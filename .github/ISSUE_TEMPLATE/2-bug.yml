@@ -1,0 +1,60 @@
+name: "🐛 버그"
+description: "동작이 기대와 다른 경우"
+title: "fix(scope): "
+labels: ["fix"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - wholesale (도매)
+        - retail (소매)
+        - ui (공통 컴포넌트)
+        - api (클라이언트/타입)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 심각도
+      options:
+        - P0 - 주요 플로우가 막힘 / 데이터 손상
+        - P1 - 기능이 동작하지 않음, 우회 불가
+        - P2 - 동작하지만 잘못됨, 우회 가능
+        - P3 - 사소한 UI 어긋남
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 절차
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작 / 실제 동작
+      value: |
+        **기대:**
+        **실제:**
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 환경
+      placeholder: "Chrome 131 / macOS / preview 배포 / MSW 모드"
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 스크린샷 · 콘솔 에러 · 네트워크 응답

@@ -1,0 +1,38 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# vercel
+.vercel/
+
+# env
+.env
+.env.*
+!.env.example
+
+# test / coverage
+coverage/
+playwright-report/
+test-results/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

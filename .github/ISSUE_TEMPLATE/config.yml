@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 논의 · 질문
+    url: https://github.com/ORG/ondo-web/discussions
+    about: 기획 논의나 결정이 필요한 사항은 Discussions에서. 확정되면 ADR 또는 이슈로 옮긴다.

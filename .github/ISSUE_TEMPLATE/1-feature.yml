@@ -1,0 +1,75 @@
+name: "✨ 기능"
+description: "화면/기능 개발 단위. 1~3일 안에 끝나는 크기로 쪼갤 것"
+title: "feat(scope): "
+labels: ["feat"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **3일 넘게 걸릴 것 같으면 이슈를 쪼갠다.** "상품 관리 개발" 같은 이슈는 만들지 않는다.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - wholesale (도매)
+        - retail (소매)
+        - ui (공통 컴포넌트)
+        - api (클라이언트/타입)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 우선순위
+      options:
+        - P0 - MVP 필수, 막히면 다른 작업도 멈춤
+        - P1 - MVP 필수
+        - P2 - 있으면 좋음
+        - P3 - 나중에
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 무엇을 만드나
+      placeholder: "도매 판매자가 상품을 등록할 수 있는 폼 화면"
+    validations:
+      required: true
+
+  - type: textarea
+    id: ac
+    attributes:
+      label: 완료 조건 (Acceptance Criteria)
+      description: "이게 다 되면 이슈를 닫는다. 애매하면 나중에 '끝났나?'로 싸운다."
+      value: |
+        - [ ]
+        - [ ]
+        - [ ] 로딩 / 빈 상태 / 에러 상태 처리
+    validations:
+      required: true
+
+  - type: textarea
+    id: api
+    attributes:
+      label: 필요한 API
+      description: "openapi.yaml의 operationId 또는 경로. 아직 없으면 'MSW로 선개발' 이라고 적는다."
+      placeholder: |
+        - GET /products (listProducts)
+        - POST /products (createProduct)  ← 아직 미구현, MSW로 선개발
+
+  - type: textarea
+    id: design
+    attributes:
+      label: 디자인 / 참고
+      placeholder: "Figma 링크, 와이어프레임 파일명"
+
+  - type: textarea
+    id: scope-out
+    attributes:
+      label: 이번 범위에서 제외하는 것
+      description: "적어두지 않으면 스코프가 새어나간다."
+      placeholder: "- 이미지 다중 업로드는 별도 이슈"

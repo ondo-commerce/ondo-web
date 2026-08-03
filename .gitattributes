@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+pnpm-lock.yaml linguist-generated=true -diff
+packages/api/src/generated/** linguist-generated=true

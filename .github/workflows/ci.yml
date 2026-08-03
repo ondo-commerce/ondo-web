@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # turbo가 변경 범위를 계산하려면 이전 커밋이 필요
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 생성 타입이 커밋본과 다르면 실패시킨다 (openapi 변경 반영 누락 방지)
+      - name: codegen drift check
+        run: |
+          pnpm codegen
+          git diff --exit-code -- packages/api/src/generated \
+            || (echo "::error::openapi 코드젠 결과가 커밋본과 다릅니다. 'pnpm codegen' 후 커밋하세요." && exit 1)
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build

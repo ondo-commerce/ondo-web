@@ -1,0 +1,49 @@
+name: "🧹 설정 · 리팩터 · 기술 부채"
+description: "빌드/설정/의존성/구조 개선. 기능 변화 없음"
+title: "chore(scope): "
+labels: ["chore"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 종류
+      options:
+        - chore - 설정 / 빌드 / 의존성
+        - refactor - 구조 개선 (동작 변화 없음)
+        - debt - 의도적으로 남긴 기술 부채 상환
+        - docs - 문서
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 무엇을
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 왜 지금 해야 하나
+      description: "'더 깔끔해서'는 사유가 아니다. 지금 안 하면 뭐가 비싸지는지 적는다."
+      placeholder: "상품 폼과 주문 폼에서 같은 셀렉트 로직이 3번째 복사됨 → 다음 화면 전에 packages/ui로 승격"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 우선순위
+      options:
+        - P1 - 다음 기능 작업을 막고 있음
+        - P2 - 2~3주 안에
+        - P3 - 여유 생기면
+    validations:
+      required: true
+
+  - type: input
+    id: origin
+    attributes:
+      label: 부채가 생긴 PR / 이슈
+      placeholder: "#42 에서 시간 없어 하드코딩함"
