@@ -1,6 +1,7 @@
 # 11. 초기 세팅 TODO (직접 진행)
 
 > 여기까지는 되어 있다: git 레포 초기화(`main`/`dev`), `.gitignore` / `.nvmrc` / `.editorconfig` / `.gitattributes`, `CONTRIBUTING.md`, `docs/`, `.github/` 템플릿 4종.
+> **GitHub 세팅(F)도 완료** — org·레포 2개·push·브랜치 보호·라벨. 남은 항목만 아래 F에 체크박스로 남겼다.
 > **모노레포 뼈대(pnpm workspace · Turborepo · apps · packages)는 일부러 비워뒀다.** 아래를 직접 채운다.
 
 ---
@@ -47,18 +48,39 @@
       → **CI에 codegen drift 체크가 이미 걸려 있다.** 스크립트 이름이 `codegen`이 아니면 CI 실패
 - [ ] MSW 세팅 (`apps/*/src/mocks/`) — BE 오기 전까지 여기로 개발
 
-## F. GitHub
+## F. GitHub — 완료됨 (2026-08-03)
 
-- [ ] 원격 레포 생성: **`ondo-web`** (Private) — 로컬 폴더명이 `onDo`여도 무관
-      - 웹: github.com/new → Add nothing (README·.gitignore 체크 해제)
-      - CLI 쓸 거면 `brew install gh && gh auth login` (현재 미설치)
-- [ ] `git remote add origin git@github.com:<계정>/ondo-web.git`
-- [ ] `git push -u origin main && git push -u origin dev`
-- [ ] Default branch → **`dev`** 로 변경 (일상 PR 대상이 dev)
-- [ ] `main` 보호 규칙: PR 필수 / status check `ci` 필수 / up-to-date 필수 / force push 차단 / **approvals는 끔** (→ `docs/03-git.md`)
-- [ ] Settings → General → **Automatically delete head branches** ON
-- [ ] `.github/CODEOWNERS`의 계정명이 실제 핸들과 맞는지 확인
-- [ ] Labels 정리 (ISSUE_TEMPLATE이 참조하는 라벨이 없으면 이슈 생성 시 무시된다)
+org: **`ondo-commerce`** (Free, 개인 계정 소속) · 레포 2개 모두 **Private**
+
+- [x] `ondo-commerce/ondo-web` 생성 → `main` / `dev` push
+- [x] `ondo-commerce/ondo-api` 생성 (빈 레포, BE가 초기화)
+- [x] Default branch → `dev`
+- [x] `main` 보호 규칙 (PR 필수 / up-to-date 필수 / force push·삭제 차단 / approvals 끔)
+- [x] Automatically delete head branches ON
+- [x] Discussions ON (`ISSUE_TEMPLATE/config.yml`이 링크함)
+- [x] 라벨 `feat` / `fix` / `chore` 생성
+- [x] `CODEOWNERS` FE 항목을 `@OhChangEun`으로 교체
+
+### F-남은 것
+
+- [ ] **BE 2명 org 초대** → Teams에 `be` 팀 생성 → `CODEOWNERS`의 주석 처리된 5줄 해제
+      (org 멤버가 아닌 핸들을 쓰면 GitHub이 그 줄을 통째로 무시한다)
+- [ ] **필수 status check `ci` 등록** — 지금은 등록 불가.
+      GitHub은 최근 1주일 내 **실행된 적 있는** 체크만 목록에 띄운다.
+      순서: `B` 완료 → 첫 PR에서 CI 1회 성공 → Settings → Branches → `main` Edit → 검색창에서 `ci` 선택
+- [ ] **`ondo-api` 공개 범위를 BE와 합의** (레포별로 따로 설정 가능)
+
+### F-나중에: public 전환
+
+> private 동안 브랜치 보호 규칙은 **"Not enforced"** 상태다 (무료 플랜 제약).
+> 규칙은 이미 만들어놨으므로 **public으로 바꾸는 순간 자동 발효**된다. 재설정 불필요.
+
+**시점: 중간발표 직후.** 전환 전 체크리스트:
+
+- [ ] 히스토리 시크릿 스캔 — `gitleaks detect` 또는 `trufflehog git file://.`
+- [ ] `.env*`가 과거 커밋에 들어간 적 없는지 확인 (`.gitignore`에 있어도 히스토리는 별개)
+- [ ] 하드코딩된 내부 도메인·스테이징 URL·테스트 계정 정리
+- [ ] BE 2명, 소마 측 산출물 공개 규정 확인
 
 ## G. Vercel
 
@@ -78,5 +100,10 @@
 
 ## 순서 추천
 
-`A → B → C(wholesale 1개만) → F → G` 로 **일단 배포까지 한 번 뚫고**, 그 다음 `retail` 복사 · `packages` 분리 · `E`.
+`F`가 끝났으니 **`A → B → C(wholesale 1개만) → G`** 로 일단 배포까지 한 번 뚫는다.
+그 다음 `retail` 복사 · `packages` 분리 · `E`, 마지막에 `F-남은 것`의 `ci` 체크 등록.
+
 빈 껍데기라도 배포 파이프라인이 먼저 도는 편이, 나중에 "빌드가 왜 안 되는지" 원인 후보를 줄여준다.
+
+> ⚠️ 지금 상태로 PR을 올리면 **CI는 반드시 실패한다.** 루트 `package.json`이 없어서
+> `pnpm install`부터 죽는다. 정상이다 — `B`를 끝내면 통과한다.

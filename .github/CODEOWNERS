@@ -1,14 +1,22 @@
 # ondo-web CODEOWNERS
-# GITHUB_ID는 실제 계정으로 교체할 것
-
+#
 # 기본: 프론트엔드 담당자
-*                       @FE_GITHUB_ID
+*                       @OhChangEun
+
+# ─────────────────────────────────────────────────────────────
+# TODO: BE 2명이 org(ondo-commerce)에 합류하면 아래 주석을 해제한다.
+#   1) People → Invite member 로 BE 2명 초대
+#   2) Teams → `be` 팀 생성 후 2명 추가
+#   3) 아래 3줄 주석 해제
+# CODEOWNERS는 org 멤버가 아닌 핸들을 쓰면 그 줄 전체를 무시하므로,
+# 합류 전까지는 켜두지 않는다.
+# ─────────────────────────────────────────────────────────────
 
 # 아키텍처에 영향 있는 파일은 팀 전체에 알린다 (ADR 링크 + BE 1명 승인 대상)
-/docs/adr/              @FE_GITHUB_ID @BE1_GITHUB_ID @BE2_GITHUB_ID
-/turbo.json             @FE_GITHUB_ID @BE1_GITHUB_ID
-/pnpm-workspace.yaml    @FE_GITHUB_ID @BE1_GITHUB_ID
-/.github/workflows/     @FE_GITHUB_ID @BE1_GITHUB_ID
+# /docs/adr/              @OhChangEun @ondo-commerce/be
+# /turbo.json             @OhChangEun @ondo-commerce/be
+# /pnpm-workspace.yaml    @OhChangEun @ondo-commerce/be
+# /.github/workflows/     @OhChangEun @ondo-commerce/be
 
 # API 계약과 맞닿은 영역 — 변경 시 BE가 인지해야 함
-/packages/api/          @FE_GITHUB_ID @BE1_GITHUB_ID @BE2_GITHUB_ID
+# /packages/api/          @OhChangEun @ondo-commerce/be
