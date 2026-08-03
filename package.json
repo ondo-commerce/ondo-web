@@ -1,0 +1,15 @@
+{
+  "name": "ondo-web",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "codegen": "turbo run codegen"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.8"
+  }
+}
