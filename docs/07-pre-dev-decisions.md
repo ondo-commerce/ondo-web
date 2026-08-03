@@ -12,14 +12,14 @@
 
 | # | 항목 | 결정 | 바꾸는 비용 | 근거 |
 |---|---|---|---|---|
-| A1 | 패키지 매니저 | **pnpm 9** | 🔴 높음 | 모노레포 워크스페이스 성능. 중간 변경 시 lockfile·CI 전면 수정 |
-| A2 | Node 버전 | **22 LTS** (`.nvmrc`) | 🟡 | Vercel 기본값과 맞춤 |
+| A1 | 패키지 매니저 | **pnpm 11.18.0** (`packageManager` 필드로 고정) ✅ | 🔴 높음 | 모노레포 워크스페이스 성능 + 유령 의존성 차단. 중간 변경 시 lockfile·CI 전면 수정 |
+| A2 | Node 버전 | **24.18.0** (`.nvmrc`) ✅ | 🟡 | CI가 `node-version-file`로 이 파일을 읽는다 |
 | A3 | 모노레포 도구 | **Turborepo** | 🔴 | Vercel 1급 지원 + 원격 캐시 |
 | A4 | 서버 상태 | **TanStack Query v5** | 🔴 | 캐시·재검증·낙관적 업데이트를 직접 만들면 그게 6개월짜리 일 |
 | A5 | 클라 상태 | **Zustand** (스토어 2~3개 상한) | 🟡 | 전역 상태는 실제로 몇 개 안 된다. Redux는 보일러플레이트 낭비 |
 | A6 | 폼 | **react-hook-form + zod** | 🔴 | 폼이 많은 서비스. 중간 교체 시 모든 폼 재작성 |
-| A7 | 스타일 | **Tailwind + cva** (CSS-in-JS 금지) | 🔴 | RSC에서 런타임 CSS-in-JS는 지원이 나쁘다 |
-| A8 | UI 베이스 | **Radix + shadcn 복사 방식** | 🟡 | 접근성 직접 구현 불가. 코드는 레포에 두고 소유 |
+| A7 | 스타일 | **Tailwind v4 + cva** (런타임 CSS-in-JS 금지) ✅ [ADR-0005](adr/0005-css-strategy.md) | 🔴 | 런타임 CSS-in-JS는 RSC에서 못 돈다 → A17이 무너진다. Panda(제로런타임)는 1인·6개월 제약으로 탈락 |
+| A8 | UI 베이스 | **Radix + shadcn 복사 방식** | 🟡 | 접근성 직접 구현 불가. 코드는 레포에 두고 소유. **A7과 한 몸** — shadcn은 Tailwind 전제라 A7이 바뀌면 같이 무너진다 |
 | A9 | 아이콘 | **lucide-react** | 🟢 낮음 | 하나로 고정만 하면 됨 |
 | A10 | 날짜 | **date-fns** (moment/dayjs 금지) | 🟡 | 트리셰이킹. 한 곳에서만 import 하도록 `utils/date.ts` 경유 |
 | A11 | 폴더 구조 | **feature-first** → [02](02-folder-structure.md) | 🔴 | 나중에 바꾸면 전 파일 이동 |

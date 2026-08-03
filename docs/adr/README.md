@@ -91,6 +91,7 @@ ADR은 "현재 상태"가 아니라 **"결정의 역사"**다. 덮어쓰면 왜 
 | [0002](0002-openapi-codegen-and-msw.md) | OpenAPI 타입 코드젠 + MSW로 BE 의존성 분리 | Accepted | 2026-08-03 |
 | [0003](0003-state-management-boundary.md) | 서버 상태는 TanStack Query, 클라 상태는 Zustand | Accepted | 2026-08-03 |
 | [0004](0004-package-consolidation.md) | 공유 패키지를 8개가 아닌 4개로 통합 | Accepted | 2026-08-03 |
+| [0005](0005-css-strategy.md) | 스타일링은 Tailwind CSS v4 + cva + shadcn 복사 방식 | Accepted | 2026-08-03 |
 
 > 새 ADR을 추가하면 **이 표에 한 줄 추가.** 이게 유일한 유지보수 부담이다.
 

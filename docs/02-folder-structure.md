@@ -32,7 +32,7 @@ apps/wholesale/
 │   │   ├── layout.tsx                # Provider 스택
 │   │   ├── not-found.tsx
 │   │   ├── global-error.tsx
-│   │   └── globals.css
+│   │   └── globals.css               # ★ Tailwind v4 설정이 여기 (@import / @source / @theme)
 │   │
 │   ├── features/                     # ★ 실제 코드 대부분이 여기
 │   │   ├── product/
@@ -57,10 +57,21 @@ apps/wholesale/
 │
 ├── public/
 ├── next.config.ts
-├── tailwind.config.ts                # @ondo/ui preset 상속 (content에 packages/ui 포함 필수)
+├── postcss.config.mjs                # @tailwindcss/postcss 하나만
 ├── tsconfig.json                     # paths: "@/*": ["./src/*"]
 └── package.json
 ```
+
+> **Tailwind v4에는 `tailwind.config.ts`가 없다.** 설정은 전부 `src/app/globals.css` 안에 있다 (ADR-0005).
+>
+> ```css
+> @import "tailwindcss";
+> @import "@ondo/ui/styles/theme.css";        /* 공용 디자인 토큰 */
+> @source "../../../../packages/ui/src";      /* ★ 이 줄이 없으면 공용 컴포넌트 스타일이 통째로 사라진다 */
+> ```
+>
+> ⚠️ `@source` 경로는 **이 CSS 파일 기준 상대경로**다. `src/app/globals.css`에서 레포 루트까지 4단계.
+> v4는 자기 앱 폴더는 자동 스캔하지만 **모노레포 바깥 패키지는 못 찾는다.** 빠뜨려도 **에러가 나지 않고 빌드도 통과한다** — 화면만 깨진다.
 
 ### 각 레이어 규칙표
 
@@ -96,8 +107,8 @@ apps/wholesale/
 packages/ui/src/
 ├── primitives/        # 원자. 도메인 지식 0. Button, Input, Select, Modal, Toast, Badge, Spinner, Table
 ├── patterns/          # 2개 이상 primitive 조합. FormField, ConfirmDialog, Pagination, SearchInput
-├── styles/            # globals.css, tailwind preset 재수출
-├── lib/cn.ts
+├── styles/theme.css   # ★ @theme 디자인 토큰. 두 앱이 globals.css에서 @import 한다
+├── lib/cn.ts          # clsx + tailwind-merge
 └── index.ts
 ```
 
@@ -154,6 +165,7 @@ packages/api/src/
 
 - [ ] 위 트리대로 `apps/wholesale` 스캐폴딩, `retail`은 복사
 - [ ] `tsconfig.json` path alias `@/*` 설정
+- [ ] `globals.css`에 `@source`로 `packages/ui` 경로 추가 → **공용 컴포넌트를 하나 넣어 스타일이 실제로 먹는지 확인**
 - [ ] `no-restricted-imports` 규칙 적용 (feature 경계 강제)
 - [ ] `features/` 첫 도메인 1개를 **레퍼런스 구현**으로 완성 → 이후 전부 복사 (예: `product`)
 - [ ] `shared/config/env.ts`에 zod로 환경변수 검증 (누락 시 빌드 실패)

@@ -108,6 +108,8 @@ export function Button({ className, variant, size, isLoading, children, ...props
 - 모든 primitive는 **네이티브 props를 확장**한다 (`extends React.XxxHTMLAttributes`). `onFocus` 하나 때문에 컴포넌트를 고치는 일이 없어야 함
 - `className`을 **마지막에 `cn()`으로 병합**해서 호출부가 여백을 조정할 수 있게 한다
 - boolean prop 남발 금지. 3개 넘어가면 `variant`로 통합
+- 🔴 **`@apply` 금지** (ADR-0005). `.btn-primary { @apply ... }` 로 클래스를 만들면 Tailwind를 쓰면서 CSS 파일 관리 문제를 다시 만든다 — 클래스명 작명이 돌아오고, JSX만 보고 스타일을 알 수 없어진다. **추상화 단위는 CSS 클래스가 아니라 React 컴포넌트이고, variant 분기는 `cva`가 맡는다**
+- `cn()` = `clsx` + `tailwind-merge`. **`tailwind-merge`가 충돌 해결(`px-4` + `px-2` → 뒤엣것)을 담당**하므로, 이게 없으면 위의 "className을 마지막에 병합" 규칙이 실제로 동작하지 않는다 (CSS 우선순위는 작성 순서가 아니라 시트 순서라서)
 
 ### 2) 합성(Composition) 우선, prop 폭발 금지
 
@@ -155,35 +157,54 @@ primitive가 `useFormContext`를 부르면 폼 밖(필터바, 검색창)에서 �
 
 ---
 
-## 디자인 토큰
+## 디자인 토큰 (Tailwind v4 — ADR-0005)
 
-`packages/ui/tailwind-preset.ts` 하나에서만 정의하고 두 앱이 상속한다.
+`packages/ui/src/styles/theme.css` **하나에서만** 정의하고 두 앱이 `@import` 한다.
+v4는 `tailwind.config.ts`가 없다. 설정이 곧 CSS다.
 
-```ts
-// 색상은 CSS 변수로 → 다크모드·테마 전환 시 클래스 재작성 불필요
-export default {
-  theme: {
-    extend: {
-      colors: {
-        primary:   { DEFAULT: "hsl(var(--primary))", fg: "hsl(var(--primary-fg))", hover: "hsl(var(--primary-hover))" },
-        secondary: { ... },
-        danger:    { ... },
-        muted:     { DEFAULT: "hsl(var(--muted))", fg: "hsl(var(--muted-fg))" },
-        border:    "hsl(var(--border))",
-        ring:      "hsl(var(--ring))",
-      },
-      borderRadius: { md: "0.5rem", lg: "0.75rem" },
-    },
-  },
-};
+```css
+/* packages/ui/src/styles/theme.css */
+@theme {
+  --color-background:           oklch(1 0 0);
+  --color-foreground:           oklch(0.15 0 0);
+  --color-primary:              oklch(0.62 0.19 259);
+  --color-primary-foreground:   oklch(0.98 0 0);
+  --color-muted:                oklch(0.96 0 0);
+  --color-muted-foreground:     oklch(0.55 0 0);
+  --color-destructive:          oklch(0.58 0.22 27);
+  --color-border:               oklch(0.92 0 0);
+  --color-ring:                 oklch(0.62 0.19 259);
+
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
 ```
 
+```css
+/* apps/wholesale/src/app/globals.css */
+@import "tailwindcss";
+@import "@ondo/ui/styles/theme.css";
+@source "../../../../packages/ui/src";   /* 빠뜨리면 공용 스타일이 조용히 사라진다 */
+```
+
+**v4에서 달라진 점** — `@theme`에 선언한 토큰은 **자동으로 런타임 CSS 변수가 된다.**
+`bg-primary` 클래스로도 쓰고, 임의 CSS에서 `var(--color-primary)`로도 쓴다.
+v3처럼 CSS 변수를 따로 정의하고 config에서 `hsl(var(--primary))`로 참조하는 2중 구조가 **필요 없다.**
+→ 다크모드는 나중에 `.dark { --color-background: ... }` 로 변수만 덮어쓰면 된다 ([07 C](07-pre-dev-decisions.md)).
+
 **규칙**
+- **토큰 이름은 shadcn 규약을 따른다** (`-foreground`, `background`, `border`, `ring`, `destructive`).
+  이름이 다르면 shadcn 컴포넌트를 붙여넣을 때마다 클래스명을 5~10군데씩 고쳐야 한다 → "복사해서 소유"의 이점이 사라진다
+- **순서: 토큰 정의 → shadcn 복사.** 반대로 하면 shadcn 기본 토큰과 자체 토큰이 공존해 어느 쪽이 진짜인지 알 수 없게 된다
 - 컴포넌트 코드에 **원시 색상값 금지**: `bg-[#3B82F6]`, `text-blue-500` ❌ → `bg-primary` ✅
   - ESLint 또는 코드리뷰 체크리스트로 잡는다
 - 여백은 Tailwind 기본 스케일(4px 배수)만. 임의값 `p-[13px]` 금지
 - 타이포는 5단계로 제한: `text-xs / sm / base / lg / xl`. 그 이상 필요하면 디자이너와 먼저 합의
 - **Figma 변수명과 토큰명을 같게 맞춘다.** 이름이 다르면 매번 번역하다가 어긋난다
+
+> ⚠️ **v3 감각으로 짜면 틀리는 지점** — v4에서 `shadow-sm`→`shadow-xs`, `shadow`→`shadow-sm`, `rounded`→`rounded-sm` 으로 **스케일 이름이 한 칸 밀렸다.**
+> `border` 기본색도 `gray-200`이 아니라 `currentColor`다 (`border border-border`처럼 색을 같이 쓸 것).
+> 전체 목록은 [ADR-0005 부록](adr/0005-css-strategy.md).
 
 ---
 
@@ -212,7 +233,7 @@ export default {
 
 ## 체크리스트
 
-- [ ] `packages/ui/tailwind-preset.ts` + CSS 변수 토큰 정의, 두 앱에서 상속
+- [ ] `packages/ui/src/styles/theme.css`에 `@theme` 토큰 정의(shadcn 규약 이름), 두 앱 `globals.css`에서 `@import` + `@source`
 - [ ] Figma 변수명 ↔ 토큰명 매핑 표 1장 (Notion)
 - [ ] `packages/ui` 생성, `cn()` + cva 패턴 확정
 - [ ] primitive 8종 구현: Button, Input, Select, Checkbox, Modal, Toast, Badge, Spinner
