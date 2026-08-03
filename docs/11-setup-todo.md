@@ -6,23 +6,31 @@
 
 ---
 
-## A. 툴체인 (10분)
+## A. 툴체인 (10분) — 완료 (2026-08-03)
 
-- [ ] `nvm use` — `.nvmrc`는 24.18.0으로 잡혀 있음. 다른 버전 쓸 거면 `.nvmrc`부터 고칠 것 (CI가 이 파일을 읽는다)
-- [ ] pnpm 설치 — `corepack enable && corepack prepare pnpm@latest --activate`
-- [ ] 루트 `package.json`에 `"packageManager": "pnpm@<버전>"` 명시 (CI의 `pnpm/action-setup@v4`가 이 필드로 버전을 정한다)
+- [x] `nvm use` — `.nvmrc` 24.18.0
+- [x] pnpm 설치 — `corepack enable && corepack prepare pnpm@latest --activate` → **11.18.0**
+- [x] 루트 `package.json`에 `"packageManager": "pnpm@11.18.0"` 명시
 
-## B. 모노레포 뼈대 (핵심 실습 구간)
+## B. 모노레포 뼈대 (핵심 실습 구간) — 뼈대 완료 (2026-08-03)
 
-- [ ] `pnpm-workspace.yaml` — `apps/*`, `packages/*`
-- [ ] 루트 `package.json` — `"private": true` + 스크립트 `dev` / `build` / `lint` / `typecheck` / `codegen`
+- [x] `pnpm-workspace.yaml` — `apps/*`, `packages/*`
+- [x] 루트 `package.json` — `"private": true` + 스크립트 `dev` / `build` / `lint` / `typecheck` / `codegen`
       → **CI(`.github/workflows/ci.yml`)가 이 5개 스크립트를 그대로 호출한다.** 이름이 다르면 CI가 깨진다
-- [ ] `turbo.json` — 파이프라인 정의
-      - `build`: `dependsOn: ["^build"]`, `outputs: [".next/**", "!.next/cache/**"]`
+- [x] `turbo.json` — 파이프라인 정의 (turbo 2.10.8)
+      - `build`: `dependsOn: ["^build", "codegen"]`, `env`, `outputs: [".next/**", "!.next/cache/**"]`
       - `typecheck` / `lint`: 캐시 O
       - `dev`: `cache: false`, `persistent: true`
-- [ ] 워크스페이스 의존은 `"@ondo/ui": "workspace:*"` 형식으로 건다
-- [ ] 검증: 루트에서 `pnpm build` 한 번에 두 앱이 빌드되는가 / 두 번째 실행이 캐시로 스킵되는가
+      > 함정: `tasks` 밖으로 나간 키나 `dependson` 같은 오타는 **에러 없이 무시된다.** `$schema`를 넣어 VSCode가 잡게 할 것
+- [ ] 워크스페이스 의존은 `"@ondo/ui": "workspace:*"` 형식으로 건다 → C·D에서
+- [ ] 검증: 루트에서 `pnpm build` 한 번에 두 앱이 빌드되는가 / 두 번째 실행이 캐시로 스킵되는가 → 앱 생성 후
+
+## B-2. 스타일링 결정 — 완료 (2026-08-03)
+
+- [x] [ADR-0005](adr/0005-css-strategy.md) — **Tailwind v4 + cva + shadcn 복사 방식**으로 확정
+      (런타임 CSS-in-JS는 RSC 비호환으로 탈락 / Panda는 1인·6개월 제약으로 탈락)
+- [x] `docs/02`·`04`·`07 A7`을 v4 문법으로 갱신 (`tailwind.config.ts` 없음, `@theme` + `@source`)
+- [ ] 토큰 이름을 **shadcn 규약(`-foreground`)** 으로 정의 → **그다음에** shadcn 컴포넌트 복사 (순서 중요)
 
 ## C. apps (2개)
 
@@ -30,7 +38,9 @@
 - [ ] `apps/retail` — 동일 구조 복사
 - [ ] 각 앱 `next.config.ts`에 `transpilePackages: ["@ondo/ui", "@ondo/api", "@ondo/shared"]`
 - [ ] 각 앱 `tsconfig.json` path alias `"@/*": ["./src/*"]`
-- [ ] `tailwind.config.ts` — `content`에 **`../../packages/ui/src/**/*.{ts,tsx}` 포함 필수** (빠뜨리면 공용 컴포넌트 스타일이 통째로 날아간다)
+- [ ] **Tailwind v4** — `src/app/globals.css`에 `@source "../../../../packages/ui/src";` **포함 필수**
+      (빠뜨리면 공용 컴포넌트 스타일이 통째로 날아간다. **에러도 안 나고 빌드도 통과한다**)
+      → v4엔 `tailwind.config.ts`가 없다. 설정은 전부 CSS 안 ([ADR-0005](adr/0005-css-strategy.md))
 - [ ] `shared/config/env.ts` — zod로 환경변수 검증 (누락 시 빌드 실패)
 
 ## D. packages (4개 고정 — ADR-0004)
@@ -105,5 +115,6 @@ org: **`ondo-commerce`** (Free, 개인 계정 소속) · 레포 2개 모두 **Pr
 
 빈 껍데기라도 배포 파이프라인이 먼저 도는 편이, 나중에 "빌드가 왜 안 되는지" 원인 후보를 줄여준다.
 
-> ⚠️ 지금 상태로 PR을 올리면 **CI는 반드시 실패한다.** 루트 `package.json`이 없어서
-> `pnpm install`부터 죽는다. 정상이다 — `B`를 끝내면 통과한다.
+> ~~⚠️ 지금 상태로 PR을 올리면 CI는 반드시 실패한다. 루트 `package.json`이 없어서 `pnpm install`부터 죽는다.~~
+> **해소됨 (2026-08-03).** `A`·`B` 완료로 `pnpm install`은 통과한다.
+> 다만 `apps/`가 비어 있어 `turbo run build`는 "0 packages"로 끝난다 — 실패는 아니다.
