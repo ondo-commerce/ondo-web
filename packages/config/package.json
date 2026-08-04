@@ -1,0 +1,14 @@
+{
+  "name": "@ondo/config",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./typescript/*": "./typescript/*",
+    "./eslint/*": "./eslint/*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
+    "typescript-eslint": "^8.65.0"
+  }
+}
