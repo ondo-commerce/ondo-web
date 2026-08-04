@@ -1,0 +1,14 @@
+{
+  "extends": "@ondo/config/typescript/nextjs.json",
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}
