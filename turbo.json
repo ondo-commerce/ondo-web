@@ -9,7 +9,7 @@
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "typecheck": { "dependsOn": ["^build", "codegen"] },
-    "lint": {},
+    "lint": { "dependsOn": ["^lint"] },
     "dev": { "cache": false, "persistent": true }
   }
 }
