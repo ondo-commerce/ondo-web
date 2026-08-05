@@ -63,7 +63,7 @@ Redeploy → 이번엔 성공해야 한다. 실패하면 로그의 첫 번째 �
 
 ## Step 3. 스타일이 깨지는지 확인 ★
 
-배포된 URL을 열어본다. **Tailwind `content`에 `packages/ui`를 안 넣었다면 여기서 처음 티가 난다.**
+배포된 URL을 열어본다. **`globals.css`의 `@source`에 `packages/ui`를 안 넣었다면 여기서 처음 티가 난다.**
 
 > ### 🔮 예상해보기
 > 로컬 `pnpm dev`에서는 멀쩡한데 배포에서만 깨진다면, 왜 그럴까?
@@ -71,15 +71,20 @@ Redeploy → 이번엔 성공해야 한다. 실패하면 로그의 첫 번째 �
 <details>
 <summary>결과 확인</summary>
 
-로컬 dev는 Tailwind JIT가 파일을 감시하며 클래스를 즉석에서 만든다. 프로덕션 빌드는 `content` 경로를 한 번 스캔해서 **거기 없는 클래스를 전부 버린다(purge)**.
-`packages/ui`가 content에 없으면 공유 컴포넌트 스타일만 통째로 사라진다.
+로컬 dev는 Tailwind가 파일을 감시하며 클래스를 즉석에서 만든다. 프로덕션 빌드는 스캔 경로를 한 번 훑어서 **거기 없는 클래스를 아예 만들지 않는다.**
+`packages/ui`가 스캔 대상에 없으면 공유 컴포넌트 스타일만 통째로 사라진다.
 
-```ts
-content: [
-  "./src/**/*.{ts,tsx}",
-  "../../packages/ui/src/**/*.{ts,tsx}",   // ← 이 줄
-],
+v4에는 `tailwind.config.ts`가 없다. 설정은 전부 CSS 안에 있다 ([ADR-0005](adr/0005-css-strategy.md)).
+
+```css
+/* apps/*/src/app/globals.css */
+@import "tailwindcss";
+@import "@ondo/ui/styles/theme.css";
+
+@source "../../../../packages/ui/src";   /* ← 이 줄 */
 ```
+
+`../`가 4개인 이유는 `src/app/`에서 레포 루트까지 올라가야 하기 때문이다. 두 앱의 깊이가 같아서 값도 동일하다.
 
 **여기서 얻는 것**: `pnpm build && pnpm start`로 **로컬에서 프로덕션 빌드를 확인하는 습관**. dev 서버만 믿으면 안 된다.
 </details>
@@ -113,6 +118,18 @@ vercel link          # apps/wholesale 안에서 실행
 vercel env pull .env.local
 ```
 
+> ### ⚠️ `vercel link`가 남기는 것
+>
+> `apps/wholesale/.vercel/project.json`이 생긴다. **"이 디렉터리는 저 Vercel 프로젝트다"를 못박는 파일**이다.
+>
+> ```jsonc
+> { "projectId": "prj_...", "projectName": "ondo-wholesale" }
+> ```
+>
+> **앱을 복사해서 새 앱을 만들 때 이게 딸려오면 사고가 난다.** 소매 디렉터리에서 친 `vercel --prod`가 도매 프로덕션으로 나간다. gitignore 대상이라 PR 리뷰에도 안 걸린다.
+>
+> 복사 시 함께 제외할 것: `.vercel/`, `.env.local`, `.next/`, `.turbo/`, `next-env.d.ts`, `*.tsbuildinfo`
+
 ---
 
 ## Step 5. 두 번째 프로젝트 (retail)
@@ -122,6 +139,21 @@ vercel env pull .env.local
 막히면 그때 Step 1~4를 다시 본다. **혼자 되면 이해한 것이고, 봐야 하면 아직 안 된 것이다.**
 
 프로젝트 이름은 `ondo-wholesale` / `ondo-retail`로.
+
+> ### 🔮 예상해보기
+> import 직후 배포 목록을 보면 어떤 환경(Production/Preview)으로 떠 있을까?
+
+<details>
+<summary>결과 확인</summary>
+
+**Production으로 한 번 뜬다.** Branch Tracking이 `main`으로 잡혀 있어도 그렇다.
+
+프로젝트를 만드는 시점에 Vercel이 **그때의 기본 브랜치(우리는 `dev`)를 Production 슬롯에 한 번 채워 넣기 때문**이다. 최초 1회만 그렇고, 이후 `dev` push는 정상적으로 Preview로 뜬다.
+
+**주의**: 이 때문에 **첫 `main` 머지 전까지 소매 프로덕션 도메인에는 `dev` 코드가 올라가 있다.**
+
+**여기서 얻는 것**: "설정이 잘못됐나?" 싶을 때 **설정 화면과 배포 기록을 둘 다 봐야 한다**는 것. 기록만 보고 설정을 추측하면 틀린다.
+</details>
 
 ---
 
@@ -137,9 +169,25 @@ vercel env pull .env.local
 
 **2개 다 빌드된다.** Vercel은 기본적으로 "이 레포에 커밋이 왔다 → 내 프로젝트를 빌드한다"만 판단한다. 어느 앱이 바뀌었는지는 모른다.
 
-Settings → Git → **Ignored Build Step** → `npx turbo-ignore`
+Settings → Git → **Ignored Build Step** → Behavior 드롭다운에서 **Custom** 선택 → 입력칸에:
 
-이제 다시 push 하면 관계없는 쪽은 `Build skipped` 로 끝난다.
+```bash
+npx turbo-ignore --fallback=HEAD^
+```
+
+**Behavior를 Custom으로 바꿔야 입력칸이 나온다.** 다른 프리셋(`Only build if there are changes in a folder` 등)은 경로 매칭이라 의존성 그래프를 못 본다 — `packages/ui`를 고쳤을 때 두 앱 모두 스킵돼서 공유 컴포넌트 수정이 배포에 반영되지 않는다.
+
+`--fallback=HEAD^`는 이전 성공 배포 정보가 없을 때(첫 배포, 새 브랜치) 비교 대상을 지정한다. 없으면 판단 불가로 그냥 빌드하므로 필수는 아니지만, 넣으면 헛빌드가 준다.
+
+종료 코드가 직관과 반대다. **exit 0 = 스킵, exit 1 = 빌드.** 설정 화면에도 `exits 1 (build) or 0 (skip)`이라고 적혀 있다.
+
+이제 다시 push 하면 관계없는 쪽은 `Skipped` 배지로 끝난다. 판정 근거는 그 배포 로그 최상단에 찍힌다:
+
+```
+Running "npx turbo-ignore --fallback=HEAD^"
+≫ Using "wholesale" as project
+⏭ Ignoring the change
+```
 </details>
 
 **추가 실험**: `packages/ui`의 파일을 고쳐서 push 해본다.
@@ -208,7 +256,7 @@ Settings → Domains → `b2b.example.com` 추가 → 안내되는 CNAME/A 레�
 
 - [ ] Root Directory를 안 바꾸면 왜 실패하는지 **말로 설명할 수 있다**
 - [ ] "Include files outside root"가 무엇을 위한 옵션인지 안다
-- [ ] Tailwind purge로 스타일이 사라지는 증상을 **직접 봤다**
+- [ ] `@source` 누락으로 공유 컴포넌트 스타일이 사라지는 증상을 **직접 봤다**
 - [ ] `NEXT_PUBLIC_*`가 빌드 시점에 박힌다는 걸 안다
 - [ ] Preview/Production 환경변수를 다르게 설정했다
 - [ ] `turbo-ignore` 적용 전후의 빌드 개수 차이를 **직접 봤다**

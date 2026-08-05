@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "onDo 도매",
-  description: "onDo 도매 거래처 주문·재고 관리",
+  title: "onDo",
+  description: "onDo 소매 스토어",
 };
 
 export default function RootLayout({
