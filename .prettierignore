@@ -1,0 +1,7 @@
+apps/wholesale/.next/     
+apps/retail/.next/
+pnpm-lock.yaml             
+*.tsbuildinfo        
+.turbo/                  
+.claude/
+*.md
