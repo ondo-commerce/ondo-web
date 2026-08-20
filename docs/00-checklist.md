@@ -48,7 +48,7 @@
 - [ ] `FE` ESLint + Prettier 공유 설정 패키지화 (`packages/config`)
 - [ ] `FE` **`@typescript-eslint/no-explicit-any: "error"`** — warn 아님 → [08](08-tech-debt-rules.md)
 - [ ] `FE` `tsconfig` strict + `noUncheckedIndexedAccess` ON (나중에 켜면 에러 300개)
-- [ ] `FE` feature 경계 강제 (`no-restricted-imports`) → [02](02-folder-structure.md)
+- [x] `FE` feature 경계 강제 (`no-restricted-imports`) → [02](02-folder-structure.md)
 - [ ] `FE` husky + lint-staged (커밋 시 변경 파일만 lint/format)
 - [ ] `FE` commitlint (Conventional Commits 강제)
 - [ ] `FE` CI: `codegen` → `typecheck` → `lint` → `build` → [.github/workflows/ci.yml](../.github/workflows/ci.yml)

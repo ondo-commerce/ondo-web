@@ -49,7 +49,10 @@
 - [ ] `packages/api` — `client.ts` + `endpoints/` + `mocks/handlers/`, `generated/`는 **커밋 대상**
 - [ ] `packages/shared` — 포맷터·날짜·통화·범용 훅
 - [ ] `packages/config` — eslint / tsconfig / prettier 공유 설정. 다른 패키지는 여기를 extends
-- [ ] `packages/config`의 eslint에 `no-restricted-imports` (feature 경계 강제) 넣기 → `docs/02-folder-structure.md` 규칙 블록 그대로
+- [x] `packages/config`의 eslint에 `no-restricted-imports` (feature 경계 강제) 넣기 → `docs/02-folder-structure.md` 규칙 블록 그대로
+      → 규칙은 `packages/config/eslint/imports.js`에 두고 앱 2개가 `@ondo/config/eslint/imports.js`로 가져다 쓴다.
+      `@ondo/ui`의 `@ondo/api` import 금지([ADR-0004](adr/0004-package-consolidation.md) 불변 규칙 1)는
+      `packages/ui/eslint.config.mjs`에 직접 뒀다 — 공용 `base.js`에 넣으면 나중에 `packages/api`가 자기 자신을 못 부른다
 
 ## E. API 계약
 
