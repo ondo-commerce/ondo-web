@@ -35,6 +35,8 @@ reviews:
   # "지금 처리 중입니다" 중간 코멘트. 완료된 리뷰만 보면 된다
   review_progress: false
   poem: false
+  # 리뷰 중에 나오는 ASCII 소/운세. chat.art 와는 별개 키다
+  in_progress_fortune: false
 
   # ── 남기는 것 ────────────────────────────────────────
   # 링크된 이슈와 PR 내용이 어긋나면 잡아준다.
@@ -54,6 +56,11 @@ reviews:
     # 구현은 사람이 한다 (docs/03-git.md). 버튼이 있으면 언젠가 누른다
     autofix:
       enabled: false
+
+  pre_merge_checks:
+    # 함수가 없는 설정 파일에 "docstring 커버리지 통과"가 붙는다. 의미가 없다
+    docstrings:
+      mode: "off"
 
   path_filters:
     # 코드젠 산출물 — 사람이 쓰지 않는 코드를 리뷰받을 이유가 없다
