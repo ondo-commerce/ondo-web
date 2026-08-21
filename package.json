@@ -9,10 +9,30 @@
     "typecheck": "turbo run typecheck",
     "codegen": "turbo run codegen",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
     "turbo": "^2.10.8"
+  },
+  "lint-staged": {
+    "apps/wholesale/**/*.{ts,tsx}": [
+      "pnpm --filter wholesale exec eslint --fix",
+      "prettier --write"
+    ],
+    "apps/retail/**/*.{ts,tsx}": [
+      "pnpm --filter retail exec eslint --fix",
+      "prettier --write"
+    ],
+    "packages/ui/**/*.{ts,tsx}": [
+      "pnpm --filter @ondo/ui exec eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css}": [
+      "prettier --write"
+    ]
   }
 }
