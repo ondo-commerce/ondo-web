@@ -1,6 +1,6 @@
 "use client";
 
-import { AccordionRow, Chip } from "@ondo/ui";
+import { AccordionRow } from "@ondo/ui";
 import { ProductColorSizeList } from "./ProductColorSizeList";
 import { ProductSkuTable } from "./ProductSkuTable";
 import type { Product } from "../types";

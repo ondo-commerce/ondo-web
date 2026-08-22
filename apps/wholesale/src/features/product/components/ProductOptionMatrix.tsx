@@ -1,6 +1,6 @@
 "use client";
 
-import { AddSlot, Button, Checkbox, ColorDot, Table } from "@ondo/ui";
+import { Button, Checkbox, ColorDot, Table } from "@ondo/ui";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 import { SIZES } from "../constants";
 import type { PaletteColor } from "../constants";
