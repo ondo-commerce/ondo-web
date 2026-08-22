@@ -1,16 +1,6 @@
-import { Button } from "@ondo/ui";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6">
-      <h1 className="text-2xl font-semibold">onDo 도매</h1>
-      <div className="flex items-center gap-4">
-        <Button>저장</Button>
-        <Button variant="secondary">취소</Button>
-        <Button variant="destructive" size="lg">
-          삭제
-        </Button>
-      </div>
-    </main>
-  );
+/** 대시보드는 아직 화면이 없으므로 실제로 쓸 수 있는 첫 화면으로 보낸다 */
+export default function RootPage() {
+  redirect("/products");
 }

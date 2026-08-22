@@ -6,8 +6,8 @@ export default function Page() {
       <h1 className="text-2xl font-semibold">onDo 소매</h1>
       <div className="flex items-center gap-4">
         <Button>장바구니 담기</Button>
-        <Button variant="secondary">찜하기</Button>
-        <Button variant="ghost" size="lg">
+        <Button variant="line">찜하기</Button>
+        <Button variant="soft" size="lg">
           공유
         </Button>
       </div>
