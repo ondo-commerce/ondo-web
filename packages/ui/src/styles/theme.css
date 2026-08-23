@@ -1,18 +1,152 @@
+/* ===========================================================================
+   온도 디자인 토큰 — 두 앱(wholesale/retail)이 @import 하는 유일한 정의처
+
+   여기서 정의하는 건 **색과 반경의 의미(슬롯)다.**
+   - 색 값은 전부 Tailwind 기본 팔레트를 참조한다. 직접 hex를 적지 않는다.
+   - 여백은 커스텀하지 않는다. Tailwind 기본 스케일을 그대로 쓴다
+     (p-6 …). Figma와 1~2px 어긋나는 건 감수한다.
+   - 그림자도 기본 스케일을 쓰되, 떠 있는 표면 하나만 슬롯을 둔다(--shadow-float).
+     Tailwind 기본 단계에 이만큼 넓고 옅은 그림자가 없다.
+   - 타이포도 기본 스케일을 쓰되, 본문 크기 하나만 슬롯을 둔다(--text-body).
+     13px가 Tailwind 기본 스케일에 없어서 text-[13px]로 흩어지기 때문이다.
+   - 반경만 예외로 슬롯을 둔다. 디자인 시스템이 반경을 크기가 아니라 역할로
+     정의하고("입력·행·드롭다운 8"), 대형 CTA의 10px는 Tailwind 기본 스케일에
+     아예 없기 때문이다. rounded-lg라고 쓰면 왜 그 값인지가 코드에서 사라진다.
+
+   이름 규약: shadcn/ui 슬롯명. 복사해 오는 shadcn 컴포넌트가 클래스명을
+             고치지 않고 그대로 동작해야 하기 때문이다 (docs/04).
+
+   Figma 대조 (물보라 · 창은 페이지 1393:9972 실측 → 가장 가까운 Tailwind 색):
+     black   #191f28 → gray-900     gray800 #8b95a1 → gray-500
+     gray900 #4e5968 → gray-600     gray700 #b0b8c1 → gray-400
+     gray500 #d1d5db → gray-300 (정확히 일치)
+     gray300 #f2f4f6 → gray-100     blue500 #3182f6 → blue-500 (거의 일치)
+     blue200 #eef4ff → blue-50      danger  #f04452 → red-500
+     good    #00875f → emerald-600
+
+   ⚠️ 컴포넌트에 원시 색상값을 쓰지 않는다 — bg-[#3182f6]도, bg-blue-500도 금지.
+      의미를 통해서만 쓴다(bg-primary). 필요한 의미가 없으면 여기에 슬롯을 먼저 추가한다.
+   =========================================================================== */
+
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.15 0 0);
-  --color-primary: oklch(0.62 0.19 259);
-  --color-primary-foreground: oklch(0.98 0 0);
-  --color-muted: oklch(0.96 0 0);
-  --color-muted-foreground: oklch(0.55 0 0);
-  --color-destructive: oklch(0.58 0.22 27);
-  --color-border: oklch(0.92 0 0);
-  --color-ring: oklch(0.62 0.19 259);
+  --color-background: var(--color-gray-100); /* 페이지 배경 */
+  --color-foreground: var(--color-gray-900); /* 본문·제목 */
 
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
+  --color-card: var(--color-white); /* 흰 패널 */
+  --color-card-foreground: var(--color-gray-900);
 
-  --color-secondary: oklch(0.96 0 0);
-  --color-secondary-foreground: oklch(0.15 0 0);
-  --color-destructive-foreground: oklch(0.98 0 0);
+  --color-popover: var(--color-white); /* 팝오버·드롭다운 표면 */
+  --color-popover-foreground: var(--color-gray-900);
+
+  /* 보조 표면 = 옅은 회색 채움. 서브 칩 / ghost 버튼 / 검색창 배경 */
+  --color-secondary: var(--color-gray-100);
+  --color-secondary-foreground: var(--color-gray-600); /* 보조 텍스트 */
+  /* 회색 채움의 한 단계 진한 표면. secondary가 기본이고 이건 그 위의 반응 상태다
+     — soft 버튼/필터의 hover, 목록 행의 눌림(active).
+     값은 --color-border와 같지만 의미가 다르다: 저건 선이고 이건 면이다 */
+  --color-secondary-strong: var(--color-gray-200);
+
+  /* muted = 옅은 배경 + 그 위 라벨/플레이스홀더 글자 */
+  --color-muted: var(--color-gray-100);
+  --color-muted-foreground: var(
+    --color-gray-500
+  ); /* 라벨·비활성·플레이스홀더 */
+
+  /* accent = 은은한 강조 표면. 활성 칩 / 안내 배너 / 선택된 표 행 */
+  --color-accent: var(--color-gray-50);
+  --color-accent-foreground: var(--color-gray-500);
+
+  /* primary = 강조는 이 파랑 하나뿐이다. 두 번째 강조색을 만들지 않는다 */
+  --color-primary: var(--color-gray-500);
+  --color-primary-foreground: var(--color-white);
+
+  --color-destructive: var(--color-red-500); /* 필수 표시 *, 재고 0 */
+  --color-destructive-foreground: var(--color-white);
+  --color-success: var(--color-emerald-600); /* 마진율 등 양수 */
+
+  --color-border: var(--color-gray-200); /* 기본 테두리·구분선 */
+  --color-border-strong: var(
+    --color-gray-400
+  ); /* 아이콘·caret·사이즈칩 테두리 */
+  --color-input: var(--color-gray-300); /* 폼 컨트롤 테두리 */
+  --color-ring: var(--color-gray-500); /* 포커스 링 */
+
+  /* 본문 글자 크기. Tailwind 기본 스케일에 13px가 없어서 두는 유일한 타이포 슬롯이다
+     (text-sm 14px와 text-xs 12px 사이). 표 머리글처럼 본문보다 한 톤 조용한 자리에
+     쓰던 text-[13px]를 이 이름으로 모은다.
+     줄높이는 4px 격자에 맞춰 20px로 고정한다 — 안 적으면 text-body가 크기만 바꾸고
+     줄높이는 물려받은 값이 남아 줄간격이 자리마다 달라진다 */
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+
+  /* 반경 5단계 — 크기가 아니라 역할로 고른다. 여기 없는 단계를 만들지 않는다.
+     특히 12px(Tailwind rounded-xl)은 이 시스템에 없는 값이다.
+     칩은 알약이라 슬롯이 없다 — rounded-full을 그대로 쓴다 */
+  --radius-panel: 10px; /* 흰 패널·팝오버·모달 표면 */
+  --radius-cta: 10px; /* 대형 CTA 버튼 (Button size=lg) */
+  --radius-control: 6px; /* 입력·목록 행·드롭다운 */
+  --radius-button: 6px; /* 버튼·라벨·배지·체크박스 */
+
+  /* 본문 위로 **떠 있는 표면**의 그림자 — 팝오버·모달·드롭다운.
+     Segmented의 눌린 조각처럼 "살짝 솟은" 표현은 여기 해당하지 않는다
+     (그건 Tailwind 기본 shadow-sm을 그대로 쓴다).
+     40px 번짐에 불투명도 10%로, Tailwind 기본 그림자 스케일에 없는 단계다.
+     색은 rgba를 직접 적지 않고 팔레트의 검정을 섞는다 — 이 파일의 색 규약 */
+  --shadow-float: 0 12px 40px
+    color-mix(in oklab, var(--color-black) 10%, transparent);
+  --shadow-dropdown: 0 4px 12px
+    color-mix(in oklab, var(--color-black) 8%, transparent);
+  /* Figma 원본과 같은 Noto Sans KR (figma-map.md §4-7).
+     실제 로드는 각 앱 layout.tsx의 next/font가 한다 — 여기 이름만 적으면 폰트가
+     안 붙으므로 둘을 항상 같이 고친다 */
+  --font-sans:
+    var(--font-noto-sans-kr), "Noto Sans KR", "Apple SD Gothic Neo",
+    "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* 전역 자간. 두 앱 <body>에 흩어져 있던 tracking-tight를 여기로 모았다 —
+   한쪽만 고쳐서 앱끼리 갈리는 걸 막는다. 개별 요소는 tracking-* 유틸로 덮으면 된다.
+
+   참고: Figma 실측 자간은 -0.015em(14px에서 -0.21px)으로 tracking-tight보다 느슨하다.
+        Noto Sans KR은 Pretendard보다 자간이 넓어서 이 값이 답답해 보일 수 있다. */
+@layer base {
+  body {
+    letter-spacing: var(--tracking-tighter);
+  }
+}
+
+/* 스크롤 영역의 막대. 화면 전체 스크롤이 없어서 스크롤바가 보이는 자리는
+   패널 안(Panel.Body)과 사이드바 메뉴뿐이다 — 둘 다 내용이 주인공이라
+   평소엔 막대를 숨기고 그 위에 올렸을 때만 띄운다.
+
+   표준 속성(scrollbar-width/color)과 ::-webkit-을 같이 적는다.
+   Chrome은 scrollbar-width가 있으면 ::-webkit- 규칙을 무시하므로 겹쳐도 되고,
+   표준 속성을 모르는 구버전 Safari가 ::-webkit- 쪽을 받는다. */
+@utility scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  &::-webkit-scrollbar {
+    width: 2px;
+    height: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-control);
+    background: transparent;
+  }
+
+  &:hover::-webkit-scrollbar-thumb,
+  &:focus-within::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+  }
 }
