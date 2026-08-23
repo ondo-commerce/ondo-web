@@ -67,11 +67,11 @@ export function ProductDetailPanel({ product }: { product: Product }) {
         ) : null}
       </Panel.Body>
 
-      <div className="mt-8 flex shrink-0 gap-2">
-        <Button variant="soft" className="flex-1" disabled>
+      <div className="flex shrink-0 gap-2">
+        <Button variant="soft" size="lg" className="flex-1" disabled>
           재고 등록 →
         </Button>
-        <Button asChild className="flex-1">
+        <Button asChild size="lg" className="flex-1">
           <Link href={`/products/${product.id}/edit`}>상품 관리</Link>
         </Button>
       </div>
