@@ -1,0 +1,15 @@
+{
+  // Tailwind v4는 설정 파일이 없어서, IntelliSense가 `@import "tailwindcss"`가 든
+  // CSS를 컨텍스트로 잡는다. packages/ui는 두 앱 폴더 밖이라 어느 컨텍스트에도
+  // 속하지 못해 hover·자동완성이 안 뜬다 — 여기서 직접 이어준다.
+  //
+  // packages/ui를 wholesale에 붙인 건 한 폴더를 두 컨텍스트에 매핑할 수 없기 때문이다.
+  // 두 앱이 같은 theme.css를 import하므로 토큰 목록은 동일하다.
+  "tailwindCSS.experimental.configFile": {
+    "apps/wholesale/src/app/globals.css": [
+      "apps/wholesale/**",
+      "packages/ui/**"
+    ],
+    "apps/retail/src/app/globals.css": "apps/retail/**"
+  }
+}
