@@ -34,9 +34,9 @@ const button = cva(
       },
       size: {
         sm: "h-7 min-w-15 px-3 text-xs",
-        md: "h-9 min-w-15 px-4 text-sm",
+        md: "h-8.5 min-w-15 px-4 text-sm",
         /* 등록 폼 하단의 전폭 CTA */
-        lg: "h-13 w-full rounded-cta text-lg",
+        lg: "h-12 w-full rounded-cta text-lg",
         /* 아이콘 하나만 들어가는 정사각. min-w를 두지 않는다 */
         icon: "size-9",
         iconSm: "size-7",

@@ -84,8 +84,8 @@
      칩은 알약이라 슬롯이 없다 — rounded-full을 그대로 쓴다 */
   --radius-panel: 10px; /* 흰 패널·팝오버·모달 표면 */
   --radius-cta: 10px; /* 대형 CTA 버튼 (Button size=lg) */
-  --radius-control: 6px; /* 입력·목록 행·드롭다운 */
-  --radius-button: 6px; /* 버튼·라벨·배지·체크박스 */
+  --radius-control: 8px; /* 입력·목록 행·드롭다운 */
+  --radius-button: 8px; /* 버튼·라벨·배지·체크박스 */
 
   /* 본문 위로 **떠 있는 표면**의 그림자 — 팝오버·모달·드롭다운.
      Segmented의 눌린 조각처럼 "살짝 솟은" 표현은 여기 해당하지 않는다
