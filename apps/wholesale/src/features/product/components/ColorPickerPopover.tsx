@@ -79,9 +79,9 @@ export function ColorPickerPopover({
             {COLOR_PALETTE.map((group) => (
               <div
                 key={group.group}
-                className="flex flex-col items-start gap-1.5 px-5 first:pl-3 last:pr-3"
+                className="flex flex-col gap-1.5 px-5 first:pl-3 last:pr-3"
               >
-                <p className="text-foreground mb-2 whitespace-nowrap">
+                <p className="text-foreground mb-2 text-center whitespace-nowrap">
                   {group.group}
                 </p>
                 {/* justify-start: 열 안에서 칩이 열 폭만큼 늘어나므로, 가운데
