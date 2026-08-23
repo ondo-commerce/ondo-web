@@ -5,6 +5,7 @@ import { ColorPickerPopover } from "./ColorPickerPopover";
 import { SIZES } from "../constants";
 import type { PaletteColor } from "../constants";
 import type { SizeName } from "../types";
+import { ChevronDown } from "lucide-react";
 
 export interface OptionDraft {
   id: string;
@@ -94,13 +95,16 @@ export function ProductOptionMatrix({
           selected={options.map((o) => o.color.name)}
           onConfirm={commitColors}
         >
-          <button
+          <Button variant="soft" disabled={disabled}>
+            색상 선택
+          </Button>
+          {/* <button
             type="button"
             disabled={disabled}
             className="border-border bg-card hover:bg-secondary focus-visible:ring-ring inline-flex h-8 items-center gap-1.5 rounded-button border px-2.5 text-sm focus-visible:ring-2 focus-visible:outline-hidden disabled:cursor-not-allowed"
           >
             <span aria-hidden>◎</span> 색상 선택
-          </button>
+          </button> */}
         </ColorPickerPopover>
 
         {options.length > 0 ? (
