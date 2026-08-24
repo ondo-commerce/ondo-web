@@ -2,6 +2,8 @@ import type { BadgeProps } from "@ondo/ui";
 import type {
   FulfillmentStatus,
   LedgerEntryType,
+  PayerType,
+  PaymentMethod,
   SettlementStatus,
 } from "./types";
 
@@ -49,6 +51,24 @@ export const SETTLEMENT_TONE: Record<SettlementStatus, BadgeTone> = {
   unpaid: "done",
   partial: "active",
   settled: "done",
+};
+
+/**
+ * 결제 주체 라벨. 화면은 표준어 `사입삼촌 대납`을 그대로 쓴다(§9.1 G8) —
+ * 현장에서 부르는 말이 그것이고, 코드값만 `purchasingAgent`로 둔다.
+ */
+export const PAYER_LABEL: Record<PayerType, string> = {
+  retailer: "소매처 직접",
+  purchasingAgent: "사입삼촌 대납",
+};
+
+/**
+ * 입금 방식 **2종뿐이다**(`settlement_data_model.md` §2.5 결정 S1).
+ * 대납은 방식이 아니라 결제 주체가 표현하므로 여기에 세 번째 값을 만들지 않는다.
+ */
+export const METHOD_LABEL: Record<PaymentMethod, string> = {
+  cash: "현금",
+  bankTransfer: "계좌 이체",
 };
 
 /** 원장 구분 2종. 반품·수기 조정은 화면 미설계·보류라 여기에 없다 */

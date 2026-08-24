@@ -100,3 +100,17 @@ export function ledgerRows(entries: readonly LedgerEntry[]): LedgerRow[] {
 export function formatSignedAmount(value: number): string {
   return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
 }
+
+/**
+ * 금액 입력칸의 문자열 → 금액.
+ * **빈칸과 0을 구분해야 해서 빈칸은 null이다** — "아직 안 적었다"와 "0원을 적었다"는
+ * 다른 상태고, 버튼 활성 조건이 둘을 갈라 본다.
+ *
+ * 재고 탭 `derive.ts`에 같은 취지의 함수가 있지만 **복사해 왔다** —
+ * feature 경계를 넘어 import 하지 않는다(ESLint가 막는다).
+ */
+export function parseNumberInput(raw: string): number | null {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits === "") return null;
+  return Number(digits);
+}
