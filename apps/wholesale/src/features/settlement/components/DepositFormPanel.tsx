@@ -2,9 +2,22 @@
 
 import { FormField, Input, Panel, Segmented } from "@ondo/ui";
 import { useId, useState } from "react";
+import { AllocationTable } from "./AllocationTable";
 import { METHOD_LABEL, PAYER_LABEL } from "../constants";
-import { parseNumberInput } from "../derive";
-import type { PayerType, PaymentMethod, TradeRelation } from "../types";
+import {
+  allocationTargets,
+  allocationTotal,
+  autoAllocate,
+  clampAllocation,
+  orderReceivable,
+  parseNumberInput,
+} from "../derive";
+import type {
+  PayerType,
+  PaymentMethod,
+  SettlementOrder,
+  TradeRelation,
+} from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -17,19 +30,60 @@ import { formatNumber } from "@/shared/lib/format";
  * 폼 상태는 이 컴포넌트 안에만 있다. 거래처를 바꾸면 호출부가 key로 새로 만들어
  * 입력값이 통째로 초기화된다 — A거래처에 적던 금액이 B거래처 화면에 남으면 안 된다.
  */
-export function DepositFormPanel({ relation }: { relation: TradeRelation }) {
+export function DepositFormPanel({
+  relation,
+  orders,
+}: {
+  relation: TradeRelation;
+  /** 이 거래처의 주문 전량. 배분 표는 그중 미수가 남은 것만 고른다 */
+  orders: readonly SettlementOrder[];
+}) {
   /* 입력칸은 문자열로 들고 있는다 — 빈칸과 0을 구분해야 해서 숫자로 바로 못 바꾼다 */
   const [amountRaw, setAmountRaw] = useState("");
   const [receivedAt, setReceivedAt] = useState("");
   const [payerType, setPayerType] = useState<PayerType>("retailer");
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [memo, setMemo] = useState("");
+  /**
+   * 사람이 직접 고친 배분액만 담는다. 손대지 않은 행은 자동 배분값을 그대로 쓴다 —
+   * 전부 상태로 들고 있으면 입금액이 바뀔 때 어느 값이 자동이고 어느 값이 사람 것인지
+   * 구분할 수 없다.
+   */
+  const [editedAllocations, setEditedAllocations] = useState<
+    Record<string, number>
+  >({});
 
   const amountId = useId();
   const receivedAtId = useId();
   const memoId = useId();
 
   const amount = parseNumberInput(amountRaw);
+
+  const targets = allocationTargets(orders);
+  const auto = autoAllocate(targets, amount ?? 0);
+  const allocations = Object.fromEntries(
+    targets.map((order) => [
+      order.id,
+      editedAllocations[order.id] ?? auto[order.id] ?? 0,
+    ]),
+  );
+  const total = allocationTotal(allocations);
+
+  /** 입금액이 바뀌면 자동 배분을 다시 계산해야 하므로 사람이 고친 값도 함께 지운다 */
+  const changeAmount = (raw: string) => {
+    setAmountRaw(raw);
+    setEditedAllocations({});
+  };
+
+  const changeAllocation = (orderId: string, raw: string) => {
+    const order = targets.find((o) => o.id === orderId);
+    if (!order) return;
+    const parsed = parseNumberInput(raw) ?? 0;
+    setEditedAllocations((prev) => ({
+      ...prev,
+      [orderId]: clampAllocation(parsed, orderReceivable(order)),
+    }));
+  };
 
   return (
     <Panel className="flex-1">
@@ -48,7 +102,7 @@ export function DepositFormPanel({ relation }: { relation: TradeRelation }) {
               placeholder="0"
               /* 화면에는 콤마가 붙은 값이 보이고 상태에는 숫자만 남는다 */
               value={amount === null ? "" : formatNumber(amount)}
-              onChange={(e) => setAmountRaw(e.target.value)}
+              onChange={(e) => changeAmount(e.target.value)}
             />
           </FormField>
 
@@ -102,8 +156,36 @@ export function DepositFormPanel({ relation }: { relation: TradeRelation }) {
           </FormField>
         </div>
 
-        {/* 아래가 주문별 배분 섹션 자리다 — 05번 이슈 */}
         <hr className="border-border mt-1 mb-6" />
+
+        <Panel.Section title="주문별 배분" className="mt-0">
+          <AllocationTable
+            targets={targets}
+            values={allocations}
+            disabled={amount === null}
+            onChange={changeAllocation}
+          />
+
+          {/* 요약 줄. 합계가 입금액을 넘으면 숫자가 경고 색이 된다 —
+              미달은 허용한다(그때는 `입금 및 정산`만 막힌다) */}
+          {targets.length > 0 ? (
+            <div className="mt-3 flex items-baseline justify-end gap-3 text-sm">
+              <span className="text-muted-foreground">입금액</span>
+              <span className="text-primary font-medium tabular-nums">
+                {formatNumber(amount ?? 0)}
+              </span>
+              <span className="text-border-strong">|</span>
+              <span className="text-muted-foreground">배분 합계</span>
+              <span
+                className={`text-base font-medium tabular-nums ${
+                  amount !== null && total > amount ? "text-destructive" : ""
+                }`}
+              >
+                {formatNumber(total)}
+              </span>
+            </div>
+          ) : null}
+        </Panel.Section>
       </Panel.Body>
     </Panel>
   );

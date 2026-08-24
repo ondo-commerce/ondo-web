@@ -109,7 +109,11 @@ export function SettlementListView() {
       detail={
         openRelation ? (
           /* key: 거래처가 바뀌면 입력 중이던 값이 남지 않게 상태째 새로 만든다 */
-          <DepositFormPanel key={openRelation.id} relation={openRelation} />
+          <DepositFormPanel
+            key={openRelation.id}
+            relation={openRelation}
+            orders={relationOrders(SETTLEMENT_ORDERS, openRelation.id)}
+          />
         ) : undefined
       }
       emptyDetail="좌측 목록에서 거래처를 펼쳐 주세요"
