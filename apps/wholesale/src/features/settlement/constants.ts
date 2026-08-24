@@ -1,5 +1,9 @@
 import type { BadgeProps } from "@ondo/ui";
-import type { FulfillmentStatus, SettlementStatus } from "./types";
+import type {
+  FulfillmentStatus,
+  LedgerEntryType,
+  SettlementStatus,
+} from "./types";
 
 /** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
@@ -45,6 +49,22 @@ export const SETTLEMENT_TONE: Record<SettlementStatus, BadgeTone> = {
   unpaid: "done",
   partial: "active",
   settled: "done",
+};
+
+/** 원장 구분 2종. 반품·수기 조정은 화면 미설계·보류라 여기에 없다 */
+export const LEDGER_LABEL: Record<LedgerEntryType, string> = {
+  payment: "입금",
+  charge: "판매",
+};
+
+/**
+ * 원장 구분의 화살표. **색 대신 이 기호가 구분을 맡는다**(게이트 Q2) —
+ * 돈이 들어오면 ↓, 나가면(외상이 늘면) ↑다. 배지 색은 둘 다 회색 하나뿐이라
+ * 이 기호와 금액 부호(`+` / `-`)를 빼면 두 줄이 같아 보인다. 지우지 말 것.
+ */
+export const LEDGER_ARROW: Record<LedgerEntryType, string> = {
+  payment: "↓",
+  charge: "↑",
 };
 
 /**
