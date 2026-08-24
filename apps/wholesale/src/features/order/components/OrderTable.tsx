@@ -1,25 +1,31 @@
 "use client";
 
-import { Badge, Table } from "@ondo/ui";
-import { ORDER_STATUS_LABEL, SETTLEMENT_STATUS_LABEL } from "../constants";
-import {
-  orderAmount,
-  orderProductSummary,
-  orderStatusTone,
-  settlementStatusTone,
-} from "../derive";
+import { Table } from "@ondo/ui";
+import type { ReactNode } from "react";
+import { OrderRow } from "./OrderRow";
 import type { Order } from "../types";
-import { formatNumber } from "@/shared/lib/format";
 
 /**
  * 주문 목록 표 7열 + 맨 앞의 펼침 열.
  *
  * 첫 열은 머리글이 없다 — chevron만 들어가는 자리라 이름 붙일 값이 없다.
- * 펼침 동작 자체는 다음 이슈에서 이 열에 붙는다.
+ * 행 하나를 그리는 책임은 `OrderRow`에 있다(펼침 영역이 두 번째 `<tr>`이라
+ * 이 파일에서 행을 직접 그리면 `<tbody>` 자식 구조가 읽히지 않는다).
  *
  * 금액·수량은 우측 정렬 숫자(Table.Td 기본값)이고, 글자 열만 align="left"로 되돌린다.
  */
-export function OrderTable({ orders }: { orders: readonly Order[] }) {
+export function OrderTable({
+  orders,
+  openOrderId,
+  onToggle,
+  renderDetail,
+}: {
+  orders: readonly Order[];
+  openOrderId: string | null;
+  onToggle: (orderId: string) => void;
+  /** 펼침 영역 내용. 펼쳐진 행에만 부른다 */
+  renderDetail: (order: Order) => ReactNode;
+}) {
   return (
     <Table>
       <Table.Head>
@@ -35,28 +41,19 @@ export function OrderTable({ orders }: { orders: readonly Order[] }) {
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {orders.map((order) => (
-          <Table.Row key={order.id}>
-            <Table.Td />
-            <Table.Td align="left">{order.id}</Table.Td>
-            <Table.Td align="left" tone="muted">
-              {order.placedAt}
-            </Table.Td>
-            <Table.Td align="left">{order.customerName}</Table.Td>
-            <Table.Td align="left">{orderProductSummary(order)}</Table.Td>
-            <Table.Td>{formatNumber(orderAmount(order))}</Table.Td>
-            <Table.Td align="center">
-              <Badge tone={orderStatusTone(order.status)}>
-                {ORDER_STATUS_LABEL[order.status]}
-              </Badge>
-            </Table.Td>
-            <Table.Td align="center">
-              <Badge tone={settlementStatusTone(order.settlementStatus)}>
-                {SETTLEMENT_STATUS_LABEL[order.settlementStatus]}
-              </Badge>
-            </Table.Td>
-          </Table.Row>
-        ))}
+        {orders.map((order) => {
+          const open = openOrderId === order.id;
+          return (
+            <OrderRow
+              key={order.id}
+              order={order}
+              open={open}
+              onToggle={() => onToggle(order.id)}
+            >
+              {open ? renderDetail(order) : null}
+            </OrderRow>
+          );
+        })}
       </Table.Body>
     </Table>
   );

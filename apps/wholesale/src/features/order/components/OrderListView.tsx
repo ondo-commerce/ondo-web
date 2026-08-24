@@ -3,6 +3,7 @@
 import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { OrderFilterChips } from "./OrderFilterChips";
+import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { STATUS_FILTER_ALL } from "../constants";
 import { matchesQuery } from "../derive";
@@ -29,6 +30,8 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
   const [statusFilter, setStatusFilter] = useState<
     OrderStatus | typeof STATUS_FILTER_ALL
   >(STATUS_FILTER_ALL);
+  /** 펼친 주문. 한 번에 하나만 펼친다 — 우측 카드가 한 장뿐이기 때문이다 */
+  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
 
   const keyword = query.trim();
   const visibleOrders = orders.filter(
@@ -36,6 +39,22 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
       (statusFilter === STATUS_FILTER_ALL || order.status === statusFilter) &&
       matchesQuery(order, keyword),
   );
+
+  const openOrder = visibleOrders.find((o) => o.id === openOrderId) ?? null;
+
+  const toggleOrder = (orderId: string) =>
+    setOpenOrderId((prev) => (prev === orderId ? null : orderId));
+
+  /* 필터·검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 주문의 카드가 우측에 남는다 */
+  const changeStatusFilter = (next: OrderStatus | typeof STATUS_FILTER_ALL) => {
+    setStatusFilter(next);
+    setOpenOrderId(null);
+  };
+
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    setOpenOrderId(null);
+  };
 
   return (
     <ListDetailLayout
@@ -47,14 +66,14 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
               placeholder="주문번호·거래처·품명 검색"
               aria-label="주문번호·거래처·품명 검색"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => changeQuery(e.target.value)}
             />
           </div>
 
           <OrderFilterChips
             orders={orders}
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={changeStatusFilter}
           />
 
           {/* 검색줄·칩 줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
@@ -64,11 +83,22 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
                 검색 결과가 없습니다
               </p>
             ) : (
-              <OrderTable orders={visibleOrders} />
+              <OrderTable
+                orders={visibleOrders}
+                openOrderId={openOrder?.id ?? null}
+                onToggle={toggleOrder}
+                renderDetail={() => (
+                  /* 라인 표가 다음 이슈에서 이 자리에 들어간다 */
+                  <p className="text-muted-foreground text-sm">
+                    라인 표 준비 중
+                  </p>
+                )}
+              />
             )}
           </Panel.Body>
         </Panel>
       }
+      detail={openOrder ? <OrderSummaryCard order={openOrder} /> : undefined}
       /* 아무것도 안 펼쳤을 때 우측은 빈 자리로 둔다 — 흰 패널을 그리지 않는다 */
       emptyDetail={null}
     />
