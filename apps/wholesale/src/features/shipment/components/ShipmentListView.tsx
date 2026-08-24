@@ -8,7 +8,9 @@ import { PackingQueueTable } from "./PackingQueueTable";
 import { PackingWorkPanel } from "./PackingWorkPanel";
 import { RetailerAccordionRow } from "./RetailerAccordionRow";
 import { ShipmentStageChips } from "./ShipmentStageChips";
-import { STAGE_LABEL } from "../constants";
+import { ShippedTable } from "./ShippedTable";
+import { TradeStatementCard } from "./TradeStatementCard";
+import { WHOLESALER_NAME } from "../constants";
 import {
   groupPackages,
   groupReadyItems,
@@ -21,8 +23,15 @@ import {
   shipPackage,
   stageCounts,
   stamp,
+  statementFromPackage,
 } from "../derive";
-import type { PackingItem, Package, Retailer, ShipmentStage } from "../types";
+import type {
+  PackingItem,
+  Package,
+  PackageStatus,
+  Retailer,
+  ShipmentStage,
+} from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 선택 전 우측 안내. 단계마다 무엇을 고르라는 말이 달라서 한 문구로 못 쓴다 */
@@ -85,18 +94,20 @@ export function ShipmentListView({
     ),
   );
 
-  const packedGroups = groupPackages(
-    retailers,
-    packages.filter((pkg) => pkg.status === "PACKED"),
-  ).filter((group) =>
-    matchesKeyword(
-      group.retailer,
-      group.packages.flatMap((pkg) =>
-        pkg.lines.map((line) => line.productName),
+  /** 포장 완료·출고 완료는 상태만 다르고 묶는 방식과 검색 축이 같다 */
+  const packageGroupsOf = (status: PackageStatus) =>
+    groupPackages(
+      retailers,
+      packages.filter((pkg) => pkg.status === status),
+    ).filter((group) =>
+      matchesKeyword(
+        group.retailer,
+        group.packages.flatMap((pkg) =>
+          pkg.lines.map((line) => line.productName),
+        ),
+        keyword,
       ),
-      keyword,
-    ),
-  );
+    );
 
   const selectedPackage =
     packages.find((pkg) => pkg.packageNo === selectedPackageNo) ?? null;
@@ -217,36 +228,41 @@ export function ShipmentListView({
       );
     }
 
-    if (stage === "packed") {
-      if (packedGroups.length === 0) {
-        return emptyList("포장된 묶음이 없습니다");
-      }
-      return (
-        <AccordionRows>
-          {packedGroups.map(({ retailer, packages: rows }) => (
-            <RetailerAccordionRow
-              key={retailer.id}
-              retailer={retailer}
-              summary={packageSummaryLabel(rows)}
-              open={openRetailerId === retailer.id}
-              onOpenChange={(open) => handleOpenChange(retailer.id, open)}
-            >
+    const groups = packageGroupsOf(stage === "packed" ? "PACKED" : "SHIPPED");
+    if (groups.length === 0) {
+      return emptyList(
+        stage === "packed"
+          ? "포장된 묶음이 없습니다"
+          : "출고된 묶음이 없습니다",
+      );
+    }
+
+    return (
+      <AccordionRows>
+        {groups.map(({ retailer, packages: rows }) => (
+          <RetailerAccordionRow
+            key={retailer.id}
+            retailer={retailer}
+            summary={packageSummaryLabel(rows)}
+            open={openRetailerId === retailer.id}
+            onOpenChange={(open) => handleOpenChange(retailer.id, open)}
+          >
+            {stage === "packed" ? (
               <PackageTable
                 packages={rows}
                 selectedPackageNo={selectedPackageNo}
                 onSelect={setSelectedPackageNo}
               />
-            </RetailerAccordionRow>
-          ))}
-        </AccordionRows>
-      );
-    }
-
-    /* 출고 완료 목록은 다음 이슈에서 채운다. 칩 건수는 이미 맞다 */
-    return (
-      <p className="text-muted-foreground py-12 text-center text-sm">
-        {STAGE_LABEL[stage]} 목록은 준비 중입니다
-      </p>
+            ) : (
+              <ShippedTable
+                packages={rows}
+                selectedPackageNo={selectedPackageNo}
+                onSelect={setSelectedPackageNo}
+              />
+            )}
+          </RetailerAccordionRow>
+        ))}
+      </AccordionRows>
     );
   };
 
@@ -263,6 +279,15 @@ export function ShipmentListView({
           onShip={ship}
         />
       );
+    }
+    if (stage === "shipped" && selectedPackage && selectedPackageRetailer) {
+      const statement = statementFromPackage(
+        selectedPackage,
+        selectedPackageRetailer,
+        WHOLESALER_NAME,
+      );
+      /* 장끼번호는 출고 완료 시점에 붙는다. 없으면 카드를 그리지 않는다 */
+      if (statement) return <TradeStatementCard statement={statement} />;
     }
     return undefined;
   };
