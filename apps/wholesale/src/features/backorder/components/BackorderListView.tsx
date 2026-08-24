@@ -2,9 +2,20 @@
 
 import { AccordionRows, Panel, SearchInput, cn } from "@ondo/ui";
 import { useState } from "react";
+import { AllocationCounterBar } from "./AllocationCounterBar";
+import { BackorderAllocationTable } from "./BackorderAllocationTable";
 import { BackorderSkuRow } from "./BackorderSkuRow";
 import { SKU_GRID } from "../constants";
-import type { BackorderSku } from "../types";
+import {
+  allocatedQty,
+  assignableQty,
+  firstComeAllocation,
+  sortByOrderedAt,
+  totalBackorderQty,
+  unallocatedQty,
+  withAllocation,
+} from "../derive";
+import type { AllocationDraft, BackorderSku } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
@@ -43,6 +54,18 @@ export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
    * 둘이 열리면 어느 쪽 요약인지 알 수 없다.
    */
   const [openSkuId, setOpenSkuId] = useState<string | null>(null);
+  /**
+   * 배분 수량 입력. 펼친 SKU 하나의 것만 들고 있는다 — 아코디언이 하나만 열리므로
+   * 여러 SKU의 입력이 동시에 살아 있을 일이 없고, 남겨 두면 다른 SKU를 펼쳤을 때
+   * 남의 입력이 카운터에 섞인다.
+   */
+  const [draft, setDraft] = useState<AllocationDraft>({});
+
+  /** 펼칠 때 배분 수량을 선착순으로 자동으로 채운다. 접으면 입력을 버린다 */
+  const openRow = (sku: BackorderSku, open: boolean) => {
+    setOpenSkuId(open ? sku.id : null);
+    setDraft(open ? firstComeAllocation(sku.lines, assignableQty(sku)) : {});
+  };
 
   const keyword = query.trim().toLowerCase();
   const visibleSkus = keyword
@@ -52,6 +75,35 @@ export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
           sku.id.toLowerCase().includes(keyword),
       )
     : skus;
+
+  /**
+   * 펼친 SKU의 본문. 카운터 3개는 **여기서 한 번만 계산해** 카운터 바와 표에 나눠 준다 —
+   * 두 컴포넌트가 각자 세면 합이 어긋날 수 있고, 어긋나는 순간 사장이 화면을 안 믿는다.
+   */
+  const allocationBody = (sku: BackorderSku) => {
+    const lines = sortByOrderedAt(sku.lines);
+    const assignable = assignableQty(sku);
+    const allocated = allocatedQty(draft);
+
+    return (
+      <>
+        <AllocationCounterBar
+          unallocated={unallocatedQty(totalBackorderQty(lines), allocated)}
+          assignable={assignable}
+          allocated={allocated}
+        />
+        <BackorderAllocationTable
+          lines={lines}
+          draft={draft}
+          onChange={(lineId, next) =>
+            setDraft((prev) =>
+              withAllocation(prev, lines, assignable, lineId, next),
+            )
+          }
+        />
+      </>
+    );
+  };
 
   return (
     <ListDetailLayout
@@ -84,10 +136,10 @@ export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
                       key={sku.id}
                       sku={sku}
                       open={openSkuId === sku.id}
-                      onOpenChange={(open) =>
-                        setOpenSkuId(open ? sku.id : null)
-                      }
-                    />
+                      onOpenChange={(open) => openRow(sku, open)}
+                    >
+                      {openSkuId === sku.id ? allocationBody(sku) : null}
+                    </BackorderSkuRow>
                   ))}
                 </AccordionRows>
               </div>
