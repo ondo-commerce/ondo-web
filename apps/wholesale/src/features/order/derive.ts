@@ -241,6 +241,7 @@ export function confirmOrder(
     const allocatedQty = line.allocatedQty + n;
     if (n > 0) {
       batchLines.push({
+        lineId: line.id,
         skuId: line.skuId,
         label: packingLabel(line),
         qty: n,
@@ -281,4 +282,85 @@ export function confirmOrder(
  */
 export function cancelOrder(order: Order): Order {
   return { ...order, status: "CANCELED" };
+}
+
+/**
+ * 포장 준비 — 지금 입력된 수량으로 포장 대기 회차를 하나 만든다.
+ *
+ * Figma 프레임 1913:8149의 제목이 곧 규칙이다:
+ * "미송 건에 대해 미송 탭이 아닌 주문 탭에서 부분 포장 가능".
+ * 확정한 주문의 잔량을 몇 번이고 나눠 담을 수 있어야 해서 회차가 쌓인다.
+ *
+ * **미송이 먼저 줄어든다.** 미송은 "팔았는데 못 보낸 것"이라 재고가 생기면
+ * 새 할당보다 이쪽을 먼저 갚는 게 업무 순서다.
+ */
+export function addPackingBatch(
+  order: Order,
+  inputs: Readonly<Record<string, string>>,
+): Order {
+  const batchLines: PackingBatchLine[] = [];
+
+  const lines = order.lines.map((line) => {
+    const n = shipQty(inputs, line);
+    if (n === 0) return line;
+
+    const backorderUsed = Math.min(n, line.backorderQty);
+    batchLines.push({
+      lineId: line.id,
+      skuId: line.skuId,
+      label: packingLabel(line),
+      qty: n,
+      backorderUsed,
+    });
+    return {
+      ...line,
+      allocatedQty: line.allocatedQty + n,
+      reservedQty: line.reservedQty + n,
+      backorderQty: line.backorderQty - backorderUsed,
+    };
+  });
+
+  if (batchLines.length === 0) return order;
+
+  return {
+    ...order,
+    lines,
+    batches: [
+      ...order.batches,
+      {
+        id: `${order.id}-B${order.nextBatchNo}`,
+        no: order.nextBatchNo,
+        lines: batchLines,
+      },
+    ],
+    // 번호는 재사용하지 않는다 — #2를 지우고 새로 만들면 #4다
+    nextBatchNo: order.nextBatchNo + 1,
+  };
+}
+
+/**
+ * 회차 삭제 — 그 회차의 `포장 준비`를 **정확히 되돌린다.**
+ * 미송을 얼마나 갚았는지는 회차 줄의 `backorderUsed`에 적혀 있다.
+ * 다시 계산하려 들면(`min` 은 역함수가 없다) 되돌린 값이 원래와 달라진다.
+ */
+export function removePackingBatch(order: Order, batchId: string): Order {
+  const target = order.batches.find((b) => b.id === batchId);
+  if (!target) return order;
+
+  const lines = order.lines.map((line) => {
+    const undo = target.lines.find((l) => l.lineId === line.id);
+    if (!undo) return line;
+    return {
+      ...line,
+      allocatedQty: line.allocatedQty - undo.qty,
+      reservedQty: line.reservedQty - undo.qty,
+      backorderQty: line.backorderQty + undo.backorderUsed,
+    };
+  });
+
+  return {
+    ...order,
+    lines,
+    batches: order.batches.filter((b) => b.id !== batchId),
+  };
 }

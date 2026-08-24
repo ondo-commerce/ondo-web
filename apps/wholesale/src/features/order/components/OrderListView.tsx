@@ -1,17 +1,21 @@
 "use client";
 
-import { Panel, SearchInput } from "@ondo/ui";
+import { Button, Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { OrderFilterChips } from "./OrderFilterChips";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
+import { PackingQueueCard } from "./PackingQueueCard";
 import { STATUS_FILTER_ALL } from "../constants";
 import {
+  addPackingBatch,
   cancelOrder,
   clampShipInput,
   confirmOrder,
   matchesQuery,
+  removePackingBatch,
+  totalShipQty,
 } from "../derive";
 import type { Order, OrderStatus } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
@@ -135,6 +139,21 @@ export function OrderListView({
                     order={order}
                     inputs={shipInputs}
                     onInputChange={changeShipInput}
+                    /* 포장 준비는 확정된 주문에만 있다. 신규 주문은 `주문 확정`이
+                       첫 회차를 만들고, 다 나간 주문은 담을 것이 없다 */
+                    footer={
+                      order.status === "CONFIRMED" ||
+                      order.status === "PARTIALLY_SHIPPED" ? (
+                        <Button
+                          disabled={totalShipQty(order, shipInputs) === 0}
+                          onClick={() =>
+                            replaceOrder(addPackingBatch(order, shipInputs))
+                          }
+                        >
+                          포장 준비
+                        </Button>
+                      ) : undefined
+                    }
                   />
                 )}
               />
@@ -144,12 +163,25 @@ export function OrderListView({
       }
       detail={
         openOrder ? (
-          <OrderSummaryCard
-            order={openOrder}
-            inputs={shipInputs}
-            onConfirm={() => replaceOrder(confirmOrder(openOrder, shipInputs))}
-            onCancel={() => replaceOrder(cancelOrder(openOrder))}
-          />
+          <>
+            <OrderSummaryCard
+              order={openOrder}
+              inputs={shipInputs}
+              onConfirm={() =>
+                replaceOrder(confirmOrder(openOrder, shipInputs))
+              }
+              onCancel={() => replaceOrder(cancelOrder(openOrder))}
+            />
+            {/* 회차가 하나도 없으면 카드째 사라진다 */}
+            {openOrder.batches.length > 0 ? (
+              <PackingQueueCard
+                order={openOrder}
+                onRemoveBatch={(batchId) =>
+                  replaceOrder(removePackingBatch(openOrder, batchId))
+                }
+              />
+            ) : null}
+          </>
         ) : undefined
       }
       /* 아무것도 안 펼쳤을 때 우측은 빈 자리로 둔다 — 흰 패널을 그리지 않는다 */
