@@ -1,5 +1,5 @@
 import { ACTIVE_ORDER_STATUSES, ACTIVE_SETTLEMENT_STATUSES } from "./constants";
-import type { Order, OrderStatus, SettlementStatus } from "./types";
+import type { Order, OrderLine, OrderStatus, SettlementStatus } from "./types";
 
 /*
  * 주문 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -65,4 +65,90 @@ export function settlementStatusTone(
   status: SettlementStatus,
 ): "active" | "done" {
   return ACTIVE_SETTLEMENT_STATUSES.includes(status) ? "active" : "done";
+}
+
+/* ------------------------------------------------------------------------
+ * 라인 표의 파생값. Figma 3프레임의 숫자를 역산해 확정한 공식이다(01-pm.md §1.4).
+ * `n` = `이번 출고` 입력값이고, 입력이 없으면 n = 0이라 before와 after가 같아진다.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * 가용재고 = 현재고 − 주문처리중.
+ *
+ * ⚠️ **서버 계약 미확인 — glossary 미등재.** glossary §4.5의 `판매가능`은
+ * `현재고 − 주문처리중 − 미송대기`로 다른 값이고, 그건 "마켓에 노출되는 값"이다.
+ * 주문 라인 표의 이 열은 Figma 3프레임의 숫자가 이 정의로만 맞아떨어져서 이렇게 뒀다
+ * (확정 프레임 2행: 가용 14 → 10, 이번 출고 4). 미송을 여기서 한 번 빼고 괄호에 또
+ * 보여주면 같은 수량을 두 번 차감해 보여주는 화면이 된다.
+ *
+ * **`판매가능`과 이름을 섞지 않는다.** 서버 계약이 확인되면 그때 glossary에 올린다.
+ */
+export function assignableQty(line: OrderLine): number {
+  return line.stockOnHand - line.reservedQty;
+}
+
+/** 미할당 = 주문수량 − 출고진행. **미송을 포함한 값이다**(01-pm.md §1.4) */
+export function unallocatedQty(line: OrderLine): number {
+  return line.qty - line.allocatedQty;
+}
+
+/** 출고진행: `alloc → alloc + n` */
+export function allocatedAfter(line: OrderLine, n: number): number {
+  return line.allocatedQty + n;
+}
+
+/** 미할당: `qty − alloc → qty − alloc − n` */
+export function unallocatedAfter(line: OrderLine, n: number): number {
+  return unallocatedQty(line) - n;
+}
+
+/** 가용재고: `avail → avail − n` */
+export function assignableAfter(line: OrderLine, n: number): number {
+  return assignableQty(line) - n;
+}
+
+/** 미송: `bo → bo − min(n, bo)`. 미송이 없는 라인에서는 그대로 0이다 */
+export function backorderAfter(line: OrderLine, n: number): number {
+  return line.backorderQty - Math.min(n, line.backorderQty);
+}
+
+/** 전량 할당된 라인. 입력칸 대신 완료 ✓가 들어간다 */
+export function isLineAllocated(line: OrderLine): boolean {
+  return unallocatedQty(line) === 0;
+}
+
+/** 가용재고가 0이라 지금은 아무것도 못 빼는 라인. 입력칸이 비활성이 된다 */
+export function isLineOutOfStock(line: OrderLine): boolean {
+  return assignableQty(line) <= 0;
+}
+
+/**
+ * 수량을 입력할 수 있는 국면인가.
+ * 취소된 주문과 이미 다 나간 주문은 읽기 전용이다 — 되돌릴 값이 없다.
+ */
+export function isEditablePhase(status: OrderStatus): boolean {
+  return (
+    status === "PLACED" ||
+    status === "CONFIRMED" ||
+    status === "PARTIALLY_SHIPPED"
+  );
+}
+
+/**
+ * 숫자 입력칸의 문자열 → 수량.
+ * 빈칸과 0을 구분해야 해서 빈칸은 null이다 — "안 적었다"와 "0을 적었다"는 다르다
+ * (재고 탭 derive.parseNumberInput과 같은 규칙).
+ */
+export function parseNumberInput(raw: string): number | null {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits === "") return null;
+  return Number(digits);
+}
+
+/** 입력 맵(라인 id → 입력 문자열)에서 그 라인의 수량을 꺼낸다. 안 적었으면 0 */
+export function shipQty(
+  inputs: Readonly<Record<string, string>>,
+  line: OrderLine,
+): number {
+  return parseNumberInput(inputs[line.id] ?? "") ?? 0;
 }

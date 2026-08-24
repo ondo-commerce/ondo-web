@@ -3,6 +3,7 @@
 import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { OrderFilterChips } from "./OrderFilterChips";
+import { OrderLineTable } from "./OrderLineTable";
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { STATUS_FILTER_ALL } from "../constants";
@@ -32,6 +33,12 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
   >(STATUS_FILTER_ALL);
   /** 펼친 주문. 한 번에 하나만 펼친다 — 우측 카드가 한 장뿐이기 때문이다 */
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  /**
+   * `이번 출고` 입력값(라인 id → 문자열).
+   * 라인 표가 아니라 여기에 둔다 — 우측 카드의 `주문 확정`과 표 하단의 `포장 준비`가
+   * 같은 입력을 읽어야 해서, 표 안에 가둬 두면 카드에서 볼 수 없다.
+   */
+  const [shipInputs, setShipInputs] = useState<Record<string, string>>({});
 
   const keyword = query.trim();
   const visibleOrders = orders.filter(
@@ -42,19 +49,32 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
 
   const openOrder = visibleOrders.find((o) => o.id === openOrderId) ?? null;
 
-  const toggleOrder = (orderId: string) =>
+  /* 다른 주문을 펼치면 앞 주문의 입력값을 버린다 — 라인 id가 달라 섞이진 않지만,
+     화면에서 사라진 값이 뒤에 남아 있으면 확정 때 무엇이 반영될지 읽히지 않는다 */
+  const toggleOrder = (orderId: string) => {
     setOpenOrderId((prev) => (prev === orderId ? null : orderId));
+    setShipInputs({});
+  };
 
   /* 필터·검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 주문의 카드가 우측에 남는다 */
   const changeStatusFilter = (next: OrderStatus | typeof STATUS_FILTER_ALL) => {
     setStatusFilter(next);
     setOpenOrderId(null);
+    setShipInputs({});
   };
 
   const changeQuery = (next: string) => {
     setQuery(next);
     setOpenOrderId(null);
+    setShipInputs({});
   };
+
+  /** 숫자가 아닌 문자는 애초에 들어가지 않는다 */
+  const changeShipInput = (lineId: string, raw: string) =>
+    setShipInputs((prev) => ({
+      ...prev,
+      [lineId]: raw.replace(/[^0-9]/g, ""),
+    }));
 
   return (
     <ListDetailLayout
@@ -87,11 +107,12 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
                 orders={visibleOrders}
                 openOrderId={openOrder?.id ?? null}
                 onToggle={toggleOrder}
-                renderDetail={() => (
-                  /* 라인 표가 다음 이슈에서 이 자리에 들어간다 */
-                  <p className="text-muted-foreground text-sm">
-                    라인 표 준비 중
-                  </p>
+                renderDetail={(order) => (
+                  <OrderLineTable
+                    order={order}
+                    inputs={shipInputs}
+                    onInputChange={changeShipInput}
+                  />
                 )}
               />
             )}
