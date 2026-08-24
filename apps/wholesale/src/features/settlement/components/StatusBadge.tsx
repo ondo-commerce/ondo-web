@@ -2,10 +2,16 @@ import { Badge } from "@ondo/ui";
 import {
   FULFILLMENT_LABEL,
   FULFILLMENT_TONE,
+  LEDGER_ARROW,
+  LEDGER_LABEL,
   SETTLEMENT_LABEL,
   SETTLEMENT_TONE,
 } from "../constants";
-import type { FulfillmentStatus, SettlementStatus } from "../types";
+import type {
+  FulfillmentStatus,
+  LedgerEntryType,
+  SettlementStatus,
+} from "../types";
 
 /*
  * 정산 탭의 상태 배지 두 종.
@@ -28,5 +34,21 @@ export function FulfillmentBadge({ status }: { status: FulfillmentStatus }) {
 export function SettlementBadge({ status }: { status: SettlementStatus }) {
   return (
     <Badge tone={SETTLEMENT_TONE[status]}>{SETTLEMENT_LABEL[status]}</Badge>
+  );
+}
+
+/**
+ * 미수원장의 구분 배지.
+ *
+ * `wholesale_screen_spec.md` §8.1은 이 배지를 "2색 규칙의 유일한 예외"로 허용했지만
+ * **게이트 결정이 그 예외를 쓰지 않는 쪽을 택했다.** 그래서 입금과 판매가 같은 회색이고,
+ * 구분은 배지 안의 화살표(`↓`/`↑`)와 금액의 부호가 맡는다.
+ */
+export function LedgerBadge({ entryType }: { entryType: LedgerEntryType }) {
+  return (
+    <Badge tone="done">
+      {LEDGER_ARROW[entryType]}
+      {LEDGER_LABEL[entryType]}
+    </Badge>
   );
 }

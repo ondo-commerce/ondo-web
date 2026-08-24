@@ -75,14 +75,13 @@ export function SettlementListView() {
               <AccordionRows>
                 {visibleRelations.map((relation) => {
                   const orders = relationOrders(SETTLEMENT_ORDERS, relation.id);
+                  const ledger = relationLedger(LEDGER_ENTRIES, relation.id);
                   return (
                     <RetailerRow
                       key={relation.id}
                       relation={relation}
                       orderCount={orders.length}
-                      receivable={outstandingReceivable(
-                        relationLedger(LEDGER_ENTRIES, relation.id),
-                      )}
+                      receivable={outstandingReceivable(ledger)}
                       open={openRelationId === relation.id}
                       onOpenChange={(open) =>
                         setOpenRelationId(open ? relation.id : null)
@@ -92,6 +91,7 @@ export function SettlementListView() {
                       <SettlementSegmentView
                         key={relation.id}
                         orders={orders}
+                        ledger={ledger}
                       />
                     </RetailerRow>
                   );

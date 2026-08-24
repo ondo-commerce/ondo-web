@@ -1,4 +1,10 @@
-import type { LedgerEntry, SettlementOrder, SettlementStatus } from "./types";
+import type {
+  LedgerEntry,
+  LedgerRow,
+  SettlementOrder,
+  SettlementStatus,
+} from "./types";
+import { formatNumber } from "@/shared/lib/format";
 
 /*
  * 정산 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -67,4 +73,30 @@ export function formatDateTime(value: string): string {
   const day = value.slice(8, 10);
   const time = value.slice(11, 16);
   return `${month}월 ${day}일 ${time}`;
+}
+
+/**
+ * 원장 표의 행 = 엔트리를 **날짜 오름차순으로 정렬한 뒤 위에서부터 누적**한 잔액.
+ *
+ * `balanceAfter`를 fixtures에 적어 두지 않는 이유: 입금 한 건만 끼어들어도
+ * 그 아래 모든 줄의 잔액이 틀어지기 때문이다. 원장은 append-only라 순서가 곧 계산이다.
+ *
+ * ⚠️ 필터를 걸기 **전에** 이 함수를 부른다. 걸러진 줄만 누적하면 잔액이 거짓이 된다.
+ */
+export function ledgerRows(entries: readonly LedgerEntry[]): LedgerRow[] {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  let balance = 0;
+  return sorted.map((entry) => {
+    balance += entry.amount;
+    return { ...entry, balanceAfter: balance };
+  });
+}
+
+/**
+ * 부호를 붙인 금액 표시(`+200,000` / `-350,000`).
+ * 배지 색을 늘리지 않기로 했으므로(게이트 Q2) **이 부호가 입금과 판매를 가르는 두 번째 단서**다.
+ * 마진율의 `formatRate`와 같은 규칙으로 양수에만 `+`를 붙인다.
+ */
+export function formatSignedAmount(value: number): string {
+  return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
 }
