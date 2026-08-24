@@ -137,3 +137,39 @@ export function formatOrderedAt(line: BackorderLine): string {
   const [, month = "", day = ""] = line.orderedDate.split(".");
   return `${Number(month)}월 ${Number(day)}일 ${line.orderedTime}`;
 }
+
+/**
+ * 배분 확정 결과의 SKU. **순수 함수로 뺀다** — 확정 뒤 숫자를 표·카운터 바·좌측 목록·
+ * 우측 요약 네 곳이 다시 읽는데, 컴포넌트가 각자 고치면 화면끼리 값이 갈린다.
+ * 호출부는 여기서 나온 SKU로 state를 갈아끼우기만 한다.
+ *
+ * 확정은 **포장 대기가 생기는 두 경로 중 하나다**(glossary §4.4. 다른 하나는 주문 탭의
+ * 포장 준비). 이번 범위에서 실제 포장 대기열을 만들지는 않는다 — 출고 탭 소관이고 서버가 없다.
+ *
+ * 줄어드는 건 `현재고`가 아니라 `주문처리중`이다. 배분한 실물은 아직 창고에 있고
+ * 포장 대기로 **묶였을 뿐**이다. 현재고는 실제 출고 시점에 빠진다.
+ * 그 결과 가용재고(= 현재고 − 주문처리중)가 배분한 만큼 줄어든다.
+ *
+ * 다 받은 주문(잔여 미송 0)은 행에서 지운다. 더 기다릴 게 없는 줄이라 남겨 두면
+ * 표가 0으로 채워지고 다음 배분에서 눈이 가야 할 행을 가린다.
+ */
+export function applyAllocation(
+  sku: BackorderSku,
+  draft: AllocationDraft,
+): BackorderSku {
+  const allocated = sku.lines.reduce(
+    (sum, line) => sum + (draft[line.id] ?? 0),
+    0,
+  );
+
+  return {
+    ...sku,
+    reservedQty: sku.reservedQty + allocated,
+    lines: sku.lines
+      .map((line) => ({
+        ...line,
+        qty: remainingQty(line, draft[line.id] ?? 0),
+      }))
+      .filter((line) => line.qty > 0),
+  };
+}
