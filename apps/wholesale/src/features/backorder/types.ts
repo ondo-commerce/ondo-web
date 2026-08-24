@@ -50,3 +50,12 @@ export interface BackorderSku {
   /** 이 SKU를 기다리는 주문들. 화면 정렬(주문 일시 오래된 순)은 derive가 맡는다 */
   lines: BackorderLine[];
 }
+
+/**
+ * 배분 수량 입력 묶음 — 라인 id → 배분 수량.
+ *
+ * 재고 탭 입고와 달리 **숫자다(빈칸 = null이 아니다).** 배분 수량은 빈칸을 0으로 읽기로
+ * 정해져 있어서 "안 적었다"와 "0을 적었다"를 구분할 필요가 없고, 오히려 구분하면
+ * 카운터 3개(미배분·가용재고·배분 완료)가 null을 만나 합이 어긋난다.
+ */
+export type AllocationDraft = Record<string, number>;

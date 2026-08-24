@@ -1,6 +1,7 @@
 "use client";
 
 import { AccordionRow } from "@ondo/ui";
+import type { ReactNode } from "react";
 import { EMPTY_MARK, SKU_GRID } from "../constants";
 import { totalBackorderQty } from "../derive";
 import type { BackorderSku } from "../types";
@@ -17,10 +18,13 @@ export function BackorderSkuRow({
   sku,
   open,
   onOpenChange,
+  children,
 }: {
   sku: BackorderSku;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 펼친 본문(카운터 바 + 배분 표). 무엇을 펼칠지는 호출부가 정한다 */
+  children: ReactNode;
 }) {
   const total = totalBackorderQty(sku.lines);
 
@@ -43,7 +47,7 @@ export function BackorderSkuRow({
         </span>
       }
     >
-      <p className="text-muted-foreground py-8 text-center text-sm">준비 중</p>
+      {children}
     </AccordionRow>
   );
 }
