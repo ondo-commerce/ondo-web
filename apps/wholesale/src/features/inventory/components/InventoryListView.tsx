@@ -4,17 +4,22 @@ import { AccordionRows, Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { InventoryInboundPanel } from "./InventoryInboundPanel";
 import { InventoryProductRow } from "./InventoryProductRow";
-import type { InboundEntry } from "../types";
+import { SkuHistoryCard } from "./SkuHistoryCard";
+import { SkuInboundCard } from "./SkuInboundCard";
+import { formatMovementDate, inboundMovement } from "../derive";
+import { stockHistory } from "../fixtures";
+import type { InboundEntry, StockMovement } from "../types";
 import type { Product } from "@/features/product";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
  * 재고 관리 — 좌 목록(아코디언 + SKU 표) + 우 작업 패널.
  *
- * 우측은 한 화면 안에서 모드가 바뀐다. 다른 페이지가 아니다.
+ * 우측은 한 화면 안에서 두 모드로 바뀐다. 다른 페이지가 아니다.
  *
  *   아무 상품도 안 펼침 → 빈 상태 문구
  *   상품 행 펼침        → 모드 A (상품 단위 일괄 입고 표)
+ *     └ SKU 행 클릭     → 모드 B (입고 카드 + 변동 이력 카드)
  *
  * **다른 상품을 펼치면 SKU 선택이 반드시 풀린다.** 안 풀면 A상품 목록 옆에
  * B상품 SKU 카드가 남는다.
@@ -37,6 +42,10 @@ export function InventoryListView({
   const [query, setQuery] = useState("");
   const [openProductId, setOpenProductId] = useState<string | null>(null);
   const [selectedSkuId, setSelectedSkuId] = useState<string | null>(null);
+  /** 화면에서 만든 입고 이력. 더미 이력은 fixtures에 있고 여기엔 새로 생긴 것만 쌓인다 */
+  const [addedHistory, setAddedHistory] = useState<
+    Record<string, StockMovement[]>
+  >({});
 
   const keyword = query.trim().toLowerCase();
   const visibleProducts = keyword
@@ -48,18 +57,31 @@ export function InventoryListView({
     : products;
 
   const openProduct = products.find((p) => p.id === openProductId) ?? null;
+  const selectedSku =
+    openProduct?.skus.find((s) => s.id === selectedSkuId) ?? null;
 
   const handleOpenChange = (productId: string, open: boolean) => {
     setOpenProductId(open ? productId : null);
     setSelectedSkuId(null);
   };
 
-  /** 같은 행을 다시 누르면 선택이 풀린다 */
+  /** 같은 행을 다시 누르면 모드 A로 돌아간다 */
   const handleSelectSku = (skuId: string) =>
     setSelectedSkuId((prev) => (prev === skuId ? null : skuId));
 
   const receive = (entries: InboundEntry[]) => {
     if (!openProduct || entries.length === 0) return;
+    // 오늘 날짜는 렌더가 아니라 버튼을 누른 이 순간에만 읽는다
+    const date = formatMovementDate(new Date());
+
+    const newRows: Record<string, StockMovement[]> = {};
+    for (const entry of entries) {
+      const sku = openProduct.skus.find((s) => s.id === entry.skuId);
+      if (!sku) continue;
+      newRows[entry.skuId] = [
+        inboundMovement(entry.skuId, date, sku.stock, entry.qty),
+      ];
+    }
 
     setProducts((prev) =>
       prev.map((p) =>
@@ -74,10 +96,38 @@ export function InventoryListView({
             },
       ),
     );
+
+    setAddedHistory((prev) => {
+      const next = { ...prev };
+      for (const [skuId, rows] of Object.entries(newRows)) {
+        next[skuId] = [...rows, ...(prev[skuId] ?? [])];
+      }
+      return next;
+    });
   };
 
   const detail = () => {
     if (!openProduct) return undefined;
+
+    if (selectedSku) {
+      return (
+        <>
+          <SkuInboundCard
+            key={selectedSku.id}
+            productName={openProduct.name}
+            productCode={openProduct.code}
+            sku={selectedSku}
+            onReceive={(entry) => receive([entry])}
+          />
+          <SkuHistoryCard
+            movements={[
+              ...(addedHistory[selectedSku.id] ?? []),
+              ...stockHistory(selectedSku.id),
+            ]}
+          />
+        </>
+      );
+    }
 
     /* key: 다른 상품으로 바뀌면 입력값이 남지 않게 상태째 새로 만든다 */
     return (
