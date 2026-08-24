@@ -19,18 +19,23 @@ export function ListDetailLayout({
   list: ReactNode;
   /** 선택된 항목의 상세. 없으면 같은 자리에 emptyDetail이 들어간다 */
   detail?: ReactNode;
-  /** 선택 전 우측에 놓을 안내. 탭마다 문구가 다르면 넘긴다 */
+  /**
+   * 선택 전 우측에 놓을 안내. 탭마다 문구가 다르면 넘긴다.
+   * **`null`을 넘기면 안내 패널 자체를 그리지 않는다** — 주문 탭은 아무 행도 안 펼쳤을 때
+   * 우측이 빈 자리로 남는다(Figma 1702:4429 실측). 폭은 그대로 유지된다.
+   */
   emptyDetail?: ReactNode;
 }) {
   return (
     <div className="flex min-h-0 flex-1 gap-4">
       <div className="flex min-w-0 flex-1 flex-col">{list}</div>
       <div className="flex w-lg shrink-0 flex-col gap-4">
-        {detail ?? (
-          <Panel className="text-muted-foreground grid flex-1 place-items-center text-sm">
-            {emptyDetail}
-          </Panel>
-        )}
+        {detail ??
+          (emptyDetail === null ? null : (
+            <Panel className="text-muted-foreground grid flex-1 place-items-center text-sm">
+              {emptyDetail}
+            </Panel>
+          ))}
       </div>
     </div>
   );

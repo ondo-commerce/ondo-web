@@ -1,5 +1,7 @@
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import { ORDERS, OrderListView } from "@/features/order";
 
-export default function Page() {
-  return <PlaceholderPage title="주문 관리" />;
+export const metadata = { title: "주문 관리 · 온도 ERP" };
+
+export default function OrdersPage() {
+  return <OrderListView orders={ORDERS} />;
 }
