@@ -100,8 +100,18 @@ export function OrderRow({
 
       {open ? (
         <tr id={detailId}>
-          {/* 8 = 펼침 열 + 목록 7열. 확장행은 표 폭을 통째로 받는다 */}
-          <td colSpan={8} className="border-gray-100 bg-accent border-b p-4">
+          {/*
+            8 = 펼침 열 + 목록 7열. 확장행은 표 폭을 통째로 받는다.
+
+            max-w-0이 없으면 안쪽 라인 표의 너비가 바깥 목록 표의 열 폭 계산에 끼어들어,
+            라인이 많은 주문을 펼칠 때 목록 전체가 가로로 늘어난다(주문 상태 열이 밀려난다).
+            0으로 못박으면 이 셀은 폭 계산에서 빠지고 표 폭만큼 늘어나며, 넘치는 라인 표는
+            자기 스크롤 컨테이너 안에서 흐른다.
+          */}
+          <td
+            colSpan={8}
+            className="border-gray-100 bg-accent max-w-0 border-b p-4"
+          >
             {children}
           </td>
         </tr>

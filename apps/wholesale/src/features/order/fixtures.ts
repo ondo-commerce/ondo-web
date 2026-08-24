@@ -3,6 +3,7 @@ import type {
   Order,
   OrderLine,
   OrderStatus,
+  PackingBatchLine,
   PaymentMethod,
   ReceiveMethod,
   SettlementStatus,
@@ -165,7 +166,12 @@ function buildLine(
     unitPrice: sku.price,
     lineAmount: qty * sku.price,
     stockOnHand: sku.stock,
-    reservedQty: sku.reservedQty,
+    /*
+     * 주문처리중은 현재고를 넘지 않게 자른다. 상품 더미의 두 값은 서로 무관하게 만들어져서
+     * 그대로 쓰면 `가용재고`(현재고 − 주문처리중)가 음수로 찍히는데, 그건 더미의 산물이지
+     * 업무 상태가 아니다. 팔 수 없는 상태는 0으로 충분히 표현된다.
+     */
+    reservedQty: Math.min(sku.reservedQty, sku.stock),
   };
 }
 
@@ -183,16 +189,55 @@ function settlementFor(status: OrderStatus, seed: number): SettlementStatus {
   return "UNPAID";
 }
 
+/**
+ * 라인 수를 고정하는 두 건. 경계를 눈으로 확인하려면 **라인 1개짜리와 10개 넘는 주문이
+ * 목록에 실제로 있어야 한다** — 첫 열이 2줄이라 라인이 많으면 표가 눌리기 쉽다.
+ */
+const LINE_COUNT_OVERRIDE: Readonly<Record<number, number>> = { 0: 1, 1: 12 };
+
+/**
+ * 더미로 이미 쌓여 있는 포장 대기 회차.
+ *
+ * 주문 탭에서 만든 것도 있고 미송 탭의 `배분 확정`으로 들어온 것도 있다 — 화면에서는
+ * 구분되지 않는다(glossary §4.4의 포장 대기 2경로). 아직 안 나간 할당분
+ * (`출고진행 − 출고완료`)을 최대 3회차로 나눠 담는다. Figma 부분 출고 프레임이
+ * `#3` `#2` `#1` 세 장이라 그 밀도를 맞춘다.
+ */
+function initialBatches(orderId: string, lines: readonly OrderLine[]) {
+  const pending = lines.filter((l) => l.allocatedQty - l.shippedQty > 0);
+  if (pending.length === 0) return [];
+
+  const groups: PackingBatchLine[][] = [[], [], []];
+  pending.forEach((line, i) => {
+    (groups[i % 3] as PackingBatchLine[]).push({
+      lineId: line.id,
+      skuId: line.skuId,
+      label: `${line.productName} (${line.color} - ${line.size})`,
+      qty: line.allocatedQty - line.shippedQty,
+      /* 확정된 주문에서는 미할당이 곧 미송이라, 이 회차를 지우면 그만큼 미송으로
+         되돌아가야 한다. derive.confirmOrder가 만드는 회차와 같은 규칙이다 */
+      backorderUsed: line.allocatedQty - line.shippedQty,
+    });
+  });
+
+  return groups
+    .filter((g) => g.length > 0)
+    .map((g, i) => ({ id: `${orderId}-B${i + 1}`, no: i + 1, lines: g }));
+}
+
 function buildOrder(index: number): Order {
   const status = STATUS_PLAN[index] as OrderStatus;
   const customer = pick(CUSTOMERS, index * 31 + 2);
-  const lineCount = between(1, 4, index * 41 + 6);
+  const lineCount = LINE_COUNT_OVERRIDE[index] ?? between(1, 4, index * 41 + 6);
   const lines = Array.from({ length: lineCount }, (_, i) =>
     buildLine(index, i, status),
   );
+  const id = `ORD-${String(index + 1).padStart(3, "0")}`;
+  // 출고 완료·신규·취소에는 대기 중인 포장이 없다 (다 나갔거나 아직 안 잡혔다)
+  const batches = initialBatches(id, lines);
 
   return {
-    id: `ORD-${String(index + 1).padStart(3, "0")}`,
+    id,
     placedAt: orderDate(index),
     customerName: customer.name,
     contact: customer.contact,
@@ -201,8 +246,9 @@ function buildOrder(index: number): Order {
     status,
     settlementStatus: settlementFor(status, index * 59 + 10),
     lines,
-    batches: [],
-    nextBatchNo: 1,
+    batches,
+    // 번호는 재사용하지 않는다 — 이미 3회차가 있으면 다음은 #4다
+    nextBatchNo: batches.length + 1,
   };
 }
 
