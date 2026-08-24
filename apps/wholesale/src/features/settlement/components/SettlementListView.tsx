@@ -3,6 +3,7 @@
 import { AccordionRows, Button, Panel, SearchInput } from "@ondo/ui";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
+import { DepositFormPanel } from "./DepositFormPanel";
 import { RetailerRow } from "./RetailerRow";
 import { SettlementSegmentView } from "./SettlementSegmentView";
 import {
@@ -32,6 +33,10 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 export function SettlementListView() {
   const [query, setQuery] = useState("");
   const [openRelationId, setOpenRelationId] = useState<string | null>(null);
+
+  /** 펼친 거래처가 곧 우측 입금의 대상이다. 안 펼쳤으면 우측은 빈 상태로 남는다 */
+  const openRelation =
+    TRADE_RELATIONS.find((r) => r.id === openRelationId) ?? null;
 
   const keyword = query.trim().toLowerCase();
   /* 품명 검색은 이 화면에 품목 데이터가 없어 걸리지 않는다 — placeholder만 §9.4 문구를 따른다 */
@@ -100,6 +105,12 @@ export function SettlementListView() {
             )}
           </Panel.Body>
         </Panel>
+      }
+      detail={
+        openRelation ? (
+          /* key: 거래처가 바뀌면 입력 중이던 값이 남지 않게 상태째 새로 만든다 */
+          <DepositFormPanel key={openRelation.id} relation={openRelation} />
+        ) : undefined
       }
       emptyDetail="좌측 목록에서 거래처를 펼쳐 주세요"
     />
