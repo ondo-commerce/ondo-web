@@ -1,6 +1,6 @@
 "use client";
 
-import { FormField, Input, Panel, Segmented } from "@ondo/ui";
+import { Button, FormField, Input, Panel, Segmented } from "@ondo/ui";
 import { useId, useState } from "react";
 import { AllocationTable } from "./AllocationTable";
 import { METHOD_LABEL, PAYER_LABEL } from "../constants";
@@ -13,6 +13,9 @@ import {
   parseNumberInput,
 } from "../derive";
 import type {
+  AllocationEntry,
+  DepositDraft,
+  DepositMode,
   PayerType,
   PaymentMethod,
   SettlementOrder,
@@ -33,10 +36,17 @@ import { formatNumber } from "@/shared/lib/format";
 export function DepositFormPanel({
   relation,
   orders,
+  onSubmit,
 }: {
   relation: TradeRelation;
   /** 이 거래처의 주문 전량. 배분 표는 그중 미수가 남은 것만 고른다 */
   orders: readonly SettlementOrder[];
+  /** 실행은 서버가 없어 호출부의 로컬 상태로 반영된다 */
+  onSubmit: (
+    mode: DepositMode,
+    draft: DepositDraft,
+    allocations: AllocationEntry[],
+  ) => void;
 }) {
   /* 입력칸은 문자열로 들고 있는다 — 빈칸과 0을 구분해야 해서 숫자로 바로 못 바꾼다 */
   const [amountRaw, setAmountRaw] = useState("");
@@ -75,6 +85,23 @@ export function DepositFormPanel({
     setEditedAllocations({});
   };
 
+  /** 입금액을 안 적었거나 0이면 기록할 사실이 없다 — 두 버튼 모두 잠근다 */
+  const canSubmit = amount !== null && amount > 0;
+  /** 배분이 입금액과 딱 맞을 때만 정산까지 간다. 미달·초과는 `입금만 진행`으로 남긴다 */
+  const canSettle = canSubmit && total === amount;
+
+  const submit = (mode: DepositMode) => {
+    if (!canSubmit) return;
+    onSubmit(
+      mode,
+      { amount, receivedAt, payerType, method, memo },
+      Object.entries(allocations).map(([orderId, value]) => ({
+        orderId,
+        amount: value,
+      })),
+    );
+  };
+
   const changeAllocation = (orderId: string, raw: string) => {
     const order = targets.find((o) => o.id === orderId);
     if (!order) return;
@@ -99,7 +126,7 @@ export function DepositFormPanel({
               id={amountId}
               numeric
               inputMode="numeric"
-              placeholder="0"
+              /* placeholder를 두지 않는다 — 흐린 `0`이 적어 둔 0과 헷갈린다 */
               /* 화면에는 콤마가 붙은 값이 보이고 상태에는 숫자만 남는다 */
               value={amount === null ? "" : formatNumber(amount)}
               onChange={(e) => changeAmount(e.target.value)}
@@ -123,10 +150,18 @@ export function DepositFormPanel({
               onValueChange={(value) => setPayerType(value as PayerType)}
               aria-label="결제 주체"
             >
-              <Segmented.Item value="retailer">
+              {/* 우측 패널이 512px이라 칸 폭이 Figma(264px)보다 좁다.
+                  좌우 여백을 줄여 `사입삼촌 대납`이 두 줄로 접히지 않게 한다 */}
+              <Segmented.Item
+                value="retailer"
+                className="px-2 whitespace-nowrap"
+              >
                 {PAYER_LABEL.retailer}
               </Segmented.Item>
-              <Segmented.Item value="purchasingAgent">
+              <Segmented.Item
+                value="purchasingAgent"
+                className="px-2 whitespace-nowrap"
+              >
                 {PAYER_LABEL.purchasingAgent}
               </Segmented.Item>
             </Segmented>
@@ -139,8 +174,13 @@ export function DepositFormPanel({
               onValueChange={(value) => setMethod(value as PaymentMethod)}
               aria-label="입금 방식"
             >
-              <Segmented.Item value="cash">{METHOD_LABEL.cash}</Segmented.Item>
-              <Segmented.Item value="bankTransfer">
+              <Segmented.Item value="cash" className="px-2 whitespace-nowrap">
+                {METHOD_LABEL.cash}
+              </Segmented.Item>
+              <Segmented.Item
+                value="bankTransfer"
+                className="px-2 whitespace-nowrap"
+              >
                 {METHOD_LABEL.bankTransfer}
               </Segmented.Item>
             </Segmented>
@@ -187,6 +227,25 @@ export function DepositFormPanel({
           ) : null}
         </Panel.Section>
       </Panel.Body>
+
+      {/* 두 버튼은 같은 폭이다. 어느 쪽이 기본인지는 채움/테두리로만 말한다 */}
+      <div className="mt-4 flex shrink-0 gap-3">
+        <Button
+          variant="line"
+          className="flex-1"
+          disabled={!canSubmit}
+          onClick={() => submit("paymentOnly")}
+        >
+          입금만 진행
+        </Button>
+        <Button
+          className="flex-1"
+          disabled={!canSettle}
+          onClick={() => submit("settle")}
+        >
+          입금 및 정산
+        </Button>
+      </div>
     </Panel>
   );
 }

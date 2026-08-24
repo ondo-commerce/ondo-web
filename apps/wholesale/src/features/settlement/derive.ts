@@ -1,4 +1,5 @@
 import type {
+  AllocationEntry,
   LedgerEntry,
   LedgerRow,
   SettlementOrder,
@@ -159,4 +160,58 @@ export function clampAllocation(value: number, receivable: number): number {
 /** 배분 합계. 이 값이 입금액과 같아야 `입금 및 정산`을 누를 수 있다 */
 export function allocationTotal(values: Record<string, number>): number {
   return Object.values(values).reduce((sum, v) => sum + v, 0);
+}
+
+/**
+ * 지금 시각 → `2025-08-24T15:30`.
+ * **버튼을 누른 순간에만 부른다.** 렌더 중에 현재 시각을 만들면 서버와 브라우저의
+ * 값이 달라 하이드레이션이 깨진다(재고 탭 `formatMovementDate`와 같은 이유).
+ */
+export function nowIsoMinute(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/**
+ * 원장에 붙일 입금 한 줄. 부호는 **+**다 — 거래처 계정 잔액이 그만큼 올라간다.
+ * 두 버튼 모두 이 줄을 만든다. 차이는 배정(`applyAllocations`)을 하느냐뿐이다.
+ */
+export function paymentLedgerEntry(
+  relationId: string,
+  date: string,
+  amount: number,
+  seq: number,
+): LedgerEntry {
+  return {
+    id: `${relationId}-payment-${seq}`,
+    relationId,
+    date,
+    entryType: "payment",
+    amount,
+  };
+}
+
+/**
+ * 배정액을 주문에 더한다. 주문의 정산 상태·미수 잔액은 저장값이 아니라
+ * `allocatedAmount`에서 나오므로 **여기 한 곳만 고치면 표 세 곳이 함께 움직인다.**
+ * 주문 금액을 넘겨 배정하지 않도록 상한을 둔다 — 넘으면 미수가 음수가 된다.
+ */
+export function applyAllocations(
+  orders: readonly SettlementOrder[],
+  allocations: readonly AllocationEntry[],
+): SettlementOrder[] {
+  return orders.map((order) => {
+    const hit = allocations.find((a) => a.orderId === order.id);
+    if (!hit || hit.amount <= 0) return order;
+    return {
+      ...order,
+      allocatedAmount: Math.min(
+        order.totalAmount,
+        order.allocatedAmount + hit.amount,
+      ),
+    };
+  });
 }
