@@ -1,6 +1,6 @@
 "use client";
 
-import { AccordionRows, Panel, SearchInput, cn } from "@ondo/ui";
+import { AccordionRows, Button, Panel, SearchInput, cn } from "@ondo/ui";
 import { useState } from "react";
 import { AllocationCounterBar } from "./AllocationCounterBar";
 import { BackorderAllocationTable } from "./BackorderAllocationTable";
@@ -8,6 +8,7 @@ import { BackorderSkuRow } from "./BackorderSkuRow";
 import { SKU_GRID } from "../constants";
 import {
   allocatedQty,
+  applyAllocation,
   assignableQty,
   firstComeAllocation,
   sortByOrderedAt,
@@ -47,7 +48,17 @@ function ListHeader() {
  *
  * 선택(펼침) 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
  */
-export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
+export function BackorderListView({
+  skus: initialSkus,
+}: {
+  skus: BackorderSku[];
+}) {
+  /*
+   * 배분 확정은 서버가 없어서 로컬 상태로 반영한다. 그래서 목록을 prop 그대로 그리지 않고
+   * state로 들고 있는다 — 확정하면 총 미송 수량과 가용재고가 같이 움직여야 한다.
+   * (재고 탭 InventoryListView의 receive()와 같은 방식)
+   */
+  const [skus, setSkus] = useState(initialSkus);
   const [query, setQuery] = useState("");
   /**
    * **한 번에 하나만 펼친다.** 우측 요약이 "펼친 SKU 1개"에 종속돼 있어서
@@ -65,6 +76,29 @@ export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
   const openRow = (sku: BackorderSku, open: boolean) => {
     setOpenSkuId(open ? sku.id : null);
     setDraft(open ? firstComeAllocation(sku.lines, assignableQty(sku)) : {});
+  };
+
+  /**
+   * 배분 확정. 계산은 `applyAllocation`이 다 하고 여기서는 state만 갈아끼운다.
+   *
+   * 미송이 0이 된 SKU는 목록에서 지운다 — 미송이 없으면 미송 탭에 남아 있을 이유가 없고,
+   * 0행을 남기면 목록이 계속 길어지기만 한다. 그 SKU를 지울 때 아코디언도 같이 닫는다.
+   * 남는 경우에는 줄어든 가용재고 기준으로 배분 수량을 선착순으로 다시 채운다.
+   */
+  const confirmAllocation = (sku: BackorderSku) => {
+    const next = applyAllocation(sku, draft);
+    const cleared = next.lines.length === 0;
+
+    setSkus((prev) =>
+      cleared
+        ? prev.filter((s) => s.id !== sku.id)
+        : prev.map((s) => (s.id === sku.id ? next : s)),
+    );
+
+    if (cleared) setOpenSkuId(null);
+    setDraft(
+      cleared ? {} : firstComeAllocation(next.lines, assignableQty(next)),
+    );
   };
 
   const keyword = query.trim().toLowerCase();
@@ -101,6 +135,16 @@ export function BackorderListView({ skus }: { skus: BackorderSku[] }) {
             )
           }
         />
+
+        {/* 확인 다이얼로그는 없다 — Figma에 그려져 있지 않다. 대신 배분이 0이면 눌리지 않는다 */}
+        <div className="mt-4 mb-2 flex justify-end">
+          <Button
+            disabled={allocated === 0}
+            onClick={() => confirmAllocation(sku)}
+          >
+            배분 확정
+          </Button>
+        </div>
       </>
     );
   };
