@@ -81,3 +81,29 @@ export interface Package {
   /** 담긴 품목. 포장 시점의 스냅샷이라 대기 목록에서 빠진 뒤에도 여기 남는다 */
   lines: PackingItem[];
 }
+
+/**
+ * 장끼 = 거래명세표(`trade_statement` §2.8). **시스템이 발행하는 문서**이고
+ * 영수증·세금계산서와 다른 것이다(glossary §5).
+ *
+ * 포장에서 뽑아낸 표시용 모양이라 저장 대상이 아니다 — 서버가 붙으면 이 필드들이
+ * `trade_statement` 행 + join으로 내려온다.
+ */
+export interface TradeStatement {
+  /** `JG-YYYYMMDD-NNN` */
+  statementNo: string;
+  /** 카드에는 `출고번호`라는 이름으로 나온다 */
+  packageNo: string;
+  shippedAt: string;
+  /**
+   * 물건을 낸 도매처 자신. 라벨이 `판매처`가 아닌 이유는 glossary §2.1이
+   * `판매처`를 폐기어(→소매처)로 지정해서, 그대로 쓰면 같은 카드의 `거래처`와
+   * 정반대를 가리키게 되기 때문이다(게이트 Q1).
+   */
+  wholesalerName: string;
+  /** 받는 소매처. 카드에는 `부산상사 (RT-007)` 형태로 합쳐 나온다 */
+  retailer: Retailer;
+  pickupMethod: PickupMethod;
+  /** 품목 줄. `package.lines` 그대로다 */
+  lines: PackingItem[];
+}

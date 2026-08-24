@@ -5,6 +5,7 @@ import type {
   PickupMethod,
   Retailer,
   ShipmentStage,
+  TradeStatement,
 } from "./types";
 
 /*
@@ -268,4 +269,31 @@ export function shipPackage(
   statementNo: string,
 ): Package {
   return { ...pkg, status: "SHIPPED", shippedAt, statementNo };
+}
+
+/** 장끼 품목표의 `옵션` 열. SKU = 색상 × 사이즈라 두 축을 합쳐 적는다(glossary §3) */
+export function optionLabel(line: PackingItem): string {
+  return `${line.color} / ${line.size}`;
+}
+
+/**
+ * 출고된 묶음에서 장끼를 뽑는다. **출고 전에는 만들 수 없다** —
+ * 장끼번호가 출고 완료 시점에 발번되기 때문이다(§2.8). 그래서 null을 돌려주고,
+ * 부르는 쪽이 안내 문구로 갈라 준다.
+ */
+export function statementFromPackage(
+  pkg: Package,
+  retailer: Retailer,
+  wholesalerName: string,
+): TradeStatement | null {
+  if (pkg.statementNo === null || pkg.shippedAt === null) return null;
+  return {
+    statementNo: pkg.statementNo,
+    packageNo: pkg.packageNo,
+    shippedAt: pkg.shippedAt,
+    wholesalerName,
+    retailer,
+    pickupMethod: pkg.pickupMethod,
+    lines: pkg.lines,
+  };
 }
