@@ -1,5 +1,7 @@
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import { SettlementListView } from "@/features/settlement";
 
-export default function Page() {
-  return <PlaceholderPage title="정산 관리" />;
+export const metadata = { title: "정산 관리 · 온도 ERP" };
+
+export default function SettlementsPage() {
+  return <SettlementListView />;
 }
