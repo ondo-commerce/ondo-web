@@ -7,7 +7,12 @@ import { OrderLineTable } from "./OrderLineTable";
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { STATUS_FILTER_ALL } from "../constants";
-import { matchesQuery } from "../derive";
+import {
+  cancelOrder,
+  clampShipInput,
+  confirmOrder,
+  matchesQuery,
+} from "../derive";
 import type { Order, OrderStatus } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
@@ -26,7 +31,16 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
  * 데이터는 전부 더미라 로딩·에러 상태가 없다. 서버가 붙으면 목록을 받는 자리(orders prop)에서
  * 세 상태를 갈라야 한다.
  */
-export function OrderListView({ orders }: { orders: readonly Order[] }) {
+export function OrderListView({
+  orders: initialOrders,
+}: {
+  orders: readonly Order[];
+}) {
+  /*
+   * 확정·취소·포장은 서버가 없어서 로컬 상태로 반영한다(재고 탭 입고와 같은 방식).
+   * **새로고침하면 더미 초기값으로 돌아가는 게 정상이다.**
+   */
+  const [orders, setOrders] = useState(initialOrders);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     OrderStatus | typeof STATUS_FILTER_ALL
@@ -69,12 +83,21 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
     setShipInputs({});
   };
 
-  /** 숫자가 아닌 문자는 애초에 들어가지 않는다 */
-  const changeShipInput = (lineId: string, raw: string) =>
-    setShipInputs((prev) => ({
-      ...prev,
-      [lineId]: raw.replace(/[^0-9]/g, ""),
-    }));
+  /**
+   * 숫자가 아닌 문자는 애초에 들어가지 않고, `min(미할당, 가용재고)`를 넘기면 잘린다.
+   * 넘겨서 받아 두면 확정 순간에 항등식이 깨진 주문이 만들어진다.
+   */
+  const changeShipInput = (lineId: string, raw: string) => {
+    const line = openOrder?.lines.find((l) => l.id === lineId);
+    const next = line ? clampShipInput(line, raw) : "";
+    setShipInputs((prev) => ({ ...prev, [lineId]: next }));
+  };
+
+  /** 확정·취소는 주문 하나만 갈아 끼운다. 입력값은 반영이 끝났으니 비운다 */
+  const replaceOrder = (next: Order) => {
+    setOrders((prev) => prev.map((o) => (o.id === next.id ? next : o)));
+    setShipInputs({});
+  };
 
   return (
     <ListDetailLayout
@@ -119,7 +142,16 @@ export function OrderListView({ orders }: { orders: readonly Order[] }) {
           </Panel.Body>
         </Panel>
       }
-      detail={openOrder ? <OrderSummaryCard order={openOrder} /> : undefined}
+      detail={
+        openOrder ? (
+          <OrderSummaryCard
+            order={openOrder}
+            inputs={shipInputs}
+            onConfirm={() => replaceOrder(confirmOrder(openOrder, shipInputs))}
+            onCancel={() => replaceOrder(cancelOrder(openOrder))}
+          />
+        ) : undefined
+      }
       /* 아무것도 안 펼쳤을 때 우측은 빈 자리로 둔다 — 흰 패널을 그리지 않는다 */
       emptyDetail={null}
     />
