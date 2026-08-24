@@ -220,6 +220,52 @@ export function packageFromItems(
     status: "PACKED",
     packedAt,
     shippedAt: null,
+    statementNo: null,
     lines: [...items],
   };
+}
+
+/**
+ * 표의 `상품 요약`. 품목이 하나면 품명만, 둘 이상이면 `오버핏 코튼 티셔츠 외 2건`.
+ * 열 하나에 품명을 다 적으면 표가 가로로 늘어나 수량을 세로로 훑을 수 없다.
+ */
+export function lineSummaryLabel(lines: readonly PackingItem[]): string {
+  const [first] = lines;
+  if (!first) return "-";
+  return lines.length === 1
+    ? first.productName
+    : `${first.productName} 외 ${lines.length - 1}건`;
+}
+
+/**
+ * 다음 장끼번호 `JG-YYYYMMDD-NNN`. 날짜부는 **출고 처리 시각의 날짜**이고
+ * `NNN`은 그날 발행 순번이다(판정 D6 · §2.8).
+ *
+ * 오늘 날짜는 인자로 받는다 — 이 함수가 직접 `new Date()`를 읽으면 렌더 중에
+ * 불릴 여지가 생기고, 그러면 서버와 브라우저의 값이 갈린다.
+ */
+export function nextStatementNo(
+  shippedAt: string,
+  packages: readonly Package[],
+): string {
+  const datePart = shippedAt.slice(0, 10).replace(/-/g, "");
+  const prefix = `JG-${datePart}-`;
+  const issuedToday = packages.filter((pkg) =>
+    pkg.statementNo?.startsWith(prefix),
+  ).length;
+  return `${prefix}${String(issuedToday + 1).padStart(3, "0")}`;
+}
+
+/**
+ * 출고 완료로 넘어간 묶음. 상태·출고 일시·장끼번호 세 값이 **한 번에** 바뀐다 —
+ * 나눠서 넣으면 장끼번호 없는 SHIPPED가 잠깐 존재해서 장끼 카드가 빈칸을 그린다.
+ *
+ * 미수 발생·재고 차감은 서버 트리거라 여기서 반영하지 않는다(판정 D10).
+ */
+export function shipPackage(
+  pkg: Package,
+  shippedAt: string,
+  statementNo: string,
+): Package {
+  return { ...pkg, status: "SHIPPED", shippedAt, statementNo };
 }

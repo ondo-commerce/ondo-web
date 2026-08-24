@@ -2,17 +2,23 @@
 
 import { AccordionRows, Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
+import { PackageDetailPanel } from "./PackageDetailPanel";
+import { PackageTable } from "./PackageTable";
 import { PackingQueueTable } from "./PackingQueueTable";
 import { PackingWorkPanel } from "./PackingWorkPanel";
 import { RetailerAccordionRow } from "./RetailerAccordionRow";
 import { ShipmentStageChips } from "./ShipmentStageChips";
 import { STAGE_LABEL } from "../constants";
 import {
+  groupPackages,
   groupReadyItems,
   matchesKeyword,
   nextPackageNo,
+  nextStatementNo,
   packageFromItems,
+  packageSummaryLabel,
   readySummaryLabel,
+  shipPackage,
   stageCounts,
   stamp,
 } from "../derive";
@@ -62,6 +68,10 @@ export function ShipmentListView({
   const [openRetailerId, setOpenRetailerId] = useState<string | null>(null);
   /** 포장 대기 표에서 체크한 줄. 우측 `포장 작업` 패널이 이 배열을 읽는다 */
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  /** 포장 완료·출고 완료 단계에서 고른 묶음. 두 단계 모두 한 행만 고른다 */
+  const [selectedPackageNo, setSelectedPackageNo] = useState<string | null>(
+    null,
+  );
 
   const counts = stageCounts(items, packages);
   const keyword = query.trim();
@@ -75,17 +85,37 @@ export function ShipmentListView({
     ),
   );
 
+  const packedGroups = groupPackages(
+    retailers,
+    packages.filter((pkg) => pkg.status === "PACKED"),
+  ).filter((group) =>
+    matchesKeyword(
+      group.retailer,
+      group.packages.flatMap((pkg) =>
+        pkg.lines.map((line) => line.productName),
+      ),
+      keyword,
+    ),
+  );
+
+  const selectedPackage =
+    packages.find((pkg) => pkg.packageNo === selectedPackageNo) ?? null;
+  const selectedPackageRetailer =
+    retailers.find((r) => r.id === selectedPackage?.retailerId) ?? null;
+
   /** 단계를 바꾸면 펼침과 선택이 같이 풀린다. 대기 줄 선택이 포장 완료 화면까지 따라오면 안 된다 */
   const handleStageChange = (next: ShipmentStage) => {
     setStage(next);
     setOpenRetailerId(null);
     setSelectedItemIds([]);
+    setSelectedPackageNo(null);
   };
 
   /** 다른 소매처를 펼치면 선택 초기화 — 한 포장은 한 소매처 것이다 */
   const handleOpenChange = (retailerId: string, open: boolean) => {
     setOpenRetailerId(open ? retailerId : null);
     setSelectedItemIds([]);
+    setSelectedPackageNo(null);
   };
 
   const toggleItem = (itemId: string) =>
@@ -131,50 +161,108 @@ export function ShipmentListView({
     setSelectedItemIds([]);
   };
 
+  /**
+   * 출고 완료. 상태·출고 일시·장끼번호가 한 번에 붙는다.
+   * 미수 발생과 재고 차감은 서버 트리거라 여기서 반영하지 않는다(판정 D10) —
+   * 대신 확인 다이얼로그가 그 세 가지를 문구로 알린다.
+   */
+  const ship = () => {
+    if (!selectedPackage) return;
+    // 오늘 날짜는 렌더가 아니라 확인을 누른 이 순간에만 읽는다
+    const shippedAt = stamp(new Date());
+    const statementNo = nextStatementNo(shippedAt, packages);
+
+    setPackages((prev) =>
+      prev.map((pkg) =>
+        pkg.packageNo === selectedPackage.packageNo
+          ? shipPackage(pkg, shippedAt, statementNo)
+          : pkg,
+      ),
+    );
+    setSelectedPackageNo(null);
+  };
+
+  /** 목록이 비었을 때의 문구. 검색 때문인지 원래 없는 건지를 갈라 준다 */
+  const emptyList = (blank: string) => (
+    <p className="text-muted-foreground py-12 text-center text-sm">
+      {keyword ? "검색 결과가 없습니다" : blank}
+    </p>
+  );
+
   const listBody = () => {
-    if (stage !== "ready") {
-      /* 포장 완료·출고 완료 목록은 다음 이슈에서 채운다. 칩 건수는 이미 맞다 */
+    if (stage === "ready") {
+      if (readyGroups.length === 0) {
+        return emptyList("포장 대기 중인 품목이 없습니다");
+      }
       return (
-        <p className="text-muted-foreground py-12 text-center text-sm">
-          {STAGE_LABEL[stage]} 목록은 준비 중입니다
-        </p>
+        <AccordionRows>
+          {readyGroups.map(({ retailer, items: rows }) => (
+            <RetailerAccordionRow
+              key={retailer.id}
+              retailer={retailer}
+              summary={readySummaryLabel(rows)}
+              open={openRetailerId === retailer.id}
+              onOpenChange={(open) => handleOpenChange(retailer.id, open)}
+            >
+              <PackingQueueTable
+                items={rows}
+                selectedIds={selectedItemIds}
+                onToggle={toggleItem}
+                onToggleVisible={toggleVisible}
+                onRestrictTo={restrictTo}
+              />
+            </RetailerAccordionRow>
+          ))}
+        </AccordionRows>
       );
     }
 
-    if (readyGroups.length === 0) {
+    if (stage === "packed") {
+      if (packedGroups.length === 0) {
+        return emptyList("포장된 묶음이 없습니다");
+      }
       return (
-        <p className="text-muted-foreground py-12 text-center text-sm">
-          {keyword ? "검색 결과가 없습니다" : "포장 대기 중인 품목이 없습니다"}
-        </p>
+        <AccordionRows>
+          {packedGroups.map(({ retailer, packages: rows }) => (
+            <RetailerAccordionRow
+              key={retailer.id}
+              retailer={retailer}
+              summary={packageSummaryLabel(rows)}
+              open={openRetailerId === retailer.id}
+              onOpenChange={(open) => handleOpenChange(retailer.id, open)}
+            >
+              <PackageTable
+                packages={rows}
+                selectedPackageNo={selectedPackageNo}
+                onSelect={setSelectedPackageNo}
+              />
+            </RetailerAccordionRow>
+          ))}
+        </AccordionRows>
       );
     }
 
+    /* 출고 완료 목록은 다음 이슈에서 채운다. 칩 건수는 이미 맞다 */
     return (
-      <AccordionRows>
-        {readyGroups.map(({ retailer, items: rows }) => (
-          <RetailerAccordionRow
-            key={retailer.id}
-            retailer={retailer}
-            summary={readySummaryLabel(rows)}
-            open={openRetailerId === retailer.id}
-            onOpenChange={(open) => handleOpenChange(retailer.id, open)}
-          >
-            <PackingQueueTable
-              items={rows}
-              selectedIds={selectedItemIds}
-              onToggle={toggleItem}
-              onToggleVisible={toggleVisible}
-              onRestrictTo={restrictTo}
-            />
-          </RetailerAccordionRow>
-        ))}
-      </AccordionRows>
+      <p className="text-muted-foreground py-12 text-center text-sm">
+        {STAGE_LABEL[stage]} 목록은 준비 중입니다
+      </p>
     );
   };
 
   const detail = () => {
     if (stage === "ready" && selectedItems.length > 0) {
       return <PackingWorkPanel items={selectedItems} onPack={pack} />;
+    }
+    if (stage === "packed" && selectedPackage && selectedPackageRetailer) {
+      return (
+        <PackageDetailPanel
+          key={selectedPackage.packageNo}
+          pkg={selectedPackage}
+          retailer={selectedPackageRetailer}
+          onShip={ship}
+        />
+      );
     }
     return undefined;
   };

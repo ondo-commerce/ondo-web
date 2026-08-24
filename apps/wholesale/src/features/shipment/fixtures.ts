@@ -295,8 +295,12 @@ function stamp(ms: number): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
-/** 아직 번호를 못 받은 포장. 번호는 전체를 포장 일시 순으로 세운 뒤에 붙인다 */
-type DraftPackage = Omit<Package, "packageNo">;
+/**
+ * 아직 번호를 못 받은 포장. 포장번호는 전체를 포장 일시 순으로,
+ * 장끼번호는 출고된 것만 출고 일시 순으로 세운 뒤에 붙인다 —
+ * 둘 다 순서가 정해져야 나오는 값이라 여기서는 뺀다.
+ */
+type DraftPackage = Omit<Package, "packageNo" | "statementNo">;
 
 /**
  * 소매처별 포장 완료 건수. 합 17 + 아래 손으로 적은 부산상사 3건 = 20(= `포장 완료` 칩).
@@ -498,12 +502,30 @@ function buildPackages(): Package[] {
    * 늦은 번호를 갖고 있으면 번호를 시간 순서로 읽을 수 없다.
    * (Figma는 포장 상세와 장끼에 똑같이 PKG-001을 적어 뒀는데 그건 목업의 중복이다.)
    */
-  return drafts
+  const numbered: Package[] = drafts
     .sort((a, b) => a.packedAt.localeCompare(b.packedAt))
     .map((draft, index) => ({
       ...draft,
       packageNo: `PKG-${String(index + 1).padStart(3, "0")}`,
+      statementNo: null,
     }));
+
+  /*
+   * 장끼번호는 출고 완료 시점에 붙는다(§2.8). 날짜부는 출고일과 같고 `NNN`은
+   * 그날 발행 순번이라, 출고 일시 순으로 훑으면서 날짜별 카운터를 올린다.
+   * (Figma는 장끼번호 날짜부와 출고일이 어긋나 있는데 그건 목업 오류다 — 판정 D6)
+   */
+  const issuedPerDay = new Map<string, number>();
+  for (const pkg of numbered
+    .filter((p) => p.shippedAt !== null)
+    .sort((a, b) => (a.shippedAt ?? "").localeCompare(b.shippedAt ?? ""))) {
+    const datePart = (pkg.shippedAt ?? "").slice(0, 10).replace(/-/g, "");
+    const seq = (issuedPerDay.get(datePart) ?? 0) + 1;
+    issuedPerDay.set(datePart, seq);
+    pkg.statementNo = `JG-${datePart}-${String(seq).padStart(3, "0")}`;
+  }
+
+  return numbered;
 }
 
 /** 포장 완료 20건 + 출고 완료 30건 */

@@ -73,6 +73,11 @@ export interface Package {
   packedAt: string;
   /** 출고 일시. `PACKED` 동안은 null이다 */
   shippedAt: string | null;
+  /**
+   * 장끼번호 `JG-YYYYMMDD-NNN`. **출고 완료 시점에 발번된다**(§2.8) —
+   * 포장만 한 묶음에는 없다. 날짜부는 출고일과 같아야 한다(판정 D6).
+   */
+  statementNo: string | null;
   /** 담긴 품목. 포장 시점의 스냅샷이라 대기 목록에서 빠진 뒤에도 여기 남는다 */
   lines: PackingItem[];
 }
