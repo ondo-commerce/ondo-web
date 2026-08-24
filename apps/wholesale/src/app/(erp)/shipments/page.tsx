@@ -1,5 +1,18 @@
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import {
+  PACKAGES,
+  PACKING_ITEMS,
+  RETAILERS,
+  ShipmentListView,
+} from "@/features/shipment";
 
-export default function Page() {
-  return <PlaceholderPage title="출고 관리" />;
+export const metadata = { title: "출고 관리 · 온도 ERP" };
+
+export default function ShipmentsPage() {
+  return (
+    <ShipmentListView
+      retailers={RETAILERS}
+      items={PACKING_ITEMS}
+      packages={PACKAGES}
+    />
+  );
 }
