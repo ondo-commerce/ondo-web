@@ -7,7 +7,10 @@ import { DepositFormPanel } from "./DepositFormPanel";
 import { RetailerRow } from "./RetailerRow";
 import { SettlementSegmentView } from "./SettlementSegmentView";
 import {
+  applyAllocations,
+  nowIsoMinute,
   outstandingReceivable,
+  paymentLedgerEntry,
   relationLedger,
   relationOrders,
 } from "../derive";
@@ -16,6 +19,7 @@ import {
   SETTLEMENT_ORDERS,
   TRADE_RELATIONS,
 } from "../fixtures";
+import type { AllocationEntry, DepositDraft, DepositMode } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
@@ -33,6 +37,14 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 export function SettlementListView() {
   const [query, setQuery] = useState("");
   const [openRelationId, setOpenRelationId] = useState<string | null>(null);
+  /*
+   * 입금 실행은 서버가 없어 로컬 상태로 반영한다. 그래서 주문·원장을 상수로 그리지 않고
+   * state로 들고 있는다 — 배정액이 바뀌면 정산 상태·미수 잔액·tail이 함께 움직여야 한다.
+   */
+  const [orders, setOrders] = useState(SETTLEMENT_ORDERS);
+  const [ledger, setLedger] = useState(LEDGER_ENTRIES);
+  /** 실행 후 폼을 비우는 장치. 값을 하나씩 지우는 대신 패널을 새로 만든다 */
+  const [formSeq, setFormSeq] = useState(0);
 
   /** 펼친 거래처가 곧 우측 입금의 대상이다. 안 펼쳤으면 우측은 빈 상태로 남는다 */
   const openRelation =
@@ -47,6 +59,32 @@ export function SettlementListView() {
           r.retailerCode.toLowerCase().includes(keyword),
       )
     : TRADE_RELATIONS;
+
+  /**
+   * 두 버튼의 차이는 **배정을 하느냐 하나뿐**이다(`settlement_data_model.md` §2.5).
+   * 원장의 `↓입금` 한 줄은 둘 다 똑같이 생긴다 — 돈이 들어온 사실은 같기 때문이다.
+   * `입금만 진행`은 배분 입력값을 쓰지 않으므로 주문의 정산 상태가 하나도 안 바뀌고,
+   * 그만큼이 미배정으로 남는다(그 표시는 이번 범위 밖 — 01-pm.md §5 Q7).
+   */
+  const submitDeposit = (
+    mode: DepositMode,
+    draft: DepositDraft,
+    allocations: AllocationEntry[],
+  ) => {
+    if (!openRelation || draft.amount === null || draft.amount <= 0) return;
+    // 실행 시각은 렌더가 아니라 버튼을 누른 이 순간에만 읽는다
+    const date = nowIsoMinute(new Date());
+    const amount = draft.amount;
+
+    setLedger((prev) => [
+      ...prev,
+      paymentLedgerEntry(openRelation.id, date, amount, prev.length),
+    ]);
+    if (mode === "settle") {
+      setOrders((prev) => applyAllocations(prev, allocations));
+    }
+    setFormSeq((seq) => seq + 1);
+  };
 
   return (
     <ListDetailLayout
@@ -79,14 +117,14 @@ export function SettlementListView() {
             ) : (
               <AccordionRows>
                 {visibleRelations.map((relation) => {
-                  const orders = relationOrders(SETTLEMENT_ORDERS, relation.id);
-                  const ledger = relationLedger(LEDGER_ENTRIES, relation.id);
+                  const rowOrders = relationOrders(orders, relation.id);
+                  const rowLedger = relationLedger(ledger, relation.id);
                   return (
                     <RetailerRow
                       key={relation.id}
                       relation={relation}
-                      orderCount={orders.length}
-                      receivable={outstandingReceivable(ledger)}
+                      orderCount={rowOrders.length}
+                      receivable={outstandingReceivable(rowLedger)}
                       open={openRelationId === relation.id}
                       onOpenChange={(open) =>
                         setOpenRelationId(open ? relation.id : null)
@@ -95,8 +133,8 @@ export function SettlementListView() {
                       {/* key: 거래처가 바뀌면 세그먼트·필터 상태를 새로 만든다 */}
                       <SettlementSegmentView
                         key={relation.id}
-                        orders={orders}
-                        ledger={ledger}
+                        orders={rowOrders}
+                        ledger={rowLedger}
                       />
                     </RetailerRow>
                   );
@@ -108,11 +146,12 @@ export function SettlementListView() {
       }
       detail={
         openRelation ? (
-          /* key: 거래처가 바뀌면 입력 중이던 값이 남지 않게 상태째 새로 만든다 */
+          /* key: 거래처가 바뀌거나 한 건을 실행하면 입력값이 남지 않게 상태째 새로 만든다 */
           <DepositFormPanel
-            key={openRelation.id}
+            key={`${openRelation.id}-${formSeq}`}
             relation={openRelation}
-            orders={relationOrders(SETTLEMENT_ORDERS, openRelation.id)}
+            orders={relationOrders(orders, openRelation.id)}
+            onSubmit={submitDeposit}
           />
         ) : undefined
       }

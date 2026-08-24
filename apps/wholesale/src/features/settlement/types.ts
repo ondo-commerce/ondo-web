@@ -97,3 +97,11 @@ export interface AllocationEntry {
   orderId: string;
   amount: number;
 }
+
+/**
+ * 입금 등록 버튼 2개. **만드는 것이 다르다**(`settlement_data_model.md` §2.5):
+ * - `paymentOnly` — `payment`만. 배분 입력값을 쓰지 않고 전액이 미배정으로 남는다.
+ *   통장에 돈이 먼저 들어왔는데 어느 주문 값인지 아직 모를 때 쓴다.
+ * - `settle` — `payment` + `payment_allocation`. 각 행의 배분액이 그대로 배정된다.
+ */
+export type DepositMode = "paymentOnly" | "settle";
