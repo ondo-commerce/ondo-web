@@ -63,6 +63,9 @@ export interface OrderLine {
  * 얼마나 복구해야 하는지 알 수 없다(`min(n, bo)`는 되돌릴 수 없는 계산이다).
  */
 export interface PackingBatchLine {
+  /** 어느 주문 라인에서 뺀 수량인지. **삭제로 되돌릴 때 이 값으로 라인을 찾는다** —
+   *  한 주문에 같은 SKU가 두 줄로 들어올 수 있어 skuId로 찾으면 엉뚱한 줄이 걸린다 */
+  lineId: string;
   skuId: string;
   /** `상품명 (색상 - 사이즈)`. 회차 카드는 SKU 코드가 아니라 이 표기를 쓴다(Figma 실측) */
   label: string;
