@@ -1,5 +1,11 @@
 import { ACTIVE_ORDER_STATUSES, ACTIVE_SETTLEMENT_STATUSES } from "./constants";
-import type { Order, OrderLine, OrderStatus, SettlementStatus } from "./types";
+import type {
+  Order,
+  OrderLine,
+  OrderStatus,
+  PackingBatchLine,
+  SettlementStatus,
+} from "./types";
 
 /*
  * 주문 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -151,4 +157,128 @@ export function shipQty(
   line: OrderLine,
 ): number {
   return parseNumberInput(inputs[line.id] ?? "") ?? 0;
+}
+
+/** 입력 맵 전체 합계. 0이면 확정해도 포장 회차가 생기지 않는다 */
+export function totalShipQty(
+  order: Order,
+  inputs: Readonly<Record<string, string>>,
+): number {
+  return order.lines.reduce((sum, line) => sum + shipQty(inputs, line), 0);
+}
+
+/* ------------------------------------------------------------------------
+ * 상태를 바꾸는 계산. 전부 순수 함수다 — 새 주문 객체를 돌려주고 컴포넌트가
+ * 수량을 직접 만지지 않는다. 서버가 붙으면 이 함수들이 요청 본문을 만드는 자리가 된다.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `이번 출고` 입력 상한 = `min(미할당, 가용재고)`.
+ * 둘 중 하나라도 넘기면 `qty = shipped + 포장대기 + backorder` 항등식이 깨진다
+ * (`settlement_data_model.md` §2.3).
+ */
+export function shipCap(line: OrderLine): number {
+  return Math.max(0, Math.min(unallocatedQty(line), assignableQty(line)));
+}
+
+/** 입력칸 문자열을 상한으로 자른다. 빈칸은 빈칸으로 둔다(0과 구분) */
+export function clampShipInput(line: OrderLine, raw: string): string {
+  const parsed = parseNumberInput(raw);
+  if (parsed === null) return "";
+  return String(Math.min(parsed, shipCap(line)));
+}
+
+/** 포장 대기열 줄 표기 — `상품명 (색상 - 사이즈)`. SKU 코드가 아니다(Figma 실측) */
+export function packingLabel(line: OrderLine): string {
+  return `${line.productName} (${line.color} - ${line.size})`;
+}
+
+/** 확정 다이얼로그에 띄울 미송 예고 */
+export interface BackorderPreview {
+  /** 미송이 잡히는 SKU 수 */
+  skuCount: number;
+  /** 미송 합계(장) */
+  totalQty: number;
+}
+
+/**
+ * 지금 입력 상태로 확정하면 미송이 얼마나 잡히는가.
+ * **입력하지 않은 잔량은 전부 미송이 된다** — Figma 프레임 1913:6060의 제목이 곧 규칙이다
+ * ("가용재고를 다 입력하지 않고 주문 확정한 경우, 무조건 미송처리").
+ */
+export function backorderPreview(
+  order: Order,
+  inputs: Readonly<Record<string, string>>,
+): BackorderPreview {
+  return order.lines.reduce<BackorderPreview>(
+    (acc, line) => {
+      const rest = unallocatedAfter(line, shipQty(inputs, line));
+      return rest > 0
+        ? { skuCount: acc.skuCount + 1, totalQty: acc.totalQty + rest }
+        : acc;
+    },
+    { skuCount: 0, totalQty: 0 },
+  );
+}
+
+/**
+ * 주문 확정(PLACED → CONFIRMED, `settlement_data_model.md` §3.1).
+ *
+ * 입력분은 `출고진행`으로 올라가며 포장 대기 회차 한 건이 되고,
+ * **남은 잔량은 전부 미송으로 확정된다.** 되돌릴 수 없다.
+ *
+ * `reservedQty`를 같이 올리는 이유: 가용재고 = 현재고 − 주문처리중이라,
+ * 잡아 둔 수량만큼 가용재고가 줄어야 다음에 같은 SKU를 또 빼가지 않는다.
+ */
+export function confirmOrder(
+  order: Order,
+  inputs: Readonly<Record<string, string>>,
+): Order {
+  const batchLines: PackingBatchLine[] = [];
+
+  const lines = order.lines.map((line) => {
+    const n = shipQty(inputs, line);
+    const allocatedQty = line.allocatedQty + n;
+    if (n > 0) {
+      batchLines.push({
+        skuId: line.skuId,
+        label: packingLabel(line),
+        qty: n,
+        /* 확정 직후에는 미할당이 곧 미송이다. 이 회차를 지우면 그만큼 미송으로 되돌아간다 */
+        backorderUsed: n,
+      });
+    }
+    return {
+      ...line,
+      allocatedQty,
+      reservedQty: line.reservedQty + n,
+      backorderQty: line.qty - allocatedQty,
+    };
+  });
+
+  const created = batchLines.length > 0;
+  return {
+    ...order,
+    status: "CONFIRMED",
+    lines,
+    batches: created
+      ? [
+          ...order.batches,
+          {
+            id: `${order.id}-B${order.nextBatchNo}`,
+            no: order.nextBatchNo,
+            lines: batchLines,
+          },
+        ]
+      : order.batches,
+    nextBatchNo: order.nextBatchNo + (created ? 1 : 0),
+  };
+}
+
+/**
+ * 주문 취소(PLACED → CANCELED). 수량은 건드리지 않는다 —
+ * 확정 전이라 잡아 둔 것도, 미송으로 넘긴 것도 없기 때문이다.
+ */
+export function cancelOrder(order: Order): Order {
+  return { ...order, status: "CANCELED" };
 }
