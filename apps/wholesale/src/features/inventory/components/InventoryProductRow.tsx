@@ -1,6 +1,7 @@
 "use client";
 
 import { AccordionRow } from "@ondo/ui";
+import { InventoryStockTable } from "./InventoryStockTable";
 import type { Product } from "@/features/product";
 
 /**
@@ -12,10 +13,14 @@ export function InventoryProductRow({
   product,
   open,
   onOpenChange,
+  selectedSkuId,
+  onSelectSku,
 }: {
   product: Product;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  selectedSkuId: string | null;
+  onSelectSku: (skuId: string) => void;
 }) {
   return (
     <AccordionRow
@@ -36,10 +41,11 @@ export function InventoryProductRow({
         </span>
       }
     >
-      {/* 펼친 자리에 들어갈 SKU 재고 표는 아직 없다 — 지금은 자리만 잡는다 */}
-      <p className="text-muted-foreground py-3 text-sm">
-        SKU {product.skus.length}개
-      </p>
+      <InventoryStockTable
+        product={product}
+        selectedSkuId={selectedSkuId}
+        onSelectSku={onSelectSku}
+      />
     </AccordionRow>
   );
 }
