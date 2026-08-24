@@ -5,6 +5,8 @@ import { useState } from "react";
 import { AllocationCounterBar } from "./AllocationCounterBar";
 import { BackorderAllocationTable } from "./BackorderAllocationTable";
 import { BackorderSkuRow } from "./BackorderSkuRow";
+import { BackorderSummaryCard } from "./BackorderSummaryCard";
+import { EtaFormCard } from "./EtaFormCard";
 import { SKU_GRID } from "../constants";
 import {
   allocatedQty,
@@ -12,6 +14,7 @@ import {
   assignableQty,
   firstComeAllocation,
   sortByOrderedAt,
+  summarize,
   totalBackorderQty,
   unallocatedQty,
   withAllocation,
@@ -101,6 +104,10 @@ export function BackorderListView({
     );
   };
 
+  /** 예상 입고일 등록. 저장하면 좌측 목록과 요약이 같은 값을 보게 된다 */
+  const saveEta = (skuId: string, eta: string) =>
+    setSkus((prev) => prev.map((s) => (s.id === skuId ? { ...s, eta } : s)));
+
   const keyword = query.trim().toLowerCase();
   const visibleSkus = keyword
     ? skus.filter(
@@ -109,6 +116,10 @@ export function BackorderListView({
           sku.id.toLowerCase().includes(keyword),
       )
     : skus;
+
+  /* 우측 두 카드는 **펼친 SKU 1개**에 종속된다. 검색으로 가려진 SKU라도 펼쳐져 있으면
+     그 값이 보여야 하므로 visibleSkus가 아니라 skus에서 찾는다 */
+  const openSku = skus.find((sku) => sku.id === openSkuId) ?? null;
 
   /**
    * 펼친 SKU의 본문. 카운터 3개는 **여기서 한 번만 계산해** 카운터 바와 표에 나눠 준다 —
@@ -190,6 +201,19 @@ export function BackorderListView({
             )}
           </Panel.Body>
         </Panel>
+      }
+      detail={
+        openSku ? (
+          <>
+            <BackorderSummaryCard summary={summarize(openSku)} />
+            {/* key: 다른 SKU로 바뀌면 입력 중이던 날짜·사유가 남지 않게 상태째 새로 만든다 */}
+            <EtaFormCard
+              key={openSku.id}
+              initialEta={openSku.eta}
+              onSave={(eta) => saveEta(openSku.id, eta)}
+            />
+          </>
+        ) : undefined
       }
       emptyDetail="좌측에서 미송 SKU를 펼치세요"
     />

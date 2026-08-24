@@ -1,4 +1,9 @@
-import type { AllocationDraft, BackorderLine, BackorderSku } from "./types";
+import type {
+  AllocationDraft,
+  BackorderLine,
+  BackorderSku,
+  BackorderSummary,
+} from "./types";
 
 /*
  * 미송 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -172,4 +177,42 @@ export function applyAllocation(
       }))
       .filter((line) => line.qty > 0),
   };
+}
+
+/**
+ * 미송 요약 8지표. **펼친 SKU 하나** 기준이다.
+ *
+ * 8개를 컴포넌트에서 따로 세지 않고 한 번에 만든다 — `총 미송 수량`은 좌측 목록과,
+ * `가용재고`는 카운터 바와 **같은 값이어야** 하는데 계산이 흩어지면 그 보증이 깨진다.
+ */
+export function summarize(sku: BackorderSku): BackorderSummary {
+  const lines = sortByOrderedAt(sku.lines);
+  const first = lines[0] ?? null;
+  const last = lines[lines.length - 1] ?? null;
+
+  return {
+    totalQty: totalBackorderQty(lines),
+    orderCount: lines.length,
+    customerCount: new Set(lines.map((line) => line.customer)).size,
+    assignable: assignableQty(sku),
+    eta: sku.eta,
+    firstOrderedDate: first?.orderedDate ?? null,
+    lastOrderedDate: last?.orderedDate ?? null,
+    // 주문마다 단가가 다르다. 총 수량 × 대표 단가로 만들면 실제 미수금과 어긋난다
+    totalAmount: lines.reduce(
+      (sum, line) => sum + line.qty * line.unitPrice,
+      0,
+    ),
+  };
+}
+
+/**
+ * 예상 입고일 입력 형식 검사(`YYYY.MM.DD`).
+ * 달력 팝오버(DatePicker)가 `packages/ui`에 없고 Figma에도 없어서 텍스트 입력으로 받는다 —
+ * 그래서 형식을 여기서 막지 않으면 좌측 목록에 아무 문자열이나 날짜인 척 들어간다.
+ * 월·일의 범위까지 본다. 존재하지 않는 날(2월 30일)은 걸러내지 않는다 — 서버가 붙을 때
+ * 진짜 검증이 오고, 화면 단계에서 `Date`를 만들면 시간대만큼 날짜가 밀린다.
+ */
+export function isEtaFormat(raw: string): boolean {
+  return /^\d{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])$/.test(raw.trim());
 }
