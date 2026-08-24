@@ -114,3 +114,49 @@ export function parseNumberInput(raw: string): number | null {
   if (digits === "") return null;
   return Number(digits);
 }
+
+/**
+ * 배분 표에 올릴 주문 = **미수가 남은 주문만**, 주문 일시 오래된 순.
+ *
+ * 정산 완료된 주문을 빼는 이유: 붙일 돈이 없는 줄이라 입력칸이 있어 봐야 쓸 수 없다.
+ * 정렬이 FIFO인 이유: `settlement_data_model.md` §2.6의 `FIFO_AUTO`(오래된 미수부터)다.
+ * Figma에 그려진 행 순서는 날짜순도 금액순도 아니라 근거로 삼지 않았다(01-pm.md §1.6).
+ */
+export function allocationTargets(
+  orders: readonly SettlementOrder[],
+): SettlementOrder[] {
+  return orders
+    .filter((o) => orderReceivable(o) > 0)
+    .sort((a, b) => a.placedAt.localeCompare(b.placedAt));
+}
+
+/**
+ * 자동 배분(FIFO) — 위 행부터 미수 전액을 채우고 남은 금액이 그 다음 행에 들어간다.
+ * 입금액이 미수 총합보다 크면 남는 돈은 어디에도 붙지 않는다(미배정). 그 표시는 이번 범위 밖이다.
+ */
+export function autoAllocate(
+  targets: readonly SettlementOrder[],
+  amount: number,
+): Record<string, number> {
+  let left = Math.max(0, amount);
+  const result: Record<string, number> = {};
+  for (const order of targets) {
+    const take = Math.min(orderReceivable(order), left);
+    result[order.id] = take;
+    left -= take;
+  }
+  return result;
+}
+
+/**
+ * 한 행의 배분액을 그 행의 미수 안으로 가둔다.
+ * 미수보다 많이 붙이면 남는 돈이 그 주문에 갇혀 다른 주문을 못 갚는다 — 그래서 잘라 준다.
+ */
+export function clampAllocation(value: number, receivable: number): number {
+  return Math.min(Math.max(0, value), receivable);
+}
+
+/** 배분 합계. 이 값이 입금액과 같아야 `입금 및 정산`을 누를 수 있다 */
+export function allocationTotal(values: Record<string, number>): number {
+  return Object.values(values).reduce((sum, v) => sum + v, 0);
+}
