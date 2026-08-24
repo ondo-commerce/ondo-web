@@ -29,6 +29,7 @@ export function PackingQueueTable({
   selectedIds,
   onToggle,
   onToggleVisible,
+  onRestrictTo,
 }: {
   /** 그 소매처의 대기 줄 전부. 정렬·필터는 여기서 한다 */
   items: readonly PackingItem[];
@@ -36,18 +37,33 @@ export function PackingQueueTable({
   onToggle: (itemId: string) => void;
   /** 헤더 체크박스. 보이는 줄 id를 통째로 넘긴다 */
   onToggleVisible: (itemIds: string[], checked: boolean) => void;
+  /** 필터를 바꿨을 때 살아남을 선택. 화면에서 사라진 줄의 체크를 같이 거둔다 */
+  onRestrictTo: (itemIds: string[]) => void;
 }) {
   const [pickup, setPickup] = useState<PickupFilterValue>(FILTER_ALL);
 
-  const visible = sortReadyItems(
-    pickup === FILTER_ALL ? items : filterByPickupMethod(items, pickup),
-  );
+  const rowsFor = (value: PickupFilterValue) =>
+    sortReadyItems(
+      value === FILTER_ALL ? items : filterByPickupMethod(items, value),
+    );
+
+  const visible = rowsFor(pickup);
   const allChecked =
     visible.length > 0 && visible.every((i) => selectedIds.includes(i.id));
 
+  /*
+   * 필터를 바꾸면 안 보이게 된 줄의 체크를 거둔다. 남겨 두면 우측 패널이
+   * 표에 없는 품목을 세고 있어서, 왜 합계가 그 숫자인지 화면에서 설명되지 않는다.
+   * 보이는 줄의 체크는 그대로 둔다 — 골라 둔 것을 필터 한 번에 날리지 않는다.
+   */
+  const changePickup = (next: PickupFilterValue) => {
+    setPickup(next);
+    onRestrictTo(rowsFor(next).map((i) => i.id));
+  };
+
   return (
     <div>
-      <PickupMethodFilter value={pickup} onChange={setPickup} />
+      <PickupMethodFilter value={pickup} onChange={changePickup} />
 
       {visible.length === 0 ? (
         <p className="text-muted-foreground py-8 text-center text-sm">

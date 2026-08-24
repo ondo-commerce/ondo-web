@@ -159,3 +159,67 @@ export function formatDateLabel(stamp: string): string {
   const [month, day, time] = parseStamp(stamp);
   return `${month}월 ${day}일 ${time}`;
 }
+
+/**
+ * 지금 시각 → 목업이 쓰는 `YYYY-MM-DDTHH:mm`.
+ *
+ * **버튼을 누른 순간에만 부른다.** 렌더 중에 오늘을 읽으면 서버(UTC)와
+ * 브라우저(KST)의 값이 달라 하이드레이션이 깨진다(재고 탭 formatMovementDate와 같은 이유).
+ */
+export function stamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * 선택한 줄의 수령 방식이 섞였는가.
+ * `package.pickup_method`가 단일 ENUM이라(§2.7) 섞인 선택은 한 묶음이 될 수 없다(판정 D7).
+ */
+export function hasMixedPickup(items: readonly PackingItem[]): boolean {
+  return new Set(items.map((item) => item.pickupMethod)).size > 1;
+}
+
+/**
+ * 포장할 수 있는 선택인가. 고른 게 없거나 수령 방식이 섞였으면 못 한다.
+ *
+ * 고르는 것 자체는 막지 않는다(게이트 Q3) — 체크박스를 회색으로 만들면 왜 회색인지
+ * 설명할 자리가 없어서, 고르게 두고 버튼 옆에서 이유를 말한다.
+ */
+export function canPack(items: readonly PackingItem[]): boolean {
+  return items.length > 0 && !hasMixedPickup(items);
+}
+
+/**
+ * 다음 포장번호 `PKG-051`. 지금 있는 번호의 최댓값 + 1이다 —
+ * 개수 + 1로 만들면 앞 번호가 지워졌을 때 이미 쓴 번호를 다시 발급한다.
+ */
+export function nextPackageNo(packages: readonly Package[]): string {
+  const max = packages.reduce((highest, pkg) => {
+    const n = Number(pkg.packageNo.replace("PKG-", ""));
+    return Number.isNaN(n) ? highest : Math.max(highest, n);
+  }, 0);
+  return `PKG-${String(max + 1).padStart(3, "0")}`;
+}
+
+/**
+ * 고른 줄들을 포장 묶음 하나로 만든다.
+ * 수령 방식은 첫 줄에서 가져온다 — 여기 오는 선택은 이미 `canPack`을 통과해
+ * 전부 같은 값이다.
+ */
+export function packageFromItems(
+  packageNo: string,
+  retailerId: string,
+  items: readonly PackingItem[],
+  packedAt: string,
+): Package {
+  const [first] = items;
+  return {
+    packageNo,
+    retailerId,
+    pickupMethod: first ? first.pickupMethod : "SELF_PICKUP",
+    status: "PACKED",
+    packedAt,
+    shippedAt: null,
+    lines: [...items],
+  };
+}

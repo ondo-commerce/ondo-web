@@ -3,14 +3,18 @@
 import { AccordionRows, Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { PackingQueueTable } from "./PackingQueueTable";
+import { PackingWorkPanel } from "./PackingWorkPanel";
 import { RetailerAccordionRow } from "./RetailerAccordionRow";
 import { ShipmentStageChips } from "./ShipmentStageChips";
 import { STAGE_LABEL } from "../constants";
 import {
   groupReadyItems,
   matchesKeyword,
+  nextPackageNo,
+  packageFromItems,
   readySummaryLabel,
   stageCounts,
+  stamp,
 } from "../derive";
 import type { PackingItem, Package, Retailer, ShipmentStage } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
@@ -39,13 +43,19 @@ const EMPTY_DETAIL: Record<ShipmentStage, string> = {
  */
 export function ShipmentListView({
   retailers,
-  items,
-  packages,
+  items: initialItems,
+  packages: initialPackages,
 }: {
   retailers: readonly Retailer[];
   items: readonly PackingItem[];
   packages: readonly Package[];
 }) {
+  /*
+   * 포장 처리는 서버가 없어서 로컬 상태로 반영한다(재고 탭 입고와 같은 처지).
+   * 대기 줄이 줄고 묶음이 느는 것이 한 번에 일어나야 칩 건수가 어긋나지 않는다.
+   */
+  const [items, setItems] = useState(initialItems);
+  const [packages, setPackages] = useState(initialPackages);
   const [stage, setStage] = useState<ShipmentStage>("ready");
   const [query, setQuery] = useState("");
   /** 동시에 하나만 펼친다 — 좌우가 같은 소매처를 가리키게 하려면 기준이 하나여야 한다 */
@@ -92,6 +102,35 @@ export function ShipmentListView({
         : prev.filter((id) => !itemIds.includes(id)),
     );
 
+  const restrictTo = (itemIds: string[]) =>
+    setSelectedItemIds((prev) => prev.filter((id) => itemIds.includes(id)));
+
+  const selectedItems = items.filter((item) =>
+    selectedItemIds.includes(item.id),
+  );
+
+  /**
+   * 포장 완료. 고른 줄이 대기 목록에서 빠지고 같은 순간 `PKG-NNN` 한 건이 생긴다 —
+   * 둘을 따로 처리하면 그 사이에 칩 건수의 합이 맞지 않는 순간이 생긴다.
+   */
+  const pack = () => {
+    const [first] = selectedItems;
+    if (!first) return;
+
+    const packageNo = nextPackageNo(packages);
+    // 지금 시각은 렌더가 아니라 이 버튼을 누른 순간에만 읽는다
+    const packedAt = stamp(new Date());
+
+    setPackages((prev) => [
+      ...prev,
+      packageFromItems(packageNo, first.retailerId, selectedItems, packedAt),
+    ]);
+    setItems((prev) =>
+      prev.filter((item) => !selectedItemIds.includes(item.id)),
+    );
+    setSelectedItemIds([]);
+  };
+
   const listBody = () => {
     if (stage !== "ready") {
       /* 포장 완료·출고 완료 목록은 다음 이슈에서 채운다. 칩 건수는 이미 맞다 */
@@ -125,11 +164,19 @@ export function ShipmentListView({
               selectedIds={selectedItemIds}
               onToggle={toggleItem}
               onToggleVisible={toggleVisible}
+              onRestrictTo={restrictTo}
             />
           </RetailerAccordionRow>
         ))}
       </AccordionRows>
     );
+  };
+
+  const detail = () => {
+    if (stage === "ready" && selectedItems.length > 0) {
+      return <PackingWorkPanel items={selectedItems} onPack={pack} />;
+    }
+    return undefined;
   };
 
   return (
@@ -157,6 +204,7 @@ export function ShipmentListView({
           <Panel.Body>{listBody()}</Panel.Body>
         </Panel>
       }
+      detail={detail()}
       emptyDetail={EMPTY_DETAIL[stage]}
     />
   );
