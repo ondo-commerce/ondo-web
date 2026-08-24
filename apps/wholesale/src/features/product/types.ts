@@ -24,8 +24,18 @@ export interface Sku {
   code: string;
   color: string;
   size: SizeName;
-  /** 현재고. 0이면 빨강으로 표시한다 */
+  /**
+   * 현재고(stockOnHand) — 창고에 실제로 있는 수량. 0이면 빨강으로 표시한다.
+   *
+   * ⚠️ 팔 수 있는 수량이 아니다. 마켓에 노출되는 값은 아래 두 필드를 뺀
+   *    판매가능(availableQty = stock − reservedQty − backorderQty)이고,
+   *    그 계산은 재고 탭의 derive.ts 한 곳에서만 한다.
+   */
   stock: number;
+  /** 주문처리중(reservedQty) — 주문이 잡혀 빠져나갈 예정이라 이미 묶인 수량 */
+  reservedQty: number;
+  /** 미송대기(backorderQty) — 팔았지만 아직 못 보낸 수량. 현재고보다 클 수 있다 */
+  backorderQty: number;
   /** 주문 제한 재고 (게시글에 붙는 값) */
   orderLimit: number;
   /** 입고 이력으로 갱신되는 값. 화면에서 수정하지 않는다 */

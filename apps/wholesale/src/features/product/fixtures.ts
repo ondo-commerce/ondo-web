@@ -8,15 +8,28 @@ import type { Product, Sku, SizeName } from "./types";
  *    원가 계산은 서버 몫이고, 여기서 계산식을 만들면 나중에 서버와 어긋난다.
  */
 
+/**
+ * 현재고 말고 나머지 수량 3종. 목업 대부분이 0이라 위치 인자로 늘리지 않고 묶었다
+ * — 인자가 10개가 되면 어느 자리가 미송인지 호출부에서 읽히지 않는다.
+ */
+interface SkuQuantities {
+  orderLimit?: number;
+  /** 주문처리중 */
+  reservedQty?: number;
+  /** 미송대기 */
+  backorderQty?: number;
+}
+
 function sku(
   code: string,
   color: string,
   size: SizeName,
+  /** 현재고. 판매가능이 아니다 — types.ts의 Sku.stock 주석 참고 */
   stock: number,
   avgCost: number,
   price: number,
   marginRate: number,
-  orderLimit = 0,
+  qty: SkuQuantities = {},
 ): Sku {
   return {
     id: `${code}-${color}-${size}`,
@@ -24,7 +37,9 @@ function sku(
     color,
     size,
     stock,
-    orderLimit,
+    reservedQty: qty.reservedQty ?? 0,
+    backorderQty: qty.backorderQty ?? 0,
+    orderLimit: qty.orderLimit ?? 0,
     avgCost,
     price,
     marginRate,
@@ -42,15 +57,45 @@ const HANDWRITTEN: Product[] = [
       { name: "오렌지", hex: colorHex("오렌지") },
       { name: "블루", hex: colorHex("블루") },
     ],
+    /*
+     * 재고 탭 Figma(1503:8746)의 표와 같은 값이다 — 화면 실측의 기준점이라
+     * 여기만은 시드 생성이 아니라 손으로 맞춰 둔다.
+     * 예전 stock 값(33·23·0·10…)은 사실상 판매가능이었다. 현재고로 다시 잡고
+     * 주문처리중·미송대기를 채워서 33 = 40 − 5 − 2 가 화면에서 재현되게 했다.
+     */
     skus: [
-      sku("SU-18", "블랙", "XS", 33, 15200, 24000, 36.6),
-      sku("SU-18", "블랙", "S", 23, 15200, 24000, 36.6),
-      sku("SU-18", "블랙", "M", 0, 13800, 24000, 42.5),
-      sku("SU-18", "블랙", "L", 10, 13800, 24000, 42.5),
-      sku("SU-18", "오렌지", "S", 23, 16100, 24000, 32.9),
-      sku("SU-18", "오렌지", "L", 0, 13800, 24000, 42.5),
-      sku("SU-18", "오렌지", "2XL", 0, 13800, 24000, 42.5),
-      sku("SU-18", "블루", "L", 16, 14900, 24000, 37.9),
+      sku("SU-18", "블랙", "XS", 40, 15200, 24000, 36.6, {
+        reservedQty: 5,
+        backorderQty: 2,
+      }),
+      sku("SU-18", "블랙", "S", 26, 15200, 24000, 36.6, {
+        reservedQty: 3,
+        backorderQty: 0,
+      }),
+      sku("SU-18", "블랙", "M", 7, 13800, 24000, 42.5, {
+        reservedQty: 2,
+        backorderQty: 5,
+      }),
+      sku("SU-18", "블랙", "L", 14, 13800, 24000, 42.5, {
+        reservedQty: 1,
+        backorderQty: 3,
+      }),
+      sku("SU-18", "오렌지", "S", 28, 16100, 24000, 32.9, {
+        reservedQty: 4,
+        backorderQty: 1,
+      }),
+      sku("SU-18", "오렌지", "L", 3, 13800, 24000, 42.5, {
+        reservedQty: 0,
+        backorderQty: 3,
+      }),
+      sku("SU-18", "오렌지", "2XL", 3, 13800, 24000, 42.5, {
+        reservedQty: 1,
+        backorderQty: 2,
+      }),
+      sku("SU-18", "블루", "L", 18, 14900, 24000, 37.9, {
+        reservedQty: 2,
+        backorderQty: 0,
+      }),
     ],
     post: {
       id: "p1",
@@ -364,7 +409,17 @@ function fillerProduct(index: number): Product {
       const seed = index * 101 + ci * 13 + si;
       // 7개 중 1개 꼴로 품절 — 재고 0 빨강 표시를 목록에서 보기 위한 것
       const stock = hash(seed) % 7 === 0 ? 0 : between(3, 48, seed + 1);
-      return sku(code, color, size, stock, avgCost, price, marginRate);
+      /*
+       * 주문처리중·미송대기는 현재고와 별개의 축이라 현재고로 상한을 두지 않는다.
+       * 둘의 합이 현재고를 넘으면 판매가능이 음수가 되는데, 그건 데이터 오류가
+       * 아니라 초과 배분된 상태다 — 재고 탭이 회색으로 그걸 그대로 드러낸다.
+       */
+      const reservedQty = stock === 0 ? 0 : between(0, 8, seed + 2);
+      const backorderQty = stock === 0 ? 0 : between(0, 6, seed + 3);
+      return sku(code, color, size, stock, avgCost, price, marginRate, {
+        reservedQty,
+        backorderQty,
+      });
     }),
   );
 
