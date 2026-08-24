@@ -59,3 +59,28 @@ export interface BackorderSku {
  * 카운터 3개(미배분·가용재고·배분 완료)가 null을 만나 합이 어긋난다.
  */
 export type AllocationDraft = Record<string, number>;
+
+/**
+ * 미송 요약 8지표. **펼친 SKU 하나에 대한 값이다** — 탭 전체 합계가 아니다.
+ *
+ * 전부 `lines`에서 파생된다. fixtures에 요약을 따로 박지 않는다 —
+ * 박으면 배분 확정으로 행이 줄어든 뒤 요약만 옛 숫자로 남는다.
+ */
+export interface BackorderSummary {
+  /** 총 미송 수량 `T`. 좌측 목록의 같은 SKU 값과 같아야 한다 */
+  totalQty: number;
+  /** 주문 건수 = 배분 표의 행 수 */
+  orderCount: number;
+  /** 거래처 수 (중복 제거). 한 거래처가 여러 번 주문했을 수 있다 */
+  customerCount: number;
+  /** 가용재고. 카운터 바의 값과 같아야 한다 */
+  assignable: number;
+  /** 예상 입고일. 미등록이면 null */
+  eta: string | null;
+  /** 최초 주문일 `YYYY.MM.DD` = 표 첫 행. 미송이 없으면 null */
+  firstOrderedDate: string | null;
+  /** 최근 주문일 `YYYY.MM.DD` = 표 마지막 행 */
+  lastOrderedDate: string | null;
+  /** 미송 총액 = Σ(미송 수량 × 주문 단가). 단일 단가 × 총 수량이 **아니다** */
+  totalAmount: number;
+}
