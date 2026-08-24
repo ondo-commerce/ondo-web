@@ -1,4 +1,4 @@
-import type { LedgerEntry, SettlementOrder } from "./types";
+import type { LedgerEntry, SettlementOrder, SettlementStatus } from "./types";
 
 /*
  * 정산 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -44,4 +44,27 @@ export function ledgerBalance(entries: readonly LedgerEntry[]): number {
  */
 export function outstandingReceivable(entries: readonly LedgerEntry[]): number {
   return Math.max(0, -ledgerBalance(entries));
+}
+
+/**
+ * 주문 하나의 정산 상태. **저장값이 아니라 배정액에서 매번 계산한다**
+ * (`settlement_data_model.md` §3.2). 서버가 캐시(`settlement_status`)로 내려주더라도
+ * 화면은 이 함수를 믿는다 — 입금 직후 캐시와 배정액이 어긋나는 순간이 실제로 있다.
+ */
+export function settlementStatus(order: SettlementOrder): SettlementStatus {
+  if (order.allocatedAmount <= 0) return "unpaid";
+  if (order.allocatedAmount < order.totalAmount) return "partial";
+  return "settled";
+}
+
+/**
+ * `2025-08-12T09:14` → `8월 12일 09:14`.
+ * **Date로 파싱하지 않고 문자열을 자른다** — 저 문자열에는 시간대가 없어서
+ * `new Date()`에 넣으면 서버와 브라우저가 다른 날짜로 읽어 하이드레이션이 깨진다.
+ */
+export function formatDateTime(value: string): string {
+  const month = Number(value.slice(5, 7));
+  const day = value.slice(8, 10);
+  const time = value.slice(11, 16);
+  return `${month}월 ${day}일 ${time}`;
 }

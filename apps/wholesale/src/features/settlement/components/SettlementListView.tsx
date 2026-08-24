@@ -4,6 +4,7 @@ import { AccordionRows, Button, Panel, SearchInput } from "@ondo/ui";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
 import { RetailerRow } from "./RetailerRow";
+import { SettlementSegmentView } from "./SettlementSegmentView";
 import {
   outstandingReceivable,
   relationLedger,
@@ -72,24 +73,29 @@ export function SettlementListView() {
               </p>
             ) : (
               <AccordionRows>
-                {visibleRelations.map((relation) => (
-                  <RetailerRow
-                    key={relation.id}
-                    relation={relation}
-                    orderCount={
-                      relationOrders(SETTLEMENT_ORDERS, relation.id).length
-                    }
-                    receivable={outstandingReceivable(
-                      relationLedger(LEDGER_ENTRIES, relation.id),
-                    )}
-                    open={openRelationId === relation.id}
-                    onOpenChange={(open) =>
-                      setOpenRelationId(open ? relation.id : null)
-                    }
-                  >
-                    {null}
-                  </RetailerRow>
-                ))}
+                {visibleRelations.map((relation) => {
+                  const orders = relationOrders(SETTLEMENT_ORDERS, relation.id);
+                  return (
+                    <RetailerRow
+                      key={relation.id}
+                      relation={relation}
+                      orderCount={orders.length}
+                      receivable={outstandingReceivable(
+                        relationLedger(LEDGER_ENTRIES, relation.id),
+                      )}
+                      open={openRelationId === relation.id}
+                      onOpenChange={(open) =>
+                        setOpenRelationId(open ? relation.id : null)
+                      }
+                    >
+                      {/* key: 거래처가 바뀌면 세그먼트·필터 상태를 새로 만든다 */}
+                      <SettlementSegmentView
+                        key={relation.id}
+                        orders={orders}
+                      />
+                    </RetailerRow>
+                  );
+                })}
               </AccordionRows>
             )}
           </Panel.Body>
