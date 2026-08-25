@@ -1,4 +1,4 @@
-import { PRODUCTS, type Sku } from "@/features/product";
+import { PRODUCTS, type Sku, type SizeName } from "@/features/product";
 import type {
   Order,
   OrderLine,
@@ -130,13 +130,45 @@ function allocatedFor(status: OrderStatus, qty: number, seed: number): number {
   }
 }
 
+/**
+ * 라인 하나를 그리는 데 필요한 SKU 정보. 풀에서 뽑든 손으로 적든 이 모양이다.
+ * 수량·할당·미송은 여기 없다 — 그건 주문 상태가 정한다(buildLine).
+ */
+interface LineSpec {
+  skuId: string;
+  productName: string;
+  color: string;
+  size: SizeName;
+  unitPrice: number;
+  stockOnHand: number;
+  reservedQty: number;
+}
+
+/** 기본 경로 — 게시글 붙은 상품의 실제 SKU에서 결정적으로 하나 뽑는다 */
+function poolSpec(orderIndex: number, lineIndex: number): LineSpec {
+  const { productName, sku } = pick(
+    SKU_POOL,
+    orderIndex * 101 + lineIndex * 7 + 3,
+  );
+  return {
+    skuId: sku.id,
+    productName,
+    color: sku.color,
+    size: sku.size,
+    unitPrice: sku.price,
+    stockOnHand: sku.stock,
+    reservedQty: sku.reservedQty,
+  };
+}
+
 function buildLine(
   orderIndex: number,
   lineIndex: number,
   status: OrderStatus,
+  /** 손으로 적은 라인. 없으면 SKU 풀에서 뽑는다 */
+  override?: LineSpec,
 ): OrderLine {
-  const item = pick(SKU_POOL, orderIndex * 101 + lineIndex * 7 + 3);
-  const { sku } = item;
+  const spec = override ?? poolSpec(orderIndex, lineIndex);
   const qty = between(1, 6, orderIndex * 53 + lineIndex * 13 + 5) * 5;
   const allocatedQty = allocatedFor(
     status,
@@ -152,26 +184,26 @@ function buildLine(
         : 0;
 
   return {
-    id: `${orderIndex}-${lineIndex}-${sku.id}`,
-    skuId: sku.id,
-    productName: item.productName,
-    color: sku.color,
-    size: sku.size,
+    id: `${orderIndex}-${lineIndex}-${spec.skuId}`,
+    skuId: spec.skuId,
+    productName: spec.productName,
+    color: spec.color,
+    size: spec.size,
     qty,
     allocatedQty,
     shippedQty,
     // 확정된 주문의 미할당은 전부 미송으로 확정돼 있다
     backorderQty:
       status === "PLACED" || status === "SHIPPED" ? 0 : qty - allocatedQty,
-    unitPrice: sku.price,
-    lineAmount: qty * sku.price,
-    stockOnHand: sku.stock,
+    unitPrice: spec.unitPrice,
+    lineAmount: qty * spec.unitPrice,
+    stockOnHand: spec.stockOnHand,
     /*
      * 주문처리중은 현재고를 넘지 않게 자른다. 상품 더미의 두 값은 서로 무관하게 만들어져서
      * 그대로 쓰면 `가용재고`(현재고 − 주문처리중)가 음수로 찍히는데, 그건 더미의 산물이지
      * 업무 상태가 아니다. 팔 수 없는 상태는 0으로 충분히 표현된다.
      */
-    reservedQty: Math.min(sku.reservedQty, sku.stock),
+    reservedQty: Math.min(spec.reservedQty, spec.stockOnHand),
   };
 }
 
@@ -190,10 +222,141 @@ function settlementFor(status: OrderStatus, seed: number): SettlementStatus {
 }
 
 /**
- * 라인 수를 고정하는 두 건. 경계를 눈으로 확인하려면 **라인 1개짜리와 10개 넘는 주문이
- * 목록에 실제로 있어야 한다** — 첫 열이 2줄이라 라인이 많으면 표가 눌리기 쉽다.
+ * ORD-001 전용 라인 — **표가 글자 길이를 견디는지 보려고 손으로 적은 더미다.**
+ *
+ * 나머지 주문은 `SKU_POOL`에서 뽑아 쓰는데, 그 풀은 실제 상품 SKU라 품명도 SKU 코드도
+ * 길이가 고만고만해서 열이 눌리는 상황이 안 나온다. 그래서 이 한 건만 손으로 적어
+ * **품명 2자~26자, SKU 코드 4자~24자, 색상 2자~7자, 단가 4자리~6자리**를 한 표에 섞는다.
+ *
+ * ⚠️ 여기 값은 업무 데이터가 아니라 **표시 실험용**이다. 다른 주문과 달리 게시글에 붙은
+ *    실제 SKU가 아니라서 단가·재고가 상품 더미와 이어지지 않는다. 서버가 붙으면 이 배열이
+ *    가장 먼저 지워질 자리다.
+ *
+ * 가용재고 0인 줄을 둘 섞어 뒀다(현재고 0인 `K-9`, 주문처리중이 재고를 다 먹은 `DN-2201`).
+ * `이번 출고` 칸이 흰 입력칸과 비활성 회색칸으로 갈리는 걸 한 화면에서 볼 수 있다.
+ *
+ * 세 번째 상태인 **전량 할당 ✓는 여기서 안 나온다** — ORD-001은 신규(PLACED)라
+ * `allocatedFor`가 0을 돌려주고(확정 전에는 아무것도 안 잡힌다), 미할당이 0인 줄이
+ * 생길 수 없기 때문이다. ✓를 보려면 확정·부분출고 상태의 주문을 펼쳐야 한다.
  */
-const LINE_COUNT_OVERRIDE: Readonly<Record<number, number>> = { 0: 1, 1: 12 };
+const ORD001_LINES: readonly LineSpec[] = [
+  // 아주 짧은 쪽
+  {
+    skuId: "TS-1",
+    productName: "면티",
+    color: "블랙",
+    size: "S",
+    unitPrice: 4900,
+    stockOnHand: 320,
+    reservedQty: 15,
+  },
+  {
+    skuId: "K-9",
+    productName: "니트",
+    color: "크림",
+    size: "Free",
+    unitPrice: 18000,
+    stockOnHand: 0,
+    reservedQty: 0,
+  },
+  // 중간
+  {
+    skuId: "SU-18-블랙-M",
+    productName: "루즈 오버핏 셔츠",
+    color: "블랙",
+    size: "M",
+    unitPrice: 23000,
+    stockOnHand: 48,
+    reservedQty: 6,
+  },
+  {
+    skuId: "SL-40-차콜-L",
+    productName: "슬랙스",
+    color: "차콜",
+    size: "L",
+    unitPrice: 29000,
+    stockOnHand: 63,
+    reservedQty: 9,
+  },
+  {
+    skuId: "CR-77-아이보리-XS",
+    productName: "크롭 반팔 티셔츠",
+    color: "아이보리",
+    size: "XS",
+    unitPrice: 12500,
+    stockOnHand: 140,
+    reservedQty: 22,
+  },
+  {
+    skuId: "JK-1203-베이지-XL",
+    productName: "빈티지 워싱 크롭 데님 자켓",
+    color: "베이지",
+    size: "XL",
+    unitPrice: 58000,
+    stockOnHand: 19,
+    reservedQty: 4,
+  },
+  // 긴 쪽
+  {
+    skuId: "DN-2201-인디고워싱-2XL",
+    productName: "하이웨이스트 슬림 부츠컷 데님 팬츠",
+    color: "인디고 워싱",
+    size: "2XL",
+    unitPrice: 41000,
+    stockOnHand: 7,
+    reservedQty: 7,
+  },
+  {
+    skuId: "LN-88-라이트베이지-Free",
+    productName: "린넨 혼방 오버사이즈 셔츠 자켓",
+    color: "라이트 베이지",
+    size: "Free",
+    unitPrice: 67000,
+    stockOnHand: 25,
+    reservedQty: 3,
+  },
+  {
+    skuId: "OX-7788-화이트-XL",
+    productName: "코튼 100% 프리미엄 옥스포드 버튼다운 셔츠",
+    color: "화이트",
+    size: "XL",
+    unitPrice: 34000,
+    stockOnHand: 82,
+    reservedQty: 11,
+  },
+  {
+    skuId: "CT-3301-차콜그레이-2XL",
+    productName: "울 캐시미어 혼방 더블 브레스티드 롱 코트",
+    color: "차콜 그레이",
+    size: "2XL",
+    unitPrice: 128000,
+    stockOnHand: 5,
+    reservedQty: 2,
+  },
+  {
+    skuId: "PD-15-그린-S",
+    productName: "패딩",
+    color: "그린",
+    size: "S",
+    unitPrice: 96000,
+    stockOnHand: 31,
+    reservedQty: 8,
+  },
+];
+
+/**
+ * 라인 수를 고정하는 건들. 경계를 눈으로 확인하려면 **라인 1개짜리와 10개 넘는 주문이
+ * 목록에 실제로 있어야 한다** — 첫 열이 2줄이라 라인이 많으면 표가 눌리기 쉽다.
+ *
+ * 라인 1개짜리는 원래 index 0(ORD-001)이었는데, 거기가 글자 길이 실험용
+ * 11줄짜리로 바뀌면서 index 2(ORD-003)로 옮겼다. 경계 자체는 그대로 남아 있다.
+ */
+const LINE_COUNT_OVERRIDE: Readonly<Record<number, number>> = { 1: 12, 2: 1 };
+
+/** 손으로 적은 라인을 쓰는 주문. 없으면 SKU 풀에서 뽑는다 */
+const LINE_SPEC_OVERRIDE: Readonly<Record<number, readonly LineSpec[]>> = {
+  0: ORD001_LINES,
+};
 
 /**
  * 더미로 이미 쌓여 있는 포장 대기 회차.
@@ -228,9 +391,13 @@ function initialBatches(orderId: string, lines: readonly OrderLine[]) {
 function buildOrder(index: number): Order {
   const status = STATUS_PLAN[index] as OrderStatus;
   const customer = pick(CUSTOMERS, index * 31 + 2);
-  const lineCount = LINE_COUNT_OVERRIDE[index] ?? between(1, 4, index * 41 + 6);
+  const specs = LINE_SPEC_OVERRIDE[index];
+  const lineCount =
+    specs?.length ??
+    LINE_COUNT_OVERRIDE[index] ??
+    between(1, 4, index * 41 + 6);
   const lines = Array.from({ length: lineCount }, (_, i) =>
-    buildLine(index, i, status),
+    buildLine(index, i, status, specs?.[i]),
   );
   const id = `ORD-${String(index + 1).padStart(3, "0")}`;
   // 출고 완료·신규·취소에는 대기 중인 포장이 없다 (다 나갔거나 아직 안 잡혔다)
