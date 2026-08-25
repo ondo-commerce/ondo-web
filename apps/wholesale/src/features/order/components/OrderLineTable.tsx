@@ -139,9 +139,9 @@ export function OrderLineTable({
                     >
                       {line.productName}
                     </span>
-                    <span className="text-muted-foreground block text-xs">
+                    {/* <span className="text-gray-400 block text-[13px]">
                       ₩{formatNumber(line.unitPrice)}
-                    </span>
+                    </span> */}
                   </Table.Td>
                   <Table.Td align="left">
                     {/* Chip이 inline-flex라 안쪽 span에 min-w-0이 있어야 truncate가 먹는다
