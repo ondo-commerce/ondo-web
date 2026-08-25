@@ -9,7 +9,7 @@ import { cn } from "../lib/cn";
 const trigger = cva(
   /* cursor-pointer: Tailwind v4 preflight가 button의 커서를 default로 바꿔서
      직접 준다 (Button과 같은 이유). disabled에서는 아래 not-allowed가 이긴다 */
-  "inline-flex cursor-pointer items-center justify-between gap-2 text-sm whitespace-nowrap transition-colors " +
+  "inline-flex cursor-pointer items-center justify-between gap-2 text-[13px] whitespace-nowrap transition-colors " +
     // "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-hidden " +
     "disabled:text-muted-foreground disabled:cursor-not-allowed " +
     "data-[placeholder]:text-muted-foreground",
@@ -18,7 +18,7 @@ const trigger = cva(
       variant: {
         /* 폼 안의 드롭다운 — 흰 배경 + 테두리. hover는 Button의 line과 같은 단계 */
         filter:
-          "bg-secondary h-8 rounded-control pr-2.5 pl-4 enabled:hover:bg-secondary-strong",
+          "bg-secondary h-7.5 rounded-control pr-2.5 pl-4 enabled:hover:bg-secondary-strong",
         field:
           "border-input bg-card h-9 w-full rounded-control border pr-2.5 pl-3 enabled:hover:bg-secondary",
         /* 목록 상단 필터 — 회색 채움, 테두리 없음, 내용만큼만.

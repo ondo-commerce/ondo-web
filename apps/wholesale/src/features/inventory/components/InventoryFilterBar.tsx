@@ -29,7 +29,7 @@ export function InventoryFilterBar({
   return (
     <div className="mb-2 flex justify-end gap-2">
       <Select value={color} onValueChange={onColorChange}>
-        <Select.Trigger aria-label="색상 필터" className="w-24">
+        <Select.Trigger aria-label="색상 필터">
           {color === FILTER_ALL ? "색상" : color}
         </Select.Trigger>
         <Select.Content>
@@ -43,7 +43,7 @@ export function InventoryFilterBar({
       </Select>
 
       <Select value={size} onValueChange={onSizeChange}>
-        <Select.Trigger aria-label="사이즈 필터" className="w-24">
+        <Select.Trigger aria-label="사이즈 필터">
           {size === FILTER_ALL ? "사이즈" : size}
         </Select.Trigger>
         <Select.Content>
