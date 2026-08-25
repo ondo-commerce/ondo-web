@@ -36,7 +36,7 @@ export interface ReadyGroup {
   items: PackingItem[];
 }
 
-/** 소매처 하나에 묶인 포장 묶음들. `포장 완료` · `출고 완료` 단계가 함께 쓴다 */
+/** 소매처 하나에 묶인 포장 묶음들. `출고 대기` · `출고 완료` 단계가 함께 쓴다 */
 export interface PackageGroup {
   retailer: Retailer;
   packages: Package[];
@@ -77,7 +77,7 @@ export function readySummaryLabel(items: readonly PackingItem[]): string {
   return `SKU ${items.length}건 · ${sumQty(items)}개`;
 }
 
-/** 아코디언 꼬리 `PKG 3건 · 66개` — 포장 완료·출고 완료 단계는 묶음이 단위다 */
+/** 아코디언 꼬리 `PKG 3건 · 66개` — 출고 대기·출고 완료 단계는 묶음이 단위다 */
 export function packageSummaryLabel(packages: readonly Package[]): string {
   return `PKG ${packages.length}건 · ${packages.reduce((total, pkg) => total + packageQty(pkg), 0)}개`;
 }
@@ -96,7 +96,7 @@ export function sortReadyItems(items: readonly PackingItem[]): PackingItem[] {
   });
 }
 
-/** 일시 최신순. 포장 완료는 포장 일시, 출고 완료는 출고 일시로 정렬한다(판정 D8) */
+/** 일시 최신순. 출고 대기는 포장 일시, 출고 완료는 출고 일시로 정렬한다(판정 D8) */
 export function sortPackagesByDesc(
   packages: readonly Package[],
   key: (pkg: Package) => string,

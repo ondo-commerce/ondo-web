@@ -15,10 +15,17 @@ export const PICKUP_METHODS: readonly PickupMethod[] = [
   "AGENT_VISIT",
 ];
 
-/** 3단 필터 칩의 글자. 건수는 화면에서 붙인다 */
+/**
+ * 3단 필터 칩의 글자. 건수는 화면에서 붙인다.
+ *
+ * `packed`의 라벨이 `포장 완료`에서 **`출고 대기`로 바뀌었다**(명세 변경).
+ * 바뀐 건 한국어 라벨뿐이고 **단계 키(`packed`)와 상태값(`PackageStatus.PACKED`)은 그대로다** —
+ * 위 PICKUP_METHOD_LABEL 주석과 같은 이유로, 화면 글자에 맞춰 코드값을 돌리면 서버 계약과 갈린다
+ * (`settlement_data_model.md` §2.7의 ENUM이 `PACKED`다).
+ */
 export const STAGE_LABEL: Record<ShipmentStage, string> = {
   ready: "포장 대기",
-  packed: "포장 완료",
+  packed: "출고 대기",
   shipped: "출고 완료",
 };
 
