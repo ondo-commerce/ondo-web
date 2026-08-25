@@ -3,7 +3,7 @@ import type { PackingItem, Package, PickupMethod, Retailer } from "./types";
 /*
  * 출고 탭 목업. API가 붙으면 이 파일만 지운다.
  *
- * 칩 건수를 판정 D5(= 그 단계에 있는 행의 총 개수)에 맞춰 **포장 대기 20 · 포장 완료 20 ·
+ * 칩 건수를 판정 D5(= 그 단계에 있는 행의 총 개수)에 맞춰 **포장 대기 20 · 출고 대기 20 ·
  * 출고 완료 30**으로 정합하게 만든다. 포장 대기 20줄과 Figma에 실제로 그려져 있는
  * 부산상사(RT-007)의 포장 3건은 손으로 적고, 나머지 47건은 시드 생성기가 만든다 —
  * 50건을 다 적으면 파일이 500줄을 넘고, 손으로 적은 줄과 생성된 줄의 구분도 사라진다.
@@ -303,7 +303,7 @@ function stamp(ms: number): string {
 type DraftPackage = Omit<Package, "packageNo" | "statementNo">;
 
 /**
- * 소매처별 포장 완료 건수. 합 17 + 아래 손으로 적은 부산상사 3건 = 20(= `포장 완료` 칩).
+ * 소매처별 출고 대기 건수. 합 17 + 아래 손으로 적은 부산상사 3건 = 20(= `출고 대기` 칩).
  * RT-007이 0인 이유가 그것이다.
  */
 const PACKED_PER_RETAILER: readonly number[] = [
@@ -528,5 +528,5 @@ function buildPackages(): Package[] {
   return numbered;
 }
 
-/** 포장 완료 20건 + 출고 완료 30건 */
+/** 출고 대기 20건 + 출고 완료 30건 */
 export const PACKAGES: readonly Package[] = buildPackages();
