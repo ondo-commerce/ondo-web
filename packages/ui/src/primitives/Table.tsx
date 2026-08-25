@@ -16,14 +16,50 @@ import { cn } from "../lib/cn";
  * 최소값으로 박아 줄바꿈이 생길 상황 자체를 없애고, 스크롤 컨테이너의 min-content가
  * 0으로 잡히는 성질 덕에 그 너비가 바깥 패널을 밀어내지 않는다. 둘은 세트다.
  */
-export function Table({
-  className,
-  ...props
-}: TableHTMLAttributes<HTMLTableElement>) {
+export interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
+  /**
+   * 머리글 행을 세로 스크롤에 고정한다. **표가 세로 스크롤을 직접 받게 되는 옵션이다.**
+   *
+   * 왜 옵션이 필요한가: 이 래퍼는 원래도 세로 스크롤 컨테이너였다. `overflow-x: auto`를
+   * 주면 CSS 규칙상 `overflow-y: visible`이 `auto`로 계산되기 때문이다. 다만 높이 제한이
+   * 없어서 실제로는 스크롤하지 않고 늘어나기만 했고, 세로 스크롤은 바깥 `Panel.Body`가
+   * 받았다. sticky는 **가장 가까운 스크롤 컨테이너** 기준이라 thead 입장에서는 이 래퍼가
+   * 기준인데 그게 안 움직이니, 클래스만 붙여서는 아무 일도 일어나지 않는다.
+   *
+   * 그래서 이 옵션은 래퍼에 높이(min-h-0 flex-1)를 줘서 **여기가 실제로 스크롤하게** 만든다.
+   * 부르는 쪽은 표를 `Panel.Body` 안이 아니라 `Panel`의 flex 자식으로 직접 놓아야 한다 —
+   * 안 그러면 스크롤 컨테이너가 둘이 겹쳐 막대가 두 개 생긴다.
+   *
+   * 경계선을 border가 아니라 inset shadow로 그리는 이유: `border-collapse` 표에서
+   * sticky 셀의 border는 셀을 따라 움직이지 않는다(Chrome/Safari의 오래된 동작).
+   * 그래서 머리글의 위아래 선만 그림자로 바꿔 그린다.
+   *
+   * `overscroll-contain`도 같이 붙는다. 표 안의 표처럼 스크롤 컨테이너가 중첩되면,
+   * 안쪽을 끝까지 내렸을 때 휠이 바깥으로 넘어가 바깥 목록이 툭 튄다(scroll chaining).
+   * 중첩 스크롤이 싸구려로 느껴지는 주된 원인이라 여기서 끊는다.
+   */
+  stickyHead?: boolean;
+}
+
+export function Table({ className, stickyHead, ...props }: TableProps) {
   return (
-    <div className="scroll-slim overflow-x-auto">
+    <div
+      className={cn(
+        "scroll-slim",
+        stickyHead
+          ? "min-h-0 flex-1 overflow-auto overscroll-contain"
+          : "overflow-x-auto",
+      )}
+    >
       <table
-        className={cn("w-full min-w-max border-collapse text-sm", className)}
+        className={cn(
+          "w-full min-w-max border-collapse text-sm",
+          stickyHead &&
+            "[&>thead>tr>th]:sticky [&>thead>tr>th]:top-0 [&>thead>tr>th]:z-10 " +
+              "[&>thead>tr>th]:bg-card [&>thead>tr>th]:border-y-0 " +
+              "[&>thead>tr>th]:shadow-[inset_0_1px_0_var(--color-gray-100),inset_0_-1px_0_var(--color-gray-100)]",
+          className,
+        )}
         {...props}
       />
     </div>
@@ -55,9 +91,9 @@ export interface TableRowProps extends HTMLAttributes<HTMLTableRowElement> {
 
 /* 양 끝 셀의 ::before만 깎는다. 가운데 셀까지 깎으면 셀마다 끊긴 조각이 된다.
    머리글 행은 th라 ::before가 없어서 이 규칙에 걸리지 않는다 */
-const rowShape =
-  "[&>td:first-child]:before:rounded-l-control " +
-  "[&>td:last-child]:before:rounded-r-control";
+// const rowShape =
+//   "[&>td:first-child]:before:rounded-l-control " +
+//   "[&>td:last-child]:before:rounded-r-control";
 
 Table.Row = function TableRow({
   className,
@@ -68,9 +104,9 @@ Table.Row = function TableRow({
     <tr
       aria-selected={selected}
       className={cn(
-        rowShape,
+        // rowShape,
         "hover:[&>td]:before:bg-secondary",
-        selected && "[&>td]:before:bg-accent",
+        selected && "[&>td]:before:bg-secondary",
         className,
       )}
       {...props}
