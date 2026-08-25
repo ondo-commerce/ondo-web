@@ -1,3 +1,5 @@
+import { Check } from "lucide-react";
+
 /**
  * 전량 할당이 끝나 더 넣을 수량이 없는 라인의 표시(Figma 실측: 연초록 원 + 진초록 ✓).
  * 입력칸을 비활성으로 두지 않고 아예 ✓로 바꾸는 이유는, 비활성 칸은 "지금은 안 되지만
@@ -13,18 +15,9 @@ export function AllocatedCheck() {
       aria-label="전량 할당 완료"
       className="bg-success/10 text-success inline-flex size-6 items-center justify-center rounded-full"
     >
-      <svg
-        viewBox="0 0 12 12"
-        className="size-3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d="M2.5 6.5 5 9l4.5-5.5" />
-      </svg>
+      {/* strokeWidth는 lucide 기본값(2)이 아니다 — 원본이 12뷰박스에 2였던 굵은 ✓라,
+          24뷰박스에서 같은 굵기로 보이려면 올려야 한다(Figma 실측 유지) */}
+      <Check aria-hidden className="size-3.5" strokeWidth={3} />
     </span>
   );
 }
