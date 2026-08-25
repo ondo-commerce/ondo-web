@@ -1,6 +1,7 @@
 "use client";
 
 import { ColorDot, Table } from "@ondo/ui";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { Product, Sku } from "../types";
 import { formatNumber } from "@/shared/lib/format";
@@ -61,18 +62,10 @@ export function ProductSkuTable({ product }: { product: Product }) {
                       aria-expanded={open}
                       className="focus-visible:ring-ring flex items-center gap-1.5 rounded-button focus-visible:ring-2 focus-visible:outline-hidden"
                     >
-                      <svg
-                        viewBox="0 0 12 12"
-                        className={`text-border-strong size-3 transition-transform ${open ? "rotate-90" : ""}`}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                      <ChevronRight
                         aria-hidden
-                      >
-                        <path d="M4.5 2.5 8 6l-3.5 3.5" />
-                      </svg>
+                        className={`text-border-strong size-4 transition-transform ${open ? "rotate-90" : ""}`}
+                      />
                       <ColorDot color={option?.hex ?? "#ffffff"} />
                       <span>{option?.displayName ?? color}</span>
                     </button>

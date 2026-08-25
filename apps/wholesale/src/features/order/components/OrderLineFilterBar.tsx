@@ -31,7 +31,7 @@ export function OrderLineFilterBar({
   return (
     <div className="mb-2 flex justify-end gap-2">
       <Select value={color} onValueChange={onColorChange}>
-        <Select.Trigger aria-label="색상 필터" className="w-24">
+        <Select.Trigger aria-label="색상 필터">
           {color === LINE_FILTER_ALL ? "색상" : color}
         </Select.Trigger>
         <Select.Content>
@@ -45,7 +45,7 @@ export function OrderLineFilterBar({
       </Select>
 
       <Select value={size} onValueChange={onSizeChange}>
-        <Select.Trigger aria-label="사이즈 필터" className="w-24">
+        <Select.Trigger aria-label="사이즈 필터">
           {size === LINE_FILTER_ALL ? "사이즈" : size}
         </Select.Trigger>
         <Select.Content>

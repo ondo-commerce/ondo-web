@@ -37,7 +37,7 @@ export function PickupMethodFilter({
           if (option) onChange(option);
         }}
       >
-        <Select.Trigger aria-label="수령방식 필터" className="w-32">
+        <Select.Trigger aria-label="수령방식 필터">
           {value === FILTER_ALL ? "수령방식" : PICKUP_METHOD_LABEL[value]}
         </Select.Trigger>
         <Select.Content>

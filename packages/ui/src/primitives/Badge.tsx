@@ -11,7 +11,7 @@ const badge = cva(
   {
     variants: {
       tone: {
-        active: "bg-card border-primary text-primary border",
+        active: "bg-card border-input text-primary",
         done: "bg-secondary text-muted-foreground",
       },
     },

@@ -76,7 +76,7 @@ export function SettlementSegmentView({
             onValueChange={(value) => setStatusFilter(value as StatusFilter)}
           >
             {/* 닫힌 트리거에는 고른 값이 보인다. 무엇으로 걸러져 있는지가 표 밖에서 읽혀야 한다 */}
-            <Select.Trigger aria-label="정산 상태 필터" className="w-25">
+            <Select.Trigger aria-label="정산 상태 필터">
               {statusFilter === FILTER_ALL
                 ? "정산 상태"
                 : SETTLEMENT_LABEL[statusFilter]}
@@ -95,7 +95,7 @@ export function SettlementSegmentView({
             value={ledgerFilter}
             onValueChange={(value) => setLedgerFilter(value as LedgerFilter)}
           >
-            <Select.Trigger aria-label="원장 구분 필터" className="w-25">
+            <Select.Trigger aria-label="원장 구분 필터">
               {ledgerFilter === FILTER_ALL
                 ? "구분"
                 : LEDGER_LABEL[ledgerFilter]}
