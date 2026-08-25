@@ -14,7 +14,7 @@ export function Panel({ className, children, ...props }: PanelProps) {
   return (
     <div
       className={cn(
-        "bg-card border border-border flex min-h-0 flex-col rounded-panel p-6 pr-4",
+        "bg-card border border-border flex min-h-0 flex-col rounded-panel p-4",
         className,
       )}
       {...props}

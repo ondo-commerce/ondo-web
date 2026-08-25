@@ -143,9 +143,14 @@ export function InventoryListView({
     <ListDetailLayout
       list={
         <Panel className="flex-1">
-          <Panel.Title>재고 관리</Panel.Title>
-          <div className="mb-4 shrink-0">
+          {/* 툴바 한 줄 — 좌: 검색 / 우: 필터와 주 액션.
+              검색창의 `mr-auto`가 나머지를 오른쪽으로 민다. 오른쪽 묶음에 ml-auto를 주는 것보다
+              이쪽이 낫다 — 오른쪽에 무엇이 오든(필터·버튼·둘 다·없음) 규칙이 같기 때문이다.
+              패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
+              탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
+          <div className="mb-4 flex shrink-0 items-center gap-3">
             <SearchInput
+              className="mr-auto"
               placeholder="품번·품명 검색"
               aria-label="품번·품명 검색"
               value={query}

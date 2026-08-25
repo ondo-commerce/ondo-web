@@ -48,7 +48,7 @@ const EMPTY_DETAIL: Record<ShipmentStage, string> = {
  * 칩으로 아래 셋만 바꾼다:
  *
  *   포장 대기 → 대기 줄 표(체크박스) + 포장 작업 패널
- *   포장 완료 → 포장 묶음 표          + 포장 상세 패널
+ *   출고 대기 → 포장 묶음 표          + 포장 상세 패널
  *   출고 완료 → 출고된 묶음 표        + 장끼 카드
  *
  * 단계와 선택 상태는 URL에 두지 않는다(재고 탭과 같은 규칙).
@@ -77,7 +77,7 @@ export function ShipmentListView({
   const [openRetailerId, setOpenRetailerId] = useState<string | null>(null);
   /** 포장 대기 표에서 체크한 줄. 우측 `포장 작업` 패널이 이 배열을 읽는다 */
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  /** 포장 완료·출고 완료 단계에서 고른 묶음. 두 단계 모두 한 행만 고른다 */
+  /** 출고 대기·출고 완료 단계에서 고른 묶음. 두 단계 모두 한 행만 고른다 */
   const [selectedPackageNo, setSelectedPackageNo] = useState<string | null>(
     null,
   );
@@ -94,7 +94,7 @@ export function ShipmentListView({
     ),
   );
 
-  /** 포장 완료·출고 완료는 상태만 다르고 묶는 방식과 검색 축이 같다 */
+  /** 출고 대기·출고 완료는 상태만 다르고 묶는 방식과 검색 축이 같다 */
   const packageGroupsOf = (status: PackageStatus) =>
     groupPackages(
       retailers,
@@ -114,7 +114,7 @@ export function ShipmentListView({
   const selectedPackageRetailer =
     retailers.find((r) => r.id === selectedPackage?.retailerId) ?? null;
 
-  /** 단계를 바꾸면 펼침과 선택이 같이 풀린다. 대기 줄 선택이 포장 완료 화면까지 따라오면 안 된다 */
+  /** 단계를 바꾸면 펼침과 선택이 같이 풀린다. 대기 줄 선택이 출고 대기 화면까지 따라오면 안 된다 */
   const handleStageChange = (next: ShipmentStage) => {
     setStage(next);
     setOpenRetailerId(null);
@@ -232,7 +232,7 @@ export function ShipmentListView({
     if (groups.length === 0) {
       return emptyList(
         stage === "packed"
-          ? "포장된 묶음이 없습니다"
+          ? "출고 대기 중인 묶음이 없습니다"
           : "출고된 묶음이 없습니다",
       );
     }
@@ -296,16 +296,24 @@ export function ShipmentListView({
     <ListDetailLayout
       list={
         <Panel className="flex-1">
-          <Panel.Title>출고 관리</Panel.Title>
-          <div className="mb-3 shrink-0">
+          {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
+              한 줄로 두면 검색창 340px + 세그먼트들이 좌측 패널 폭을 넘겨서 제멋대로 접힌다.
+              검색은 폭이 고정이고 필터는 칸 수·글자 길이에 따라 변하니, 변하는 쪽만 아래 줄에
+              모아 두면 검색창 자리가 탭을 옮겨도 흔들리지 않는다.
+              첫 줄의 `mr-auto`는 오른쪽에 주 액션이 붙는 탭(상품·정산)과 규칙을 맞추려는 것이다.
+              패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
+              탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
+          <div className="mb-3 flex shrink-0 items-center gap-3">
             <SearchInput
+              className="mr-auto"
               placeholder="거래처·품명 검색"
               aria-label="거래처·품명 검색"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <div className="mb-4 shrink-0">
+
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
             <ShipmentStageChips
               counts={counts}
               value={stage}
