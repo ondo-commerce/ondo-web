@@ -28,6 +28,15 @@ import { formatNumber } from "@/shared/lib/format";
  * 같은 공식이 확인 다이얼로그·포장 회차 생성에서도 쓰이는데 JSX 안에 흩어 놓으면
  * 화면끼리 숫자가 갈린다.
  *
+ * **펼침 영역은 자기 스크롤을 갖는다**(`max-h-[50vh]` + 표만 흐름).
+ * 바깥 주문 목록도 머리글이 sticky라, 둘이 같은 스크롤 컨테이너를 쓰면 라인을 읽는 동안
+ * 위에는 상관없는 `주문번호·거래처` 머리글이 붙어 있게 된다. 안쪽에 자기 컨테이너를 주면
+ * 두 머리글이 만날 일이 없다 — 목록을 훑을 땐 바깥 것, 라인을 훑을 땐 안쪽 것이 붙는다.
+ *
+ * 덤으로 필터바와 하단 액션 줄이 제자리에 남는다. 라인이 30개여도 `주문 확정`이 항상 보인다.
+ * (flex 아이템의 기본 `min-height: auto`가 둘을 내용보다 작게 줄지 않게 막아준다.
+ *  줄어들어야 하는 건 표 하나뿐이고, 그건 `stickyHead`가 주는 `min-h-0`이 담당한다.)
+ *
  * `이번 출고` 칸은 3상태다(Figma 실측):
  *   미할당 0    → 완료 ✓ (잠김)
  *   가용재고 0  → 비활성 회색 입력칸
@@ -82,7 +91,9 @@ export function OrderLineTable({
   };
 
   return (
-    <div>
+    /* 50vh = 화면의 절반. 고정 px가 아닌 이유는 노트북과 외부 모니터에서
+       목록과 라인의 비율이 같게 유지돼야 하기 때문이다 */
+    <div className="flex max-h-[50vh] flex-col">
       <OrderLineFilterBar
         colors={colorNames}
         sizes={sizeNames}
@@ -97,12 +108,12 @@ export function OrderLineTable({
           조건에 맞는 라인이 없습니다
         </p>
       ) : (
-        <Table>
+        <Table stickyHead>
           <Table.Head>
             <Table.Row>
               {/* 첫 열은 상품명+단가라 붙일 이름이 없다 */}
               <Table.Th align="left" />
-              <Table.Th align="left">SKU</Table.Th>
+              <Table.Th align="center">SKU</Table.Th>
               <Table.Th align="left">색상</Table.Th>
               <Table.Th align="center">사이즈</Table.Th>
               <Table.Th>주문수량</Table.Th>
@@ -119,14 +130,29 @@ export function OrderLineTable({
               return (
                 <Table.Row key={line.id}>
                   <Table.Td align="left">
-                    <span className="block">{line.productName}</span>
+                    {/* w-44는 상한(max-w)이 아니라 **고정 폭**이다. 상한만 걸면 품명이
+                        짧은 주문에서 열이 좁아져 주문마다 폭이 달라진다 — 목록을 오갈 때
+                        눈이 매번 자리를 다시 찾는 게 그 증상이다. 넘치면 자른다(title로 원문 제공) */}
+                    <span
+                      className="block w-44 truncate"
+                      title={line.productName}
+                    >
+                      {line.productName}
+                    </span>
                     <span className="text-muted-foreground block text-xs">
                       ₩{formatNumber(line.unitPrice)}
                     </span>
                   </Table.Td>
                   <Table.Td align="left">
-                    <Chip tone="sub" shape="square" className="text-body">
-                      {line.skuId}
+                    {/* Chip이 inline-flex라 안쪽 span에 min-w-0이 있어야 truncate가 먹는다
+                        (flex 아이템 기본 min-width:auto가 내용보다 줄어드는 걸 막는다) */}
+                    <Chip
+                      tone="sub"
+                      shape="square"
+                      className="w-28 text-body"
+                      title={line.skuId}
+                    >
+                      <span className="min-w-0 truncate">{line.skuId}</span>
                     </Chip>
                   </Table.Td>
                   <Table.Td align="left">{line.color}</Table.Td>

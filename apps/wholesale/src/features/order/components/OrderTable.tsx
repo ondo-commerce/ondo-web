@@ -13,6 +13,10 @@ import type { Order } from "../types";
  * 이 파일에서 행을 직접 그리면 `<tbody>` 자식 구조가 읽히지 않는다).
  *
  * 금액·수량은 우측 정렬 숫자(Table.Td 기본값)이고, 글자 열만 align="left"로 되돌린다.
+ *
+ * `stickyHead`를 켠다 — 주문이 75건이라 아래로 내리면 머리글이 사라져서 지금 보는 숫자가
+ * 주문금액인지 수량인지 놓친다. 대신 **이 표는 세로 스크롤을 직접 받는다**:
+ * 부르는 쪽이 `Panel.Body` 안이 아니라 `Panel`의 flex 자식으로 놓아야 한다.
  */
 export function OrderTable({
   orders,
@@ -27,7 +31,7 @@ export function OrderTable({
   renderDetail: (order: Order) => ReactNode;
 }) {
   return (
-    <Table>
+    <Table stickyHead>
       <Table.Head>
         <Table.Row>
           <Table.Th className="w-8" />
