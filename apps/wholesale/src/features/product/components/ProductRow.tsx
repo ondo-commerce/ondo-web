@@ -44,7 +44,7 @@ export function ProductRow({
             type="button"
             aria-expanded={open}
             aria-controls={detailId}
-            aria-label={`${product.name} 펼치기`}
+            aria-label={`${product.name} ${open ? "접기" : "펼치기"}`}
             className="focus-visible:ring-ring text-border-strong inline-flex rounded-button p-1 focus-visible:ring-2 focus-visible:outline-hidden"
             onClick={(e) => {
               e.stopPropagation();
