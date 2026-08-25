@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Table } from "@ondo/ui";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { ORDER_STATUS_LABEL, SETTLEMENT_STATUS_LABEL } from "../constants";
 import {
@@ -59,18 +60,11 @@ export function OrderRow({
               onToggle();
             }}
           >
-            <svg
-              viewBox="0 0 12 12"
-              className={`size-3 transition-transform ${open ? "rotate-90" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            {/* 펼치면 90°만 돈다 — `>`를 180° 돌리면 `<`가 되어 "펼침"으로 안 읽힌다 */}
+            <ChevronRight
               aria-hidden
-            >
-              <path d="M4.5 2.5 8 6l-3.5 3.5" />
-            </svg>
+              className={`size-4 transition-transform ${open ? "rotate-90" : ""}`}
+            />
           </button>
         </Table.Td>
         <Table.Td align="left">{order.id}</Table.Td>
@@ -107,10 +101,17 @@ export function OrderRow({
             라인이 많은 주문을 펼칠 때 목록 전체가 가로로 늘어난다(주문 상태 열이 밀려난다).
             0으로 못박으면 이 셀은 폭 계산에서 빠지고 표 폭만큼 늘어나며, 넘치는 라인 표는
             자기 스크롤 컨테이너 안에서 흐른다.
+
+            isolate가 핵심이다. 안쪽 표도 머리글이 sticky(z-10)인데, 이 셀이 스태킹
+            컨텍스트를 안 만들면 그 z-10이 바깥 목록 머리글의 z-10과 같은 무대에서 겨룬다.
+            같은 층에서는 DOM 순서가 늦은 쪽이 이기고 thead보다 tbody가 뒤라서,
+            **안쪽 머리글이 바깥 머리글을 덮는다.** isolate로 가둬 두면 이 셀은 z-auto
+            층에 머물러 바깥 머리글(z-10)이 항상 위에 온다.
+            (`Table.Td`는 이미 isolate를 갖고 있는데, 확장행은 생짜 `<td>`라 빠져 있었다.)
           */}
           <td
             colSpan={8}
-            className="border-gray-100 bg-accent max-w-0 border-b p-4"
+            className="border border-gray-200 isolate max-w-0 p-4"
           >
             {children}
           </td>

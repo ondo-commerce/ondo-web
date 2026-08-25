@@ -48,7 +48,18 @@ export const FILTER_STATUSES: readonly OrderStatus[] = [
   "SHIPPED",
 ];
 
-/** 필터 칩의 `전체` 값. 상태 코드와 섞이지 않게 별도 값으로 둔다 */
+/** 정산 상태 필터 드롭다운에 세울 순서. 미결제 → 부분 → 완료로 진행 방향을 따른다 */
+export const SETTLEMENT_FILTER_STATUSES: readonly SettlementStatus[] = [
+  "UNPAID",
+  "PARTIAL",
+  "SETTLED",
+];
+
+/**
+ * 필터의 `전체` 값. 상태 코드와 섞이지 않게 별도 값으로 둔다.
+ * 주문 상태 세그먼트와 정산 상태 드롭다운이 **같은 값을 쓴다** — 축은 다르지만
+ * "안 걸었다"는 뜻은 하나여서 상수를 둘로 늘리지 않는다.
+ */
 export const STATUS_FILTER_ALL = "ALL";
 
 /**

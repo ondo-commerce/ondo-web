@@ -27,9 +27,9 @@ export function ListDetailLayout({
   emptyDetail?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 gap-4">
+    <div className="flex min-h-0 flex-1 gap-2">
       <div className="flex min-w-0 flex-1 flex-col">{list}</div>
-      <div className="flex w-lg shrink-0 flex-col gap-4">
+      <div className="flex w-md shrink-0 flex-col gap-4">
         {detail ??
           (emptyDetail === null ? null : (
             <Panel className="text-muted-foreground grid flex-1 place-items-center text-sm">

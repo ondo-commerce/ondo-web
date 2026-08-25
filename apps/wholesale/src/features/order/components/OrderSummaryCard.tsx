@@ -1,8 +1,5 @@
-"use client";
-
-import { Badge, Button, Panel } from "@ondo/ui";
-import { useState, type ReactNode } from "react";
-import { OrderConfirmDialog } from "./OrderConfirmDialog";
+import { Badge, Panel } from "@ondo/ui";
+import type { ReactNode } from "react";
 import {
   ORDER_STATUS_LABEL,
   PAYMENT_METHOD_LABEL,
@@ -10,7 +7,6 @@ import {
   SETTLEMENT_STATUS_LABEL,
 } from "../constants";
 import {
-  backorderPreview,
   orderAmount,
   orderQty,
   orderStatusTone,
@@ -38,26 +34,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
  *
  * 정산 상태는 `미정산`이 아니라 **`미결제`**다(screen_spec §9.4).
  *
- * 하단 두 버튼은 **신규 주문에만** 붙는다. 확정·취소는 되돌릴 수 없어서
- * 한 번 지나간 주문에는 다시 나타나지 않는다.
+ * **버튼이 없다.** `주문 확정`·`주문 취소`는 `이번 출고` 입력을 먹는 액션이라
+ * 입력이 있는 곳(펼침 영역 하단 `OrderActionBar`)으로 내려갔다. 입력은 왼쪽에서 하고
+ * 그 입력을 반영하는 버튼은 오른쪽에 있으면, 무엇이 무엇에 반영되는지 읽히지 않는다.
+ * 이 카드는 "이 주문이 무엇인가"만 답한다.
  */
-export function OrderSummaryCard({
-  order,
-  inputs,
-  onConfirm,
-  onCancel,
-}: {
-  order: Order;
-  /** `이번 출고` 입력 맵. 확정 다이얼로그의 미송 예고를 만드는 데 쓴다 */
-  inputs: Readonly<Record<string, string>>;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-
-  const preview = backorderPreview(order, inputs);
-
+export function OrderSummaryCard({ order }: { order: Order }) {
   return (
     <Panel className="shrink-0">
       <Panel.Title
@@ -92,69 +74,6 @@ export function OrderSummaryCard({
           </Field>
         </div>
       </div>
-
-      {order.status === "PLACED" ? (
-        /* 가로 2등분 — 둘 다 주문 하나를 끝내는 액션이라 무게가 같다 */
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button
-            variant="line"
-            className="w-full"
-            onClick={() => setCancelOpen(true)}
-          >
-            주문 취소
-          </Button>
-          <Button className="w-full" onClick={() => setConfirmOpen(true)}>
-            주문 확정
-          </Button>
-        </div>
-      ) : null}
-
-      <OrderConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="주문 확정"
-        confirmLabel="주문 확정"
-        description={
-          <>
-            {order.id} · {order.customerName}의 주문을 확정합니다.
-            {preview.totalQty > 0 ? (
-              <>
-                <br />
-                입력하지 않은 잔량{" "}
-                <b className="text-foreground">
-                  SKU {preview.skuCount}개 · 합계{" "}
-                  {formatNumber(preview.totalQty)}장이 미송으로 확정됩니다.
-                </b>
-              </>
-            ) : null}
-            <br />
-            확정한 뒤에는 되돌릴 수 없습니다.
-          </>
-        }
-        onConfirm={() => {
-          onConfirm();
-          setConfirmOpen(false);
-        }}
-      />
-
-      <OrderConfirmDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title="주문 취소"
-        confirmLabel="주문 취소"
-        destructive
-        description={
-          <>
-            {order.id} · {order.customerName}의 주문을 취소합니다.
-            <br />
-            취소한 주문은 되돌릴 수 없고 목록의 전체 칩에서만 보입니다.
-          </>
-        }
-        onConfirm={() => {
-          onCancel();
-          setCancelOpen(false);
-        }}
-      />
     </Panel>
   );
 }

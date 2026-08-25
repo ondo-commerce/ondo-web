@@ -1,8 +1,13 @@
 "use client";
 
-import { Button, Panel, SearchInput } from "@ondo/ui";
+import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
+import { OrderActionBar } from "./OrderActionBar";
 import { OrderFilterChips } from "./OrderFilterChips";
+import {
+  OrderSettlementFilter,
+  type SettlementFilterValue,
+} from "./OrderSettlementFilter";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
@@ -13,9 +18,9 @@ import {
   cancelOrder,
   clampShipInput,
   confirmOrder,
+  isEditablePhase,
   matchesQuery,
   removePackingBatch,
-  totalShipQty,
 } from "../derive";
 import type { Order, OrderStatus } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
@@ -49,12 +54,18 @@ export function OrderListView({
   const [statusFilter, setStatusFilter] = useState<
     OrderStatus | typeof STATUS_FILTER_ALL
   >(STATUS_FILTER_ALL);
+  /** 정산 상태 필터. 이행 축(statusFilter)과 독립이라 둘이 함께 걸린다 */
+  const [settlementFilter, setSettlementFilter] =
+    useState<SettlementFilterValue>(STATUS_FILTER_ALL);
   /** 펼친 주문. 한 번에 하나만 펼친다 — 우측 카드가 한 장뿐이기 때문이다 */
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   /**
    * `이번 출고` 입력값(라인 id → 문자열).
-   * 라인 표가 아니라 여기에 둔다 — 우측 카드의 `주문 확정`과 표 하단의 `포장 준비`가
-   * 같은 입력을 읽어야 해서, 표 안에 가둬 두면 카드에서 볼 수 없다.
+   *
+   * 여기 두는 이유가 바뀌었다 — 원래는 우측 카드의 `주문 확정`이 읽어야 해서였는데,
+   * 확정이 펼침 하단(`OrderActionBar`)으로 내려와 지금은 읽는 쪽이 전부 펼침 안에 있다.
+   * 그래도 남긴 건 **필터·검색을 바꿀 때 입력을 비워야 하기 때문**이다(아래 change* 참고).
+   * 그 리셋까지 아래로 내리면 펼침 영역이 바깥 필터 변화를 알아야 해서 더 얽힌다.
    */
   const [shipInputs, setShipInputs] = useState<Record<string, string>>({});
 
@@ -62,6 +73,8 @@ export function OrderListView({
   const visibleOrders = orders.filter(
     (order) =>
       (statusFilter === STATUS_FILTER_ALL || order.status === statusFilter) &&
+      (settlementFilter === STATUS_FILTER_ALL ||
+        order.settlementStatus === settlementFilter) &&
       matchesQuery(order, keyword),
   );
 
@@ -77,6 +90,12 @@ export function OrderListView({
   /* 필터·검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 주문의 카드가 우측에 남는다 */
   const changeStatusFilter = (next: OrderStatus | typeof STATUS_FILTER_ALL) => {
     setStatusFilter(next);
+    setOpenOrderId(null);
+    setShipInputs({});
+  };
+
+  const changeSettlementFilter = (next: SettlementFilterValue) => {
+    setSettlementFilter(next);
     setOpenOrderId(null);
     setShipInputs({});
   };
@@ -107,9 +126,16 @@ export function OrderListView({
     <ListDetailLayout
       list={
         <Panel className="flex-1">
-          <Panel.Title>주문 관리</Panel.Title>
-          <div className="mb-4 shrink-0">
+          {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
+              한 줄로 두면 검색창 340px + 세그먼트들이 좌측 패널 폭을 넘겨서 제멋대로 접힌다.
+              검색은 폭이 고정이고 필터는 칸 수·글자 길이에 따라 변하니, 변하는 쪽만 아래 줄에
+              모아 두면 검색창 자리가 탭을 옮겨도 흔들리지 않는다.
+              첫 줄의 `mr-auto`는 오른쪽에 주 액션이 붙는 탭(상품·정산)과 규칙을 맞추려는 것이다.
+              패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
+              탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
+          <div className="mb-3 flex shrink-0 items-center gap-3">
             <SearchInput
+              className="mr-auto"
               placeholder="주문번호·거래처·품명 검색"
               aria-label="주문번호·거래처·품명 검색"
               value={query}
@@ -117,61 +143,68 @@ export function OrderListView({
             />
           </div>
 
-          <OrderFilterChips
-            orders={orders}
-            value={statusFilter}
-            onChange={changeStatusFilter}
-          />
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            <OrderFilterChips
+              orders={orders}
+              value={statusFilter}
+              onChange={changeStatusFilter}
+            />
+            <OrderSettlementFilter
+              value={settlementFilter}
+              onChange={changeSettlementFilter}
+            />
+          </div>
 
-          {/* 검색줄·칩 줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
-          <Panel.Body>
-            {visibleOrders.length === 0 ? (
+          {/* 검색줄·칩 줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+
+              이 표만 `Panel.Body`를 쓰지 않는다. 머리글을 sticky로 고정하려면 표 자신이
+              세로 스크롤을 받아야 하는데(Table의 stickyHead 주석 참고), Panel.Body가 밖에서
+              또 스크롤을 받으면 막대가 두 개 생긴다. 빈 목록일 때는 흐를 것이 없어서
+              그대로 Panel.Body를 쓴다 */}
+          {visibleOrders.length === 0 ? (
+            <Panel.Body>
               <p className="text-muted-foreground py-12 text-center text-sm">
                 검색 결과가 없습니다
               </p>
-            ) : (
-              <OrderTable
-                orders={visibleOrders}
-                openOrderId={openOrder?.id ?? null}
-                onToggle={toggleOrder}
-                renderDetail={(order) => (
-                  <OrderLineTable
-                    order={order}
-                    inputs={shipInputs}
-                    onInputChange={changeShipInput}
-                    /* 포장 준비는 확정된 주문에만 있다. 신규 주문은 `주문 확정`이
-                       첫 회차를 만들고, 다 나간 주문은 담을 것이 없다 */
-                    footer={
-                      order.status === "CONFIRMED" ||
-                      order.status === "PARTIALLY_SHIPPED" ? (
-                        <Button
-                          disabled={totalShipQty(order, shipInputs) === 0}
-                          onClick={() =>
-                            replaceOrder(addPackingBatch(order, shipInputs))
-                          }
-                        >
-                          포장 준비
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )}
-              />
-            )}
-          </Panel.Body>
+            </Panel.Body>
+          ) : (
+            <OrderTable
+              orders={visibleOrders}
+              openOrderId={openOrder?.id ?? null}
+              onToggle={toggleOrder}
+              renderDetail={(order) => (
+                <OrderLineTable
+                  order={order}
+                  inputs={shipInputs}
+                  onInputChange={changeShipInput}
+                  /* `이번 출고` 입력을 먹는 액션은 전부 입력 옆에 둔다.
+                       어느 버튼이 뜨는지는 국면이 정한다(OrderActionBar).
+                       취소·출고 완료는 입력 자체가 없는 국면이라 액션 줄도 없다 */
+                  footer={
+                    isEditablePhase(order.status) ? (
+                      <OrderActionBar
+                        order={order}
+                        inputs={shipInputs}
+                        onConfirm={() =>
+                          replaceOrder(confirmOrder(order, shipInputs))
+                        }
+                        onCancel={() => replaceOrder(cancelOrder(order))}
+                        onPack={() =>
+                          replaceOrder(addPackingBatch(order, shipInputs))
+                        }
+                      />
+                    ) : undefined
+                  }
+                />
+              )}
+            />
+          )}
         </Panel>
       }
       detail={
         openOrder ? (
           <>
-            <OrderSummaryCard
-              order={openOrder}
-              inputs={shipInputs}
-              onConfirm={() =>
-                replaceOrder(confirmOrder(openOrder, shipInputs))
-              }
-              onCancel={() => replaceOrder(cancelOrder(openOrder))}
-            />
+            <OrderSummaryCard order={openOrder} />
             {/* 회차가 하나도 없으면 카드째 사라진다 */}
             {openOrder.batches.length > 0 ? (
               <PackingQueueCard
