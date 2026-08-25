@@ -48,7 +48,11 @@ export function Topbar() {
               <li key={href}>
                 <Link
                   href={href}
-                  aria-current={active ? "page" : undefined}
+                  /* 정확히 그 경로일 때만 page다. /products/new에서 상위 탭을
+                     page라고 하면 보조기술에 현재 페이지를 잘못 알린다 */
+                  aria-current={
+                    pathname === href ? "page" : active ? "location" : undefined
+                  }
                   className={cn(
                     "focus-visible:ring-ring flex h-9 items-center gap-2 rounded-control px-3 text-sm whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-hidden",
                     active
