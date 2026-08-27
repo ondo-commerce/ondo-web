@@ -1,4 +1,8 @@
-import type { SizeName } from "./types";
+import type { BadgeProps } from "@ondo/ui";
+import type { PostStatus, SizeName } from "./types";
+
+/** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
+type BadgeTone = NonNullable<BadgeProps["tone"]>;
 
 export const SIZES: readonly SizeName[] = [
   "Free",
@@ -104,4 +108,25 @@ export const CATEGORY_TREE: Record<string, Record<string, string[]>> = {
     의류: ["상의", "하의", "아우터"],
     잡화: ["가방", "신발", "액세서리"],
   },
+};
+
+/**
+ * 게시 상태 라벨. **`null`(미게시)까지 포함해 세 값이다** — 상품은 게시글 없이도 존재하고
+ * (`Product.post === null`), 목록에서는 그 상태도 한 칸에 같이 그려야 한다.
+ * 상세 패널·수정 화면이 같은 문구를 쓰도록 여기 둔다(주문 탭 `ORDER_STATUS_LABEL`과 같은 자리).
+ */
+export const POST_STATUS_LABEL: Record<PostStatus | "NONE", string> = {
+  NONE: "미등록",
+  ON_SALE: "판매중",
+  SEASON_ENDED: "시즌종료",
+};
+
+/**
+ * 배지 색은 둘뿐이다 — **진행 중인 것만 파랑**(게이트 G-2).
+ * `미등록`과 `시즌종료`가 같은 회색이 되는 건 의도된 결과다. 둘의 구분은 배지 글자가 맡는다.
+ */
+export const POST_STATUS_TONE: Record<PostStatus | "NONE", BadgeTone> = {
+  NONE: "done",
+  ON_SALE: "active",
+  SEASON_ENDED: "done",
 };

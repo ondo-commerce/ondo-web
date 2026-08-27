@@ -12,6 +12,10 @@ import type { Product } from "../types";
  * 자리라 이름 붙일 값이 없다. 행 하나를 그리는 책임은 `ProductRow`에 있다
  * (펼침 영역이 두 번째 `<tr>`이라 여기서 행을 직접 그리면 `<tbody>` 자식 구조가 읽히지 않는다).
  *
+ * `stickyHead`를 켠다 — 상품이 쌓이면 아래로 내렸을 때 지금 보는 값이 구성인지 게시인지
+ * 놓친다. 대신 **이 표는 세로 스크롤을 직접 받는다**: 부르는 쪽이 `Panel.Body` 안이 아니라
+ * `Panel`의 flex 자식으로 놓아야 한다.
+ *
  * 주문 표와 달리 금액 열이 없어서 열이 5개뿐이다. 그래도 표로 두는 이유는
  * 품번과 구성이 세로로 훑히기 때문이다 — 아코디언에서는 같은 값이 행마다 다른 자리에 놓였다.
  */
@@ -28,7 +32,7 @@ export function ProductTable({
   renderDetail: (product: Product) => ReactNode;
 }) {
   return (
-    <Table>
+    <Table stickyHead>
       <Table.Head>
         <Table.Row>
           <Table.Th className="w-8" />

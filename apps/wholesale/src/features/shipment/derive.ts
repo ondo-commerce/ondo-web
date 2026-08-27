@@ -72,16 +72,6 @@ export function groupPackages(
     .filter((group) => group.packages.length > 0);
 }
 
-/** 아코디언 꼬리 `SKU 6건 · 55개` — 포장 대기 단계의 요약 단위는 대기 줄이다 */
-export function readySummaryLabel(items: readonly PackingItem[]): string {
-  return `SKU ${items.length}건 · ${sumQty(items)}개`;
-}
-
-/** 아코디언 꼬리 `PKG 3건 · 66개` — 출고 대기·출고 완료 단계는 묶음이 단위다 */
-export function packageSummaryLabel(packages: readonly Package[]): string {
-  return `PKG ${packages.length}건 · ${packages.reduce((total, pkg) => total + packageQty(pkg), 0)}개`;
-}
-
 /**
  * 표의 줄 순서: **수령 방식으로 먼저 묶고**(직접 수령 → 사입삼촌) 묶음 안에서 주문 일시 최신순.
  * 수령 방식이 포장 단위를 가르는 축이라(판정 D7) 같은 방식끼리 붙어 있어야 한 번에 고른다.

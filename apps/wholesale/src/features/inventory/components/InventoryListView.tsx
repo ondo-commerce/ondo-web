@@ -1,9 +1,9 @@
 "use client";
 
-import { AccordionRows, Panel, SearchInput } from "@ondo/ui";
+import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { InventoryInboundPanel } from "./InventoryInboundPanel";
-import { InventoryProductRow } from "./InventoryProductRow";
+import { InventoryTable } from "./InventoryTable";
 import { SkuHistoryCard } from "./SkuHistoryCard";
 import { SkuInboundCard } from "./SkuInboundCard";
 import { formatMovementDate, inboundMovement } from "../derive";
@@ -60,8 +60,9 @@ export function InventoryListView({
   const selectedSku =
     openProduct?.skus.find((s) => s.id === selectedSkuId) ?? null;
 
-  const handleOpenChange = (productId: string, open: boolean) => {
-    setOpenProductId(open ? productId : null);
+  /** 다른 상품을 펼치면 SKU 선택이 반드시 풀린다 — 안 풀면 A상품 옆에 B상품 카드가 남는다 */
+  const toggleProduct = (productId: string) => {
+    setOpenProductId((prev) => (prev === productId ? null : productId));
     setSelectedSkuId(null);
   };
 
@@ -158,27 +159,24 @@ export function InventoryListView({
             />
           </div>
 
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
-          <Panel.Body>
-            {visibleProducts.length === 0 ? (
+          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+              빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+          {visibleProducts.length === 0 ? (
+            <Panel.Body>
               <p className="text-muted-foreground py-12 text-center text-sm">
                 검색 결과가 없습니다
               </p>
-            ) : (
-              <AccordionRows>
-                {visibleProducts.map((product) => (
-                  <InventoryProductRow
-                    key={product.id}
-                    product={product}
-                    open={openProductId === product.id}
-                    onOpenChange={(open) => handleOpenChange(product.id, open)}
-                    selectedSkuId={selectedSkuId}
-                    onSelectSku={handleSelectSku}
-                  />
-                ))}
-              </AccordionRows>
-            )}
-          </Panel.Body>
+            </Panel.Body>
+          ) : (
+            <InventoryTable
+              products={visibleProducts}
+              openProductId={openProductId}
+              onToggle={toggleProduct}
+              selectedSkuId={selectedSkuId}
+              onSelectSku={handleSelectSku}
+            />
+          )}
         </Panel>
       }
       detail={detail()}

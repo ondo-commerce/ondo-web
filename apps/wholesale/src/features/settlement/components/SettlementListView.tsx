@@ -1,10 +1,10 @@
 "use client";
 
-import { AccordionRows, IconButton, Panel, SearchInput } from "@ondo/ui";
+import { IconButton, Panel, SearchInput } from "@ondo/ui";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
 import { DepositFormPanel } from "./DepositFormPanel";
-import { RetailerRow } from "./RetailerRow";
+import { SettlementRelationTable } from "./SettlementRelationTable";
 import { SettlementSegmentView } from "./SettlementSegmentView";
 import {
   applyAllocations,
@@ -108,40 +108,40 @@ export function SettlementListView() {
             </IconButton>
           </div>
 
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
-          <Panel.Body>
-            {visibleRelations.length === 0 ? (
+          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+              빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+          {visibleRelations.length === 0 ? (
+            <Panel.Body>
               <p className="text-muted-foreground py-12 text-center text-sm">
                 검색 결과가 없습니다
               </p>
-            ) : (
-              <AccordionRows>
-                {visibleRelations.map((relation) => {
-                  const rowOrders = relationOrders(orders, relation.id);
-                  const rowLedger = relationLedger(ledger, relation.id);
-                  return (
-                    <RetailerRow
-                      key={relation.id}
-                      relation={relation}
-                      orderCount={rowOrders.length}
-                      receivable={outstandingReceivable(rowLedger)}
-                      open={openRelationId === relation.id}
-                      onOpenChange={(open) =>
-                        setOpenRelationId(open ? relation.id : null)
-                      }
-                    >
-                      {/* key: 거래처가 바뀌면 세그먼트·필터 상태를 새로 만든다 */}
-                      <SettlementSegmentView
-                        key={relation.id}
-                        orders={rowOrders}
-                        ledger={rowLedger}
-                      />
-                    </RetailerRow>
-                  );
-                })}
-              </AccordionRows>
-            )}
-          </Panel.Body>
+            </Panel.Body>
+          ) : (
+            <SettlementRelationTable
+              relations={visibleRelations}
+              openRelationId={openRelationId}
+              onToggle={(relationId) =>
+                setOpenRelationId((prev) =>
+                  prev === relationId ? null : relationId,
+                )
+              }
+              orderCountOf={(relation) =>
+                relationOrders(orders, relation.id).length
+              }
+              receivableOf={(relation) =>
+                outstandingReceivable(relationLedger(ledger, relation.id))
+              }
+              renderDetail={(relation) => (
+                /* key: 거래처가 바뀌면 세그먼트·필터 상태를 새로 만든다 */
+                <SettlementSegmentView
+                  key={relation.id}
+                  orders={relationOrders(orders, relation.id)}
+                  ledger={relationLedger(ledger, relation.id)}
+                />
+              )}
+            />
+          )}
         </Panel>
       }
       detail={

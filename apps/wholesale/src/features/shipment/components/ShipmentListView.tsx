@@ -1,12 +1,12 @@
 "use client";
 
-import { AccordionRows, Panel, SearchInput } from "@ondo/ui";
+import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { PackageDetailPanel } from "./PackageDetailPanel";
 import { PackageTable } from "./PackageTable";
 import { PackingQueueTable } from "./PackingQueueTable";
 import { PackingWorkPanel } from "./PackingWorkPanel";
-import { RetailerAccordionRow } from "./RetailerAccordionRow";
+import { ShipmentRetailerTable } from "./ShipmentRetailerTable";
 import { ShipmentStageChips } from "./ShipmentStageChips";
 import { ShippedTable } from "./ShippedTable";
 import { TradeStatementCard } from "./TradeStatementCard";
@@ -18,11 +18,11 @@ import {
   nextPackageNo,
   nextStatementNo,
   packageFromItems,
-  packageSummaryLabel,
-  readySummaryLabel,
+  packageQty,
   shipPackage,
   stageCounts,
   stamp,
+  sumQty,
   statementFromPackage,
 } from "../derive";
 import type {
@@ -123,8 +123,8 @@ export function ShipmentListView({
   };
 
   /** 다른 소매처를 펼치면 선택 초기화 — 한 포장은 한 소매처 것이다 */
-  const handleOpenChange = (retailerId: string, open: boolean) => {
-    setOpenRetailerId(open ? retailerId : null);
+  const toggleRetailer = (retailerId: string) => {
+    setOpenRetailerId((prev) => (prev === retailerId ? null : retailerId));
     setSelectedItemIds([]);
     setSelectedPackageNo(null);
   };
@@ -195,9 +195,12 @@ export function ShipmentListView({
 
   /** 목록이 비었을 때의 문구. 검색 때문인지 원래 없는 건지를 갈라 준다 */
   const emptyList = (blank: string) => (
-    <p className="text-muted-foreground py-12 text-center text-sm">
-      {keyword ? "검색 결과가 없습니다" : blank}
-    </p>
+    /* 빈 목록에는 흐를 것이 없어서 stickyHead 표 대신 Panel.Body를 쓴다 */
+    <Panel.Body>
+      <p className="text-muted-foreground py-12 text-center text-sm">
+        {keyword ? "검색 결과가 없습니다" : blank}
+      </p>
+    </Panel.Body>
   );
 
   const listBody = () => {
@@ -206,25 +209,31 @@ export function ShipmentListView({
         return emptyList("포장 대기 중인 품목이 없습니다");
       }
       return (
-        <AccordionRows>
-          {readyGroups.map(({ retailer, items: rows }) => (
-            <RetailerAccordionRow
-              key={retailer.id}
-              retailer={retailer}
-              summary={readySummaryLabel(rows)}
-              open={openRetailerId === retailer.id}
-              onOpenChange={(open) => handleOpenChange(retailer.id, open)}
-            >
+        <ShipmentRetailerTable
+          countLabel="SKU 건수"
+          rows={readyGroups.map(({ retailer, items: rows }) => ({
+            retailer,
+            count: rows.length,
+            qty: sumQty(rows),
+          }))}
+          openRetailerId={openRetailerId}
+          onToggle={toggleRetailer}
+          renderDetail={(retailer) => {
+            const group = readyGroups.find(
+              (g) => g.retailer.id === retailer.id,
+            );
+            if (!group) return null;
+            return (
               <PackingQueueTable
-                items={rows}
+                items={group.items}
                 selectedIds={selectedItemIds}
                 onToggle={toggleItem}
                 onToggleVisible={toggleVisible}
                 onRestrictTo={restrictTo}
               />
-            </RetailerAccordionRow>
-          ))}
-        </AccordionRows>
+            );
+          }}
+        />
       );
     }
 
@@ -238,31 +247,33 @@ export function ShipmentListView({
     }
 
     return (
-      <AccordionRows>
-        {groups.map(({ retailer, packages: rows }) => (
-          <RetailerAccordionRow
-            key={retailer.id}
-            retailer={retailer}
-            summary={packageSummaryLabel(rows)}
-            open={openRetailerId === retailer.id}
-            onOpenChange={(open) => handleOpenChange(retailer.id, open)}
-          >
-            {stage === "packed" ? (
-              <PackageTable
-                packages={rows}
-                selectedPackageNo={selectedPackageNo}
-                onSelect={setSelectedPackageNo}
-              />
-            ) : (
-              <ShippedTable
-                packages={rows}
-                selectedPackageNo={selectedPackageNo}
-                onSelect={setSelectedPackageNo}
-              />
-            )}
-          </RetailerAccordionRow>
-        ))}
-      </AccordionRows>
+      <ShipmentRetailerTable
+        countLabel="포장 건수"
+        rows={groups.map(({ retailer, packages: rows }) => ({
+          retailer,
+          count: rows.length,
+          qty: rows.reduce((total, pkg) => total + packageQty(pkg), 0),
+        }))}
+        openRetailerId={openRetailerId}
+        onToggle={toggleRetailer}
+        renderDetail={(retailer) => {
+          const group = groups.find((g) => g.retailer.id === retailer.id);
+          if (!group) return null;
+          return stage === "packed" ? (
+            <PackageTable
+              packages={group.packages}
+              selectedPackageNo={selectedPackageNo}
+              onSelect={setSelectedPackageNo}
+            />
+          ) : (
+            <ShippedTable
+              packages={group.packages}
+              selectedPackageNo={selectedPackageNo}
+              onSelect={setSelectedPackageNo}
+            />
+          );
+        }}
+      />
     );
   };
 
@@ -321,8 +332,10 @@ export function ShipmentListView({
             />
           </div>
 
-          {/* 제목·검색줄·칩 줄은 Panel.Body 밖이라 목록만 흐른다 — 화면 전체 스크롤 없음 */}
-          <Panel.Body>{listBody()}</Panel.Body>
+          {/* 검색줄·칩 줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다
+              (빈 목록일 때만 emptyList가 Panel.Body를 쓴다) */}
+          {listBody()}
         </Panel>
       }
       detail={detail()}
