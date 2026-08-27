@@ -12,7 +12,7 @@ export { Popover } from "./primitives/Popover";
 export { Segmented, type SegmentedProps } from "./primitives/Segmented";
 export { Select } from "./primitives/Select";
 export { Switch, type SwitchProps } from "./primitives/Switch";
-export { Table } from "./primitives/Table";
+export { Table, type TableExpandableRowProps } from "./primitives/Table";
 export { Textarea, type TextareaProps } from "./primitives/Textarea";
 export { ToggleChip, type ToggleChipProps } from "./primitives/ToggleChip";
 
