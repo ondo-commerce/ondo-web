@@ -1,10 +1,9 @@
 "use client";
 
-import { cn } from "@ondo/ui";
+import { cn, IconButton } from "@ondo/ui";
 import { Bell, CircleUser } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType, SVGProps } from "react";
 import { NAV_ITEMS } from "@/shared/config/nav";
 
 /**
@@ -31,7 +30,7 @@ export function Topbar() {
         className="flex shrink-0 items-center gap-1"
         title="온도 ERP"
       >
-        <span aria-hidden className="text-base">
+        <span aria-hidden className="text-xl">
           ⌘
         </span>
         <span className="text-lg font-bold tracking-tighter">온도 ERP</span>
@@ -54,13 +53,13 @@ export function Topbar() {
                     pathname === href ? "page" : active ? "location" : undefined
                   }
                   className={cn(
-                    "focus-visible:ring-ring flex h-9 items-center gap-2 rounded-control px-3 text-sm whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-hidden",
+                    "focus-visible:ring-ring flex h-8 items-center gap-2 rounded-control px-3 text-sm whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-hidden",
                     active
                       ? "bg-accent text-accent-foreground font-medium"
                       : "text-muted-foreground hover:bg-secondary hover:text-secondary-foreground",
                   )}
                 >
-                  <Icon className="size-4.5 shrink-0" aria-hidden />
+                  <Icon className="size-4 shrink-0" aria-hidden />
                   {label}
                 </Link>
               </li>
@@ -69,40 +68,16 @@ export function Topbar() {
         </ul>
       </nav>
 
-      <IconButton icon={Bell} label="알림">
+      <IconButton variant="ghost" aria-label="알림" title="알림">
+        <Bell aria-hidden />
+
         {/* TODO: 안 읽은 알림이 있을 때만 점을 띄운다.
             <span className="bg-destructive absolute top-1.5 right-1.5 size-1.5 rounded-full" /> */}
       </IconButton>
 
-      <IconButton icon={CircleUser} label="계정" />
+      <IconButton variant="ghost" aria-label="계정" title="계정">
+        <CircleUser aria-hidden />
+      </IconButton>
     </header>
-  );
-}
-
-function IconButton({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  label: string;
-  children?: React.ReactNode;
-}) {
-  // TODO: 클릭 시 Popover를 연다 (@ondo/ui의 Popover 재사용).
-  //       알림 = 목록 + "모두 읽음", 계정 = 내 정보 / 설정 / 로그아웃.
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className={cn(
-        "text-muted-foreground hover:bg-secondary hover:text-secondary-foreground",
-        "focus-visible:ring-ring relative grid size-10 shrink-0 cursor-pointer place-items-center",
-        "rounded-control transition-colors focus-visible:ring-2 focus-visible:outline-hidden",
-      )}
-    >
-      <Icon className="size-4.5" aria-hidden />
-      {children}
-    </button>
   );
 }

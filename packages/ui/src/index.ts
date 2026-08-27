@@ -5,6 +5,7 @@ export { Checkbox, type CheckboxProps } from "./primitives/Checkbox";
 export { Chip, type ChipProps } from "./primitives/Chip";
 export { ColorDot, type ColorDotProps } from "./primitives/ColorDot";
 export { Dialog } from "./primitives/Dialog";
+export { IconButton, type IconButtonProps } from "./primitives/IconButton";
 export { Input, type InputProps } from "./primitives/Input";
 export { Panel, type PanelProps } from "./primitives/Panel";
 export { Popover } from "./primitives/Popover";

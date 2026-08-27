@@ -1,6 +1,6 @@
 "use client";
 
-import { AccordionRows, Button, Panel, SearchInput } from "@ondo/ui";
+import { AccordionRows, IconButton, Panel, SearchInput } from "@ondo/ui";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
 import { DepositFormPanel } from "./DepositFormPanel";
@@ -103,9 +103,9 @@ export function SettlementListView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <Button variant="ghost" size="iconSm" aria-label="더보기">
-              <EllipsisVertical aria-hidden className="size-4" />
-            </Button>
+            <IconButton variant="ghost" size="sm" aria-label="더보기">
+              <EllipsisVertical aria-hidden />
+            </IconButton>
           </div>
 
           {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
