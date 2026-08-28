@@ -29,8 +29,10 @@ export interface PostFormValue {
 export const EMPTY_POST_FORM: PostFormValue = {
   name: "",
   description: "",
-  // TODO(임시): 슬롯 너비 눈으로 확인하려고 채워둔 더미. 확인 끝나면 [] 로 되돌린다
-  images: Array.from({ length: 9 }, () => "IMG"),
+  // TODO(임시): 슬롯 너비 눈으로 확인하려고 채워둔 더미. 확인 끝나면 [] 로 되돌린다.
+  // 값을 서로 다르게 두는 건 취향이 아니라 필요다 — 순서 변경이 URL을 그대로
+  // 정렬 ID로 쓰기 때문에, 전부 "IMG"면 어느 칸을 옮겼는지 구분되지 않는다.
+  images: Array.from({ length: 9 }, (_, i) => `IMG ${i + 1}`),
   allowSinglePiece: false,
   prices: {},
 };
@@ -71,6 +73,25 @@ export function PostFormPanel({
   action?: ReactNode;
 }) {
   const disabled = status === "SEASON_ENDED";
+
+  /**
+   * 이미지 순서 변경. from 번째를 to 번째 자리로 옮긴다.
+   *
+   * PostImageGrid 가 아니라 여기서 배열을 다시 만드는 이유: images 는 폼 값이라
+   * 다른 필드와 똑같이 onChange 한 갈래로 나가야 한다. 그리드가 자기 안에서
+   * 상태를 들면 저장 시점에 어느 쪽이 진짜인지 모르게 된다.
+   */
+  function handleImageReorder(from: number, to: number) {
+    // dnd-kit 의 arrayMove 를 쓰지 않고 손으로 옮긴다 — 이 파일이 라이브러리를
+    // import 하는 순간, 위에 적어둔 "그리드만 갈아끼우면 된다"는 경계가 깨진다.
+    // 세 줄이라 가져올 값어치도 없다.
+    const next = [...value.images];
+    const [moved] = next.splice(from, 1);
+    if (moved === undefined) return;
+    next.splice(to, 0, moved);
+
+    onChange({ ...value, images: next });
+  }
 
   return (
     <Panel className="flex-1">
@@ -149,10 +170,21 @@ export function PostFormPanel({
 
             <FormField
               label="게시글 이미지"
-              hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하여 순서를 변경할 수 있어요."
+              hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하거나, 슬롯을 선택한 뒤 스페이스바로 집어 방향키로 순서를 바꿀 수 있어요."
               required
             >
-              <PostImageGrid images={value.images} />
+              {/*
+               * disabled 를 손으로 내려보내는 유일한 필드다. 위 fieldset 이
+               * 껐다고 안심할 수 없다 — fieldset 은 input·button 같은 **네이티브
+               * 폼 컨트롤**만 끈다. 순서 변경 슬롯은 드래그 리스너를 단 div 라
+               * 그 그물에 걸리지 않아서, 시즌 종료로 잠긴 화면에서도 이미지 순서만
+               * 계속 바뀐다.
+               */}
+              <PostImageGrid
+                images={value.images}
+                disabled={disabled}
+                onReorder={handleImageReorder}
+              />
             </FormField>
           </Panel.Section>
 
