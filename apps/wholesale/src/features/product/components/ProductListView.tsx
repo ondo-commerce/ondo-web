@@ -24,10 +24,29 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
  */
 export function ProductListView({ products }: { products: Product[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  /* 검색은 품번·품명 두 축이다 — placeholder가 약속한 그대로다 */
+  const keyword = query.trim().toLowerCase();
+  const visibleProducts = keyword
+    ? products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(keyword) ||
+          p.code.toLowerCase().includes(keyword),
+      )
+    : products;
+
+  /* 우측 상세는 **검색으로 가려져도 펼쳐져 있으면 보여야** 하므로 products에서 찾는다 */
   const selected = products.find((p) => p.id === selectedId) ?? null;
 
   const toggleProduct = (productId: string) =>
     setSelectedId((prev) => (prev === productId ? null : productId));
+
+  /* 검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 상품의 상세가 우측에 남는다 */
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    setSelectedId(null);
+  };
 
   return (
     <ListDetailLayout
@@ -43,16 +62,26 @@ export function ProductListView({ products }: { products: Product[] }) {
               className="mr-auto"
               placeholder="품번·품명 검색"
               aria-label="품번·품명 검색"
+              value={query}
+              onChange={(e) => changeQuery(e.target.value)}
             />
             <Button asChild variant="line">
               <Link href="/products/new">상품 등록</Link>
             </Button>
           </div>
 
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다 */}
-          <Panel.Body>
+          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+              빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+          {visibleProducts.length === 0 ? (
+            <Panel.Body>
+              <p className="text-muted-foreground py-12 text-center text-sm">
+                검색 결과가 없습니다
+              </p>
+            </Panel.Body>
+          ) : (
             <ProductTable
-              products={products}
+              products={visibleProducts}
               openProductId={selectedId}
               onToggle={toggleProduct}
               /* 게시글 등록 여부에 따라 펼친 내용이 완전히 다르다 */
@@ -64,7 +93,7 @@ export function ProductListView({ products }: { products: Product[] }) {
                 )
               }
             />
-          </Panel.Body>
+          )}
         </Panel>
       }
       detail={selected ? <ProductDetailPanel product={selected} /> : undefined}

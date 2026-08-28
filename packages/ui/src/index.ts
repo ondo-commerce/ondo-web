@@ -5,13 +5,14 @@ export { Checkbox, type CheckboxProps } from "./primitives/Checkbox";
 export { Chip, type ChipProps } from "./primitives/Chip";
 export { ColorDot, type ColorDotProps } from "./primitives/ColorDot";
 export { Dialog } from "./primitives/Dialog";
+export { IconButton, type IconButtonProps } from "./primitives/IconButton";
 export { Input, type InputProps } from "./primitives/Input";
 export { Panel, type PanelProps } from "./primitives/Panel";
 export { Popover } from "./primitives/Popover";
 export { Segmented, type SegmentedProps } from "./primitives/Segmented";
 export { Select } from "./primitives/Select";
 export { Switch, type SwitchProps } from "./primitives/Switch";
-export { Table } from "./primitives/Table";
+export { Table, type TableExpandableRowProps } from "./primitives/Table";
 export { Textarea, type TextareaProps } from "./primitives/Textarea";
 export { ToggleChip, type ToggleChipProps } from "./primitives/ToggleChip";
 

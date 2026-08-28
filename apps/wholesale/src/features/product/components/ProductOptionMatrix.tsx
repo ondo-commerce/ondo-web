@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, ColorDot, Table } from "@ondo/ui";
+import { Button, Checkbox, ColorDot, IconButton, Table } from "@ondo/ui";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 import { SIZES } from "../constants";
 import type { PaletteColor } from "../constants";
@@ -198,9 +198,9 @@ export function ProductOptionMatrix({
                 ))}
 
                 <Table.Td align="center">
-                  <Button
+                  <IconButton
                     variant="ghost"
-                    size="iconSm"
+                    size="sm"
                     disabled={disabled}
                     onClick={() =>
                       onChange(options.filter((o) => o.id !== option.id))
@@ -208,7 +208,7 @@ export function ProductOptionMatrix({
                     aria-label={`${option.color.name} 옵션 제거`}
                   >
                     ✕
-                  </Button>
+                  </IconButton>
                 </Table.Td>
               </Table.Row>
             ))}

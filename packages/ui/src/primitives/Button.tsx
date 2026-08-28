@@ -33,13 +33,10 @@ const button = cva(
         link: "text-primary underline-offset-4 hover:underline disabled:text-border-strong",
       },
       size: {
-        sm: "h-7 min-w-15 px-3 text-xs",
-        md: "h-8.5 min-w-15 px-4 text-sm",
+        sm: "h-7 px-3 text-xs",
+        md: "h-8 px-4 text-sm",
         /* 등록 폼 하단의 전폭 CTA */
-        lg: "h-12 w-full rounded-cta text-lg",
-        /* 아이콘 하나만 들어가는 정사각. min-w를 두지 않는다 */
-        icon: "size-9",
-        iconSm: "size-7",
+        lg: "h-12 rounded-cta text-lg",
       },
     },
     /* link는 버튼 상자가 아니라 글자다. 높이·최소폭·좌우 여백을 갖고 있으면
