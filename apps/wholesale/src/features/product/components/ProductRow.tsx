@@ -3,6 +3,7 @@
 import { Badge, Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { POST_STATUS_LABEL, POST_STATUS_TONE } from "../constants";
+import { postStatusKey } from "../derive";
 import type { Product } from "../types";
 
 /**
@@ -23,8 +24,9 @@ export function ProductRow({
   /** 펼침 영역에 들어가는 내용 */
   children: ReactNode;
 }) {
-  /* 게시글이 없는 상품은 상태값 자체가 없다. `NONE`으로 좁혀 세 값을 한 표에서 읽는다 */
-  const postKey = product.post?.status ?? "NONE";
+  /* 게시글이 없는 상품은 상태값 자체가 없다. `NONE`으로 좁혀 세 값을 한 표에서 읽는다.
+     필터도 같은 함수로 가른다 — 기준이 갈리면 배지와 필터 결과가 어긋난다 */
+  const postKey = postStatusKey(product);
 
   return (
     <Table.ExpandableRow

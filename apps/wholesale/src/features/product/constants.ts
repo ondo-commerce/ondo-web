@@ -1,5 +1,5 @@
 import type { BadgeProps } from "@ondo/ui";
-import type { PostStatus, SizeName } from "./types";
+import type { PostStatusKey, SizeName } from "./types";
 
 /** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
@@ -115,7 +115,7 @@ export const CATEGORY_TREE: Record<string, Record<string, string[]>> = {
  * (`Product.post === null`), 목록에서는 그 상태도 한 칸에 같이 그려야 한다.
  * 상세 패널·수정 화면이 같은 문구를 쓰도록 여기 둔다(주문 탭 `ORDER_STATUS_LABEL`과 같은 자리).
  */
-export const POST_STATUS_LABEL: Record<PostStatus | "NONE", string> = {
+export const POST_STATUS_LABEL: Record<PostStatusKey, string> = {
   NONE: "미등록",
   ON_SALE: "판매중",
   SEASON_ENDED: "시즌종료",
@@ -125,8 +125,52 @@ export const POST_STATUS_LABEL: Record<PostStatus | "NONE", string> = {
  * 배지 색은 둘뿐이다 — **진행 중인 것만 파랑**(게이트 G-2).
  * `미등록`과 `시즌종료`가 같은 회색이 되는 건 의도된 결과다. 둘의 구분은 배지 글자가 맡는다.
  */
-export const POST_STATUS_TONE: Record<PostStatus | "NONE", BadgeTone> = {
+export const POST_STATUS_TONE: Record<PostStatusKey, BadgeTone> = {
   NONE: "done",
   ON_SALE: "active",
   SEASON_ENDED: "done",
+};
+
+/**
+ * 게시 필터의 `전체` 값. 상태 코드와 섞이지 않게 별도 값으로 둔다.
+ * 주문 탭 `STATUS_FILTER_ALL`과 같은 규칙이지만 **상수를 따로 만든다** —
+ * feature끼리는 상수를 공유하지 않는다 — eslint가 feature 간 직접 import를 막는다
+ * (재고 탭 `FILTER_ALL`, 출고 탭 `FILTER_ALL`이 각자 있는 것과 같은 이유).
+ */
+export const POST_FILTER_ALL = "ALL";
+export const FILTER_ALL_LABEL = "전체";
+
+export const ALL_STATUS_LABEL = {
+  [POST_FILTER_ALL]: FILTER_ALL_LABEL,
+};
+
+/**
+ * 게시 필터가 가질 수 있는 값. **유니온을 손으로 쓴다** — 값 목록에서 역산하면
+ * (`keyof typeof ...`) 게시 상태가 늘었을 때 컴파일이 안 깨져서 알 수가 없다.
+ */
+export type PostFilterValue = PostStatusKey | typeof POST_FILTER_ALL;
+
+/**
+ * 세그먼트에 세울 값과 그 순서. 미등록 → 판매중 → 시즌종료로 게시글의 일생을 따른다.
+ *
+ * 어느 칸을 세울지는 이 배열이 정한다 — 아래 라벨 표가 아니다
+ * (`Object.keys`는 타입이 `string[]`으로 날아간다).
+ */
+export const POST_FILTER_VALUES: readonly PostFilterValue[] = [
+  POST_FILTER_ALL,
+  "NONE",
+  "ON_SALE",
+  "SEASON_ENDED",
+];
+
+/**
+ * 세그먼트 칸의 라벨. `전체`까지 한 표에서 다 찾히므로 화면에서 `ALL`만 따로
+ * 갈라내지 않아도 된다.
+ *
+ * 상태 라벨을 다시 쓰지 않고 `POST_STATUS_LABEL`을 펼친다 — 배지와 필터가 같은 문구를
+ * 쓰게 강제하려는 것이다. 두 벌이 되면 `시즌종료`만 한쪽에서 `시즌 종료`가 된다.
+ */
+export const POST_FILTER_LABEL: Record<PostFilterValue, string> = {
+  ...ALL_STATUS_LABEL,
+  ...POST_STATUS_LABEL,
 };

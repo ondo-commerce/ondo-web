@@ -4,6 +4,16 @@ export type SizeName = "Free" | "XS" | "S" | "M" | "L" | "XL" | "2XL";
 /** 게시글 상태. 시즌 종료는 삭제가 아니라 마켓 노출만 내린 상태다 */
 export type PostStatus = "ON_SALE" | "SEASON_ENDED";
 
+/**
+ * 게시 상태를 **한 축으로 볼 때의 3값.** `NONE`은 게시글이 아직 없는 상태
+ * (`Product.post === null`)라 `PostStatus`에는 들어갈 수 없다 — 게시글이 없으면
+ * 그 게시글의 상태도 없기 때문이다.
+ *
+ * 그런데 목록의 `게시` 열과 필터는 그 셋을 **한 칸에서 같이** 읽어야 한다.
+ * 그 시선을 이름 붙인 것이 이 타입이다. 필터 전용이 아니라 배지·상세도 같이 쓴다.
+ */
+export type PostStatusKey = PostStatus | "NONE";
+
 export interface ColorOption {
   /** 고정 팔레트 26종 중 하나. 자유 입력이 아니다 — 필터·집계의 기준값 */
   name: string;

@@ -3,16 +3,17 @@
 import { Panel, SearchInput } from "@ondo/ui";
 import { useState } from "react";
 import { OrderActionBar } from "./OrderActionBar";
-import { OrderFilterChips } from "./OrderFilterChips";
-import {
-  OrderSettlementFilter,
-  type SettlementFilterValue,
-} from "./OrderSettlementFilter";
+import { OrderStatusFilter } from "./OrderStatusFilter";
+import { OrderSettlementFilter } from "./OrderSettlementFilter";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { PackingQueueCard } from "./PackingQueueCard";
-import { STATUS_FILTER_ALL } from "../constants";
+import {
+  STATUS_FILTER_ALL,
+  type OrderFilterValue,
+  type SettlementFilterValue,
+} from "../constants";
 import {
   addPackingBatch,
   cancelOrder,
@@ -22,7 +23,7 @@ import {
   matchesQuery,
   removePackingBatch,
 } from "../derive";
-import type { Order, OrderStatus } from "../types";
+import type { Order } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
@@ -51,9 +52,8 @@ export function OrderListView({
    */
   const [orders, setOrders] = useState(initialOrders);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    OrderStatus | typeof STATUS_FILTER_ALL
-  >(STATUS_FILTER_ALL);
+  const [statusFilter, setStatusFilter] =
+    useState<OrderFilterValue>(STATUS_FILTER_ALL);
   /** 정산 상태 필터. 이행 축(statusFilter)과 독립이라 둘이 함께 걸린다 */
   const [settlementFilter, setSettlementFilter] =
     useState<SettlementFilterValue>(STATUS_FILTER_ALL);
@@ -88,7 +88,7 @@ export function OrderListView({
   };
 
   /* 필터·검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 주문의 카드가 우측에 남는다 */
-  const changeStatusFilter = (next: OrderStatus | typeof STATUS_FILTER_ALL) => {
+  const changeStatusFilter = (next: OrderFilterValue) => {
     setStatusFilter(next);
     setOpenOrderId(null);
     setShipInputs({});
@@ -144,7 +144,7 @@ export function OrderListView({
           </div>
 
           <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
-            <OrderFilterChips
+            <OrderStatusFilter
               orders={orders}
               value={statusFilter}
               onChange={changeStatusFilter}

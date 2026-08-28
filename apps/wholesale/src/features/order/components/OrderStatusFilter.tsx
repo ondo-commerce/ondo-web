@@ -2,14 +2,13 @@
 
 import { Segmented } from "@ondo/ui";
 import {
-  FILTER_STATUSES,
-  ORDER_STATUS_LABEL,
+  ORDER_FILTER_LABEL,
+  ORDER_FILTER_VALUES,
   STATUS_FILTER_ALL,
+  type OrderFilterValue,
 } from "../constants";
 import { countByStatus } from "../derive";
-import type { Order, OrderStatus } from "../types";
-
-type FilterValue = OrderStatus | typeof STATUS_FILTER_ALL;
+import type { Order } from "../types";
 
 /**
  * 목록 위의 상태 필터 줄. `packages/ui`의 `Segmented`를 쓴다 — 출고 탭
@@ -26,25 +25,20 @@ type FilterValue = OrderStatus | typeof STATUS_FILTER_ALL;
  * 건수는 **전체 목록 기준으로 고정**이다(derive.countByStatus). 눌러서 좁혀도
  * 다른 칸의 숫자는 움직이지 않는다.
  */
-export function OrderFilterChips({
+export function OrderStatusFilter({
   orders,
   value,
   onChange,
 }: {
   /** 건수 계산의 기준이 되는 전체 목록. 걸러진 목록을 넘기면 안 된다 */
   orders: readonly Order[];
-  value: FilterValue;
-  onChange: (value: FilterValue) => void;
+  value: OrderFilterValue;
+  onChange: (value: OrderFilterValue) => void;
 }) {
-  const options: readonly { key: FilterValue; label: string; count: number }[] =
-    [
-      { key: STATUS_FILTER_ALL, label: "전체", count: orders.length },
-      ...FILTER_STATUSES.map((status) => ({
-        key: status as FilterValue,
-        label: ORDER_STATUS_LABEL[status],
-        count: countByStatus(orders, status),
-      })),
-    ];
+  /* `전체`의 건수만 상태로 셀 수 없다 — 걸러내지 않은 목록 길이가 곧 그 값이다.
+     삼항이 유니온에서 `ALL`을 떼어내 주므로 countByStatus에 캐스팅 없이 넘어간다 */
+  const countOf = (value: OrderFilterValue) =>
+    value === STATUS_FILTER_ALL ? orders.length : countByStatus(orders, value);
 
   return (
     <Segmented
@@ -54,14 +48,14 @@ export function OrderFilterChips({
       value={value}
       /* Radix가 돌려주는 값은 string이다. 캐스팅 대신 아는 값 목록에서 찾아 좁힌다 */
       onValueChange={(next) => {
-        const found = options.find((option) => option.key === next);
-        if (found) onChange(found.key);
+        const found = ORDER_FILTER_VALUES.find((v) => v === next);
+        if (found) onChange(found);
       }}
       aria-label="주문 상태 필터"
     >
-      {options.map(({ key, label, count }) => (
-        <Segmented.Item key={key} value={key}>
-          {label} ({count})
+      {ORDER_FILTER_VALUES.map((v) => (
+        <Segmented.Item key={v} value={v}>
+          {ORDER_FILTER_LABEL[v]} ({countOf(v)})
         </Segmented.Item>
       ))}
     </Segmented>

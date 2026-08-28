@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { ProductColorSizeList } from "./ProductColorSizeList";
 import { ProductDetailPanel } from "./ProductDetailPanel";
+import { ProductPostFilter } from "./ProductPostFilter";
 import { ProductSkuTable } from "./ProductSkuTable";
 import { ProductTable } from "./ProductTable";
+import { POST_FILTER_ALL, type PostFilterValue } from "../constants";
+import { postStatusKey } from "../derive";
 import type { Product } from "../types";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
@@ -25,16 +28,20 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 export function ProductListView({ products }: { products: Product[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [postFilter, setPostFilter] =
+    useState<PostFilterValue>(POST_FILTER_ALL);
 
-  /* 검색은 품번·품명 두 축이다 — placeholder가 약속한 그대로다 */
+  /* 검색은 품번·품명 두 축이다 — placeholder가 약속한 그대로다.
+     게시 필터와 검색은 **함께 걸린다**(주문 탭과 같은 규칙) — 판매중만 켜 둔 채로
+     품번을 쳐서 좁힐 수 있어야 한다 */
   const keyword = query.trim().toLowerCase();
-  const visibleProducts = keyword
-    ? products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(keyword) ||
-          p.code.toLowerCase().includes(keyword),
-      )
-    : products;
+  const visibleProducts = products.filter(
+    (p) =>
+      (postFilter === POST_FILTER_ALL || postStatusKey(p) === postFilter) &&
+      (!keyword ||
+        p.name.toLowerCase().includes(keyword) ||
+        p.code.toLowerCase().includes(keyword)),
+  );
 
   /* 우측 상세는 **검색으로 가려져도 펼쳐져 있으면 보여야** 하므로 products에서 찾는다 */
   const selected = products.find((p) => p.id === selectedId) ?? null;
@@ -42,9 +49,14 @@ export function ProductListView({ products }: { products: Product[] }) {
   const toggleProduct = (productId: string) =>
     setSelectedId((prev) => (prev === productId ? null : productId));
 
-  /* 검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 상품의 상세가 우측에 남는다 */
+  /* 검색·필터를 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 상품의 상세가 우측에 남는다 */
   const changeQuery = (next: string) => {
     setQuery(next);
+    setSelectedId(null);
+  };
+
+  const changePostFilter = (next: PostFilterValue) => {
+    setPostFilter(next);
     setSelectedId(null);
   };
 
@@ -52,12 +64,16 @@ export function ProductListView({ products }: { products: Product[] }) {
     <ListDetailLayout
       list={
         <Panel className="flex-1">
-          {/* 툴바 한 줄 — 좌: 검색 / 우: 필터와 주 액션.
-              검색창의 `mr-auto`가 나머지를 오른쪽으로 민다. 오른쪽 묶음에 ml-auto를 주는 것보다
-              이쪽이 낫다 — 오른쪽에 무엇이 오든(필터·버튼·둘 다·없음) 규칙이 같기 때문이다.
+          {/* 툴바 두 줄 — 첫 줄은 검색과 주 액션, 둘째 줄은 필터.
+              **세그먼트는 검색줄 아래로 내린다.** 주문 탭과 같은 규칙이다 — 검색창은 폭이
+              고정(340px)인데 필터는 칸 수·글자 길이에 따라 변해서, 한 줄에 두면 탭마다
+              검색창 자리가 흔들리고 칸이 늘어날 때 제멋대로 접힌다. 변하는 쪽만 아래 줄에
+              모아 두면 위쪽 줄의 모양이 탭을 옮겨도 같다.
+              첫 줄의 `mr-auto`가 주 액션을 오른쪽으로 민다. 오른쪽 묶음에 ml-auto를 주는 것보다
+              이쪽이 낫다 — 오른쪽에 무엇이 오든(버튼·둘 다·없음) 규칙이 같기 때문이다.
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
-          <div className="mb-4 flex shrink-0 items-center gap-3">
+          <div className="mb-3 flex shrink-0 items-center gap-3">
             <SearchInput
               className="mr-auto"
               placeholder="품번·품명 검색"
@@ -68,6 +84,10 @@ export function ProductListView({ products }: { products: Product[] }) {
             <Button asChild variant="line">
               <Link href="/products/new">상품 등록</Link>
             </Button>
+          </div>
+
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            <ProductPostFilter value={postFilter} onChange={changePostFilter} />
           </div>
 
           {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
