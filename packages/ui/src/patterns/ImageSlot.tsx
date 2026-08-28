@@ -14,7 +14,7 @@ const slot = cva(
   {
     variants: {
       size: {
-        md: "size-24",
+        md: "size-22",
         lg: "size-50",
       },
     },

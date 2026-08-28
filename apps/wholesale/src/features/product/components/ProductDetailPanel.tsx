@@ -4,7 +4,7 @@ import type { Product } from "../types";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-4 py-1.5 text-sm">
+    <div className="flex gap-4 py-1 text-sm">
       <dt className="text-muted-foreground w-24 shrink-0">{label}</dt>
       <dd className="min-w-0 flex-1 whitespace-pre-line">{value}</dd>
     </div>
@@ -15,14 +15,13 @@ function Row({ label, value }: { label: string; value: string }) {
 export function ProductDetailPanel({ product }: { product: Product }) {
   return (
     <Panel className="flex-1">
-      <Panel.Title action={<Chip tone="sub">{product.code}</Chip>}>
+      <Panel.Title suffix={<Chip tone="sub">{product.code}</Chip>}>
         {product.name}
       </Panel.Title>
 
       <Panel.Body>
         <Panel.Section title="기본 정보">
           <dl>
-            <Row label="품명" value={product.name} />
             <Row label="카테고리" value={product.category.join(" > ")} />
             <Row
               label="옵션"
@@ -51,9 +50,9 @@ export function ProductDetailPanel({ product }: { product: Product }) {
                       i === 0 ? (
                         <Chip
                           tone="accent"
-                          className="absolute top-2 left-2 h-5 px-2 text-xs"
+                          className="absolute top-0.5 left-0.5 h-5 px-2 text-xs"
                         >
-                          대표 이미지
+                          대표
                         </Chip>
                       ) : null
                     }
@@ -67,9 +66,11 @@ export function ProductDetailPanel({ product }: { product: Product }) {
         ) : null}
       </Panel.Body>
 
-      <div className="flex shrink-0 gap-2">
-        <Button variant="soft" size="lg" className="flex-1" disabled>
-          재고 등록 →
+      <div className="flex shrink-0 gap-2 pt-2">
+        {/* 재고 탭은 상품별 URL이 없다(/inventory 한 장). 그래서 어느 상품을 보던
+            중이었는지는 넘어가지 않고, 도착하면 목록이 접힌 상태로 열린다 */}
+        <Button asChild variant="soft" size="lg" className="flex-1">
+          <Link href="/inventory">재고 등록 →</Link>
         </Button>
         <Button asChild size="lg" className="flex-1">
           <Link href={`/products/${product.id}/edit`}>상품 관리</Link>

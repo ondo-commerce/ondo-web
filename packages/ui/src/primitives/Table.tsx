@@ -78,12 +78,7 @@ Table.Body = function TableBody({
   className,
   ...props
 }: HTMLAttributes<HTMLTableSectionElement>) {
-  return (
-    <tbody
-      className={cn("[&>tr:last-child>td]:border-b-0", className)}
-      {...props}
-    />
-  );
+  return <tbody className={className} {...props} />;
 };
 
 export interface TableRowProps extends HTMLAttributes<HTMLTableRowElement> {
@@ -223,9 +218,11 @@ export interface TableExpandableRowProps {
  * 대신 `Table.Row` + chevron 버튼(`aria-expanded`/`aria-controls`) + 두 번째 `<tr>`의
  * `colSpan` 확장행으로 만든다 — 확장행이 표의 전체 폭을 그대로 받는다.
  *
- * 펼쳐진 행은 배경이 회색이 된다(`Table.Row`의 selected). 부르는 쪽은 그 상태에서
- * 배지를 평문으로 내리는 것까지 맞춰야 한다 — 지금 보고 있는 행이므로 상태를 색으로
- * 다시 강조할 이유가 없다.
+ * 펼쳐진 행은 배경이 회색이 된다(`Table.Row`의 selected). **지금 보고 있는 행이라는
+ * 표시는 그 배경 하나가 맡는다** — 부르는 쪽에서 셀 내용까지 바꾸지 않는다.
+ *
+ * 한때는 배지를 평문으로 내리게 했는데, `Badge`가 높이 고정(h-6.5)이라 글자로 바뀌는
+ * 순간 행이 6px 낮아졌다. 펼칠 때마다 표가 움찔해서 되돌렸다.
  */
 Table.ExpandableRow = function TableExpandableRow({
   open,
@@ -286,14 +283,12 @@ Table.ExpandableRow = function TableExpandableRow({
             층에 머물러 바깥 머리글(z-10)이 항상 위에 온다.
             (`Table.Td`는 이미 isolate를 갖고 있는데, 확장행은 생짜 `<td>`라 빠져 있었다.)
           */}
-          <td
-            colSpan={colSpan}
-            className={cn(
-              "border border-gray-200 isolate max-w-0 p-4",
-              detailClassName,
-            )}
-          >
-            {detail}
+          <td colSpan={colSpan} className="isolate max-w-0 p-0">
+            <div
+              className={cn("border-border border p-4 mt-1", detailClassName)}
+            >
+              {detail}
+            </div>
           </td>
         </tr>
       ) : null}
