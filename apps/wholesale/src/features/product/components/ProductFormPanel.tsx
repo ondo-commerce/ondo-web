@@ -2,6 +2,7 @@
 
 import { FormField, Input, Panel, Select } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { ProductOptionMatrix, type OptionDraft } from "./ProductOptionMatrix";
 import { CATEGORY_TREE } from "../constants";
 
@@ -23,11 +24,19 @@ export const EMPTY_PRODUCT_FORM: ProductFormValue = {
  */
 export function ProductFormPanel({
   title,
+  action,
   value,
   onChange,
   disabled = false,
 }: {
   title: string;
+  /**
+   * 제목 우측 끝에 놓을 액션. 수정 화면이 `상품 삭제`를 여기 꽂는다.
+   *
+   * 지우는 단위가 상품이라 이 패널이 그 액션의 주인이다 — 게시글은 상품에 딸려
+   * 사라지고, 게시글만 따로 지우는 기능은 없다.
+   */
+  action?: ReactNode;
   value: ProductFormValue;
   onChange: (next: ProductFormValue) => void;
   disabled?: boolean;
@@ -50,7 +59,7 @@ export function ProductFormPanel({
 
   return (
     <Panel className="flex-1">
-      <Panel.Title>{title}</Panel.Title>
+      <Panel.Title action={action}>{title}</Panel.Title>
 
       {/* 스크롤은 여기 안에서만. 스파이 목차를 없애면서 앵커 id도 같이 지웠다 */}
       <Panel.Body>

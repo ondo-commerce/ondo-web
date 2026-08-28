@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Checkbox, Panel } from "@ondo/ui";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
@@ -84,10 +85,12 @@ export function ProductCreateView() {
       }
       actions={
         <>
-          <Button variant="line" onClick={() => router.push("/products")}>
-            취소
+          {/* 목적지가 고정이라 실제 <a>로 둔다 — onClick+push면 새 탭·주소 복사가 죽는다
+              (Button의 asChild 주석 참고) */}
+          <Button asChild variant="line" size="lg">
+            <Link href="/products">취소</Link>
           </Button>
-          <Button onClick={submit}>
+          <Button size="lg" onClick={submit}>
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
           </Button>
         </>
