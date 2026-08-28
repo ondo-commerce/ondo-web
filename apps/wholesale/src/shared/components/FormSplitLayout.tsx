@@ -26,8 +26,8 @@ export function FormSplitLayout({
   actions: ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex min-h-0 flex-1 gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex min-h-0 flex-1 gap-2">
         {/* 각 단의 자식 패널은 flex-1로 남은 높이를 채운다 */}
         <div className="flex min-w-0 flex-1 flex-col">{left}</div>
         <div className="flex min-w-0 flex-1 flex-col">{right}</div>

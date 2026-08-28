@@ -36,7 +36,7 @@ const button = cva(
         sm: "h-7 px-3 text-xs",
         md: "h-8 px-4 text-sm",
         /* 등록 폼 하단의 전폭 CTA */
-        lg: "h-12 rounded-cta text-lg",
+        lg: "h-12 px-8 rounded-cta text-lg",
       },
     },
     /* link는 버튼 상자가 아니라 글자다. 높이·최소폭·좌우 여백을 갖고 있으면

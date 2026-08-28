@@ -27,21 +27,33 @@ export function Panel({ className, children, ...props }: PanelProps) {
 export interface PanelTitleProps extends HTMLAttributes<HTMLDivElement> {
   /** 제목 아래 회색 보조 설명 */
   sub?: ReactNode;
-  /** 제목 우측에 붙는 액션 (버튼, 세그먼트 토글 등) */
+  /**
+   * 제목 **글자 바로 오른쪽**에 붙는 정적 표시물 (품번 칩 등).
+   *
+   * `action`과 자리가 다르다. `action`은 패널 우측 끝으로 밀려서 제목과 멀어지는데,
+   * 품번처럼 **제목이 무엇인지 마저 말해주는 값**은 제목에서 떨어지면 딸린 값으로 안 읽힌다.
+   * 누를 수 있는 것은 `action`, 읽기만 하는 꼬리표는 여기다.
+   */
+  suffix?: ReactNode;
+  /** 제목 우측 끝에 붙는 액션 (버튼, 세그먼트 토글 등) */
   action?: ReactNode;
 }
 
 Panel.Title = function PanelTitle({
   className,
   sub,
+  suffix,
   action,
   children,
   ...props
 }: PanelTitleProps) {
   return (
-    <div className={cn("mb-3 flex items-start gap-4", className)} {...props}>
+    <div className={cn("mb-6 flex items-start gap-4", className)} {...props}>
       <div className="min-w-0 flex-1">
-        <h2 className="text-lg font-medium tracking-tight">{children}</h2>
+        <div className="flex justify-baseline items-center gap-2">
+          <h2 className="text-xl font-medium">{children}</h2>
+          {suffix ? <div className="shrink-0">{suffix}</div> : null}
+        </div>
         {sub ? (
           <p className="text-muted-foreground mt-1.5 text-sm">{sub}</p>
         ) : null}
@@ -64,7 +76,7 @@ Panel.Section = function PanelSection({
 }: PanelSectionProps) {
   return (
     <section className={cn("mt-6 first:mt-0", className)} {...props}>
-      {title ? <h3 className="mb-4 text-base font-medium">{title}</h3> : null}
+      {title ? <h3 className="mb-1 text-sm">{title}</h3> : null}
       {children}
     </section>
   );
@@ -87,10 +99,7 @@ Panel.Body = function PanelBody({
 }: PanelBodyProps) {
   return (
     <div
-      className={cn(
-        "scroll-slim min-h-0 flex-1 overflow-y-auto pr-3",
-        className,
-      )}
+      className={cn("scroll-slim min-h-0 flex-1 overflow-y-auto", className)}
       {...props}
     >
       {children}

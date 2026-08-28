@@ -53,15 +53,12 @@ export function ProductRow({
         {product.colors.length}색 · {product.skus.length} SKU
       </Table.Td>
 
-      {/* 펼쳐진 행에서는 배지 대신 평문으로 내린다 — 주문 탭과 같은 처리다 */}
+      {/* 펼쳐도 배지를 그대로 둔다. 예전에는 평문으로 내렸는데, `Badge`가 높이 고정
+          (h-6.5)이라 글자로 바뀌는 순간 행이 6px 낮아져서 펼칠 때마다 표가 움찔했다 */}
       <Table.Td align="center">
-        {open ? (
-          POST_STATUS_LABEL[postKey]
-        ) : (
-          <Badge tone={POST_STATUS_TONE[postKey]}>
-            {POST_STATUS_LABEL[postKey]}
-          </Badge>
-        )}
+        <Badge tone={POST_STATUS_TONE[postKey]}>
+          {POST_STATUS_LABEL[postKey]}
+        </Badge>
       </Table.Td>
     </Table.ExpandableRow>
   );

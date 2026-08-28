@@ -18,8 +18,8 @@ import { formatNumber } from "@/shared/lib/format";
  * 껍데기(chevron 열·확장행·열 폭 규칙)는 `Table.ExpandableRow`가 갖고 있다.
  * 여기 남은 것은 **이 탭의 열이 무엇인가**뿐이다.
  *
- * 펼쳐진 행은 배지가 평문으로 바뀐다 — 지금 보고 있는 행이므로 상태를 색으로
- * 다시 강조할 이유가 없다(배경이 이미 회색으로 바뀐다).
+ * 펼쳐진 행도 배지를 그대로 둔다 — 아래 배지 칸 주석 참고.
+ * 지금 보고 있는 행이라는 표시는 배경이 회색으로 바뀌는 것이 맡는다.
  */
 export function OrderRow({
   order,
@@ -53,21 +53,14 @@ export function OrderRow({
       <Table.Td align="left">{order.customerName}</Table.Td>
       <Table.Td align="left">{orderProductSummary(order)}</Table.Td>
       <Table.Td>{formatNumber(orderAmount(order))}</Table.Td>
+      {/* 펼쳐도 배지를 그대로 둔다 — 상품 탭과 같은 이유(행 높이가 흔들린다) */}
       <Table.Td align="center">
-        {open ? (
-          statusLabel
-        ) : (
-          <Badge tone={orderStatusTone(order.status)}>{statusLabel}</Badge>
-        )}
+        <Badge tone={orderStatusTone(order.status)}>{statusLabel}</Badge>
       </Table.Td>
       <Table.Td align="center">
-        {open ? (
-          settlementLabel
-        ) : (
-          <Badge tone={settlementStatusTone(order.settlementStatus)}>
-            {settlementLabel}
-          </Badge>
-        )}
+        <Badge tone={settlementStatusTone(order.settlementStatus)}>
+          {settlementLabel}
+        </Badge>
       </Table.Td>
     </Table.ExpandableRow>
   );
