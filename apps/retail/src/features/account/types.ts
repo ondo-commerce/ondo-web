@@ -61,3 +61,32 @@ export interface Terms {
   /** 모달에 펼치는 전문 — 문단 배열 */
   body: string[];
 }
+
+/**
+ * 진행 표시 한 칸의 상태.
+ *
+ * `current`를 `done`과 나누는 이유: 켜짐/꺼짐 두 값이면 "지금 어디인가"를
+ * 화면이 말할 수 없다. 거절은 마지막 칸이 `current`다 — 지나간 단계가 아니라
+ * **지금 멈춰 있는 자리**다.
+ */
+export type ApprovalStepState = "done" | "current" | "todo";
+
+export interface ApprovalStep {
+  label: string;
+  state: ApprovalStepState;
+}
+
+/** 승인 대기·거절 화면이 보여 주는 신청 요약 */
+export interface Application {
+  storeName: string;
+  /** 자리표시자만 쓴다. 실제 형식의 번호를 소스에 적지 않는다 */
+  bizNo: string;
+  appliedAt: string;
+}
+
+/** 거절 결과. 사유는 이력에만 남는다(RT-07) */
+export interface Rejection {
+  reason: string;
+  decidedAt: string;
+  decidedBy: string;
+}

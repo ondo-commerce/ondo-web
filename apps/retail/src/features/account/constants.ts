@@ -114,3 +114,23 @@ export const PASSWORD_MIN_LENGTH = 8;
 /** 첨부 허용 형식 안내. `accept` 속성과 화면 문구가 같은 곳에서 나온다 */
 export const LICENSE_ACCEPT = ".jpg,.jpeg,.png,.pdf";
 export const LICENSE_ACCEPT_LABEL = "JPG · PNG · PDF";
+
+/**
+ * 진행 표시 3단계의 이름.
+ *
+ * 마지막 칸만 결과에 따라 갈린다 — 심사 중이면 `승인 완료`(아직 안 온 단계),
+ * 거절이면 `거절`(여기서 멈춘 자리). 앞 두 칸은 어느 쪽이든 같다.
+ */
+export const APPROVAL_STEP_LABELS = {
+  applied: "신청 완료",
+  reviewing: "심사 중",
+  approved: "승인 완료",
+  rejected: "거절",
+} as const;
+
+/** 진행 표시가 화면 낭독기에 읽히는 말. 색·굵기 말고 글자로도 상태가 전달돼야 한다 */
+export const APPROVAL_STEP_STATE_LABEL = {
+  done: "지난 단계",
+  current: "지금 단계",
+  todo: "다음 단계",
+} as const;

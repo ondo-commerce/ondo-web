@@ -1,4 +1,4 @@
-import type { Account, Terms } from "./types";
+import type { Account, Application, Terms } from "./types";
 
 /*
  * 화면을 그리기 위한 목업. API가 붙으면 이 파일만 지운다.
@@ -50,4 +50,16 @@ export const SIGNUP_TERMS: Record<"service" | "privacy", Terms> = {
       "5. 동의 거부 권리 — 동의를 거부할 수 있으나, 사업자 자격을 확인할 수 없어 가입이 제한됩니다.",
     ],
   },
+};
+
+/**
+ * 심사 중인 신청 1건.
+ *
+ * ⚠️ 사업자등록번호는 **자리표시자**다. 실제 형식의 번호를 더미로 넣으면 그대로
+ *    캡처·문서에 실려 나간다. 주민등록번호 형태의 값은 어느 화면에도 없다.
+ */
+export const APPLICATION: Application = {
+  storeName: "봄봄상회",
+  bizNo: "000-00-00000",
+  appliedAt: "2026.07.17 10:20",
 };
