@@ -1,6 +1,7 @@
 import {
   COLOR_PALETTE,
   FILTER_ALL,
+  PAGE_SIZE,
   PRICE_BANDS,
   SIZES,
   type PaletteColor,
@@ -232,4 +233,40 @@ export function catalogHref(
 
   const query = params.toString();
   return query ? `${basePath}?${query}` : basePath;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   `상품 더 보기` — 펼친 정도도 주소가 갖는다.
+
+   화면 안의 `useState`로 두면 카드 하나를 열어 보고 뒤로 왔을 때 다시 8장으로
+   접힌다. 19개 중 8개만 첫 화면이라 훑다가 하나 열어 보는 동선에서 매번 겪는다.
+   필터·정렬이 이미 주소에 있는 것과 같은 이유다 — 화면을 떠났다 오는 것이
+   이 화면의 기본 동선이다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 몇 장까지 펼쳤는지. 주소에 실리는 이름 */
+export const SHOWN_PARAM = "shown";
+
+/**
+ * 주소 → 펼친 장수. 못 읽는 값(`abc`·`-8`·`1e3`·소수)은 **접힌 상태로 떨어뜨린다** —
+ * 링크를 손으로 고쳐 넣은 값 때문에 화면이 비거나 통째로 펼쳐지지 않게.
+ */
+export function resolveShown(raw: string | null): number {
+  if (raw === null || !/^\d+$/.test(raw)) return PAGE_SIZE;
+
+  const value = Number(raw);
+  return value > PAGE_SIZE ? value : PAGE_SIZE;
+}
+
+/**
+ * `상품 더 보기`가 갈 주소. **지금 주소 위에 `shown`만 얹는다** —
+ * 필터를 바꾸면 `catalogHref`가 이 값을 안 싣기 때문에 펼침이 저절로 접힌다.
+ * 좁힌 뒤에도 16장이 펼쳐져 있으면 건수와 카드 수가 어긋나 보인다.
+ */
+export function moreHref(currentHref: string, shown: number): string {
+  const [path, query] = currentHref.split("?");
+  const params = new URLSearchParams(query);
+  params.set(SHOWN_PARAM, String(shown));
+
+  return `${path}?${params.toString()}`;
 }

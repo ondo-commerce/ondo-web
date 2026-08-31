@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   CATALOG_PRODUCTS,
   HomeView,
@@ -13,6 +14,10 @@ import { CATEGORIES, DEFAULT_CATEGORY_SLUG } from "@/shared/config/nav";
 const NARROWING_SLUGS = CATEGORIES.filter(
   (c) => c.slug !== DEFAULT_CATEGORY_SLUG,
 ).map((c) => c.slug);
+
+/* 탭 제목을 화면 이름으로 채운다. 기본값(`온도 마켓`)만 두면 홈 탭이 앱 이름과
+   같아져서, 탭을 여러 장 벌려 놓았을 때 어느 것이 홈인지 탭 줄에서 안 보인다 */
+export const metadata: Metadata = { title: "쇼핑몰 홈" };
 
 /**
  * 쇼핑몰 홈. **좁혀 둔 조건은 주소가 원본이라 서버에서 읽어 내려준다** —

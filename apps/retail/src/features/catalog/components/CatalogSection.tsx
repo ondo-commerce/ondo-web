@@ -3,7 +3,7 @@
 import { Button } from "@ondo/ui";
 import { ChevronDown, RotateCcw, SearchX } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   FilterDropdown,
   SortDropdown,
@@ -23,6 +23,9 @@ import {
   catalogHref,
   filterProducts,
   isFilterEmpty,
+  moreHref,
+  resolveShown,
+  SHOWN_PARAM,
   sortProducts,
 } from "../derive";
 import type { CatalogFilter, CatalogProduct, CatalogSort } from "../types";
@@ -64,7 +67,9 @@ export function CatalogSection({
   columns?: 4 | 5;
   noun?: string;
 }) {
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  /* 펼친 정도도 주소가 갖는다 — 화면 상태로 두면 카드 하나를 열어 보고 뒤로
+     왔을 때 다시 8장으로 접힌다(필터·정렬이 주소에 있는 것과 같은 이유) */
+  const visibleCount = resolveShown(useSearchParams().get(SHOWN_PARAM));
 
   const matched = sortProducts(filterProducts(products, filter), sort);
   /* 필터가 좁아져 남은 수가 이미 적으면 slice가 알아서 전부 준다 —
@@ -168,19 +173,31 @@ export function CatalogSection({
           />
         ) : null}
 
-        {/* 아무것도 안 걸렸을 때도 자리를 지킨다 — 눌러도 같은 화면이라 해가 없고,
-            사라지면 필터를 걸 때마다 툴바가 옆으로 밀린다 */}
-        <Button
-          asChild
-          variant="ghost"
-          className="text-body h-8 gap-1.5 px-2"
-          aria-disabled={clean}
-        >
-          <Link href={resetHref}>
+        {/* 아무것도 안 걸렸을 때도 자리를 지킨다 — 사라지면 필터를 걸 때마다
+            툴바가 옆으로 밀린다. 다만 그때는 **진짜 못 누르는 버튼**으로 둔다:
+            `aria-disabled`만 걸면 보조기술에는 못 누른다고 말해 놓고 실제로는
+            포커스도 되고 눌리면 이동한다 */}
+        {clean ? (
+          <Button
+            variant="ghost"
+            className="text-body h-8 gap-1.5 px-2"
+            disabled
+          >
             <RotateCcw aria-hidden className="size-3.5" />
             초기화
-          </Link>
-        </Button>
+          </Button>
+        ) : (
+          <Button
+            asChild
+            variant="ghost"
+            className="text-body h-8 gap-1.5 px-2"
+          >
+            <Link href={resetHref}>
+              <RotateCcw aria-hidden className="size-3.5" />
+              초기화
+            </Link>
+          </Button>
+        )}
 
         <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
           <ResultCount
@@ -211,14 +228,17 @@ export function CatalogSection({
           />
 
           {hasMore ? (
-            <button
-              type="button"
-              onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
-              className="border-border text-secondary-foreground hover:bg-secondary text-body -mx-4 -mb-4 flex h-10 cursor-pointer items-center justify-center gap-1 rounded-b-panel border-t font-medium"
+            /* 버튼이 아니라 링크다 — 펼친 정도가 주소에 남아야 뒤로 가기에서
+               살아남는다. `scroll={false}`: 다음 8장은 화면 아래에 붙는데
+               맨 위로 튀면 방금 어디를 보고 있었는지 잃는다 */
+            <Link
+              href={moreHref(href({}), visible.length + PAGE_SIZE)}
+              scroll={false}
+              className="border-border text-secondary-foreground hover:bg-secondary text-body -mx-4 -mb-4 flex h-10 items-center justify-center gap-1 rounded-b-panel border-t font-medium"
             >
               {noun} 더 보기
               <ChevronDown aria-hidden className="text-border-strong size-3" />
-            </button>
+            </Link>
           ) : null}
         </>
       )}
