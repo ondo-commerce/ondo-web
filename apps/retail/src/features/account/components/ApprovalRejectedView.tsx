@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, FormField, Notice } from "@ondo/ui";
+import { Button, cn, FormField, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -15,6 +15,9 @@ import {
   ACCOUNT_STATUS_LABEL,
   errorId,
   fieldId,
+  FIELD_LABEL_CLASS,
+  labelId,
+  withStoreName,
 } from "../constants";
 import { approvalSteps, validateReapply } from "../derive";
 import { REJECTION } from "../fixtures";
@@ -26,8 +29,15 @@ import type { AttachedFile } from "../types";
  * 거절 사유는 빨간 경고 배너, 아래쪽 `왜 거절되나요?`는 회색 안내다 — 둘 다
  * 읽을 글이지만 하나는 **내 신청에 일어난 일**이고 하나는 **제도 설명**이다.
  * 톤이 같으면 어느 쪽이 내 얘기인지 구분되지 않는다.
+ *
+ * 상호명은 화면에 그리지 않지만 재신청 뒤 승인 대기 화면이 쓰므로 그대로
+ * 들고 있다가 넘긴다 — 여기서 끊으면 재신청한 사장이 남의 상호를 보게 된다.
  */
-export function ApprovalRejectedView() {
+export function ApprovalRejectedView({
+  storeName = null,
+}: {
+  storeName?: string | null;
+}) {
   const router = useRouter();
   const [license, setLicense] = useState<AttachedFile | null>(null);
   /** 한 번 걸린 뒤에는 파일을 고르는 즉시 문구가 풀린다 */
@@ -45,7 +55,7 @@ export function ApprovalRejectedView() {
       return;
     }
     /* 접수까지가 이번 범위다. 상태가 REJECTED → PENDING으로 돌아가는 화면으로 보낸다 */
-    router.push(ACCOUNT_PATH.approval);
+    router.push(withStoreName(ACCOUNT_PATH.approval, storeName));
   };
 
   return (
@@ -71,16 +81,20 @@ export function ApprovalRejectedView() {
 
         <form onSubmit={submit}>
           <AuthSection>
+            {/* `htmlFor`를 주지 않는다 — 점선 상자가 이미 이 입력의 `<label for>`다.
+                둘 다 라벨이면 칸 이름이 두 글의 이어붙임으로 읽힌다 */}
             <FormField
-              className="mb-0"
-              label="사업자등록증 다시 올리기"
-              htmlFor={fieldId("license")}
+              className={cn("mb-0", FIELD_LABEL_CLASS)}
+              label={
+                <span id={labelId("license")}>사업자등록증 다시 올리기</span>
+              }
             >
               <FileField
                 id={fieldId("license")}
                 emptyLabel="파일 다시 첨부"
                 file={license}
                 invalid={error !== undefined}
+                labelledBy={labelId("license")}
                 describedBy={
                   error
                     ? `${errorId("license")} ${fieldId("license")}-help`
