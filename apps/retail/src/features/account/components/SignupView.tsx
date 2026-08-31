@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, FormField, Input, Notice } from "@ondo/ui";
+import { Button, cn, FormField, Input, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,12 +14,17 @@ import {
   ACCOUNT_PATH,
   errorId,
   fieldId,
+  FIELD_LABEL_CLASS,
+  INVALID_INPUT_CLASS,
+  labelId,
   SIGNUP_FIELD_ORDER,
+  withStoreName,
 } from "../constants";
 import {
   EMPTY_SIGNUP,
   firstInvalidField,
   normalizeSeparators,
+  normalizeStoreName,
   validateSignup,
   visibleErrors,
   type SignupValues,
@@ -93,8 +98,14 @@ export function SignupView() {
       document.getElementById(fieldId(first))?.focus();
       return;
     }
-    /* 보낼 서버가 없다. 신청이 접수된 다음 화면으로 넘기는 데까지가 이번 범위다 */
-    router.push(ACCOUNT_PATH.approval);
+    /* 보낼 서버가 없다. 신청이 접수된 다음 화면으로 넘기는 데까지가 이번 범위다.
+       방금 적은 상호명을 같이 넘긴다 — 안 넘기면 승인 화면이 남의 상호를 말한다 */
+    router.push(
+      withStoreName(
+        ACCOUNT_PATH.approval,
+        normalizeStoreName(values.storeName),
+      ),
+    );
   };
 
   /** 글자를 받는 칸 한 벌. 7개가 같은 모양이라 여기서 한 번만 그린다 */
@@ -106,6 +117,8 @@ export function SignupView() {
       autoComplete?: string;
       placeholder: string;
       help?: string;
+      /** 필수 칸. `*`와 sr-only `(필수)`만이 아니라 속성으로도 전달한다 */
+      required?: boolean;
       last?: boolean;
       onBlur?: () => void;
     },
@@ -118,14 +131,16 @@ export function SignupView() {
 
     return (
       <FormField
-        className={options.last ? "mb-0" : "mb-4"}
+        className={cn(options.last ? "mb-0" : "mb-4", FIELD_LABEL_CLASS)}
         label={label}
         htmlFor={fieldId(field)}
       >
         <Input
           id={fieldId(field)}
+          className={INVALID_INPUT_CLASS}
           name={field}
           type={options.type ?? "text"}
+          required={options.required}
           autoComplete={options.autoComplete}
           placeholder={options.placeholder}
           value={String(values[field] ?? "")}
@@ -167,11 +182,13 @@ export function SignupView() {
               {textField("storeName", <RequiredLabel>상호명</RequiredLabel>, {
                 placeholder: "예: 우리옷가게",
                 autoComplete: "organization",
+                required: true,
                 last: true,
               })}
               {textField("ownerName", <RequiredLabel>대표자명</RequiredLabel>, {
                 placeholder: "예: 김봄",
                 autoComplete: "name",
+                required: true,
                 last: true,
               })}
             </TwoCol>
@@ -183,6 +200,7 @@ export function SignupView() {
                 type: "email",
                 autoComplete: "email",
                 placeholder: "store@example.com",
+                required: true,
               },
             )}
 
@@ -191,6 +209,7 @@ export function SignupView() {
                 type: "password",
                 autoComplete: "new-password",
                 placeholder: "8자 이상",
+                required: true,
                 last: true,
               })}
               {textField(
@@ -200,6 +219,7 @@ export function SignupView() {
                   type: "password",
                   autoComplete: "new-password",
                   placeholder: "한 번 더 입력",
+                  required: true,
                   last: true,
                 },
               )}
@@ -209,6 +229,7 @@ export function SignupView() {
               type: "tel",
               autoComplete: "tel",
               placeholder: "010-0000-0000",
+              required: true,
               last: true,
               onBlur: () => normalizeOnBlur("phone"),
             })}
@@ -221,16 +242,24 @@ export function SignupView() {
               onBlur: () => normalizeOnBlur("bizNo"),
             })}
 
+            {/* `htmlFor`를 주지 않는다 — 점선 상자가 이미 이 입력의 `<label for>`라서
+                여기까지 라벨이면 칸 이름이 두 글의 이어붙임이 된다. 이름은 이
+                `<span>` 하나로 고정하고 입력이 `aria-labelledby`로 가리킨다 */}
             <FormField
-              className="mb-0"
-              label={<RequiredLabel>사업자등록증</RequiredLabel>}
-              htmlFor={fieldId("license")}
+              className={cn("mb-0", FIELD_LABEL_CLASS)}
+              label={
+                <span id={labelId("license")}>
+                  <RequiredLabel>사업자등록증</RequiredLabel>
+                </span>
+              }
             >
               <FileField
                 id={fieldId("license")}
                 emptyLabel="파일 첨부"
                 file={values.license}
                 invalid={errors.license !== undefined}
+                required
+                labelledBy={labelId("license")}
                 describedBy={describedBy(
                   errors.license && errorId("license"),
                   `${fieldId("license")}-help`,

@@ -22,6 +22,8 @@ export function FileField({
   emptyLabel,
   file,
   invalid = false,
+  required = false,
+  labelledBy,
   describedBy,
   onSelect,
 }: {
@@ -30,6 +32,15 @@ export function FileField({
   emptyLabel: string;
   file: AttachedFile | null;
   invalid?: boolean;
+  required?: boolean;
+  /**
+   * 이 칸의 이름표 id.
+   *
+   * 점선 상자가 `<label for>`라서 바깥 이름표까지 `<label for>`이면 두 글이
+   * 이어 붙어 한 칸의 이름이 된다(`사업자등록증 (필수) 파일 첨부 JPG · PNG · PDF`).
+   * 이름은 바깥 이름표 하나로 고정하고 상자 글은 안내로 남긴다.
+   */
+  labelledBy?: string;
   describedBy?: string;
   onSelect: (file: AttachedFile | null) => void;
 }) {
@@ -41,7 +52,9 @@ export function FileField({
         name={id}
         accept={LICENSE_ACCEPT}
         className="peer sr-only"
+        required={required}
         aria-invalid={invalid}
+        aria-labelledby={labelledBy}
         aria-describedby={describedBy}
         onChange={(event) => {
           const picked = event.target.files?.[0];
