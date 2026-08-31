@@ -1,5 +1,15 @@
 import type { Metadata } from "next";
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import {
+  SEARCH_ORDERS,
+  SEARCH_PRODUCTS,
+  SEARCH_WHOLESALERS,
+  SearchGuide,
+  SearchResultView,
+  isBlankQuery,
+  normalizeQuery,
+  resolveTab,
+  runSearch,
+} from "@/features/search";
 
 export const metadata: Metadata = { title: "검색 결과" };
 
@@ -12,6 +22,32 @@ export const metadata: Metadata = { title: "검색 결과" };
  */
 export const dynamic = "force-dynamic";
 
-export default function Page() {
-  return <PlaceholderPage title="검색 결과" />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const raw = Array.isArray(params.q) ? params.q[0] : params.q;
+
+  /* 셸 검색창이 required·pattern으로 빈 제출을 막지만 주소로 직접 들어오는 길이
+     열려 있다. 결과 0건 화면을 주면 검색한 적 없는 사장이 "없다"고 읽는다 */
+  if (isBlankQuery(raw)) return <SearchGuide />;
+
+  const query = (raw ?? "").trim();
+  const result = runSearch(normalizeQuery(raw), {
+    products: SEARCH_PRODUCTS,
+    wholesalers: SEARCH_WHOLESALERS,
+    orders: SEARCH_ORDERS,
+  });
+
+  return (
+    <SearchResultView
+      /* 화면에는 **친 그대로**를 되돌려 준다. 소문자로 바꾼 값은 비교용이라
+         `“st-002” 검색 결과`처럼 사장이 안 친 문자열이 제목에 뜨면 안 된다 */
+      query={query}
+      tab={resolveTab(Array.isArray(params.tab) ? params.tab[0] : params.tab)}
+      result={result}
+    />
+  );
 }
