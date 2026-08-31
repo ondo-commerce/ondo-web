@@ -2,13 +2,15 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
   APPROVAL_STEP_LABELS,
+  STORE_QUERY,
   PASSWORD_MIN_LENGTH,
   withStoreName,
 } from "./constants";
-import { ACCOUNTS } from "./fixtures";
+import { ACCOUNTS, APPLICATION } from "./fixtures";
 import type {
   Account,
   AccountStatus,
+  Application,
   ApprovalStep,
   AttachedFile,
   FieldErrors,
@@ -260,6 +262,32 @@ export function visibleErrors<K extends string>(
 }
 
 /* ── 가입 심사 진행 ───────────────────────────────────────────────────── */
+
+/**
+ * 조회 문자열에서 상호명을 꺼낸다.
+ *
+ * `?store=a&store=b`처럼 같은 이름이 두 번 오면 Next가 배열을 준다. 첫 값만
+ * 쓴다 — 배열을 이어 붙이면 주소로 요약 한 줄을 원하는 만큼 늘릴 수 있다.
+ */
+export function readStoreName(
+  params: Record<string, string | string[] | undefined>,
+): string | null {
+  const raw = params[STORE_QUERY];
+  return normalizeStoreName(Array.isArray(raw) ? raw[0] : raw);
+}
+
+/**
+ * 신청 요약이 보여 줄 한 건.
+ *
+ * 상호명만 **화면 밖에서 온 값**으로 갈아 끼운다 — 로그인한 계정의 것이거나
+ * 방금 가입 폼에 적은 것이다. 사업자등록번호·신청 일시는 백엔드가 없어 더미
+ * 그대로다(등록번호는 자리표시자여야 한다 · R6). 값이 없으면 더미로 돌아가
+ * 직접 주소를 친 경우에도 빈 줄이 생기지 않는다.
+ */
+export function applicationFor(storeName: string | null): Application {
+  const store = normalizeStoreName(storeName);
+  return store ? { ...APPLICATION, storeName: store } : APPLICATION;
+}
 
 /**
  * 진행 표시 3단.
