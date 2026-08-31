@@ -24,6 +24,20 @@ export interface FilterOption {
   hex?: string;
 }
 
+/**
+ * 툴바 칸의 겉모습(`_base.css` `.fbtn`). 드롭다운 트리거와 찜 목록의 즉시 토글
+ * 칩이 같은 모양이라 여기 한 곳에서 만든다 — 두 벌이 되면 한쪽만 색이 바뀐다.
+ * 고른 상태는 검은 채움이다. 게이트 D1대로 강조색을 쓰지 않는다.
+ */
+export function filterChipClass(active: boolean): string {
+  return cn(
+    "text-body flex h-8 cursor-pointer items-center gap-1.5 rounded-control px-3 whitespace-nowrap transition-colors",
+    active
+      ? "bg-foreground text-card"
+      : "bg-secondary text-secondary-foreground hover:bg-secondary-strong",
+  );
+}
+
 function DropdownItems({
   options,
   value,
@@ -124,12 +138,7 @@ export function FilterDropdown({
         aria-label={
           active ? `${label} 필터, ${selectedLabel}` : `${label} 필터`
         }
-        className={cn(
-          "text-body flex h-8 cursor-pointer items-center gap-1.5 rounded-control px-3 transition-colors",
-          active
-            ? "bg-foreground text-card"
-            : "bg-secondary text-secondary-foreground hover:bg-secondary-strong",
-        )}
+        className={filterChipClass(active)}
       >
         {selectedLabel ?? label}
         <ChevronDown

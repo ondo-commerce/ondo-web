@@ -236,6 +236,62 @@ export function catalogHref(
 }
 
 /* ────────────────────────────────────────────────────────────────────────
+   도매처 홈 · 찜 목록
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 도매처 홈의 `신상` — 기준일 이후에 올라온 것.
+ *
+ * "최근 7일"을 `new Date()`로 계산하지 않는다. 더미 데이터는 날짜가 고정인데
+ * 오늘을 기준으로 세면 시간이 지날수록 신상이 0건이 되고, 화면이 비는 이유가
+ * 코드가 아니라 달력에 있게 된다. 기준일은 fixtures가 준다.
+ */
+export function newArrivals(
+  products: readonly CatalogProduct[],
+  since: string,
+): CatalogProduct[] {
+  return sortProducts(
+    products.filter((p) => p.listedAt >= since),
+    "latest",
+  );
+}
+
+/** 주소의 `?seller=`를 정리한다. 지금 찜 목록에 없는 도매처면 `전체`로 떨어뜨린다 */
+export function resolveSeller(
+  params: Record<string, string | string[] | undefined>,
+  allowed: readonly string[],
+): string {
+  const raw = params.seller;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+
+  return value && allowed.includes(value) ? value : FILTER_ALL;
+}
+
+/** 도매처 칩으로 좁힌다. `전체`면 그대로 */
+export function filterBySeller(
+  products: readonly CatalogProduct[],
+  seller: string,
+): CatalogProduct[] {
+  return seller === FILTER_ALL
+    ? [...products]
+    : products.filter((p) => p.wholesalerId === seller);
+}
+
+/** 찜 목록의 주소. 기본값인 축은 빼서 `초기 상태 = 그냥 /wishlist`가 되게 한다 */
+export function wishlistHref(
+  seller: string,
+  sort: CatalogSort,
+  defaultSort: CatalogSort,
+): string {
+  const params = new URLSearchParams();
+  if (seller !== FILTER_ALL) params.set("seller", seller);
+  if (sort !== defaultSort) params.set("sort", sort);
+
+  const query = params.toString();
+  return query ? `/wishlist?${query}` : "/wishlist";
+}
+
+/* ────────────────────────────────────────────────────────────────────────
    `상품 더 보기` — 펼친 정도도 주소가 갖는다.
 
    화면 안의 `useState`로 두면 카드 하나를 열어 보고 뒤로 왔을 때 다시 8장으로
