@@ -21,7 +21,6 @@ type Row = [
   sizeLabel: string,
   priceMin: number,
   hasRange: boolean,
-  favorited: boolean,
 ];
 
 const ROWS: readonly Row[] = [
@@ -35,7 +34,6 @@ const ROWS: readonly Row[] = [
     "5",
     12500,
     true,
-    true,
   ],
   [
     "p-wide-slacks",
@@ -47,7 +45,6 @@ const ROWS: readonly Row[] = [
     "4",
     14000,
     true,
-    false,
   ],
   [
     "p-linen-jacket",
@@ -58,7 +55,6 @@ const ROWS: readonly Row[] = [
     2,
     "Free",
     24500,
-    false,
     false,
   ],
   [
@@ -71,7 +67,6 @@ const ROWS: readonly Row[] = [
     "5",
     30000,
     true,
-    true,
   ],
   [
     "p-shirring-dress",
@@ -82,7 +77,6 @@ const ROWS: readonly Row[] = [
     2,
     "2",
     16500,
-    true,
     true,
   ],
   [
@@ -95,7 +89,6 @@ const ROWS: readonly Row[] = [
     "5",
     4500,
     true,
-    true,
   ],
   [
     "p-highwaist-denim",
@@ -107,7 +100,6 @@ const ROWS: readonly Row[] = [
     "3",
     18000,
     true,
-    false,
   ],
   [
     "p-pleats-skirt",
@@ -118,7 +110,6 @@ const ROWS: readonly Row[] = [
     2,
     "4",
     7500,
-    true,
     true,
   ],
   [
@@ -131,7 +122,6 @@ const ROWS: readonly Row[] = [
     "4",
     16000,
     true,
-    false,
   ],
   [
     "p-basic-tee",
@@ -143,7 +133,6 @@ const ROWS: readonly Row[] = [
     "4",
     8500,
     true,
-    false,
   ],
   [
     "p-hood-zipup",
@@ -155,7 +144,6 @@ const ROWS: readonly Row[] = [
     "5",
     28000,
     true,
-    false,
   ],
   [
     "p-daily-slacks",
@@ -167,7 +155,6 @@ const ROWS: readonly Row[] = [
     "4",
     19000,
     true,
-    false,
   ],
   [
     "p-kids-sweat",
@@ -179,7 +166,6 @@ const ROWS: readonly Row[] = [
     "3",
     11000,
     true,
-    false,
   ],
   [
     "p-canvas-tote",
@@ -190,7 +176,6 @@ const ROWS: readonly Row[] = [
     3,
     "Free",
     9000,
-    false,
     false,
   ],
   [
@@ -203,7 +188,6 @@ const ROWS: readonly Row[] = [
     "3",
     21000,
     true,
-    false,
   ],
   [
     "p-leather-belt",
@@ -214,7 +198,6 @@ const ROWS: readonly Row[] = [
     3,
     "Free",
     6500,
-    false,
     false,
   ],
   [
@@ -227,7 +210,6 @@ const ROWS: readonly Row[] = [
     "4",
     32000,
     true,
-    false,
   ],
 ];
 
@@ -242,7 +224,6 @@ export const SEARCH_PRODUCTS: readonly SearchProduct[] = ROWS.map(
     sizeLabel,
     priceMin,
     hasRange,
-    favorited,
   ]) => ({
     id,
     code,
@@ -253,7 +234,6 @@ export const SEARCH_PRODUCTS: readonly SearchProduct[] = ROWS.map(
     sizeLabel,
     priceMin,
     hasRange,
-    favorited,
   }),
 );
 

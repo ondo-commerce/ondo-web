@@ -17,7 +17,9 @@ export interface SearchProduct {
   priceMin: number;
   /** 최저가보다 비싼 조합이 있는가. 있으면 `~`를 붙인다 */
   hasRange: boolean;
-  favorited: boolean;
+  /* 찜 상태는 여기 없다 — `features/catalog`의 세션 저장소 한 곳이 갖는다.
+     결과 줄과 카드가 각자 값을 들고 있으면 같은 상품을 두고 두 화면이 반대되는
+     말을 한다 */
 }
 
 export interface SearchWholesaler {
