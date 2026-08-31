@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import { ApprovalStatusView } from "@/features/account";
+import { AuthLayout } from "@/shared/components/AuthLayout";
 
 export const metadata: Metadata = { title: "승인 대기" };
 
 export default function Page() {
-  return <PlaceholderPage title="승인 대기" />;
+  return (
+    <AuthLayout width="wide">
+      <ApprovalStatusView />
+    </AuthLayout>
+  );
 }

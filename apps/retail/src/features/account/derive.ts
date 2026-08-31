@@ -1,6 +1,7 @@
 import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
+  APPROVAL_STEP_LABELS,
   PASSWORD_MIN_LENGTH,
   withStoreName,
 } from "./constants";
@@ -8,6 +9,7 @@ import { ACCOUNTS } from "./fixtures";
 import type {
   Account,
   AccountStatus,
+  ApprovalStep,
   AttachedFile,
   FieldErrors,
   LoginField,
@@ -255,4 +257,43 @@ export function visibleErrors<K extends string>(
     if (message !== undefined) shown[field] = message;
   }
   return shown;
+}
+
+/* ── 가입 심사 진행 ───────────────────────────────────────────────────── */
+
+/**
+ * 진행 표시 3단.
+ *
+ * 승인 대기와 거절이 **같은 컴포넌트를 쓰게** 하려고 단계 배열을 여기서 만든다.
+ * 화면 두 곳이 각자 배열을 적으면 라벨이 갈리고, 나중에 단계가 늘 때(Q1 거래관계
+ * 승인 층) 한쪽만 늘어난다.
+ */
+export function approvalSteps(status: AccountStatus): ApprovalStep[] {
+  const applied: ApprovalStep = {
+    label: APPROVAL_STEP_LABELS.applied,
+    state: "done",
+  };
+
+  if (status === "REJECTED") {
+    return [
+      applied,
+      { label: APPROVAL_STEP_LABELS.reviewing, state: "done" },
+      /* 지나간 단계가 아니라 지금 멈춰 있는 자리다 */
+      { label: APPROVAL_STEP_LABELS.rejected, state: "current" },
+    ];
+  }
+
+  if (status === "APPROVED") {
+    return [
+      applied,
+      { label: APPROVAL_STEP_LABELS.reviewing, state: "done" },
+      { label: APPROVAL_STEP_LABELS.approved, state: "current" },
+    ];
+  }
+
+  return [
+    applied,
+    { label: APPROVAL_STEP_LABELS.reviewing, state: "current" },
+    { label: APPROVAL_STEP_LABELS.approved, state: "todo" },
+  ];
 }
