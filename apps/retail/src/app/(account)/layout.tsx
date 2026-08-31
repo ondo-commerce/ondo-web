@@ -1,11 +1,12 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AuthLayout } from "@/shared/components/AuthLayout";
 
-/**
- * 로그인 전 4화면(로그인·회원가입·승인 대기·승인 거절)의 바깥.
- * 헤더·검색·장바구니 같은 로그인 후 UI를 보이지 않으려고 `(shop)`과 그룹을 나눴다.
- *
- * 가운데 카드 레이아웃은 #85에서 이 자리에 들어온다.
- */
+/* 셸이 있는 화면과 탭 제목이 구분돼야 한다 — 각 page.tsx가 `%s` 자리를 채운다 */
+export const metadata: Metadata = {
+  title: { template: "%s · 온도 마켓 계정", default: "온도 마켓 계정" },
+};
+
 export default function AccountLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return <AuthLayout>{children}</AuthLayout>;
 }
