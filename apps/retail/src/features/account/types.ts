@@ -29,3 +29,35 @@ export type LoginField = "email" | "password";
  * `aria-describedby`로 묶으려면 "어느 칸의 오류인가"가 자료 구조에 있어야 한다.
  */
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
+
+/**
+ * 첨부한 파일. 이름과 용량만 든다.
+ *
+ * `File` 객체를 그대로 들고 다니지 않는 이유: 보낼 곳이 없다. 백엔드가 붙기
+ * 전까지 첨부는 **화면에 이름을 남기는 데서 끝난다**(네트워크 요청 0회).
+ */
+export interface AttachedFile {
+  name: string;
+  size: number;
+}
+
+/** 회원가입 폼의 칸 이름 */
+export type SignupField =
+  | "storeName"
+  | "ownerName"
+  | "email"
+  | "password"
+  | "passwordConfirm"
+  | "phone"
+  | "bizNo"
+  | "license"
+  | "agreeService"
+  | "agreePrivacy";
+
+/** 약관 2종. 둘 다 필수라 선택 항목이 없다 */
+export interface Terms {
+  /** 체크박스에 붙는 이름 */
+  label: string;
+  /** 모달에 펼치는 전문 — 문단 배열 */
+  body: string[];
+}
