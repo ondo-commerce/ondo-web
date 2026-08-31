@@ -5,3 +5,4 @@
 export { ApprovalStatusView } from "./components/ApprovalStatusView";
 export { LoginView } from "./components/LoginView";
 export { SignupView } from "./components/SignupView";
+export { readStoreName } from "./derive";

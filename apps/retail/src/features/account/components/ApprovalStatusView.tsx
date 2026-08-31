@@ -6,8 +6,7 @@ import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { SummaryList } from "./SummaryList";
 import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL } from "../constants";
-import { approvalSteps } from "../derive";
-import { APPLICATION } from "../fixtures";
+import { applicationFor, approvalSteps } from "../derive";
 
 /**
  * 가입 심사 중 화면.
@@ -15,8 +14,17 @@ import { APPLICATION } from "../fixtures";
  * 이 화면이 하는 일은 "지금 어디쯤이고 언제 끝나는가"를 말하는 것 하나다.
  * 승인 전에는 도매가를 못 본다는 전제(RT-09)를 화면이 처음으로 말하는 자리이기도
  * 해서, 왜 심사하는지를 안내로 같이 둔다.
+ *
+ * 상호명은 **밖에서 받는다.** 여기서 더미 상수를 읽으면 누가 로그인했든, 방금
+ * 무엇으로 신청했든 늘 같은 상호를 말하게 된다. 세션이 없어서 주소가 통로다.
  */
-export function ApprovalStatusView() {
+export function ApprovalStatusView({
+  storeName = null,
+}: {
+  storeName?: string | null;
+}) {
+  const application = applicationFor(storeName);
+
   return (
     <>
       <AuthPanel
@@ -31,9 +39,9 @@ export function ApprovalStatusView() {
         <AuthSection>
           <SummaryList
             items={[
-              { label: "상호명", value: APPLICATION.storeName },
-              { label: "사업자등록번호", value: APPLICATION.bizNo },
-              { label: "신청 일시", value: APPLICATION.appliedAt },
+              { label: "상호명", value: application.storeName },
+              { label: "사업자등록번호", value: application.bizNo },
+              { label: "신청 일시", value: application.appliedAt },
             ]}
           />
         </AuthSection>
