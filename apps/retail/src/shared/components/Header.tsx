@@ -1,6 +1,7 @@
 import { Button } from "@ondo/ui";
 import { Heart } from "lucide-react";
 import Link from "next/link";
+import { AccountMenu } from "@/shared/components/AccountMenu";
 import { CartButton } from "@/shared/components/CartButton";
 import { GlobalSearch } from "@/shared/components/GlobalSearch";
 
@@ -47,6 +48,7 @@ export function Header() {
           </Button>
 
           <CartButton />
+          <AccountMenu />
         </div>
       </div>
     </header>
