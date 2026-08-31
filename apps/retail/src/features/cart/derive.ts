@@ -1,4 +1,4 @@
-import type { CartLine } from "@/shared/cart-store";
+import type { CartLine } from "./types";
 import { QTY_UNIT } from "./constants";
 
 /**

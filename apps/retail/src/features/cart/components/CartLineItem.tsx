@@ -1,5 +1,5 @@
 import { Badge } from "@ondo/ui";
-import type { CartLine } from "@/shared/cart-store";
+import type { CartLine } from "../types";
 import { QTY_UNIT, SOLD_OUT_BADGE } from "../constants";
 import { formatWon, lineSubtotal, optionLabel } from "../derive";
 

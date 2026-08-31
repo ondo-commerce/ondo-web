@@ -3,7 +3,7 @@
 import { Button } from "@ondo/ui";
 import { ShoppingBag } from "lucide-react";
 import Link from "next/link";
-import { useCartCount } from "@/shared/cart-store";
+import { useCartCount } from "../store";
 
 /**
  * 장바구니 아이콘 + 담긴 조합 수 카운터.
@@ -14,6 +14,10 @@ import { useCartCount } from "@/shared/cart-store";
  *
  * `IconButton`이 아니라 `Button asChild`인 이유: IconButton은 asChild를 받지 않아
  * 항상 <button>이 된다. 화면을 옮기는 것은 <a>여야 새 탭 열기·미리보기가 산다.
+ *
+ * **`shared/components/`가 아니라 이 feature 안에 있다.** 담긴 수가 무엇인지 아는
+ * 것은 장바구니 도메인이고, 셸은 그것을 모른 채 자리만 비워 둔다 —
+ * `app/(shop)/layout.tsx`가 이 컴포넌트를 헤더에 끼워 넣는다.
  *
  * 숫자를 고정 더미(`CART_ITEM_COUNT`)에서 읽던 자리다. 장바구니 화면에서 조합을
  * 지워도 뱃지가 4에 멈춰 있으면, 원본의 §6-4 결함(같은 화면에서 헤더·뱃지·본문이

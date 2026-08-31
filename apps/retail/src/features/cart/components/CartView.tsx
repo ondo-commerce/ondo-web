@@ -5,12 +5,12 @@ import { EmptyCart } from "./EmptyCart";
 import { WholesalerGroup } from "./WholesalerGroup";
 import { CART_SUB_TAIL } from "../constants";
 import { groupByWholesaler } from "../derive";
-import { useCartLines } from "@/shared/cart-store";
+import { useCartLines } from "../store";
 
 /**
  * 장바구니 한 장.
  *
- * 담긴 목록을 화면이 `useState`로 들고 있지 않고 `shared/cart-store`에서 읽는다.
+ * 담긴 목록을 화면이 `useState`로 들고 있지 않고 `../store`에서 읽는다.
  * 헤더 뱃지가 같은 값을 봐야 하기 때문이다 — 원본은 같은 화면에서 헤더 접근성
  * 이름 `6개 담김` · 뱃지 `4` · 본문 `담긴 조합 4개`가 서로 달랐다(§6-4).
  * **부제의 `담긴 조합 N개`도 그 값 하나에서 나온다.**
