@@ -19,7 +19,11 @@ import { GlobalSearch } from "@/shared/components/GlobalSearch";
  */
 export function Header() {
   return (
-    <header className="bg-card border-border sticky top-0 z-30 border-b">
+    /* 아래 선을 카테고리 줄에 넘긴다 — 그 줄이 따라오는 화면(홈·상품 상세)에서는
+       기능줄이 자기 선을 그으면 흰 블록이 둘로 갈린다. 와이어프레임 `.topbar`는
+       두 줄을 한 상자에 담고 선을 맨 아래 하나만 긋는다. `(browse)` 레이아웃은
+       이 레이아웃의 자식이라 prop을 올려 보낼 수 없어 선택자로 알아본다 */
+    <header className="bg-card border-border sticky top-0 z-30 border-b has-[~main_[data-category-bar]]:border-b-0">
       <div className="flex h-14 items-center gap-5 px-5">
         <Link href="/" className="flex shrink-0 items-baseline gap-1.5">
           {/* 원본은 `On`이 파랑이지만 게이트 D1로 색을 쓰지 않는다 — 굵기로만 가른다 */}
