@@ -325,3 +325,17 @@ export function approvalSteps(status: AccountStatus): ApprovalStep[] {
     { label: APPROVAL_STEP_LABELS.approved, state: "todo" },
   ];
 }
+
+/**
+ * 재신청 검증. 볼 것이 첨부 하나뿐이라 문구도 하나다.
+ *
+ * 버튼을 잠그지 않으므로(`01-pm.md` R3) 파일을 안 고르고 눌러도 눌린다 —
+ * 그때 이 문구가 뜨고 포커스가 첨부칸으로 간다.
+ */
+export function validateReapply(
+  license: AttachedFile | null,
+): FieldErrors<"license"> {
+  return license
+    ? {}
+    : { license: "다시 올릴 사업자등록증 파일을 첨부해 주세요." };
+}

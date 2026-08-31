@@ -1,4 +1,4 @@
-import type { Account, Application, Terms } from "./types";
+import type { Account, Application, Rejection, Terms } from "./types";
 
 /*
  * 화면을 그리기 위한 목업. API가 붙으면 이 파일만 지운다.
@@ -62,4 +62,17 @@ export const APPLICATION: Application = {
   storeName: "봄봄상회",
   bizNo: "000-00-00000",
   appliedAt: "2026.07.17 10:20",
+};
+
+/**
+ * 거절 1건. 사유는 운영자가 쓴 자유 문장이라 코드가 만들지 않는다(RT-07).
+ *
+ * 문안이 마스킹 안내(RT-05)와 같은 얘기를 하는 건 의도한 것이다 — 회원가입에서
+ * 미리 알려 준 그 항목이 실제 거절 사유가 된다는 걸 화면 두 곳이 같이 말한다.
+ */
+export const REJECTION: Rejection = {
+  reason:
+    "제출하신 사업자등록증에서 주민등록번호 뒷자리가 보여요. 해당 부분을 가린 뒤 다시 올려 주세요.",
+  decidedAt: "2026.07.18 10:20",
+  decidedBy: "운영자",
 };
