@@ -22,14 +22,22 @@ export function AccountMenu() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className="hover:bg-secondary focus-visible:ring-ring flex h-8 cursor-pointer items-center gap-1.5 rounded-control pr-2 pl-1.5 focus-visible:ring-2 focus-visible:outline-hidden">
+      <Popover.Trigger
+        /* aria-label을 늘 붙여 둔다 — 아래에서 상호 글자가 ≤40rem에 숨는데,
+           이름이 label에 있으면 보이든 안 보이든 읽히는 말이 같다 */
+        aria-label={`${SHELL_ACCOUNT.storeName} 계정 메뉴`}
+        className="hover:bg-secondary focus-visible:ring-ring flex h-8 cursor-pointer items-center gap-1.5 rounded-control pr-2 pl-1.5 focus-visible:ring-2 focus-visible:outline-hidden phone:h-11"
+      >
         <span
           aria-hidden
           className="bg-secondary text-secondary-foreground grid size-5.5 place-items-center rounded-md text-xs tracking-normal"
         >
           {SHELL_ACCOUNT.initial}
         </span>
-        {SHELL_ACCOUNT.storeName}
+        {/* 390px에서 헤더에 남는 폭은 100px 남짓이다. 상호 글자를 접어 그 폭을
+            검색창에 넘긴다 — 소매에서 검색은 헤더의 주 조작이고 상호는 확인용이다.
+            아이니셜 사각형은 남아서 "내 계정" 자리가 사라지지는 않는다 */}
+        <span className="phone:hidden">{SHELL_ACCOUNT.storeName}</span>
         <ChevronDown aria-hidden className="text-border-strong size-3" />
       </Popover.Trigger>
 

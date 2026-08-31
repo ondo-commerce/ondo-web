@@ -24,7 +24,9 @@ export function Header() {
        두 줄을 한 상자에 담고 선을 맨 아래 하나만 긋는다. `(browse)` 레이아웃은
        이 레이아웃의 자식이라 prop을 올려 보낼 수 없어 선택자로 알아본다 */
     <header className="bg-card border-border sticky top-0 z-30 border-b has-[~main_[data-category-bar]]:border-b-0">
-      <div className="flex h-14 items-center gap-5 px-5">
+      {/* 간격 20→12는 확정 와이어프레임 `_base.css:330`(`.topbar__row{gap:12px}`) 그대로다.
+          1512px에서는 이 규칙이 걸리지 않으므로 회차 이전 렌더와 같다 */}
+      <div className="flex h-14 items-center gap-5 px-5 tablet:gap-3">
         <Link href="/" className="flex shrink-0 items-baseline gap-1.5">
           {/* 원본은 `On`이 파랑이지만 게이트 D1로 색을 쓰지 않는다 — 굵기로만 가른다 */}
           {/* 크기를 따로 주지 않는다 — 와이어프레임 `.brand`도 본문 14px 그대로다 */}
@@ -32,20 +34,24 @@ export function Header() {
             <span className="font-bold">On</span>
             <span className="font-semibold">도마켓</span>
           </span>
-          <span className="text-muted-foreground text-body">
+          {/* 꼬리표는 좁은 화면에서 사라진다 — `_base.css:331` `.brand .tag` */}
+          <span className="text-muted-foreground text-body tablet:hidden">
             동대문 도매 직거래
           </span>
         </Link>
 
         <GlobalSearch />
 
-        <div className="ml-auto flex items-center gap-1">
-          <Button asChild variant="ghost" className="px-3">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {/* 텍스트 링크는 ≤40rem에서 사라진다 — `_base.css:338` `.tlink`.
+              같은 자리는 계정 드롭다운의 `주문 내역` 항목이 대신 받는다 */}
+          <Button asChild variant="ghost" className="px-3 phone:hidden">
             <Link href="/orders">주문 내역</Link>
           </Button>
 
-          {/* 찜에는 뱃지가 없다 — 개수를 알려 줄 근거가 원본에 없다 */}
-          <Button asChild variant="ghost" className="size-8 px-0">
+          {/* 찜에는 뱃지가 없다 — 개수를 알려 줄 근거가 원본에 없다.
+              ≤40rem에서 44×44 — 손가락 최소 타깃(`_base.css:340`) */}
+          <Button asChild variant="ghost" className="size-8 px-0 phone:size-11">
             <Link href="/wishlist" aria-label="찜 목록">
               <Heart aria-hidden className="size-4.5" />
             </Link>
