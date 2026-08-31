@@ -23,7 +23,18 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
     /* action/method를 실제로 적어 둔다 — 하이드레이션 전에 Enter를 치면 브라우저가
        스스로 제출하는데, action이 없으면 지금 있는 주소로 보내 버린다
        (상품 상세에서 검색하면 /products/abc?q=... 로 간다). 값은 같은 곳을 가리킨다 */
-    <form role="search" action="/search" method="get" onSubmit={handleSubmit}>
+    <form
+      role="search"
+      action="/search"
+      method="get"
+      onSubmit={handleSubmit}
+      /* min-w-0: flex 자식의 기본 min-width는 auto라 안쪽 340px이 그대로 하한이 된다.
+         이걸 풀지 않으면 헤더가 781px 아래로 줄지 않아 페이지 전체가 가로로 밀린다(F14).
+         ≤60rem에서 남은 폭을 채우는 건 확정 와이어프레임 `_base.css:329`의 `.search`
+         규칙 그대로다 — 브레이크포인트를 Tailwind 기본값으로 반올림하지 않는 이유는
+         AC가 960/640px를 픽셀로 못박고 있어서다 */
+      className="min-w-0 tablet:flex-1"
+    >
       <SearchInput
         name="q"
         aria-label="통합 검색"
@@ -36,8 +47,10 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
         pattern=".*\S.*"
         title="검색어를 입력하세요"
         /* packages/ui의 focus 링이 주석 처리돼 있어 키보드로 들어와도 표시가 없다.
-           헤더의 주 조작 요소라 여기서 덮는다(WCAG 2.4.7) */
-        className="focus-within:ring-ring focus-within:ring-2"
+           헤더의 주 조작 요소라 여기서 덮는다(WCAG 2.4.7).
+           w-full: SearchInput 기본 폭 w-85(340px)를 좁은 화면에서만 벗긴다.
+           packages/ui는 읽기 전용이라 기본값 자체는 건드리지 않는다 */
+        className="focus-within:ring-ring focus-within:ring-2 tablet:w-full"
       />
     </form>
   );

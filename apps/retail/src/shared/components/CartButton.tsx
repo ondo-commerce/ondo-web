@@ -15,7 +15,12 @@ import { CART_ITEM_COUNT } from "@/shared/fixtures";
  */
 export function CartButton() {
   return (
-    <Button asChild variant="ghost" className="relative size-8 px-0">
+    /* ≤40rem에서 44×44 — 손가락 최소 타깃(`_base.css:340` `.iconbtn`) */
+    <Button
+      asChild
+      variant="ghost"
+      className="relative size-8 px-0 phone:size-11"
+    >
       {/* 뱃지 숫자와 접근성 이름이 같은 값을 읽는다 — 원본의 3중 불일치(§6-4) 수정 */}
       <Link href="/cart" aria-label={`장바구니, ${CART_ITEM_COUNT}개 담김`}>
         <ShoppingBag aria-hidden className="size-4.5" />

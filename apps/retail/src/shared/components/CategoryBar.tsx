@@ -13,7 +13,14 @@ import {
 /** 규격은 도매 GNB 탭과 같다 — h32 · radius 8 · px12. 선택은 밑줄이 아니라 회색 알약이다 */
 function CategoryLinks({ current }: { current: string }) {
   return (
-    <nav aria-label="카테고리" className="flex items-center gap-0.5 px-3 pb-2">
+    /* 8항목은 390px에서 493px다 — 접거나 줄이지 않고 이 줄만 가로로 흘린다
+       (`_base.css:332` `.cats{overflow-x:auto;padding-bottom:10px}`).
+       칩을 줄이면 손가락 타깃이 무너지고, 접으면 어느 축인지 안 보인다.
+       scroll-slim은 막대를 평소 숨긴다 — 페이지 안의 다른 스크롤 영역과 같은 규칙 */
+    <nav
+      aria-label="카테고리"
+      className="scroll-slim flex items-center gap-0.5 px-3 pb-2 tablet:overflow-x-auto tablet:pb-2.5"
+    >
       {CATEGORIES.map(({ slug, label }) => {
         const active = slug === current;
 
@@ -24,7 +31,10 @@ function CategoryLinks({ current }: { current: string }) {
             href={slug === DEFAULT_CATEGORY_SLUG ? "/" : `/?category=${slug}`}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex h-8 items-center rounded-control px-3 whitespace-nowrap transition-colors",
+              /* shrink-0: 가로 스크롤 컨테이너 안에서 칩이 눌려 글자가 잘리면
+                 스크롤할 것 자체가 없어진다. min-h-11은 ≤40rem 손가락 타깃
+                 (`_base.css:341` `.cats a{min-height:44px}`) */
+              "flex h-8 shrink-0 items-center rounded-control px-3 whitespace-nowrap transition-colors phone:min-h-11",
               active
                 ? "bg-secondary text-foreground font-medium"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground",

@@ -2,3 +2,19 @@
 @import "@ondo/ui/styles/theme.css";
 
 @source "../../../../packages/ui/src";
+
+/* 소매 전용 하강 브레이크포인트 두 개.
+
+   소매는 시장 안에서 휴대폰으로 여는 화면이라 셸부터 카드 격자까지 좁은 폭이
+   기준이 된다. 값(60rem/40rem)은 확정 와이어프레임 `15_retail-hallmark/_base.css`의
+   `@media` 블록 그대로다 — Tailwind 기본 sm/md/lg로 반올림하면 화면마다 접히는
+   지점이 1~2단 어긋난다.
+
+   Tailwind 기본 `max-*` 변형(임의값 하강 변형)을 쓰지 않는 이유: 그건
+   `width < 60rem`이라 **경계값 960px·640px에서 규칙이 안 걸린다.** 원본 CSS는
+   `max-width`(= `<=`)라 960px에서 이미 접혀 있고, AC도 960/640을 픽셀로 못박는다.
+   여기서 `<=`로 한 번만 정의해 두면 화면마다 다시 틀릴 일이 없다.
+
+   이름은 폭이 아니라 기기다 — 값을 고칠 때 어느 화면을 지키려는 것인지 남기려는 것. */
+@custom-variant tablet (@media (width <= 60rem));
+@custom-variant phone (@media (width <= 40rem));
