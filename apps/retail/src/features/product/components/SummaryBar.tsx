@@ -2,6 +2,7 @@
 
 import { Button, cn } from "@ondo/ui";
 import { Heart } from "lucide-react";
+import Link from "next/link";
 import { QTY_UNIT } from "../constants";
 import { formatWon, type OrderTotals } from "../derive";
 
@@ -13,6 +14,11 @@ import { formatWon, type OrderTotals } from "../derive";
  *
  * **비활성 버튼 옆에 이유를 글자로 둔다.** `disabled`만 걸면 왜 못 누르는지
  * 화면에 아무 말도 없어서, 사장이 버튼을 반복해서 누르다 만다.
+ *
+ * `바로 주문하기`는 **주문서로 가는 링크다.** onClick도 href도 없이 눌리기만
+ * 하던 자리라 사장이 누르고 또 눌러도 주소·화면·문구 어느 것도 안 바뀌었다.
+ * 확정 와이어프레임도 `06_checkout.html`로 간다. 담은 수량을 주문서가 아직
+ * 받지 못하는 것은 장바구니 회차 몫이고, 그 전이라도 **눌린 결과는 보여야 한다.**
  */
 export function SummaryBar({
   totals,
@@ -74,7 +80,15 @@ export function SummaryBar({
           >
             {alreadyAdded ? "장바구니에 담김" : "장바구니 담기"}
           </Button>
-          <Button disabled={blocked}>바로 주문하기</Button>
+          {/* 못 누를 때는 진짜 disabled 버튼이다 — asChild + Link 로 두면
+              `disabled`가 <a>에 아무 효력이 없어 잠긴 상품에서도 이동한다 */}
+          {blocked ? (
+            <Button disabled>바로 주문하기</Button>
+          ) : (
+            <Button asChild>
+              <Link href="/checkout">바로 주문하기</Link>
+            </Button>
+          )}
         </div>
       </div>
 

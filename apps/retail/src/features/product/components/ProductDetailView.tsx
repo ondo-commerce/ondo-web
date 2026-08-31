@@ -16,12 +16,13 @@ import {
   type QtyIssue,
 } from "../derive";
 import type { ColorGroup, ProductDetail } from "../types";
+import { useProductFavorite } from "@/features/catalog";
 
 /**
  * 상품 상세. **읽는 화면이라 1180px 중앙 정렬**이고 2열(좌 갤러리 480 / 우 정보)이다.
  * ≤60rem에서 1열로 접힌다 — 휴대폰에서 사진과 옵션이 나란히 설 자리가 없다.
  *
- * 수량 상태를 **이 화면 하나가 통째로 들고 있다.** 옵션 표(오른쪽 열 안)와 합계
+ * **수량** 상태를 이 화면 하나가 통째로 들고 있다. 옵션 표(오른쪽 열 안)와 합계
  * 바(패널 바닥)는 DOM에서 멀리 떨어져 있지만 같은 값을 본다 — 각자 세면 한쪽만
  * 안 따라오는 화면이 된다. 그래서 상세 전체가 클라이언트 컴포넌트다(첫 HTML은
  * 여전히 서버에서 완성돼 내려간다).
@@ -39,7 +40,10 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
      값만 봐서는 왜 500이 됐는지 알 수 없어서 문구가 같이 사라진다 */
   const [issues, setIssues] = useState<Record<string, QtyIssue | null>>({});
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
-  const [favorited, setFavorited] = useState(false);
+  /* 찜은 이 화면이 기억하지 않는다. `useState(false)`로 두었더니 홈 카드에서
+     하트가 켜진 상품을 눌러 들어와도 상세는 늘 `찜`(꺼짐)으로 시작해서, 같은
+     상품을 두고 두 화면이 반대되는 말을 했다 */
+  const { favorited, toggleFavorite } = useProductFavorite(product.id);
   /** 마지막으로 담은 수량의 지문. 지금 값과 같으면 또 담을 이유가 없다 */
   const [addedKey, setAddedKey] = useState<string | null>(null);
   const [addedNotice, setAddedNotice] = useState<string | null>(null);
@@ -163,7 +167,7 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
           totals={totals}
           disabledReason={disabledReason}
           favorited={favorited}
-          onToggleFavorite={() => setFavorited((on) => !on)}
+          onToggleFavorite={toggleFavorite}
           onAddToCart={addToCart}
           addedNotice={addedNotice}
           alreadyAdded={alreadyAdded}

@@ -116,5 +116,14 @@ export const QTY_ISSUE_TEXT = {
   OVER_LIMIT: `SKU 하나당 한 번에 ${SKU_ORDER_LIMIT}${QTY_UNIT}까지예요. ${SKU_ORDER_LIMIT}${QTY_UNIT}으로 맞췄어요.`,
 } as const;
 
+/**
+ * 같은 상한을 **적용하기 전에** 말할 때 쓰는 말.
+ *
+ * `QTY_ISSUE_TEXT.OVER_LIMIT`은 값이 실제로 500으로 되돌아간 뒤에 뜨는 완료형
+ * (`맞췄어요`)이다. 일괄 입력 팝오버는 `적용`을 누르기 전이라 칸에 아직 900이
+ * 그대로 있는데, 같은 문장을 쓰면 **아직 안 한 일을 했다고 말하는 화면**이 된다.
+ */
+export const BULK_OVER_LIMIT_HINT = `SKU 하나당 한 번에 ${SKU_ORDER_LIMIT}${QTY_UNIT}까지예요. 적용하면 ${SKU_ORDER_LIMIT}${QTY_UNIT}으로 들어가요.`;
+
 /** 재고 소진이지만 미송으로 주문은 되는 조합. **수치는 주지 않는다**(게이트 Q1) */
 export const SOLD_OUT_BADGE = "재고 소진 · 미송 가능";

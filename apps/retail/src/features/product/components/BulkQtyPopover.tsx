@@ -2,7 +2,12 @@
 
 import { Button, Input, Popover } from "@ondo/ui";
 import { useState } from "react";
-import { QTY_ISSUE_TEXT, QTY_UNIT, SKU_ORDER_LIMIT } from "../constants";
+import {
+  BULK_OVER_LIMIT_HINT,
+  QTY_ISSUE_TEXT,
+  QTY_UNIT,
+  SKU_ORDER_LIMIT,
+} from "../constants";
 import { parseQty } from "../derive";
 
 /**
@@ -95,8 +100,13 @@ export function BulkQtyPopover({
         </div>
 
         {issue ? (
+          /* 표 안의 문구와 시제가 다르다 — 저긴 값이 이미 되돌아간 뒤고
+             여긴 `적용`을 누르기 전이다. 완료형을 쓰면 아직 안 한 일을 했다고
+             말하는 화면이 된다 */
           <p className="text-destructive mt-2 text-xs">
-            {QTY_ISSUE_TEXT[issue]}
+            {issue === "OVER_LIMIT"
+              ? BULK_OVER_LIMIT_HINT
+              : QTY_ISSUE_TEXT[issue]}
           </p>
         ) : (
           <p className="text-muted-foreground mt-2 text-xs">
