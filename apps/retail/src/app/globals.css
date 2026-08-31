@@ -16,5 +16,8 @@
    여기서 `<=`로 한 번만 정의해 두면 화면마다 다시 틀릴 일이 없다.
 
    이름은 폭이 아니라 기기다 — 값을 고칠 때 어느 화면을 지키려는 것인지 남기려는 것. */
+/* 정의 순서가 곧 우선순위다 — 셋 다 걸리는 390px에서는 마지막(phone)이 이긴다.
+   넓은 쪽부터 좁은 쪽으로 적는다 */
+@custom-variant laptop (@media (width <= 75rem));
 @custom-variant tablet (@media (width <= 60rem));
 @custom-variant phone (@media (width <= 40rem));
