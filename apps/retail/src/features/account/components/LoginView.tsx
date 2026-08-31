@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, FormField, Input, Notice } from "@ondo/ui";
+import { Button, cn, FormField, Input, Notice } from "@ondo/ui";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,8 @@ import {
   ACCOUNT_PATH,
   errorId,
   fieldId,
+  FIELD_LABEL_CLASS,
+  INVALID_INPUT_CLASS,
   LOGIN_FAILED_MESSAGE,
   LOGIN_FIELD_ORDER,
 } from "../constants";
@@ -65,7 +67,7 @@ export function LoginView() {
     }
 
     setBanner(null);
-    router.push(homePathFor(account.status));
+    router.push(homePathFor(account));
   };
 
   return (
@@ -90,12 +92,13 @@ export function LoginView() {
 
           <AuthSection>
             <FormField
-              className="mb-4"
+              className={cn("mb-4", FIELD_LABEL_CLASS)}
               label="이메일"
               htmlFor={fieldId("email")}
             >
               <Input
                 id={fieldId("email")}
+                className={INVALID_INPUT_CLASS}
                 type="email"
                 name="email"
                 autoComplete="email"
@@ -112,12 +115,13 @@ export function LoginView() {
             </FormField>
 
             <FormField
-              className="mb-0"
+              className={cn("mb-0", FIELD_LABEL_CLASS)}
               label="비밀번호"
               htmlFor={fieldId("password")}
             >
               <Input
                 id={fieldId("password")}
+                className={INVALID_INPUT_CLASS}
                 type="password"
                 name="password"
                 autoComplete="current-password"
@@ -167,10 +171,16 @@ export function LoginView() {
       </AuthFoot>
 
       {/* 백엔드가 없어 이 목록 밖의 이메일은 전부 실패한다. 어느 이메일이 어느
-          화면으로 가는지 화면이 말해 주지 않으면 아무도 세 갈래를 볼 수 없다 */}
-      <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
-        화면 확인용 계정 (아직 실제 인증이 없어요) — {demoAccountHint()}
-      </p>
+          화면으로 가는지 화면이 말해 주지 않으면 아무도 세 갈래를 볼 수 없다.
+
+          **개발 환경에서만 그린다.** 확정 와이어프레임에 없는 줄이고, 더미 계정
+          목록이 실서비스 화면에 실려 나가면 안 된다. `process.env.NODE_ENV`는
+          빌드 때 문자열로 박히므로 프로덕션 번들에서는 이 가지가 통째로 사라진다 */}
+      {process.env.NODE_ENV === "production" ? null : (
+        <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
+          화면 확인용 계정 (아직 실제 인증이 없어요) — {demoAccountHint()}
+        </p>
+      )}
     </>
   );
 }

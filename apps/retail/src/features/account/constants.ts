@@ -23,6 +23,53 @@ export function errorId(field: string): string {
   return `account-${field}-error`;
 }
 
+/**
+ * 칸 이름표의 DOM id. 입력의 `aria-labelledby`가 이것을 가리킨다.
+ *
+ * 첨부칸처럼 **클릭 대상이 따로 있는 칸**에 쓴다 — 점선 상자가 이미
+ * `<label for>`라서, 바깥 이름표까지 `<label for>`이면 두 글이 이어 붙어
+ * 한 칸의 이름으로 읽힌다.
+ */
+export function labelId(field: string): string {
+  return `account-${field}-label`;
+}
+
+/** 상호명을 실어 나르는 조회 문자열의 이름. 읽는 쪽과 쓰는 쪽이 같은 값을 본다 */
+export const STORE_QUERY = "store";
+
+/**
+ * 상호명을 주소에 실어 나른다.
+ *
+ * 세션도 쿠키도 없어서(백엔드 없음) 로그인·가입 화면이 알아낸 상호명을 승인
+ * 화면에 전달할 길이 주소밖에 없다. 상수를 화면에 박아 두면 방금 신청한
+ * 사장이 남의 상호를 본다.
+ */
+export function withStoreName(path: string, storeName: string | null): string {
+  return storeName
+    ? `${path}?${STORE_QUERY}=${encodeURIComponent(storeName)}`
+    : path;
+}
+
+/**
+ * `FormField`의 라벨을 확정 와이어프레임 `.field > label`에 맞춘다.
+ *
+ * `packages/ui`가 `text-sm`(14px·400)으로 박아 둔 값을 호출부에서 덮는다 —
+ * 원본은 13px(`--text-body`)·500이다. 직계 자식 라벨만 고른다: `[&_label]`로
+ * 잡으면 첨부칸 점선 상자(`<label>`)까지 같이 바뀐다.
+ */
+export const FIELD_LABEL_CLASS =
+  "[&>div>label]:text-body [&>div>label]:font-medium";
+
+/**
+ * 오류 난 칸의 테두리.
+ *
+ * `packages/ui` `Input`에는 `aria-invalid` 스타일이 없어서, 첨부칸만 빨개지고
+ * 글자 칸은 정상 칸과 같은 회색으로 남는다. 한 폼 안에서 오류를 찾는 단서가
+ * 갈리지 않게 호출부에서 건다. `aria-invalid="false"`도 붙는 자리라
+ * 값까지 본다(`aria-invalid:`는 속성이 있기만 하면 걸린다).
+ */
+export const INVALID_INPUT_CLASS = "aria-[invalid=true]:border-destructive";
+
 /** 제출할 때 오류를 훑는 순서 = 화면에 놓인 순서. 첫 오류 칸이 곧 맨 위 오류다 */
 export const LOGIN_FIELD_ORDER = ["email", "password"] as const;
 

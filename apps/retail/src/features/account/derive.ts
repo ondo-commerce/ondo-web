@@ -1,6 +1,6 @@
-import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL } from "./constants";
+import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL, withStoreName } from "./constants";
 import { ACCOUNTS } from "./fixtures";
-import type { Account, AccountStatus, FieldErrors, LoginField } from "./types";
+import type { Account, FieldErrors, LoginField } from "./types";
 
 /**
  * 이메일 형식. 서버 검증을 흉내 내지 않는다 — `@`와 점 하나가 있는지만 본다.
@@ -14,20 +14,43 @@ export function findAccount(email: string): Account | null {
   return ACCOUNTS.find((a) => a.email === normalized) ?? null;
 }
 
+/** 신청 요약 한 줄이 카드 폭을 넘지 않는 길이. 상호명은 이보다 길 이유가 없다 */
+const STORE_NAME_MAX = 40;
+
+/**
+ * 화면에 실어도 되는 상호명으로 다듬는다.
+ *
+ * 주소로 들어오는 값이라 길이도 내용도 보장이 없다. 앞뒤 공백을 떼고 줄바꿈·
+ * 연속 공백을 한 칸으로 모은 뒤 40자에서 끊는다 — **글자를 조용히 지우지
+ * 않으려고** 자르는 게 아니라, 요약 한 줄이 카드를 밀어내지 않게 막는 것이다.
+ * 남는 게 없으면 `null`이고, 그때는 부르는 쪽이 더미로 되돌아간다.
+ */
+export function normalizeStoreName(
+  raw: string | null | undefined,
+): string | null {
+  if (!raw) return null;
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  return collapsed ? collapsed.slice(0, STORE_NAME_MAX) : null;
+}
+
 /**
  * 로그인 직후 도착할 화면.
  *
  * 승인 전 계정을 마켓 홈으로 보내면 도매가가 보인다(RT-09 위반). 상태별 목적지를
  * 화면이 아니라 여기 한 곳에서 정하는 이유다.
+ *
+ * 상호명을 주소에 실어 보낸다 — 승인 화면은 세션이 없어서 이 값이 없으면
+ * 누가 로그인했든 같은 더미 상호를 보여 준다.
  */
-export function homePathFor(status: AccountStatus): string {
-  switch (status) {
+export function homePathFor(account: Account): string {
+  const store = normalizeStoreName(account.storeName);
+  switch (account.status) {
     case "APPROVED":
       return ACCOUNT_PATH.market;
     case "PENDING":
-      return ACCOUNT_PATH.approval;
+      return withStoreName(ACCOUNT_PATH.approval, store);
     case "REJECTED":
-      return ACCOUNT_PATH.rejected;
+      return withStoreName(ACCOUNT_PATH.rejected, store);
   }
 }
 
