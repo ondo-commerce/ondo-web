@@ -53,7 +53,14 @@ export interface CatalogProduct {
   favoritedAt: string | null;
 }
 
-/** 도매처 홈 머리에 서는 값. 통계 3칸은 산식이 끊겨 있어 더미 숫자다(§3-D·G) */
+/**
+ * 도매처 홈 머리에 서는 값.
+ *
+ * **진행 중 · 미송 · 미결제 잔액 · 마지막 입금이 여기 없다.** 그 넷은 거래 원장에서
+ * 나오는 값이라 원본이 `features/settlement`이고, 같은 숫자를 여기에도 적어 두었더니
+ * 무드온이 거래처 목록과 도매처 홈에서 다른 말을 했다(F1 · #128). 도매처 홈은 이제
+ * 그 값을 `app/`에서 `TradeStats`로 받는다 — 이 파일은 마켓이 아는 것만 안다.
+ */
 export interface Wholesaler {
   id: string;
   name: string;
@@ -63,20 +70,8 @@ export interface Wholesaler {
   location: string;
   /** 20:00~06:00 — 동대문 도매는 밤에 연다 */
   businessHours: string;
-  stats: WholesalerStats;
-}
-
-export interface WholesalerStats {
-  /** 누적 주문 건수 */
+  /** 누적 주문 건수. **산식이 §3-D에서 끊겨 있어 여전히 더미다** — 원장에 주문 축이 없다 */
   orderCount: number;
-  /** 진행 중 건수 = 확정 대기 + 미송 */
-  ongoingCount: number;
-  pendingCount: number;
-  backorderCount: number;
-  /** 미결제 잔액(원). 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63) */
-  unpaidAmount: number;
-  /** 마지막 입금일 (ISO 날짜) */
-  lastPaidAt: string;
 }
 
 /** 툴바가 좁히는 네 축. 값은 전부 문자열이고 `전체`는 `FILTER_ALL` 한 값이다 */

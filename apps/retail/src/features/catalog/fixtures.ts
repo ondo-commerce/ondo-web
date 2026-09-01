@@ -19,16 +19,12 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "무",
     location: "청평화패션몰 2층 24호",
     businessHours: "20:00~06:00",
-    /* 통계 3칸은 산식이 §3-D·§3-G에서 끊겨 있다 — 도매 정산 모델과 연결되기 전까지
-       더미 숫자다. 진행 중 3건 = 확정 대기 1 + 미송 2로 자릿수는 맞춰 둔다 */
-    stats: {
-      orderCount: 18,
-      ongoingCount: 3,
-      pendingCount: 1,
-      backorderCount: 2,
-      unpaidAmount: 589000,
-      lastPaidAt: "2026-07-16",
-    },
+    /* 누적 주문만 남았다 — 산식이 §3-D에서 끊겨 있어 여전히 더미다.
+       진행 중·미송·미결제 잔액·마지막 입금은 여기서 지웠다. 거래 원장이 돈과
+       미송의 원본이 된 뒤로도 같은 숫자를 여기 한 벌 더 들고 있었고, 그래서
+       무드온이 거래처 목록에서는 `진행 중 1건 · 미송 —`, 이 화면에서는
+       `진행 중 3건 · 미송 2`였다(F1 · #128). 이제 `features/settlement`에서 온다 */
+    orderCount: 18,
   },
   {
     id: "w-basic",
@@ -36,14 +32,10 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "더",
     location: "APM 3층 12호",
     businessHours: "20:00~05:00",
-    stats: {
-      orderCount: 7,
-      ongoingCount: 1,
-      pendingCount: 1,
-      backorderCount: 0,
-      unpaidAmount: 0,
-      lastPaidAt: "2026-07-21",
-    },
+    /* **거래 이력이 없는 도매처다** — 거래처 목록(`/wholesalers`) 4곳에 안 든다.
+       그래서 `features/settlement`에도 이 id가 없고, 도매처 홈은 거래 지표를
+       못 받아 통계가 전부 0으로 선다(#122 AC19) */
+    orderCount: 0,
   },
   {
     id: "w-urban",
@@ -51,29 +43,17 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "어",
     location: "디오트 4층 41호",
     businessHours: "20:00~06:00",
-    stats: {
-      orderCount: 12,
-      ongoingCount: 2,
-      pendingCount: 0,
-      backorderCount: 2,
-      unpaidAmount: 214000,
-      lastPaidAt: "2026-07-09",
-    },
+    /* 더베이직과 같다 — 주문한 적 없는 도매처라 통계가 전부 0이다 */
+    orderCount: 0,
   },
   {
     id: "w-lavien",
     name: "라비앙",
     initial: "라",
-    location: "청평화패션몰 3층 7호",
+    /* `3층 7호`가 아니다 — 확정 와이어프레임 `12_partners.html` 기준 */
+    location: "청평화패션몰 3층 8호",
     businessHours: "21:00~06:00",
-    stats: {
-      orderCount: 5,
-      ongoingCount: 0,
-      pendingCount: 0,
-      backorderCount: 0,
-      unpaidAmount: 0,
-      lastPaidAt: "2026-06-30",
-    },
+    orderCount: 5,
   },
   {
     id: "w-cotton",
@@ -81,29 +61,17 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "코",
     location: "디오트 3층 51호",
     businessHours: "20:00~06:00",
-    stats: {
-      orderCount: 21,
-      ongoingCount: 1,
-      pendingCount: 1,
-      backorderCount: 0,
-      unpaidAmount: 96000,
-      lastPaidAt: "2026-07-24",
-    },
+    orderCount: 21,
   },
   {
     id: "w-denim",
     name: "데님하우스",
     initial: "데",
-    location: "디오트 2층 18호",
+    /* `디오트 2층 18호`가 아니다 — 확정 와이어프레임 2장(`12_partners`·
+       `09_order_detail`)이 `디오트 지하 1층 12호`로 일치한다 */
+    location: "디오트 지하 1층 12호",
     businessHours: "20:00~05:00",
-    stats: {
-      orderCount: 9,
-      ongoingCount: 1,
-      pendingCount: 0,
-      backorderCount: 1,
-      unpaidAmount: 138000,
-      lastPaidAt: "2026-07-13",
-    },
+    orderCount: 9,
   },
 ];
 

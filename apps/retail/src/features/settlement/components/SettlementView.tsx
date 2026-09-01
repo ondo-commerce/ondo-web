@@ -16,6 +16,7 @@ import {
   totalReceivable,
 } from "../derive";
 import type { PartnerSettlement } from "../types";
+import { BalanceCards } from "./BalanceCards";
 import { BalanceTable } from "./BalanceTable";
 import { EmptyPartners } from "./EmptyPartners";
 import { LedgerPanel } from "./LedgerPanel";
@@ -52,7 +53,20 @@ export function SettlementView({
       <div className="mt-2">
         <Panel>
           <Panel.Title>도매처별 미수</Panel.Title>
-          {rows.length === 0 ? <EmptyPartners /> : <BalanceTable rows={rows} />}
+          {rows.length === 0 ? (
+            <EmptyPartners />
+          ) : (
+            <>
+              {/* 좁은 폭에서는 표를 세로 카드로 갈아끼운다 — 390px에서 `마지막 입금`이
+                  잘리고 `원장 보기`가 화면 밖이었다(F3). 값은 둘 다 `rows` 하나에서 나온다 */}
+              <div className="tablet:block hidden">
+                <BalanceCards rows={rows} />
+              </div>
+              <div className="tablet:hidden">
+                <BalanceTable rows={rows} />
+              </div>
+            </>
+          )}
         </Panel>
       </div>
 

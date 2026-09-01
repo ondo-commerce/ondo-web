@@ -1,9 +1,11 @@
 import { Button, Table } from "@ondo/ui";
 import Link from "next/link";
+import { PREPAID_EXCLUDED, TOTAL_LABEL } from "../constants";
 import {
   formatBalance,
   formatDate,
   formatWon,
+  hasPrepaid,
   totalOverdue,
   totalReceivable,
 } from "../derive";
@@ -27,7 +29,10 @@ export function BalanceTable({ rows }: { rows: readonly PartnerSettlement[] }) {
           <Table.Th>연체</Table.Th>
           <Table.Th align="center">마지막 입금</Table.Th>
           {/* 버튼 열. 머리글 글자가 없어도 열 자체는 있어야 tfoot 칸 수가 맞는다 */}
-          <Table.Th align="center">
+          <Table.Th align="center" className="relative">
+            {/* `sr-only`는 position:absolute라 위치 기준을 잡아 줄 조상이 없으면
+                표 바깥(문서 기준)에 놓여 **페이지를 가로로 밀어낸다.** 이 칸을
+                기준점으로 만들어 표 자기 스크롤 상자 안에 가둔다 */}
             <span className="sr-only">원장</span>
           </Table.Th>
         </tr>
@@ -74,7 +79,15 @@ export function BalanceTable({ rows }: { rows: readonly PartnerSettlement[] }) {
       <tfoot>
         <tr>
           <td className="border-border border-t px-2 pt-3 pb-2 text-left font-medium">
-            합계
+            {TOTAL_LABEL}
+            {/* 합계는 **양수 잔액만** 더한 값이다(§5 A5). 규칙이 화면에 없으면
+                미수 잔액 열 4줄을 손으로 더한 값과 안 맞아서, 사장이 자기가 잘못
+                더한 줄 알고 다시 센다(F5) */}
+            {hasPrepaid(rows) ? (
+              <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                {PREPAID_EXCLUDED}
+              </span>
+            ) : null}
           </td>
           <td className="border-border border-t px-2 pt-3 pb-2 text-right font-medium tabular-nums">
             {formatWon(totalReceivable(rows))}

@@ -71,3 +71,45 @@ export const COPY_STATUS_TEXT = {
 
 /** 복사 표시가 남아 있는 시간(ms). 너무 짧으면 못 보고, 너무 길면 다음 줄을 눌렀을 때 헷갈린다 */
 export const COPY_STATUS_MS = 2500;
+
+/** 거래처 관리 패널 부제. 미송 배지가 무엇을 여는지 표 위에서 미리 말한다 */
+export const PARTNERS_SUB =
+  "거래한 적 있는 도매처예요. 미송 배지를 누르면 그 도매처만 걸러서 미송 현황이 열려요.";
+
+/** 수량 단위. 소매는 `장`이다(게이트 Q9) — `shared/qty.ts`의 `QTY_UNIT`과 같은 값이다 */
+export const SHEET_UNIT = "장";
+
+/** 미송 배지에 `지연`을 **글자로도** 붙인다 — 색을 못 봐도 어느 줄이 밀렸는지 읽혀야 한다 */
+export const DELAYED_LABEL = "지연";
+
+/** 표 `tfoot`의 합계 라벨 */
+export const TOTAL_LABEL = "합계";
+
+/**
+ * 합계 옆에 붙는 규칙 한 줄.
+ *
+ * 총 미수는 **양수 잔액만** 더한 값이다(§5 A5). 그 규칙이 화면에 없으면 미수 잔액
+ * 열 4줄을 더한 값과 합계가 안 맞아서, 사장이 자기 계산을 의심한다(F5).
+ * 선수금 줄이 있을 때만 붙는다.
+ */
+export const PREPAID_EXCLUDED = "선수금 제외";
+
+/**
+ * 좁은 폭(≤960px)에서 표 대신 세로로 쌓을 때 값 앞에 서는 라벨.
+ *
+ * 표에서는 머리글이 하던 일(이 숫자가 무엇인지)을 여기서는 이 라벨이 한다.
+ * 머리글과 **같은 말**이어야 폭이 바뀌어도 같은 화면으로 읽힌다.
+ */
+export const CARD_LABEL = {
+  balance: "미수 잔액",
+  overdue: "연체",
+  lastPaid: "마지막 입금",
+  lastOrdered: "마지막 주문",
+  ongoing: "진행 중",
+  backorder: "미송",
+  basis: "근거",
+  method: "결제 수단",
+  delta: "증감",
+  ledgerBalance: "잔액",
+  contact: "연락 · 계좌",
+} as const;

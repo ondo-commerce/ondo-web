@@ -1,9 +1,11 @@
+import type { TradeStats } from "@/shared/tradeStats";
 import { OVERDUE_DAYS, PAID_WINDOW_DAYS, TODAY } from "./constants";
 import { LEDGER_ENTRIES, TRADE_PARTNERS } from "./fixtures";
 import type {
   LedgerEntry,
   LedgerRow,
   OverdueInfo,
+  PartnerListRow,
   PartnerSettlement,
   PayMethod,
 } from "./types";
@@ -235,8 +237,28 @@ export function partnerSettlements(): PartnerSettlement[] {
  * 선수금을 빼면 이 값이 "받을 돈"이 아니라 "순채권"이 되어 카드 이름과 어긋난다.
  * 표 `tfoot` 합계도 같은 함수를 부르므로 카드와 표가 다른 값을 말할 수 없다.
  */
-export function totalReceivable(rows: readonly PartnerSettlement[]): number {
+export function totalReceivable(
+  /* 정산 표(`PartnerSettlement`)와 거래처 표(`PartnerListRow`)가 **같은 함수**를
+     부른다. 둘 다 잔액을 들고 있으니 타입이 아니라 모양으로 받는다 — 두 화면의
+     합계가 갈릴 자리를 아예 없앤다 */
+  rows: readonly { balance: number }[],
+): number {
   return rows.reduce((sum, row) => sum + Math.max(row.balance, 0), 0);
+}
+
+/**
+ * 합계에서 빠진 줄(선수금)이 표에 있는가.
+ *
+ * **있으면 그 사실을 표가 말해야 한다.** 화면의 미수 잔액 4줄을 손으로 더하면
+ * 829,000 또는 889,000이 나오는데 `합계`는 859,000이라, 규칙이 화면에 없으면
+ * 사장이 자기가 잘못 더한 줄 알고 다시 센다(F5). PM Epic 완료 판정 1번이
+ * "화면에 찍은 숫자만으로 검산이 된다"이고 그게 이 한 자리에서 안 섰다.
+ *
+ * 선수금이 한 줄도 없으면 문구를 붙이지 않는다 — 빼는 게 없는데 `선수금 제외`라고
+ * 적으면 없는 규칙을 읽게 된다.
+ */
+export function hasPrepaid(rows: readonly { balance: number }[]): boolean {
+  return rows.some((row) => row.balance < 0);
 }
 
 /** 총 미수 카드의 보조 문구가 세는 수 = 잔액이 **양수인** 도매처 수 */
@@ -321,4 +343,59 @@ export function overdueSummaryText(overdue: OverdueInfo): string {
   return overdue.count === 0
     ? "0건"
     : `${overdue.count}건 · 최장 D+${overdue.maxDays}`;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   거래처 목록
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 거래처 관리 표의 줄 전부. **마지막 주문 최신순**이다.
+ *
+ * `미수 잔액` 열은 여기서 fixture를 읽지 않고 `balanceOf`로 원장에서 파생시킨다 —
+ * 숫자를 두 군데 적는 순간 정산 화면과 이 화면이 다른 금액을 말하고, 그게 이번
+ * 회차가 고치려는 결함이다(도매처 홈 #98이 실제로 그렇게 갈라져 있었다).
+ */
+export function partnerListRows(): PartnerListRow[] {
+  return TRADE_PARTNERS.map((partner) => {
+    const entries = ledgerOf(partner.wholesalerId);
+
+    return {
+      ...partner,
+      balance: balanceOf(entries),
+      lastPaidAt: lastPaidAtOf(entries),
+    };
+  }).sort((a, b) => b.lastOrderedAt.localeCompare(a.lastOrderedAt));
+}
+
+/** 미송 합계 장수. 표 `tfoot`의 `41장`이 이 값이고, 41 = 10 + 15 + 16이 화면 위에서 더해진다 */
+export function totalBackorderSheets(rows: readonly PartnerListRow[]): number {
+  return rows.reduce((sum, row) => sum + row.backorderSheets, 0);
+}
+
+/**
+ * 도매처 홈(`/wholesalers/[id]`) 요약 카드가 읽는 거래 지표. **거래 이력이 없으면 null**이다.
+ *
+ * 도매처 홈은 `features/catalog`의 화면인데 진행 중 · 미송 · 미수는 전부 이 feature의
+ * 값이다. 예전에는 같은 숫자를 저쪽 더미에도 적어 두어서 무드온이 두 화면에서 다른
+ * 말을 했다(F1 · #128). feature끼리 직접 import하지 않으므로(`CLAUDE.md`) 여기서
+ * 내보내고 `app/`이 합친다 — `retail-backorder` 회차가 상호를 그렇게 이었다.
+ *
+ * null을 0으로 바꿔 돌려주지 않는다. **거래한 적 없는 것과 거래액이 0인 것은 다르고**,
+ * 그 차이를 화면이 알아야 `거래처에서 보기`를 감출지 정할 수 있다(F9).
+ */
+export function partnerStatsOf(wholesalerId: string): TradeStats | null {
+  const partner = TRADE_PARTNERS.find((p) => p.wholesalerId === wholesalerId);
+  if (!partner) return null;
+
+  const entries = ledgerOf(wholesalerId);
+
+  return {
+    pendingCount: partner.pendingCount,
+    backorderCount: partner.backorderCount,
+    backorderSheets: partner.backorderSheets,
+    backorderDelayed: partner.backorderDelayed,
+    balance: balanceOf(entries),
+    lastPaidAt: lastPaidAtOf(entries),
+  };
 }

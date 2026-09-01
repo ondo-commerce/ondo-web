@@ -4,10 +4,11 @@ import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
+import { ongoingCount, type TradeStats } from "@/shared/tradeStats";
 import { CatalogSection } from "./CatalogSection";
 import { ProductGrid } from "./ProductGrid";
 import { LIST_SORTS } from "../constants";
-import { formatWon, newArrivals } from "../derive";
+import { formatUnpaid, newArrivals } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
   CatalogFilter,
@@ -28,12 +29,18 @@ import type {
  */
 export function WholesalerHomeView({
   wholesaler,
+  tradeStats,
   products,
   newArrivalSince,
   filter,
   sort,
 }: {
   wholesaler: Wholesaler;
+  /**
+   * 거래 지표. **거래한 적 없는 도매처는 null**이다 — 0과 다르다.
+   * 원본은 `features/settlement`의 거래 원장이고 `app/`이 합쳐서 넘긴다(F1).
+   */
+  tradeStats: TradeStats | null;
   /** 이 도매처가 마켓에 올린 상품 전부 */
   products: readonly CatalogProduct[];
   newArrivalSince: string;
@@ -70,15 +77,19 @@ export function WholesalerHomeView({
               {wholesaler.location} · 영업시간 {wholesaler.businessHours}
             </p>
           </div>
-          <div className="ml-auto phone:ml-0">
-            <Button asChild variant="line" size="sm">
-              {/* 거래처 관리 화면 본체는 다음 회차다. 지금은 그 목록까지만 보낸다 */}
-              <Link href="/wholesalers">거래처에서 보기</Link>
-            </Button>
-          </div>
+          {/* 거래한 적 없는 도매처에서는 이 버튼을 감춘다. `/wholesalers`는 거래
+              이력이 있는 곳만 서는 목록이라(§3-0 A), 더베이직·어반무드에서 누르면
+              방금 보던 도매처가 없는 표로 떨어진다 — 사장이 목록을 뒤지다 만다(F9) */}
+          {tradeStats ? (
+            <div className="ml-auto phone:ml-0">
+              <Button asChild variant="line" size="sm">
+                <Link href="/wholesalers">거래처에서 보기</Link>
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        <StatCards cards={statCardsOf(wholesaler)} />
+        <StatCards cards={statCardsOf(wholesaler, tradeStats)} />
       </Panel>
 
       {fresh.length > 0 ? (
@@ -121,28 +132,35 @@ export function WholesalerHomeView({
 /**
  * 통계 3칸이 쓸 값.
  *
- * **숫자는 전부 더미다.** 누적 주문·진행 중·미결제 잔액의 산식이 도매 정산 모델과
- * §3-D·§3-G에서 끊겨 있어(통합 주문 엔티티·입금 배정 규칙 미결정) 계산할 근거가
- * 없다. 자릿수와 관계(진행 중 = 확정 대기 + 미송)만 맞춰 두고 값은 서버가 준다.
+ * **누적 주문만 더미다** — 산식이 §3-D에서 끊겨 있다(통합 주문 엔티티 미결정).
+ * 나머지 둘은 `features/settlement`의 거래 원장에서 온 값이라, 거래처 관리 표와
+ * 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서 무드온이 두 화면에서
+ * 다르게 읽혔다(F1 · #128).
+ *
+ * `tradeStats`가 null이면 **거래한 적 없는 도매처**다. 0건·0원으로 세우되 그건
+ * 계산 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
  *
  * 카드의 겉모습은 `shared/components/StatCards`가 갖는다 — 정산 화면이 같은 모양을
  * 쓰게 되면서 올렸다(Rule of Two).
  */
-function statCardsOf(wholesaler: Wholesaler): StatCard[] {
-  const { stats } = wholesaler;
-
+function statCardsOf(
+  wholesaler: Wholesaler,
+  tradeStats: TradeStats | null,
+): StatCard[] {
   return [
-    { label: "누적 주문", value: `${stats.orderCount}건`, sub: null },
+    { label: "누적 주문", value: `${wholesaler.orderCount}건`, sub: null },
     {
       label: "진행 중",
-      value: `${stats.ongoingCount}건`,
-      sub: `확정 대기 ${stats.pendingCount} · 미송 ${stats.backorderCount}`,
+      /* 합을 따로 들고 있지 않다 — `확정 대기 + 미송`을 여기서 더한다 */
+      value: `${tradeStats ? ongoingCount(tradeStats) : 0}건`,
+      sub: `확정 대기 ${tradeStats?.pendingCount ?? 0} · 미송 ${tradeStats?.backorderCount ?? 0}`,
     },
     {
       label: "미결제 잔액",
-      value: formatWon(stats.unpaidAmount),
-      /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63) */
-      sub: `마지막 입금 ${stats.lastPaidAt.replaceAll("-", ".")}`,
+      value: formatUnpaid(tradeStats?.balance ?? 0),
+      /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63).
+         입금한 적이 없으면 `—`다 — 없는 날짜를 지어내지 않는다 */
+      sub: `마지막 입금 ${tradeStats?.lastPaidAt ? tradeStats.lastPaidAt.replaceAll("-", ".") : "—"}`,
     },
   ];
 }

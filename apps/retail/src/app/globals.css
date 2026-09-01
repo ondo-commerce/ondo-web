@@ -33,6 +33,20 @@
      여기 둔다. `packages/ui`의 `Table`은 같은 값을 `border-gray-100` 원시 이름으로
      쓰고 있으므로, theme.css를 열 수 있게 되면 그 자리까지 이 이름으로 모으고 이 줄을 지운다. */
   --color-border-soft: var(--color-gray-100);
+
+  /* 요약 카드의 큰 숫자 한 단계. 확정 와이어프레임 `_base.css` `.stat .v` 실측값
+     (`font-size:22px; line-height:30px`)이다.
+
+     Tailwind 기본 스케일에 22px가 없어서 `text-xl`(20px/28)로 대신 쓰고 있었는데,
+     이 카드가 돈을 말하는 자리(총 미수 · 연체 · 미결제 잔액)로 옮겨 오면서 화면에서
+     가장 먼저 읽혀야 할 숫자가 한 단계 작게 서 있었다(F6). `text-[22px]` 원시값으로
+     흩뜨리지 않고 `--text-body`가 13px에 그랬듯 이름을 붙여 모은다.
+
+     줄높이를 같이 적는다 — 안 적으면 크기만 바뀌고 줄높이는 이전 단계에 남는다.
+     `packages/ui`가 읽기 전용이라 앱에 판다(`--color-destructive-strong`과 같은 사정).
+     TODO(#121): design(ui) 이슈로 theme.css에 올린다 */
+  --text-stat: 22px;
+  --text-stat--line-height: 30px;
 }
 
 /* 소매 전용 하강 브레이크포인트 두 개.
