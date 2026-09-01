@@ -1,4 +1,5 @@
 import { CartLineItem } from "./CartLineItem";
+import type { QtyIssue } from "@/shared/qty";
 import type { CartGroup } from "../derive";
 import { comboSheetsLabel, formatWon, totalsOf } from "../derive";
 
@@ -10,7 +11,17 @@ import { comboSheetsLabel, formatWon, totalsOf } from "../derive";
  * 센다(PM 결정). 선택을 풀어도 그 도매처에 무엇이 얼마나 들었는지는 계속
  * 보여야 한다 — 선택 기준으로 세는 것은 하단 요약 하나뿐이다(RT-32).
  */
-export function WholesalerGroup({ group }: { group: CartGroup }) {
+export function WholesalerGroup({
+  group,
+  issues,
+  onChangeQty,
+  onRemove,
+}: {
+  group: CartGroup;
+  issues: Readonly<Record<string, QtyIssue | null>>;
+  onChangeQty: (lineId: string, next: string) => void;
+  onRemove: (lineId: string) => void;
+}) {
   const totals = totalsOf(group.lines);
 
   return (
@@ -35,7 +46,13 @@ export function WholesalerGroup({ group }: { group: CartGroup }) {
 
       <ul className="px-3.5">
         {group.lines.map((line) => (
-          <CartLineItem key={line.lineId} line={line} />
+          <CartLineItem
+            key={line.lineId}
+            line={line}
+            issue={issues[line.lineId] ?? null}
+            onChangeQty={(next) => onChangeQty(line.lineId, next)}
+            onRemove={() => onRemove(line.lineId)}
+          />
         ))}
       </ul>
     </section>

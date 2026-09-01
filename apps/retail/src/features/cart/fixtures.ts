@@ -10,6 +10,9 @@ import type { CartLine } from "./types";
  * `lineId`가 그대로 말하게 두었다(`${도매처id}:${상품id}-${팔레트색}-${사이즈}`
  * — 상품 상세와 같은 규칙).
  *
+ * 수량이 숫자가 아니라 **글자**인 것은 사장이 칸에 친 것을 그대로 들고 있어야
+ * 하기 때문이다 — `types.ts`의 `qtyText` 주석 참조.
+ *
  * 도매처 위치는 **확정 와이어프레임**을 따른다. 코튼클럽은 `05_cart` ·
  * `06_checkout` · `09_order_detail` · `12_partners` 네 장이 전부 `디오트 3층
  * 51호`라, 먼저 구현된 `features/catalog|product|search/fixtures.ts`의 `APM
@@ -29,7 +32,7 @@ export const CART_SEED: readonly CartLine[] = [
     size: "S",
     price: 12500,
     soldOut: false,
-    qty: 10,
+    qtyText: "10",
   },
   {
     lineId: "w-moodon:p-flower-shirt-레드-M",
@@ -43,7 +46,7 @@ export const CART_SEED: readonly CartLine[] = [
     size: "M",
     price: 13000,
     soldOut: false,
-    qty: 6,
+    qtyText: "6",
   },
   {
     lineId: "w-moodon:p-flower-shirt-네이비-L",
@@ -59,7 +62,7 @@ export const CART_SEED: readonly CartLine[] = [
        수량은 도매처가 주문을 확정할 때 미송으로 넘어간다(RT-31) */
     price: 13500,
     soldOut: true,
-    qty: 10,
+    qtyText: "10",
   },
   {
     lineId: "w-cotton:p-cotton-tee-화이트-M",
@@ -73,6 +76,6 @@ export const CART_SEED: readonly CartLine[] = [
     size: "M",
     price: 4500,
     soldOut: false,
-    qty: 20,
+    qtyText: "20",
   },
 ];

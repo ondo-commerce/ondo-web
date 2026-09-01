@@ -1,3 +1,4 @@
+import { QTY_UNIT, SKU_ORDER_LIMIT } from "@/shared/qty";
 import type { ListingStatus } from "./types";
 
 /**
@@ -92,29 +93,15 @@ export const PRICE_HINT =
 export const THUMB_SLOTS = 5;
 
 /**
- * 한 번에 주문할 수 있는 상한. **SKU 하나당**이다(glossary G13) — 상품 단위가 아니다.
- * 색상 × 사이즈 조합마다 500장까지이고, 조합이 여럿이면 합계는 더 커질 수 있다.
- * 이 값을 화면 문구와 clamp가 같이 읽는다 — 두 곳에 적으면 안내와 동작이 갈린다.
+ * 수량 상수·문구는 **`shared/qty.ts`가 원본이다.** 사장이 숫자를 넣는 자리가
+ * 장바구니까지 두 곳이 되면서 올렸다(Rule of Two). 여기서 다시 내보내는 것은
+ * 이 화면의 부르는 쪽들이 경로 하나만 알면 되게 하려는 것이고, **정의는 한
+ * 곳뿐이다** — 두 벌이 되면 한쪽만 상한이 바뀐다.
  */
-export const SKU_ORDER_LIMIT = 500;
-
-/** 수량 단위. 소매는 `장`이다(게이트 Q9). 도매 화면의 `개`와는 별도 이슈로 맞춘다 */
-export const QTY_UNIT = "장";
+export { QTY_ISSUE_TEXT, QTY_UNIT, SKU_ORDER_LIMIT } from "@/shared/qty";
 
 /** 수량 칸 각주. 상한이 어느 단위에 걸리는지를 여기서 못박는다 */
 export const QTY_FOOTNOTE = `수량 칸에 숫자를 바로 입력하세요. −/+ 는 미세 조정용이에요. SKU 하나당 한 번에 최대 ${SKU_ORDER_LIMIT}${QTY_UNIT}까지 주문할 수 있어요.`;
-
-/**
- * 수량 입력이 걸렸을 때 그 행에 뜨는 말.
- *
- * **값만 되돌리고 말을 안 하면 "고장난 칸"이 된다**(도매 5회차 F5). 특히
- * `45.5`처럼 소수점을 넣은 경우 — 점만 조용히 지우면 `455`가 되어 45배를
- * 주문하게 되므로, 친 글자를 그대로 두고 왜 못 받는지 말한다.
- */
-export const QTY_ISSUE_TEXT = {
-  NOT_A_NUMBER: `수량은 낱장 단위예요. 0 이상의 정수만 넣을 수 있어요(소수점 · 부호 · 전각 숫자는 못 받아요).`,
-  OVER_LIMIT: `SKU 하나당 한 번에 ${SKU_ORDER_LIMIT}${QTY_UNIT}까지예요. ${SKU_ORDER_LIMIT}${QTY_UNIT}으로 맞췄어요.`,
-} as const;
 
 /**
  * 같은 상한을 **적용하기 전에** 말할 때 쓰는 말.
