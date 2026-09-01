@@ -266,7 +266,7 @@ export const SEARCH_WHOLESALERS: readonly SearchWholesaler[] = [
     id: "w-cotton",
     name: "코튼클럽",
     initial: "코",
-    location: "APM 2층 33호",
+    location: "디오트 3층 51호",
   },
   {
     id: "w-denim",

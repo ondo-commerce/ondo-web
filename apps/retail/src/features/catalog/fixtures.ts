@@ -79,7 +79,7 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     id: "w-cotton",
     name: "코튼클럽",
     initial: "코",
-    location: "APM 2층 33호",
+    location: "디오트 3층 51호",
     businessHours: "20:00~06:00",
     stats: {
       orderCount: 21,
