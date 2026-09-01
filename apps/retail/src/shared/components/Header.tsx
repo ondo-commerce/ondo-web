@@ -2,7 +2,6 @@ import { Button } from "@ondo/ui";
 import { Heart } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AccountMenu } from "@/shared/components/AccountMenu";
 import { GlobalSearch } from "@/shared/components/GlobalSearch";
 
 /**
@@ -17,11 +16,18 @@ import { GlobalSearch } from "@/shared/components/GlobalSearch";
  * 로고 14(본문 크기 그대로).
  * 알림 아이콘은 없다. 소매에는 알림 채널 자체가 없어서 자리도 비워 두지 않는다.
  *
- * **장바구니 뱃지는 이 파일이 만들지 않는다.** 담긴 수를 아는 것은
- * `features/cart`이고 셸은 `shared/`라 그쪽을 읽을 수 없다(import 한 방향).
- * 자리만 비워 두고 부모 `app/(shop)/layout.tsx`가 실물을 끼워 넣는다.
+ * **장바구니 뱃지와 계정 칩은 이 파일이 만들지 않는다.** 담긴 수를 아는 것은
+ * `features/cart`이고 로그인한 상호명을 아는 것은 `features/account`인데,
+ * 셸은 `shared/`라 그쪽을 읽을 수 없다(import 한 방향). 자리만 비워 두고
+ * 부모 `app/(shop)/layout.tsx`가 실물을 끼워 넣는다.
  */
-export function Header({ cart }: { cart: ReactNode }) {
+export function Header({
+  cart,
+  account,
+}: {
+  cart: ReactNode;
+  account: ReactNode;
+}) {
   return (
     /* 아래 선을 카테고리 줄에 넘긴다 — 그 줄이 따라오는 화면(홈·상품 상세)에서는
        기능줄이 자기 선을 그으면 흰 블록이 둘로 갈린다. 와이어프레임 `.topbar`는
@@ -62,7 +68,7 @@ export function Header({ cart }: { cart: ReactNode }) {
           </Button>
 
           {cart}
-          <AccountMenu />
+          {account}
         </div>
       </div>
     </header>

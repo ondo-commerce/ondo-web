@@ -17,12 +17,14 @@ import {
   FIELD_LABEL_CLASS,
   INVALID_INPUT_CLASS,
   labelId,
+  separatorNote,
   SIGNUP_FIELD_ORDER,
   withStoreName,
 } from "../constants";
 import {
   EMPTY_SIGNUP,
   firstInvalidField,
+  normalizePhone,
   normalizeSeparators,
   normalizeStoreName,
   validateSignup,
@@ -71,17 +73,19 @@ export function SignupView() {
    * 타이핑 도중에 고치면 커서가 튀고, 아예 안 고치면 `010.1234.5678`이 형식
    * 오류로만 남는다. 바꿨으면 **바뀐 값이 칸에 보이고** 왜 바꿨는지 아래 줄이
    * 말한다 — 조용히 글자를 지우지 않는다.
+   *
+   * 연락처만 `normalizePhone`이다. 하이픈이 아예 없는 `01012345678`은 자리수로
+   * 국번을 갈라 넣어 줘야 통과한다(retail-settings F4). 사업자등록번호는 같은
+   * 숫자 10자리라도 3-2-5라 이 처리를 공유할 수 없다.
    */
   const normalizeOnBlur = (field: "phone" | "bizNo") => {
     const raw = values[field];
-    const normalized = normalizeSeparators(raw);
+    const normalized =
+      field === "phone" ? normalizePhone(raw) : normalizeSeparators(raw);
     if (normalized === raw) return;
 
     setValues((prev) => ({ ...prev, [field]: normalized }));
-    setNotes((prev) => ({
-      ...prev,
-      [field]: `입력하신 값을 ${normalized} 로 맞췄어요. 구분자만 바꿨고 지운 글자는 없어요.`,
-    }));
+    setNotes((prev) => ({ ...prev, [field]: separatorNote(normalized) }));
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
