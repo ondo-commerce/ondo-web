@@ -9,6 +9,30 @@
      패널이 화면 폭을 꽉 쓴다. 읽는 화면과 훑는 화면의 차이라 값이 아니라
      쓰임으로 이름을 붙였다 */
   --container-wrap: 1180px;
+
+  /* 빨간 **글자** 전용 한 단계 진한 빨강.
+
+     `--color-destructive`(red-500)는 흰 배경에서 명도대비 3.81:1이라 **선으로는
+     되지만(3:1) 글자로는 AA(4.5:1)에 못 미친다.** 확정 와이어프레임
+     `15_retail-hallmark/_base.css`의 대비 수정 2번이 같은 처방을 이미 적용해 뒀다
+     — 글자만 red-700으로 내리고 테두리는 red-500을 그대로 둔다.
+
+     여기(앱)에 두는 이유: 슬롯의 원래 자리는 `packages/ui/src/styles/theme.css`인데
+     그 패키지는 읽기 전용이다. 도매에도 같은 자리가 생기면 그때 `design(ui)` 이슈로
+     theme.css에 올리고 이 줄을 지운다. 그때까지 소매만 쓴다. */
+  --color-destructive-strong: var(--color-red-700);
+
+  /* 한 단계 옅은 **구분선**. 확정 와이어프레임 `_base.css` `--border-soft:#f3f4f6`이다.
+
+     선이 두 단계로 나뉘는 이유: 패널 안에서 영역을 가르는 선(`.hr` · 표 행 구분선 ·
+     탭 밑줄)은 gray-100이고, 상자의 바깥 테두리와 합계 행 윗선만 gray-200(`--color-border`)이다.
+     한 벌로 합치면 표 행 구분선(gray-100) 사이에서 툴바 밑줄 한 줄만 유독 진하게 튄다
+     (retail-backorder F4 · retail-shell F13이 같은 자리에서 두 번 걸렸다).
+
+     `--color-border`처럼 `theme.css`에 있어야 할 슬롯인데 그 패키지가 읽기 전용이라
+     여기 둔다. `packages/ui`의 `Table`은 같은 값을 `border-gray-100` 원시 이름으로
+     쓰고 있으므로, theme.css를 열 수 있게 되면 그 자리까지 이 이름으로 모으고 이 줄을 지운다. */
+  --color-border-soft: var(--color-gray-100);
 }
 
 /* 소매 전용 하강 브레이크포인트 두 개.
