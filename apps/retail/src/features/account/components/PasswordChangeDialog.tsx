@@ -34,7 +34,7 @@ import { useReturnFocus } from "../useReturnFocus";
  * 지어낼 값이 없다. **다만 저장은 더미**이고 그 사실을 다이얼로그가 말한다.
  *
  * 닫을 때 포커스를 `변경` 버튼으로 되돌리는 일은 `useReturnFocus`가 한다.
- * Radix가 대신 해 줄 자리인데 이 레포에서는 비어 있다 — 이유는 그 훅에 적었다.
+ * Radix가 대신 해 줄 자리인데 실측으로는 안 왔다 — 사정은 그 훅에 적었다.
  * 안 되돌리면 닫는 순간 포커스가 `<body>`로 떨어져 키보드 사용자가 화면 맨
  * 위로 튄다(`retail-cart` F3).
  */
@@ -61,6 +61,14 @@ export function PasswordChangeDialog({ onChanged }: { onChanged: () => void }) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    /* 이 폼은 Radix Portal을 타고 `<body>` 직속으로 그려지지만, React 합성
+       이벤트는 **포털을 넘어 부모 트리로 버블한다.** 그 부모가 설정 화면 계정
+       패널의 `<form onSubmit>`이라, 막지 않으면 `변경하기` 한 번에 누른 적 없는
+       계정 저장까지 실행됐다 — 저장하지 않은 대표자명·연락처가 세션 보관소에
+       커밋되고 다른 화면을 갔다 와도 남았다(retail-settings F2).
+       받는 쪽(`SettingsView.submitPanel`)에서도 한 번 더 막지만, 이 다이얼로그가
+       어느 폼 안에 놓이든 자기 제출을 밖으로 흘리지 않는 것이 먼저다. */
+    event.stopPropagation();
 
     const invalid = PASSWORD_FIELD_ORDER.filter(
       (field) => found[field] !== undefined,
@@ -118,7 +126,15 @@ export function PasswordChangeDialog({ onChanged }: { onChanged: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className={cn("-mr-2 text-body", FOCUS_RING_CLASS)}
+          /* `ghost`의 `text-muted-foreground`(gray-500)를 덮는다. 이 버튼은 잠긴
+             칸의 **회색 면(gray-100) 위**에 앉아서 4.39:1로 AA에 못 미쳤다 —
+             확정 와이어프레임 `_base.css` 472행이 `.f.lock .muted`를 gray-600으로
+             이미 보정해 둔 자리다(retail-settings F1). 같은 상자 안 값 글자와
+             같은 색이 된다 */
+          className={cn(
+            "-mr-2 text-body text-secondary-foreground",
+            FOCUS_RING_CLASS,
+          )}
           aria-label="비밀번호 변경"
         >
           변경

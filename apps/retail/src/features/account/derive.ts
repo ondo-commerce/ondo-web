@@ -34,8 +34,14 @@ export function findAccount(email: string): Account | null {
   return ACCOUNTS.find((a) => a.email === normalized) ?? null;
 }
 
-/** 신청 요약 한 줄이 카드 폭을 넘지 않는 길이. 상호명은 이보다 길 이유가 없다 */
-const STORE_NAME_MAX = 40;
+/**
+ * 신청 요약 한 줄이 카드 폭을 넘지 않는 길이. 상호명은 이보다 길 이유가 없다.
+ *
+ * **입력칸도 이 값을 봐야 한다.** 저장할 때만 자르면 폼에는 친 글자가, 저장값과
+ * 헤더 칩에는 잘린 글자가 남아 **같은 세션에 두 상호명이 산다**(retail-settings
+ * F3). 자르는 자리가 하나뿐이도록 여기서 내보낸다.
+ */
+export const STORE_NAME_MAX = 40;
 
 /**
  * 화면에 실어도 되는 상호명으로 다듬는다.
@@ -161,6 +167,33 @@ export function normalizeSeparators(raw: string): string {
   return raw.trim().replace(/[.\s/]+/g, "-");
 }
 
+/**
+ * 연락처를 하이픈 형태로 맞춘다. **여기서도 글자를 지우지 않는다.**
+ *
+ * `normalizeSeparators`만으로는 **구분자가 아예 없는 가장 흔한 입력**
+ * (`01012345678`)이 그대로 남아 `PHONE_SHAPE`에서 떨어졌다 — 사장은 왜 자기
+ * 번호가 거부되는지 모른 채 직접 하이픈을 넣어야 했다(retail-settings F4).
+ *
+ * 숫자만 10~11자리일 때만 손댄다. 국번 길이는 자리수로 갈린다 —
+ * 11자리는 3-4-4(`010-1234-5678`), 10자리는 `02`로 시작하면 2-4-4
+ * (`02-1234-5678`), 아니면 3-3-4(`031-123-4567`). 그 밖의 값은 **그대로
+ * 돌려준다** — 12자리를 억지로 끼워 맞추면 친 글자가 사라진다.
+ *
+ * `normalizeSeparators`를 이렇게 고치지 않는 이유: 사업자등록번호도 같은
+ * 함수를 쓰는데 그쪽은 숫자 10자리가 3-2-5다. 형식이 다른 두 칸을 한 함수가
+ * 판정하면 한쪽이 반드시 틀린다.
+ */
+export function normalizePhone(raw: string): string {
+  const separated = normalizeSeparators(raw);
+  if (!/^\d{10,11}$/.test(separated)) return separated;
+
+  if (separated.length === 11)
+    return `${separated.slice(0, 3)}-${separated.slice(3, 7)}-${separated.slice(7)}`;
+  if (separated.startsWith("02"))
+    return `${separated.slice(0, 2)}-${separated.slice(2, 6)}-${separated.slice(6)}`;
+  return `${separated.slice(0, 3)}-${separated.slice(3, 6)}-${separated.slice(6)}`;
+}
+
 export interface SignupValues {
   storeName: string;
   ownerName: string;
@@ -214,7 +247,7 @@ export function validateSignup(values: SignupValues): FieldErrors<SignupField> {
     errors.passwordConfirm = VALIDATION_MESSAGE.passwordMismatch;
 
   if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
-  else if (!PHONE_SHAPE.test(normalizeSeparators(values.phone)))
+  else if (!PHONE_SHAPE.test(normalizePhone(values.phone)))
     errors.phone = VALIDATION_MESSAGE.phoneShape;
 
   /* 비워 두면 통과한다. 적었는데 자리수가 안 맞으면 그때만 말한다 —
@@ -381,7 +414,7 @@ export function settingsValuesFrom(account: AccountProfile): SettingsValues {
 /**
  * 설정 저장 검증. 규칙은 회원가입과 **같은 것을 꺼내 쓴다**(문구도 값도).
  *
- * 연락처는 구분자만 하이픈으로 맞춰 본다 — `010.1234.5678`도 `01012345678`도
+ * 연락처는 `normalizePhone`을 거쳐 본다 — `010.1234.5678`도 `01012345678`도
  * **친 글자를 지우지 않고** 통과 여부만 판정한다. 틀리면 값은 칸에 그대로 남고
  * 아래 줄이 이유를 말한다.
  */
@@ -394,7 +427,7 @@ export function validateSettings(
   if (!values.ownerName.trim()) errors.ownerName = VALIDATION_MESSAGE.ownerName;
 
   if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
-  else if (!PHONE_SHAPE.test(normalizeSeparators(values.phone)))
+  else if (!PHONE_SHAPE.test(normalizePhone(values.phone)))
     errors.phone = VALIDATION_MESSAGE.phoneShape;
 
   return errors;

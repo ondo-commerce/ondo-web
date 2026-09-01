@@ -20,13 +20,15 @@ import {
   INVALID_INPUT_CLASS,
   labelId,
   PASSWORD_MASK,
+  separatorNote,
   STORE_PANEL_FIELDS,
 } from "../constants";
 import {
   consentRecords,
   firstInvalidField,
-  normalizeSeparators,
+  normalizePhone,
   normalizeStoreName,
+  STORE_NAME_MAX,
   validateSettings,
   visibleErrors,
   type SettingsValues,
@@ -58,7 +60,18 @@ function describedBy(
 }
 
 /** 값을 손봤을 때 그 사실을 알리는 줄. 오류가 아니라 통지라서 회색이다 */
-type Notes = Partial<Record<"phone", string>>;
+type Notes = Partial<Record<"storeName" | "phone", string>>;
+
+/**
+ * 안내 배너를 확정 와이어프레임 `_base.css` 238~239행 `.notice`에 맞춘다.
+ *
+ * `packages/ui` `Notice`의 기본값(`bg-accent`·`text-accent-foreground`·14px/20·
+ * 패딩 12/16)은 강조 파랑 배너다. 원본의 `.notice`는 회색 면 위 gray-600
+ * 13px/19이고, 기본값 그대로 두면 대비가 8.3:1에서 **4.63:1**로 내려앉아 AA
+ * 문턱에 붙는다(retail-settings F5). 그 패키지는 읽기 전용이라 호출부에서 덮는다.
+ */
+const NOTICE_CLASS =
+  "bg-secondary text-secondary-foreground items-start px-3.5 py-2.75 text-body leading-4.75";
 
 /**
  * 설정 — 가게 정보 · 사업자 정보 · 계정 · 개인정보/약관 패널 4장.
@@ -102,28 +115,54 @@ export function SettingsView() {
   const found = validateSettings(values);
   const errors = visibleErrors(found, revealed);
 
+  /** 손본 값을 다시 고치면 통지는 역할이 끝난다. 칸마다 따로 끈다 */
+  const setNote = (field: keyof Notes, message?: string) =>
+    setNotes((prev) =>
+      prev[field] === message ? prev : { ...prev, [field]: message },
+    );
+
+  /**
+   * 칸 하나를 고친다.
+   *
+   * 상호명만 **입력 단계에서** 40자로 끊는다. 저장할 때만 자르면 칸에는 친
+   * 글자가, 저장값·헤더 칩에는 잘린 글자가 남아 같은 세션에 두 상호명이
+   * 산다(retail-settings F3 · `retail-market` F5 계열). `maxLength`로 막지 않는
+   * 이유: 브라우저가 조용히 버려서 **잘렸다는 사실을 말할 자리가 없다.**
+   */
   const setField = (field: SettingsField, next: string) => {
+    if (field === "storeName") {
+      const clamped = next.slice(0, STORE_NAME_MAX);
+      setValues((prev) => ({ ...prev, storeName: clamped }));
+      setNote(
+        "storeName",
+        clamped === next
+          ? undefined
+          : `상호명은 ${STORE_NAME_MAX}자까지 저장돼요. 넘는 글자는 받지 않았어요.`,
+      );
+      return;
+    }
+
     setValues((prev) => ({ ...prev, [field]: next }));
-    /* 손본 값을 다시 고치면 통지는 역할이 끝난다 */
-    if (field === "phone" && notes.phone) setNotes({});
+    if (field === "phone") setNote("phone", undefined);
   };
 
   /**
-   * 칸을 떠날 때 구분자만 하이픈으로 맞춘다.
+   * 칸을 떠날 때 연락처의 구분자를 하이픈으로 맞춘다.
    *
    * 타이핑 도중에 고치면 커서가 튀고, 아예 안 고치면 `010.1234.5678`이 형식
    * 오류로만 남는다. 바꿨으면 **바뀐 값이 칸에 보이고** 왜 바꿨는지 아래 줄이
    * 말한다 — 조용히 글자를 지우지 않는다(회원가입과 같은 처리).
+   *
+   * 구분자가 아예 없는 `01012345678`도 여기서 받는다 — 가장 흔한 입력 형태를
+   * 거절하고 있었다(retail-settings F4).
    */
   const normalizePhoneOnBlur = () => {
     const raw = values.phone;
-    const normalized = normalizeSeparators(raw);
+    const normalized = normalizePhone(raw);
     if (normalized === raw) return;
 
     setValues((prev) => ({ ...prev, phone: normalized }));
-    setNotes({
-      phone: `입력하신 값을 ${normalized} 로 맞췄어요. 구분자만 바꿨고 지운 글자는 없어요.`,
-    });
+    setNote("phone", separatorNote(normalized));
   };
 
   /**
@@ -131,6 +170,15 @@ export function SettingsView() {
    *
    * 오류가 있으면 결과 줄을 지운다 — 아까 성공했던 문구가 남아 있으면 방금
    * 실패한 저장까지 된 것으로 읽힌다.
+   *
+   * **다른 폼에서 올라온 제출은 여기서 끊는다.** 비밀번호 다이얼로그의 `<form>`은
+   * Radix Portal을 타고 `<body>` 직속으로 그려지지만 React 합성 이벤트는 포털을
+   * 넘어 **부모 트리로 버블한다** — 그 부모가 이 계정 패널의 `<form>`이라
+   * `변경하기` 한 번에 누른 적 없는 저장까지 실행됐다(retail-settings F2).
+   * `event.target`(제출한 폼) 과 `event.currentTarget`(이 핸들러가 붙은 폼)이
+   * 다르면 내 제출이 아니다. 다이얼로그 쪽에서도 전파를 멈추지만, 앞으로 이
+   * 패널 안에 다이얼로그가 하나 더 들어와도 같은 사고가 나지 않게 **받는 쪽에서**
+   * 한 번 더 막는다.
    */
   const submitPanel = (
     fields: readonly SettingsField[],
@@ -138,6 +186,7 @@ export function SettingsView() {
     setResult: (message: string | null) => void,
   ) => {
     return (event: FormEvent<HTMLFormElement>) => {
+      if (event.target !== event.currentTarget) return;
       event.preventDefault();
 
       const invalid = fields.filter((field) => found[field] !== undefined);
@@ -160,6 +209,10 @@ export function SettingsView() {
     (next) => {
       saveProfile({ storeName: next.storeName });
       const shown = normalizeStoreName(next.storeName) ?? next.storeName;
+      /* 저장된 값을 칸에도 되돌려 놓는다. `normalizeStoreName`은 연속 공백도
+         한 칸으로 모으므로, 안 되돌리면 칸과 헤더가 또 갈린다(F3의 나머지 절반) */
+      if (shown !== next.storeName)
+        setValues((prev) => ({ ...prev, storeName: shown }));
       setStoreResult(
         `상호명을 ${shown} 로 저장했어요. 헤더의 계정 이름도 같이 바뀌었어요. ${DUMMY_NOTE}`,
       );
@@ -201,7 +254,8 @@ export function SettingsView() {
     },
   ) => {
     const error = errors[field];
-    const note = field === "phone" ? notes.phone : undefined;
+    /* 대표자명은 손볼 것이 없어 통지가 붙지 않는다 */
+    const note = field === "ownerName" ? undefined : notes[field];
     const noteId = note ? `${fieldId(field)}-note` : undefined;
 
     return (
@@ -392,7 +446,7 @@ export function SettingsView() {
         <Panel>
           <Panel.Title>개인정보 · 약관</Panel.Title>
 
-          <Notice>
+          <Notice className={NOTICE_CLASS}>
             <span className="flex items-start gap-2">
               <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
               <span>
@@ -408,7 +462,10 @@ export function SettingsView() {
             {consentRecords().map(({ kind, label, agreedAt }) => (
               <div
                 key={kind}
-                className="border-border flex min-h-13 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2.5 last:border-b-0"
+                /* 구분선은 gray-200이 아니라 gray-100이다 — 확정 와이어프레임
+                   `.row`가 쓰는 `--border-soft`(retail-settings F6). 패널 안에서
+                   영역을 가르는 선은 상자 테두리보다 한 단계 옅다 */
+                className="border-border-soft flex min-h-13 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2.5 last:border-b-0"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">{label}</p>
