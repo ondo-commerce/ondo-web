@@ -39,3 +39,22 @@ export function FieldHelp({
     </p>
   );
 }
+
+/**
+ * 필수 칸의 라벨. `*` 하나에 기대지 않는다.
+ *
+ * 이 빨강은 흰 바탕에서 AA에 못 미친다(`01-pm.md` Q5). 색이 흐리게 보여도
+ * 뜻이 전달되도록 화면 낭독기에는 `(필수)`를 읽히고, 눈으로 보는 쪽에는
+ * 폼 머리에 `* 표시는 필수 항목이에요`라는 범례를 같이 둔다.
+ */
+export function RequiredLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      {children}{" "}
+      <span className="text-destructive" aria-hidden>
+        *
+      </span>
+      <span className="sr-only">(필수)</span>
+    </>
+  );
+}

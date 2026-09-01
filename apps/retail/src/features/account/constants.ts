@@ -88,3 +88,29 @@ export const ACCOUNT_STATUS_LABEL = {
   PENDING: "심사 중",
   REJECTED: "승인 거절",
 } as const;
+
+/**
+ * 회원가입 오류를 훑는 순서 = 화면에 놓인 순서.
+ *
+ * 사업자등록번호가 첨부 앞에 오는 건 화면 순서 그대로다 — 이 칸만 필수가
+ * 아니지만, 형식이 틀리면 여기서도 오류가 난다.
+ */
+export const SIGNUP_FIELD_ORDER = [
+  "storeName",
+  "ownerName",
+  "email",
+  "password",
+  "passwordConfirm",
+  "phone",
+  "bizNo",
+  "license",
+  "agreeService",
+  "agreePrivacy",
+] as const;
+
+/** 비밀번호 최소 길이. 문구와 검사가 같은 값을 보게 한다 */
+export const PASSWORD_MIN_LENGTH = 8;
+
+/** 첨부 허용 형식 안내. `accept` 속성과 화면 문구가 같은 곳에서 나온다 */
+export const LICENSE_ACCEPT = ".jpg,.jpeg,.png,.pdf";
+export const LICENSE_ACCEPT_LABEL = "JPG · PNG · PDF";

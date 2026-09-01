@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { PlaceholderPage } from "@/shared/components/PlaceholderPage";
+import { SignupView } from "@/features/account";
 
 export const metadata: Metadata = { title: "회원가입" };
 
 export default function Page() {
-  return <PlaceholderPage title="회원가입" />;
+  return <SignupView />;
 }
