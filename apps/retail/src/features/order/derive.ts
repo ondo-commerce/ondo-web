@@ -745,3 +745,39 @@ export function unpaidAfter(order: OrderRecord, statementNo: string): number {
 
   return sum;
 }
+
+/**
+ * 이번 세션에서 취소한 주문을 반영한 사본.
+ *
+ * 더미 배열을 직접 고치지 않는다 — 모듈 하나를 모든 화면이 같이 읽어서, 고치면
+ * 목록·상세·재주문이 전부 조용히 따라 바뀐다. 대신 **취소 사실을 여기서 한 번
+ * 겹쳐** 화면에 뜨는 배지·라인 상태·취소 버튼이 전부 같은 값에서 나오게 한다.
+ */
+export function withCancel(order: OrderRecord, canceled: boolean): OrderRecord {
+  if (!canceled) return order;
+
+  return {
+    ...order,
+    legs: order.legs.map((leg) => ({ ...leg, canceled: true })),
+    /* 라인까지 같이 바꾼다. 머리 배지는 `취소됨`인데 라인이 `확정 대기`로
+       남으면 한 화면이 서로 반대되는 말을 한다 */
+    lines: order.lines.map((line) => ({
+      ...line,
+      status: "CANCELED" as const,
+    })),
+  };
+}
+
+/** 미송으로 넘어간 라인 수. 요약 카드의 `미송 1건 대기 중`이 이걸 센다 */
+export function backorderCount(order: OrderRecord): number {
+  return order.lines.filter((line) => line.status === "BACKORDER").length;
+}
+
+/** 주문 상세 부제 `2026.08.24 10:10 · 코튼클럽 외 2곳 · 라인 5개 · 총 62장` */
+export function detailSubtitle(order: OrderRecord): string {
+  const seller = wholesalerLabel(order);
+  const totals = orderTotals(order);
+  const who = seller.rest ? `${seller.head} ${seller.rest}` : seller.head;
+
+  return `${order.orderedAt} · ${who} · 라인 ${totals.comboCount}개 · 총 ${formatSheets(totals.sheets)}`;
+}

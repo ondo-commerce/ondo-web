@@ -24,7 +24,9 @@ import {
   shipmentProgress,
   sortOrders,
   wholesalerLabel,
+  withCancel,
 } from "../derive";
+import { useCanceledOrders } from "../store";
 import type { OrderFilter, OrderLine, OrderRecord, OrderSort } from "../types";
 
 /** 표 열 수 = 펼침 열(1) + 목록 열(7). 확장행 `colSpan`이 이 값과 어긋나면 열이 밀린다 */
@@ -58,8 +60,15 @@ export function OrderListView({
 }) {
   const router = useRouter();
   const [reordering, setReordering] = useState<OrderRecord | null>(null);
+  const canceledOrders = useCanceledOrders();
 
-  const visible = sortOrders(filterOrders(orders, filter), sort);
+  /* 상세에서 취소한 주문이 목록에서도 `취소됨`으로 서야 한다 — 두 화면이 같은
+     주문을 두고 다른 배지를 보이면 어느 쪽을 믿어야 할지 알 수 없다.
+     좁히기·정렬 전에 겹쳐야 `상태: 취소됨` 필터에도 걸린다 */
+  const effective = orders.map((order) =>
+    withCancel(order, canceledOrders.has(order.orderId)),
+  );
+  const visible = sortOrders(filterOrders(effective, filter), sort);
   const current = { filter, sort, open };
 
   return (
@@ -71,7 +80,7 @@ export function OrderListView({
           filter={filter}
           sort={sort}
           open={open}
-          wholesalers={orderWholesalers(orders)}
+          wholesalers={orderWholesalers(effective)}
           resultCount={visible.length}
           canReset={!isOrderFilterEmpty(filter)}
         />

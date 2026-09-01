@@ -274,3 +274,62 @@ export const ORDER_SORTS: readonly { value: OrderSort; label: string }[] = [
 ];
 
 export const DEFAULT_ORDER_SORT: OrderSort = "latest";
+
+/** 주문 상세 화면의 문장 전부 */
+export const DETAIL_TEXT = {
+  reorderAll: "이 주문 전체 다시 담기",
+  stats: {
+    amount: "주문 금액",
+    progress: "출고 진행",
+    unpaid: "미수 잔액",
+  },
+  /** 미수는 **출고 시점**에 생긴다(RT-64) — 주문 금액 전체가 미수가 아니다 */
+  unpaidFrom: (count: number) => `출고된 ${count}건에서 발생`,
+  backorderWaiting: (count: number) => `미송 ${count}건 대기 중`,
+  cancel: "주문 취소",
+  cancelOpen:
+    "도매처가 확정하기 전까지는 주문을 취소할 수 있어요. 취소하면 되돌릴 수 없어요.",
+  cancelLocked:
+    "주문 취소는 도매처가 확정하기 전까지만 할 수 있어요. 이 주문은 이미 확정돼서 취소 버튼이 잠겨 있어요.",
+  cancelDone: "주문을 취소했어요.",
+  lineSection: "주문 상품",
+  shipmentSection: "출고 기록",
+  shipmentSub:
+    "출고될 때마다 거래명세서(장끼)가 자동으로 발행돼요. 문서는 고칠 수 없고 다시 볼 수만 있어요.",
+  shipmentEmpty: "아직 출고된 건이 없어요.",
+  statement: "장끼 보기",
+  paymentSection: "결제 · 수령",
+  /** 확정 전 도매처가 조용히 빠지지 않게 (가정 A5-d) */
+  notConfirmed: "도매처가 확정하면 여기에 표시돼요",
+  returnNotice: "반품은 도매처와 전화로 진행해요. 환불은 지원하지 않아요.",
+  notFound: {
+    title: "그 주문을 찾을 수 없어요",
+    description: "주소가 바뀌었거나 지워진 주문이에요.",
+    action: "주문 내역으로",
+  },
+  total: "합계",
+} as const;
+
+/** 거래명세서(장끼) 모달의 문장 전부 */
+export const STATEMENT_TEXT = {
+  title: "거래명세서",
+  sub: "출고할 때 시스템이 자동으로 만든 문서예요. 고칠 수 없고 다시 볼 수만 있어요.",
+  issuer: "발행",
+  receiver: "수신",
+  shippedAt: "출고 일시",
+  receiverName: "수령인",
+  origin: "원주문",
+  print: "인쇄",
+  save: "저장",
+  /** 잠긴 두 버튼 옆에 글자로 선다. 눌러도 아무 일이 없는 버튼으로 두지 않는다 */
+  disabledReason: "인쇄·저장은 아직 준비 중이에요.",
+  toSettlement: "정산에서 보기",
+} as const;
+
+/**
+ * 장끼의 미수 문구.
+ *
+ * **`FIFO`라는 낱말이 없다**(§3-0 D). 입금 배정은 도매 사장이 건별로 수기로
+ * 정하는 일이라, 배정이 없으면 "배정된 입금 없음"이라고 사실만 적는다.
+ */
+export const STATEMENT_UNPAID_NONE = "배정된 입금 없음";

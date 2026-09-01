@@ -50,6 +50,14 @@ interface OrderState {
   appliedCount: number | null;
   /** 방금 접수한 주문. 완료 화면이 이걸 읽는다 */
   receipt: OrderReceipt | null;
+  /**
+   * 이번 세션에서 취소한 주문의 통합 주문번호.
+   *
+   * 더미 배열을 직접 고치지 않는 이유는 `derive.withCancel` 주석에 있다.
+   * 목록과 상세가 같은 이 집합을 읽으므로 상세에서 취소한 주문이 목록에서도
+   * `취소됨`으로 선다 — 두 화면이 다른 말을 하지 않는다.
+   */
+  canceledOrders: ReadonlySet<string>;
 }
 
 /**
@@ -68,6 +76,7 @@ const INITIAL: OrderState = {
   agentPhone: "",
   appliedCount: null,
   receipt: null,
+  canceledOrders: new Set(),
 };
 
 /* 모듈 값이라 서버에서도 한 벌 산다. 다만 바꾸는 곳이 이벤트 핸들러뿐이라
@@ -325,4 +334,21 @@ export function useCheckoutSetting(): {
 export function useOrderReceipt(): OrderReceipt | null {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
     .receipt;
+}
+
+/**
+ * 주문을 취소한다. **도매처가 확정하기 전까지만 되는 일이라**(RT-49) 누를 수
+ * 있는지는 화면이 `derive.isCancelable`로 판정하고, 여기서는 사실만 적는다.
+ */
+export function cancelOrder(orderId: string): void {
+  const canceledOrders = new Set(state.canceledOrders);
+  canceledOrders.add(orderId);
+
+  commit({ ...state, canceledOrders });
+}
+
+/** 이번 세션에서 취소한 주문들. 목록과 상세가 같은 이 집합을 읽는다 */
+export function useCanceledOrders(): ReadonlySet<string> {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+    .canceledOrders;
 }

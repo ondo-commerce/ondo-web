@@ -437,3 +437,13 @@ export const ORDERS: readonly OrderRecord[] = [
 export function findOrder(orderId: string): OrderRecord | undefined {
   return ORDERS.find((order) => order.orderId === orderId);
 }
+
+/**
+ * 지난 주문의 장끼에 적힌 수령인.
+ *
+ * **더미다.** 수령인은 주문할 때 입력한 사입삼촌 정보가 도매처 확정 시점에
+ * 문서로 굳는 값인데, 지난 주문에는 그 입력이 남아 있지 않다(서버가 없다).
+ * 이번에 접수하는 주문의 수령인은 주문서에 친 값을 그대로 쓴다 —
+ * 지어낸 이름이 뜨는 자리는 여기 하나뿐이고, API가 붙으면 같이 사라진다.
+ */
+export const PAST_RECEIVER_NAME = "박삼촌";

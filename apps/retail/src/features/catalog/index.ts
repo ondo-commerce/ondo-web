@@ -12,9 +12,11 @@ export {
   productsOfWholesaler,
 } from "./fixtures";
 export { LIST_SORTS, WISHLIST_SORTS } from "./constants";
-/* 찜은 세 화면(홈·도매처 홈·찜 목록)과 두 feature(상품 상세·검색)가 같은 값을
-   봐야 해서 catalog가 저장소를 갖고 밖으로 훅만 연다 */
-export { useProductFavorite } from "./useFavorites";
+/* 찜은 세 화면(홈·도매처 홈·찜 목록)과 세 feature(상품 상세·검색·주문 상세)가
+   같은 값을 봐야 해서 catalog가 저장소를 갖고 밖으로 훅만 연다.
+   `useFavorites`가 같이 나가는 것은 주문 상세 때문이다 — 표 한 줄마다 훅을
+   부를 수 없어서 집합 하나와 토글 함수를 통째로 받는다 */
+export { useFavorites, useProductFavorite } from "./useFavorites";
 export {
   availableWholesalers,
   resolveFilter,
