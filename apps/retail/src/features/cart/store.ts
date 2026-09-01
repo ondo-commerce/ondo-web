@@ -201,6 +201,36 @@ export function removeSelected(): void {
   });
 }
 
+/**
+ * 주문으로 넘어간 조합을 뺀다.
+ *
+ * **접수된 것만 뺀다.** 도매처 하나가 접수를 못 받으면 그 도매처의 조합은
+ * 장바구니에 그대로 남아야 한다(RT-44) — 부분 접수 모달의 `장바구니에서 보기`가
+ * 거짓말이 되지 않으려면 여기가 지켜져야 한다.
+ *
+ * `removeSelected`와 달리 **되돌리기를 남기지 않는다.** 주문 접수는 되돌릴 수
+ * 없는 실행이라, 담긴 목록만 되돌려 놓으면 이미 접수된 주문과 장바구니가
+ * 이중으로 존재하게 된다.
+ */
+export function removeLines(lineIds: readonly string[]): void {
+  if (lineIds.length === 0) return;
+
+  const gone = new Set(lineIds);
+  const issues = { ...state.issues };
+  const selected = new Set(state.selected);
+  for (const id of gone) {
+    delete issues[id];
+    selected.delete(id);
+  }
+
+  commit({
+    lines: state.lines.filter((line) => !gone.has(line.lineId)),
+    issues,
+    selected,
+    lastRemoved: null,
+  });
+}
+
 /** 방금 뺀 것을 원래 자리로 되돌린다. 선택 상태도 뺄 때 그대로 돌아온다 */
 export function restoreRemoved(): void {
   const removed = state.lastRemoved;
