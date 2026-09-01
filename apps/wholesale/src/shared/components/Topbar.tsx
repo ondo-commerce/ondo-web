@@ -1,9 +1,10 @@
 "use client";
 
 import { cn, IconButton } from "@ondo/ui";
-import { Bell, CircleUser } from "lucide-react";
+import { Bell } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { NAV_ITEMS } from "@/shared/config/nav";
 
 /**
@@ -20,7 +21,13 @@ import { NAV_ITEMS } from "@/shared/config/nav";
  *
  * sticky가 아니다 — 화면 전체 스크롤이 없어서 붙을 대상이 없다 (AppShell 참고).
  */
-export function Topbar() {
+export function Topbar({
+  /** 계정 드롭다운. 세션을 읽는 물건이라 `features/account`에 있고, `shared`는
+      그쪽을 볼 수 없다 — `app/(erp)/layout.tsx`가 조립해 넘긴다 */
+  accountMenu,
+}: {
+  accountMenu: ReactNode;
+}) {
   const pathname = usePathname();
 
   return (
@@ -75,9 +82,7 @@ export function Topbar() {
             <span className="bg-destructive absolute top-1.5 right-1.5 size-1.5 rounded-full" /> */}
       </IconButton>
 
-      <IconButton variant="ghost" aria-label="계정" title="계정">
-        <CircleUser aria-hidden />
-      </IconButton>
+      {accountMenu}
     </header>
   );
 }
