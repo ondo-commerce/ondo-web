@@ -19,6 +19,6 @@ export { CartButton } from "./components/CartButton";
  * `parseQty` 하나여야 하고, 그 통로가 이 함수다. 조립부가 다시 파싱하면
  * 판정이 두 벌이 된다.
  */
-export { useCartLines, useCartSelected, removeLines } from "./store";
+export { useCartLines, useCartSelected, addLines, removeLines } from "./store";
 export { lineQty } from "./derive";
 export type { CartLine } from "./types";

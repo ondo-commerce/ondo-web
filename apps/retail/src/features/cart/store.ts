@@ -1,7 +1,12 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SKU_ORDER_LIMIT, parseQty, type QtyIssue } from "@/shared/qty";
+import {
+  SKU_ORDER_LIMIT,
+  clampQty,
+  parseQty,
+  type QtyIssue,
+} from "@/shared/qty";
 import { CART_SEED } from "./fixtures";
 import type { CartLine } from "./types";
 
@@ -199,6 +204,42 @@ export function removeSelected(): void {
     selected: new Set(),
     lastRemoved: removed,
   });
+}
+
+/**
+ * 조합을 담는다. 지난 주문을 다시 담을 때 쓴다.
+ *
+ * **이미 담긴 조합은 수량을 더한다.** 같은 `lineId`로 줄을 하나 더 만들면
+ * 장바구니에 같은 조합이 두 줄로 서고, 그러면 조합 수(헤더 뱃지)가 실제
+ * SKU 수보다 커진다. 더한 값이 상한을 넘으면 상한에서 멈춘다 — `setQty`가
+ * 상한 초과를 되돌리는 것과 같은 규칙이다(SKU 하나당 500장, glossary G13).
+ *
+ * 담은 줄은 **선택된 상태로** 들어간다. 담자마자 주문하러 가는 동선이라
+ * 하나씩 다시 켜게 하면 일이 늘기만 한다.
+ */
+export function addLines(incoming: readonly CartLine[]): void {
+  if (incoming.length === 0) return;
+
+  const lines = [...state.lines];
+  const selected = new Set(state.selected);
+
+  for (const line of incoming) {
+    selected.add(line.lineId);
+    const at = lines.findIndex((it) => it.lineId === line.lineId);
+    const exist = at >= 0 ? lines[at] : undefined;
+
+    if (!exist) {
+      lines.push(line);
+      continue;
+    }
+
+    const merged = clampQty(
+      parseQty(exist.qtyText).qty + parseQty(line.qtyText).qty,
+    );
+    lines[at] = { ...exist, qtyText: String(merged) };
+  }
+
+  commit({ ...state, lines, selected, lastRemoved: null });
 }
 
 /**
