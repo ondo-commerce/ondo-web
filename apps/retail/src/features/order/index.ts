@@ -9,6 +9,7 @@
 export { CheckoutView } from "./components/CheckoutView";
 export { OrderCompleteView } from "./components/OrderCompleteView";
 export { OrderListView } from "./components/OrderListView";
+export { OrderDetailView, OrderNotFound } from "./components/OrderDetailView";
 export {
   resolveOpen,
   resolveOrderFilter,
@@ -16,9 +17,10 @@ export {
   resolveScenario,
   reorderPrice,
 } from "./derive";
-export { ORDERS } from "./fixtures";
+export { ORDERS, findOrder } from "./fixtures";
 export type {
   CheckoutLine,
+  OrderRecord,
   OrderFilter,
   OrderLine,
   OrderScenario,

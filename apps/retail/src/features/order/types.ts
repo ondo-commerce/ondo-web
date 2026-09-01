@@ -97,6 +97,12 @@ export interface OrderReceipt {
   agentName: string;
   agentPhone: string;
   legs: readonly ReceiptLeg[];
+  /**
+   * 이 결과가 무엇으로 그려졌는가. **완료 화면은 주소가 아니라 이 값을 읽는다** —
+   * 주소를 다시 읽으면 접수한 결과와 주소가 서로 다른 말을 할 수 있다. 확인용
+   * 시나리오로 켠 결과에는 그 사실을 밝히는 줄이 붙는다(F10).
+   */
+  scenario: OrderScenario;
 }
 
 /**
@@ -134,6 +140,15 @@ export type OrderStatus =
  */
 export type OrderLineStatus =
   "SHIPPED" | "BACKORDER" | "READY" | "PENDING" | "CANCELED";
+
+/**
+ * `주문 취소`가 잠긴 이유 4종. **판정은 `derive.cancelLockReason`이 한다.**
+ *
+ * 사유마다 문구가 따로 있어야 한다 — 한 벌로 두면 방금 사장이 직접 취소한
+ * 주문에까지 `이미 확정돼서 잠겼어요`가 떠서 머리 배지(`취소됨`)와 정면으로
+ * 부딪친다(F3).
+ */
+export type CancelLock = "CANCELED" | "SHIPPED" | "CONFIRMED" | "EMPTY";
 
 /** 다시 담기 판정 4종. `제외` 둘은 담기지 않는다 */
 export type ReorderResult = "ADDED" | "PRICE_UP" | "SEASON_ENDED" | "DELISTED";

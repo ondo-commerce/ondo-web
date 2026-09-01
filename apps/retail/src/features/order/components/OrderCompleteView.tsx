@@ -8,7 +8,13 @@ import { DescList, DescRow } from "./PaymentSummary";
 import { OrderResultCard } from "./OrderResultCard";
 import { AcceptStatusBadge } from "./OrderStatusBadge";
 import { PartialAcceptDialog } from "./PartialAcceptDialog";
-import { COMPLETE_EMPTY, COMPLETE_TEXT, PARTIAL_TEXT } from "../constants";
+import {
+  COMPLETE_ACTION_ID,
+  COMPLETE_EMPTY,
+  COMPLETE_TEXT,
+  PARTIAL_TEXT,
+  SCENARIO_NOTICE,
+} from "../constants";
 import {
   checkingLegs,
   comboSheetsLabel,
@@ -67,10 +73,19 @@ export function OrderCompleteView({
   const accepted = receipt.legs.filter((leg) => leg.status === "ACCEPTED");
   const rejected = rejectedLegs(receipt);
   /* 합계·도매처 수는 **접수가 살아 있는 건 전부**를 센다 — 응답이 늦는
-     도매처도 같은 주문의 일부라 아래 패널에 서 있다. 안 된 건만 빠진다 */
+     도매처도 같은 주문의 일부라 아래 패널에 서 있다. 안 된 건만 빠진다.
+     **패널 부제도 이 값을 읽는다**(F2): 부제만 `receipt.legs.length`를 읽던 때는
+     한 화면이 위에서 `도매처 2곳`, 아래에서 `도매처 1곳`이라고 말했다 */
   const progressing = receipt.legs.filter((leg) => leg.status !== "REJECTED");
   const checking = checkingLegs(receipt);
   const totals = receiptTotals(receipt);
+
+  /* 모달을 닫으면 포커스가 `<body>`로 떨어진다 — 이 모달은 누른 버튼이 없어서
+     Radix가 되돌릴 자리를 모른다. 화면에서 다음에 할 일이 `주문 내역 보기`라
+     그쪽으로 옮긴다 */
+  const focusNext = () => {
+    document.getElementById(COMPLETE_ACTION_ID)?.focus();
+  };
 
   const handleRetry = () => {
     const resent = rejected.flatMap((leg) =>
@@ -93,17 +108,31 @@ export function OrderCompleteView({
               <b className="text-foreground font-medium tabular-nums">
                 {receipt.orderNo}
               </b>{" "}
-              · {receipt.placedAt} · 도매처 {receipt.legs.length}곳
+              · {receipt.placedAt} · 도매처 {progressing.length}곳
             </>
           }
           action={
             <Button asChild variant="line">
-              <Link href="/orders">{COMPLETE_TEXT.viewOrders}</Link>
+              <Link id={COMPLETE_ACTION_ID} href="/orders">
+                {COMPLETE_TEXT.viewOrders}
+              </Link>
             </Button>
           }
         >
           {COMPLETE_TEXT.title}
         </Panel.Title>
+
+        {/* 확인용 시나리오로 켠 화면이면 그 사실을 먼저 말한다 — 안내가 없으면
+            주소만 바꾼 사장이 자기 주문이 진짜로 반려된 줄 안다(F10). 주소가
+            아니라 **접수 결과**를 읽으므로 화면과 주소가 어긋날 수 없다 */}
+        {receipt.scenario === "default" ? null : (
+          <Notice className="mb-2">
+            <span className="flex items-start gap-2">
+              <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {SCENARIO_NOTICE}
+            </span>
+          </Notice>
+        )}
 
         <Notice>
           <span className="flex items-start gap-2">
@@ -177,6 +206,7 @@ export function OrderCompleteView({
           receipt={receipt}
           open={!dismissed}
           onOpenChange={(next) => setDismissed(!next)}
+          onCloseFocus={focusNext}
           onRetry={handleRetry}
         />
       ) : null}

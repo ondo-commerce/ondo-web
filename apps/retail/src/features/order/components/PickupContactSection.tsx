@@ -4,14 +4,18 @@ import { Input, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
 import {
   AGENT_FIELD,
+  AGENT_NAME_HELP,
+  AGENT_NAME_ISSUE,
   AGENT_PHONE_HELP,
   AGENT_PHONE_ISSUE,
   CHECKOUT_TEXT,
 } from "../constants";
-import { isPhoneAcceptable } from "../derive";
+import { isAgentNameAcceptable, isPhoneAcceptable } from "../derive";
 
 const NAME_ID = "checkout-agent-name";
 const PHONE_ID = "checkout-agent-phone";
+const NAME_HELP_ID = "checkout-agent-name-help";
+const NAME_ISSUE_ID = "checkout-agent-name-issue";
 const PHONE_HELP_ID = "checkout-agent-phone-help";
 const PHONE_ISSUE_ID = "checkout-agent-phone-issue";
 
@@ -44,8 +48,13 @@ function RequiredMark() {
  * `(필수)`를 읽히고 컨트롤에는 실제 `required` 속성을 건다 — 직전 회차에서
  * `*`만 있고 `required`가 없던 자리가 결함으로 잡혔다.
  *
- * 연락처는 **친 글자를 고치지 않는다.** 하이픈을 조용히 지우면 사장이 자기가
- * 무엇을 쳤는지 못 본다. 못 받는 형식이면 값은 그대로 두고 아래에 이유만 적는다.
+ * 두 칸 다 **친 글자를 고치지 않는다.** 하이픈을 조용히 지우거나 넘는 글자를
+ * 잘라내면 사장이 자기가 무엇을 쳤는지 못 본다. 못 받는 값이면 값은 그대로 두고
+ * 아래에 이유만 적는다.
+ *
+ * 판정이 **글자 종류가 아니라 쓸 수 있는 값인가**를 본다. 종류만 보던 때는 이름과
+ * 연락처가 둘 다 `-` 한 글자로 통과해 장끼에 `수령인 - -`가 찍혔다(F6) — 이 값은
+ * 사입삼촌이 물건을 받을 때 쓰는 값이라(RT-38) 그러면 물건을 못 받는다.
  */
 export function PickupContactSection({
   required,
@@ -60,6 +69,7 @@ export function PickupContactSection({
   onChangeName: (next: string) => void;
   onChangePhone: (next: string) => void;
 }) {
+  const nameIssue = !isAgentNameAcceptable(name);
   const phoneIssue = !isPhoneAcceptable(phone);
 
   return (
@@ -90,8 +100,28 @@ export function PickupContactSection({
             value={name}
             required={required}
             placeholder={AGENT_FIELD.name.placeholder}
+            aria-describedby={nameIssue ? NAME_ISSUE_ID : NAME_HELP_ID}
+            aria-invalid={nameIssue || undefined}
             onChange={(event) => onChangeName(event.target.value)}
           />
+          {/* 연락처 칸과 **같은 방식**이다 — 값은 그대로 두고 이유만 붙인다.
+              부호 한 글자(`-`)가 통과해 장끼 수령인이 `-`가 되던 자리다(F6) */}
+          {nameIssue ? (
+            <p
+              id={NAME_ISSUE_ID}
+              className="text-destructive-strong text-body mt-1.5"
+            >
+              <span className="sr-only">오류: </span>
+              {AGENT_NAME_ISSUE}
+            </p>
+          ) : (
+            <p
+              id={NAME_HELP_ID}
+              className="text-muted-foreground text-body mt-1.5"
+            >
+              {AGENT_NAME_HELP}
+            </p>
+          )}
         </div>
 
         <div>

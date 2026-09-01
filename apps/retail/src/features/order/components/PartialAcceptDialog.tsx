@@ -26,16 +26,34 @@ export function PartialAcceptDialog({
   open,
   onOpenChange,
   onRetry,
+  onCloseFocus,
 }: {
   receipt: OrderReceipt;
   open: boolean;
   onOpenChange: (next: boolean) => void;
   onRetry: () => void;
+  /**
+   * 닫은 뒤 포커스를 받을 자리를 부르는 쪽이 정한다.
+   *
+   * **이 모달은 누른 버튼이 없다** — 접수 결과에 안 된 건이 있으면 화면이
+   * 열리자마자 뜬다. Radix는 열기 전에 포커스가 있던 곳으로 되돌리는데 그
+   * 자리가 방금 떠나온 주문서라 `<body>`로 떨어진다. 그러면 키보드 사용자는
+   * 닫은 뒤 문서 맨 위부터 Tab을 다시 밟아야 한다(WCAG 2.4.3 · 직전 회차 F3).
+   */
+  onCloseFocus: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* 좁은 화면에서 모달이 화면 밖으로 나가지 않고 안에서 세로로 흐른다 */}
-      <Dialog.Content className="flex max-h-[85dvh] max-w-130 flex-col gap-0 p-0">
+      <Dialog.Content
+        className="flex max-h-[85dvh] max-w-130 flex-col gap-0 p-0"
+        /* Radix의 기본 되돌리기를 막고 우리가 정한 자리로 보낸다 —
+           기본값보다 늦게 도는 처리라 여기서 하지 않으면 덮인다 */
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onCloseFocus();
+        }}
+      >
         <div className="flex items-start gap-3 p-5 pb-0">
           <div className="min-w-0 flex-1">
             <Dialog.Title>{PARTIAL_TEXT.title}</Dialog.Title>
