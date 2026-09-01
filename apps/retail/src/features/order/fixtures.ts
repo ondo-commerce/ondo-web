@@ -180,7 +180,7 @@ export const ORDERS: readonly OrderRecord[] = [
       {
         wholesalerId: "w-lavien",
         wholesalerName: "라비앙",
-        wholesalerLocation: "청평화패션몰 3층 7호",
+        wholesalerLocation: "청평화패션몰 3층 8호",
         phone: PHONE,
         businessHours: HOURS,
         orderNo: "ORD-2608240024",
@@ -298,7 +298,7 @@ export const ORDERS: readonly OrderRecord[] = [
       {
         wholesalerId: "w-lavien",
         wholesalerName: "라비앙",
-        wholesalerLocation: "청평화패션몰 3층 7호",
+        wholesalerLocation: "청평화패션몰 3층 8호",
         phone: PHONE,
         businessHours: HOURS,
         orderNo: "ORD-2608160019",

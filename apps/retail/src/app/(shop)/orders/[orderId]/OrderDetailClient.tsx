@@ -8,7 +8,7 @@ import {
   type OrderLine,
   type OrderRecord,
 } from "@/features/order";
-import { SHELL_ACCOUNT } from "@/shared/fixtures";
+import { useStoreName } from "@/features/account";
 
 /**
  * 주문 상세와 다른 feature 둘(장바구니·찜)을 잇는 조립부.
@@ -44,11 +44,12 @@ function toCartLine(line: OrderLine, order: OrderRecord): CartLine {
 
 export function OrderDetailClient({ order }: { order: OrderRecord }) {
   const { favorites, toggleFavorite } = useFavorites();
+  const storeName = useStoreName();
 
   return (
     <OrderDetailView
       order={order}
-      receiverStore={SHELL_ACCOUNT.storeName}
+      receiverStore={storeName}
       favorites={favorites}
       onToggleFavorite={toggleFavorite}
       onReorder={(lines) =>
