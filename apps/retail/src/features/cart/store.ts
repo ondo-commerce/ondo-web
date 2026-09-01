@@ -36,9 +36,32 @@ interface CartState {
   lines: readonly CartLine[];
   /** lineId → 걸린 이유. 없으면 그 줄에 아무 말도 안 뜬다 */
   issues: Readonly<Record<string, QtyIssue | null>>;
+  /**
+   * 이번에 살 것으로 고른 조합.
+   *
+   * **담긴 것과 고른 것은 다르다.** 하단 요약과 `주문하기`는 고른 것만 세고,
+   * 그룹 머리와 헤더 뱃지는 담긴 것 전부를 센다(RT-32).
+   */
+  selected: ReadonlySet<string>;
+  /**
+   * 방금 `선택 삭제`로 뺀 것. 되돌리기가 이 자리에서 나온다.
+   *
+   * 확인 모달을 두지 않기로 한 대신(게이트 Q3) **되돌릴 길을 남긴다.** 여러
+   * 줄이 한 번에 사라지는 실행이라 잘못 눌렀을 때 무엇이 없어졌는지조차 남지
+   * 않으면 사장이 직접 다시 담아야 한다. 원래 자리(`at`)를 같이 들고 있어야
+   * 되돌린 목록이 담은 순서를 지킨다.
+   */
+  lastRemoved: readonly { at: number; line: CartLine }[] | null;
 }
 
-const INITIAL: CartState = { lines: CART_SEED, issues: {} };
+const INITIAL: CartState = {
+  lines: CART_SEED,
+  issues: {},
+  /* 처음엔 전부 켜져 있다 — 확정 와이어프레임이 `전체 선택 (4/4)`이다.
+     담아 둔 것을 사러 들어온 화면이라 하나씩 켜게 하면 일이 늘기만 한다 */
+  selected: new Set(CART_SEED.map((line) => line.lineId)),
+  lastRemoved: null,
+};
 
 /* 모듈 값이라 서버에서도 한 벌 산다. 다만 바꾸는 곳이 이벤트 핸들러뿐이라
    서버 쪽 값은 INITIAL에서 움직이지 않는다 — 요청끼리 섞이지 않는다 */
@@ -82,10 +105,14 @@ export function setQty(lineId: string, next: string): void {
   const value = issue === "OVER_LIMIT" ? String(SKU_ORDER_LIMIT) : next;
 
   commit({
+    ...state,
     lines: state.lines.map((line) =>
       line.lineId === lineId ? { ...line, qtyText: value } : line,
     ),
     issues: { ...state.issues, [lineId]: issue },
+    /* 되돌리기는 **방금 그 일괄 삭제 한 번**에 대한 것이다. 다른 조작을 한 뒤에도
+       남아 있으면 무엇이 되돌아오는지 사장이 알 수 없다 */
+    lastRemoved: null,
   });
 }
 
@@ -99,9 +126,98 @@ export function removeLine(lineId: string): void {
   const issues = { ...state.issues };
   delete issues[lineId];
 
+  const selected = new Set(state.selected);
+  /* 지운 줄이 선택 집합에 남아 있으면 하단 요약의 `선택한 조합` 수가 실제
+     화면보다 커진다 — 없는 줄을 세게 된다 */
+  selected.delete(lineId);
+
   commit({
+    ...state,
     lines: state.lines.filter((line) => line.lineId !== lineId),
     issues,
+    selected,
+    lastRemoved: null,
+  });
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   선택 — 전체 / 도매처 / 조합 3층. 어느 층을 눌러도 결국 조합 집합 하나를
+   고치는 것뿐이다. 층마다 따로 상태를 두면 세 값이 서로 어긋난다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 조합 하나를 켜고 끈다. 끄면 그 조합이 든 그룹과 전체 선택도 같이 풀린다 */
+export function toggleLine(lineId: string): void {
+  const selected = new Set(state.selected);
+  if (!selected.delete(lineId)) selected.add(lineId);
+
+  commit({ ...state, selected });
+}
+
+/**
+ * 여러 조합을 한 번에 켜거나 끈다. 도매처 그룹 머리와 전체 선택이 둘 다
+ * 이것을 부른다 — 넘기는 목록만 다르다.
+ */
+export function setLinesSelected(
+  lineIds: readonly string[],
+  on: boolean,
+): void {
+  const selected = new Set(state.selected);
+  for (const id of lineIds) {
+    if (on) selected.add(id);
+    else selected.delete(id);
+  }
+
+  commit({ ...state, selected });
+}
+
+/**
+ * 고른 조합을 전부 뺀다.
+ *
+ * **고르지 않은 조합은 남는다.** 화면에 지금 안 보이는 줄까지 지워 버리는 것이
+ * 되돌릴 수 없는 실행의 전형적인 사고라, 지우는 대상을 화면(DOM)이 아니라
+ * 선택 집합에서 뽑는다 — 접힘·필터가 나중에 생겨도 대상이 달라지지 않는다.
+ */
+export function removeSelected(): void {
+  const removed: { at: number; line: CartLine }[] = [];
+  const kept: CartLine[] = [];
+  const issues = { ...state.issues };
+
+  state.lines.forEach((line, at) => {
+    if (state.selected.has(line.lineId)) {
+      removed.push({ at, line });
+      delete issues[line.lineId];
+    } else {
+      kept.push(line);
+    }
+  });
+
+  if (removed.length === 0) return;
+
+  commit({
+    lines: kept,
+    issues,
+    selected: new Set(),
+    lastRemoved: removed,
+  });
+}
+
+/** 방금 뺀 것을 원래 자리로 되돌린다. 선택 상태도 뺄 때 그대로 돌아온다 */
+export function restoreRemoved(): void {
+  const removed = state.lastRemoved;
+  if (!removed) return;
+
+  const lines = [...state.lines];
+  /* 오름차순으로 넣어야 앞자리부터 채워지면서 원래 순서가 복원된다 */
+  for (const { at, line } of removed) lines.splice(at, 0, line);
+
+  commit({
+    ...state,
+    lines,
+    selected: new Set([
+      ...state.selected,
+      ...removed.map(({ line }) => line.lineId),
+    ]),
+    lastRemoved: null,
   });
 }
 
@@ -113,6 +229,23 @@ export function useCartLines(): readonly CartLine[] {
 /** lineId → 수량이 걸린 이유. 값과 따로 산다 */
 export function useCartIssues(): Readonly<Record<string, QtyIssue | null>> {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot).issues;
+}
+
+/** 이번에 살 것으로 고른 조합 */
+export function useCartSelected(): ReadonlySet<string> {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+    .selected;
+}
+
+/** 방금 `선택 삭제`로 뺀 조합 수. 0이면 되돌릴 것이 없다 */
+export function useLastRemovedCount(): number {
+  const removed = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  ).lastRemoved;
+
+  return removed?.length ?? 0;
 }
 
 /**

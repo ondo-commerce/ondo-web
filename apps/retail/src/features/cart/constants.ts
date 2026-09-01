@@ -32,3 +32,25 @@ export const EMPTY_CART = {
   title: "장바구니가 비어 있어요",
   description: "마음에 드는 상품을 담으면 여기 모여요.",
 } as const;
+
+/**
+ * `선택 삭제`가 끝난 뒤에 뜨는 말. **일어난 일만 과거형으로 적는다** —
+ * 아직 안 한 일을 완료형으로 말하는 화면을 만들지 않는다(직전 회차 F12).
+ */
+export function removedNotice(count: number): string {
+  return `${count}개 조합을 장바구니에서 뺐어요.`;
+}
+
+/**
+ * 되돌리기 동선의 두 버튼에 박는 id.
+ *
+ * **실행 뒤 포커스를 옮길 자리를 찾는 데 쓴다.** `선택 삭제`는 누르고 나면
+ * `disabled`가 되고 `되돌리기`는 누르고 나면 사라져서, 그대로 두면 키보드
+ * 포커스가 두 번 다 `<body>`로 떨어진다 — 되돌리려면 Tab을 문서 맨 위부터 다시
+ * 밟아야 한다(WCAG 2.4.3). `packages/ui`의 `Button`은 ref를 받지 않으므로
+ * 두 버튼을 id로 부른다.
+ */
+export const CART_ACTION_ID = {
+  removeSelected: "cart-remove-selected",
+  restore: "cart-restore-removed",
+} as const;
