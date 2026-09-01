@@ -9,3 +9,8 @@
  */
 export { PartnersView } from "./components/PartnersView";
 export { SettlementView } from "./components/SettlementView";
+/* 도매처 홈(`features/catalog`)이 쓰는 거래 지표. 화면이 아니라 값 하나를 내보내는
+   이유는 그 화면의 `진행 중`·`미송`·`미결제 잔액`이 전부 이쪽 원장에서 나오기
+   때문이다 — 저쪽에 한 벌 더 적어 두었다가 두 화면이 다른 말을 했다(F1 · #128).
+   feature끼리 직접 잇지 않으므로 합치는 자리는 `app/`이다(`CLAUDE.md`) */
+export { partnerStatsOf } from "./derive";

@@ -70,8 +70,10 @@ export interface TradePartner {
   location: string;
   /** 마지막 주문일(ISO). 거래처 목록의 정렬 축이다 — **출고일이 아니다** */
   lastOrderedAt: string;
-  /** 진행 중 건수 = 확정 대기 + 미송 */
-  ongoingCount: number;
+  /** 확정 대기 건수 */
+  pendingCount: number;
+  /** 미송 건수. 장수와 다른 축이다 — 라비앙은 1건에 16장이다 */
+  backorderCount: number;
   /** 미송 대기 장수. 0이면 화면에 `—`가 나간다 */
   backorderSheets: number;
   /**
@@ -83,10 +85,17 @@ export interface TradePartner {
   phone: string;
 }
 
-/** 거래처 목록 한 줄. 거래처 더미 + **원장에서 파생된 미수 잔액**을 합친 것이다 */
+/**
+ * 거래처 목록 한 줄. 거래처 더미 + **원장에서 파생된 미수 잔액**을 합친 것이다.
+ *
+ * `진행 중`은 필드가 아니다 — `ongoingCount(row)`가 확정 대기 + 미송을 그 자리에서
+ * 더한다. 합을 적어 두면 어느 한쪽만 고쳐졌을 때 화면이 자기끼리 안 맞는다(F1).
+ */
 export interface PartnerListRow extends TradePartner {
   /** 음수면 선수금. 정산 화면의 `미수 잔액`과 같은 함수에서 나온다 */
   balance: number;
+  /** 마지막 입금일(ISO). 도매처 홈 요약 카드가 같이 읽는다 */
+  lastPaidAt: string | null;
 }
 
 /** 연체 판정 결과. 금액·건수·최장 일수를 같이 들고 다닌다 — 카드와 표가 따로 세지 않게 */

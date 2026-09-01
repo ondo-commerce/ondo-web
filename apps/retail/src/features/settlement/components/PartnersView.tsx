@@ -2,6 +2,7 @@ import { Panel } from "@ondo/ui";
 import { PARTNERS_SUB } from "../constants";
 import { partnerListRows } from "../derive";
 import { EmptyPartners } from "./EmptyPartners";
+import { PartnerCards } from "./PartnerCards";
 import { PartnerTable } from "./PartnerTable";
 
 /**
@@ -33,7 +34,21 @@ export function PartnersView() {
         거래처 관리
       </Panel.Title>
 
-      {rows.length === 0 ? <EmptyPartners /> : <PartnerTable rows={rows} />}
+      {rows.length === 0 ? (
+        <EmptyPartners />
+      ) : (
+        <>
+          {/* 같은 목록을 폭에 따라 다른 모양으로 그린다. 값은 둘 다 `rows` 하나에서
+              나오므로 폭이 바뀌어도 말이 갈리지 않는다. 경계가 `tablet`(≤960px)인
+              이유는 `PartnerCards`의 주석에 있다(F3) */}
+          <div className="tablet:block hidden">
+            <PartnerCards rows={rows} />
+          </div>
+          <div className="tablet:hidden">
+            <PartnerTable rows={rows} />
+          </div>
+        </>
+      )}
     </Panel>
   );
 }

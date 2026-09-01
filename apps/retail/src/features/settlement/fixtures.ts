@@ -21,6 +21,11 @@ import type { LedgerEntry, TradePartner } from "./types";
  *
  * 계좌는 확정 와이어프레임의 마스킹 더미 그대로다. 실제 계좌번호 형식은
  * 미확인이라 지어내지 않는다.
+ *
+ * **진행 중 · 미송의 원본도 여기 하나뿐이다.** 도매처 홈(`features/catalog`)이
+ * 같은 값을 따로 들고 있어서 무드온이 두 화면에서 다른 말을 했고(F1), 미송 축도
+ * 같은 이유로 어긋났다(#128). 이제 도매처 홈은 `partnerStatsOf()`가 여기서 뽑은
+ * 값을 `app/`을 거쳐 받는다 — 숫자를 두 군데 적지 않는 것이 유일한 해법이다.
  */
 export const TRADE_PARTNERS: readonly TradePartner[] = [
   {
@@ -29,7 +34,10 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
     bank: { bankName: "국민", accountNo: "000000-00-000000", holder: "무드온" },
     location: "청평화패션몰 2층 24호",
     lastOrderedAt: "2026-08-31",
-    ongoingCount: 1,
+    /* 진행 중 1건 = 확정 대기 1 + 미송 0. 도매처 홈이 `진행 중 3건 · 미송 2`라고
+       따로 말하던 자리가 여기 하나로 모였다(F1) */
+    pendingCount: 1,
+    backorderCount: 0,
     backorderSheets: 0,
     backorderDelayed: false,
     phone: "02-000-0000",
@@ -46,7 +54,8 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
        `09_order_detail`)이 이 값으로 일치하고, 기존 fixture 값은 근거가 없었다 */
     location: "디오트 지하 1층 12호",
     lastOrderedAt: "2026-08-28",
-    ongoingCount: 1,
+    pendingCount: 0,
+    backorderCount: 1,
     backorderSheets: 10,
     backorderDelayed: false,
     phone: "02-000-0000",
@@ -61,7 +70,8 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
     },
     location: "디오트 3층 51호",
     lastOrderedAt: "2026-08-24",
-    ongoingCount: 1,
+    pendingCount: 0,
+    backorderCount: 1,
     backorderSheets: 15,
     backorderDelayed: false,
     phone: "02-000-0000",
@@ -72,9 +82,10 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
     bank: { bankName: "국민", accountNo: "000000-00-000000", holder: "라비앙" },
     location: "청평화패션몰 3층 8호",
     lastOrderedAt: "2026-08-16",
-    ongoingCount: 1,
+    pendingCount: 0,
     /* 미송 3건 41장 = 10 + 15 + 16. `10_backorder.html`의 3건과 같은 값이라
        미송 화면이 생겨도 두 화면이 갈리지 않는다 */
+    backorderCount: 1,
     backorderSheets: 16,
     backorderDelayed: true,
     phone: "02-000-0000",

@@ -1,9 +1,11 @@
 import { Button, Table } from "@ondo/ui";
 import Link from "next/link";
+import { PREPAID_EXCLUDED, TOTAL_LABEL } from "../constants";
 import {
   formatBalance,
   formatDate,
   formatWon,
+  hasPrepaid,
   totalOverdue,
   totalReceivable,
 } from "../derive";
@@ -77,7 +79,15 @@ export function BalanceTable({ rows }: { rows: readonly PartnerSettlement[] }) {
       <tfoot>
         <tr>
           <td className="border-border border-t px-2 pt-3 pb-2 text-left font-medium">
-            합계
+            {TOTAL_LABEL}
+            {/* 합계는 **양수 잔액만** 더한 값이다(§5 A5). 규칙이 화면에 없으면
+                미수 잔액 열 4줄을 손으로 더한 값과 안 맞아서, 사장이 자기가 잘못
+                더한 줄 알고 다시 센다(F5) */}
+            {hasPrepaid(rows) ? (
+              <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                {PREPAID_EXCLUDED}
+              </span>
+            ) : null}
           </td>
           <td className="border-border border-t px-2 pt-3 pb-2 text-right font-medium tabular-nums">
             {formatWon(totalReceivable(rows))}

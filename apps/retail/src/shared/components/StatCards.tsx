@@ -26,7 +26,10 @@ export function StatCards({ cards }: { cards: readonly StatCard[] }) {
         >
           <dt className="text-muted-foreground text-body">{label}</dt>
           <dd className="m-0">
-            <span className="mt-1.5 block text-xl font-medium tabular-nums">
+            {/* 22px/30 (`_base.css` `.stat .v`). `text-xl`(20px)로는 화면에서 가장
+                먼저 읽혀야 할 숫자가 한 단계 작게 선다 — 정산 화면과 도매처 홈이
+                같이 걸려 있었다(F6) */}
+            <span className="mt-1.5 block text-stat font-medium tabular-nums">
               {value}
             </span>
             {sub ? (

@@ -1,15 +1,18 @@
-import { Badge, Button, Table, cn } from "@ondo/ui";
+import { Button, Table } from "@ondo/ui";
 import { Phone } from "lucide-react";
 import Link from "next/link";
-import { DELAYED_LABEL, SHEET_UNIT } from "../constants";
+import { ongoingCount } from "@/shared/tradeStats";
+import { PREPAID_EXCLUDED, SHEET_UNIT, TOTAL_LABEL } from "../constants";
 import {
   formatBalance,
   formatDate,
   formatWon,
+  hasPrepaid,
   totalBackorderSheets,
   totalReceivable,
 } from "../derive";
 import type { PartnerListRow } from "../types";
+import { BackorderBadge } from "./BackorderBadge";
 import { CopyIconButton } from "./CopyButton";
 
 /**
@@ -51,7 +54,9 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
               {row.location}
             </Table.Td>
             <Table.Td align="center">{formatDate(row.lastOrderedAt)}</Table.Td>
-            <Table.Td align="center">{row.ongoingCount}건</Table.Td>
+            {/* 확정 대기 + 미송을 여기서 더한다 — 합을 따로 적어 두면 도매처 홈과
+                갈린다(F1) */}
+            <Table.Td align="center">{ongoingCount(row)}건</Table.Td>
             <Table.Td
               align="center"
               tone={row.backorderSheets === 0 ? "muted" : undefined}
@@ -99,7 +104,14 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
             colSpan={4}
             className="border-border border-t px-2 pt-3 pb-2 text-left font-medium"
           >
-            합계
+            {TOTAL_LABEL}
+            {/* 미수 합계가 선수금을 안 센다는 것을 표가 말한다 — 정산 화면
+                `도매처별 미수` tfoot과 같은 규칙이다(F5) */}
+            {hasPrepaid(rows) ? (
+              <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                {PREPAID_EXCLUDED}
+              </span>
+            ) : null}
           </td>
           <td className="border-border border-t px-2 pt-3 pb-2 text-center font-medium tabular-nums">
             {totalBackorderSheets(rows)}
@@ -113,37 +125,5 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
         </tr>
       </tfoot>
     </Table>
-  );
-}
-
-/**
- * 미송 배지. 누르면 그 도매처만 걸린 미송 현황이 열린다.
- *
- * **지연은 색만이 아니라 `지연`이라는 글자로도 구분된다.** 테두리는 red-500
- * 그대로 두고 글자만 한 단계 내린다(선은 3:1이면 되고, 테두리까지 내리면 배지가
- * 무거워진다 — 확정 와이어프레임 `_base.css` 대비 보정 2번).
- *
- * `/backorders`는 아직 준비 중 화면이다. 주소만 맞추고 화면은 만들지 않는다.
- */
-function BackorderBadge({ row }: { row: PartnerListRow }) {
-  return (
-    <Link
-      href={`/backorders?wholesaler=${row.wholesalerId}`}
-      className="inline-flex rounded-button hover:opacity-80"
-    >
-      <Badge
-        className={cn(
-          "border",
-          row.backorderDelayed
-            ? "bg-card border-destructive text-destructive-strong"
-            : "bg-card border-input text-muted-foreground",
-        )}
-      >
-        {row.backorderSheets}
-        {SHEET_UNIT}
-        {row.backorderDelayed ? ` ${DELAYED_LABEL}` : null}
-      </Badge>
-      <span className="sr-only"> ({row.name} 미송 현황 보기)</span>
-    </Link>
   );
 }

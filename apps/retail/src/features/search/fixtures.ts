@@ -260,7 +260,10 @@ export const SEARCH_WHOLESALERS: readonly SearchWholesaler[] = [
     id: "w-lavien",
     name: "라비앙",
     initial: "라",
-    location: "청평화패션몰 3층 7호",
+    /* `3층 7호`가 아니다 — 확정 와이어프레임 `12_partners.html` 기준.
+       사입하러 갈 자리를 말하는 화면이 서로 다른 주소를 대면 사장이 없는 자리를
+       찾아 헤맨다(F2). 값은 feature마다 두되 **같은 값**이어야 한다 */
+    location: "청평화패션몰 3층 8호",
   },
   {
     id: "w-cotton",
@@ -272,7 +275,9 @@ export const SEARCH_WHOLESALERS: readonly SearchWholesaler[] = [
     id: "w-denim",
     name: "데님하우스",
     initial: "데",
-    location: "디오트 2층 18호",
+    /* `디오트 2층 18호`가 아니다 — 확정 와이어프레임 2장(`12_partners`·
+       `09_order_detail`)이 `디오트 지하 1층 12호`로 일치한다(F2) */
+    location: "디오트 지하 1층 12호",
   },
 ];
 

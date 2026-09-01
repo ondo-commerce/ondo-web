@@ -62,14 +62,25 @@ function statusText(state: CopyState): string {
   return "";
 }
 
-/** 상태 문구 자리. **자리를 늘 비워 두어야** 눌렀을 때 옆 내용이 밀리지 않는다 */
+/**
+ * 상태 문구 자리. **자리를 늘 비워 두어야** 눌렀을 때 옆 내용이 밀리지 않는다.
+ *
+ * `role="status"` 껍데기는 늘 DOM에 남긴다 — 눌렀을 때 통째로 생겨나는 영역은
+ * 보조기술이 못 읽고 지나갈 수 있다. 눈에 보이는 상자(`boxClassName`)만 글자가
+ * 있을 때 그린다. 비어 있는데도 테두리가 떠 있으면 아무 일 없는 화면에 자국이 남는다.
+ */
 function CopyStatus({
   state,
   className,
+  boxClassName,
 }: {
   state: CopyState;
   className?: string;
+  /** 글자를 감싸는 상자. 떠 있는 표시로 그릴 때만 넘긴다 */
+  boxClassName?: string;
 }) {
+  const text = statusText(state);
+
   return (
     <span
       role="status"
@@ -79,7 +90,7 @@ function CopyStatus({
         className,
       )}
     >
-      {statusText(state)}
+      {text ? <span className={boxClassName}>{text}</span> : null}
     </span>
   );
 }
@@ -117,8 +128,13 @@ export function CopyTextButton({
  * 아이콘만 있는 복사 버튼. 거래처 표의 `연락 · 계좌` 칸에 선다.
  *
  * 아이콘을 체크로 바꾸는 것에 더해 **글자로도** 결과를 적는다 — 아이콘 하나만
- * 바뀌면 무슨 일이 일어났는지 단정할 수 없다. 다만 그 자리를 고정 폭으로 잡아
- * 둔다: 표 칸 안이라 글자가 나타났다 사라지면 열 폭이 흔들려 옆 줄까지 밀린다.
+ * 바뀌면 무슨 일이 일어났는지 단정할 수 없다.
+ *
+ * 그 글자를 **흐름에서 빼 아이콘 위에 띄운다.** 예전에는 옆에 `w-16` 고정 슬롯을
+ * 잡아 두었는데, 평소에는 늘 비어 있는 그 64px이 아이콘과 같이 가운데 정렬되면서
+ * 아이콘 두 개가 머리글 중심에서 33px 왼쪽으로 치우쳤다(F8). 열 폭이 흔들리지
+ * 않게 하려던 목적(J3)은 절대 배치가 더 확실하게 지킨다 — 뜨든 말든 폭에 0을
+ * 차지하므로 열 폭이 상태와 무관해진다.
  */
 export function CopyIconButton({
   text,
@@ -133,7 +149,7 @@ export function CopyIconButton({
     state === "copied" ? Check : state === "failed" ? TriangleAlert : Copy;
 
   return (
-    <>
+    <span className="relative inline-flex">
       <IconButton
         variant="ghost"
         size="md"
@@ -148,7 +164,14 @@ export function CopyIconButton({
       >
         <Icon aria-hidden />
       </IconButton>
-      <CopyStatus state={state} className="inline-block w-16 text-left" />
-    </>
+      {/* 버튼 바로 위에 뜬다. 배경과 테두리를 갖는 이유는 윗줄 위에 겹치기 때문이다 —
+          투명한 채로 겹치면 남의 줄 글자와 섞여 읽힌다. 클릭을 가로채지 않게
+          `pointer-events-none`을 준다 */}
+      <CopyStatus
+        state={state}
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 -translate-x-1/2 pb-1"
+        boxClassName="border-border bg-card block rounded-control border px-2 py-0.5 shadow-dropdown"
+      />
+    </span>
   );
 }

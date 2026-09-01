@@ -11,6 +11,7 @@ import {
 } from "../derive";
 import type { LedgerEntry, PartnerSettlement } from "../types";
 import { BankAccountRow } from "./BankAccountRow";
+import { LedgerCards } from "./LedgerCards";
 import { PartnerSwitch } from "./PartnerSwitch";
 
 /**
@@ -41,14 +42,16 @@ export function LedgerPanel({
     <Panel>
       <Panel.Title
         sub={LEDGER_SUB}
-        suffix={
-          <span className="text-muted-foreground text-sm">{partner.name}</span>
-        }
         action={
           <PartnerSwitch rows={partners} currentId={partner.wholesalerId} />
         }
       >
-        거래 원장
+        {/* 도매처 이름이 **헤딩 안에** 있다. `suffix` 슬롯은 `<h2>` 밖 형제
+            `<span>`이라, 눈으로는 `거래 원장 무드온`으로 보여도 헤딩으로 화면을
+            훑는 사장에게는 그냥 `거래 원장`이었다(F7). 확정 와이어프레임도
+            `<h2>거래 원장 <span class="muted">무드온</span></h2>`로 넣었다 */}
+        거래 원장{" "}
+        <span className="text-muted-foreground text-sm">{partner.name}</span>
       </Panel.Title>
 
       {rows.length === 0 ? (
@@ -56,41 +59,51 @@ export function LedgerPanel({
           {EMPTY_LEDGER}
         </p>
       ) : (
-        <Table>
-          <Table.Head>
-            <tr>
-              <Table.Th align="center">일자</Table.Th>
-              <Table.Th align="left">구분</Table.Th>
-              <Table.Th align="left">근거</Table.Th>
-              <Table.Th align="left">결제 수단</Table.Th>
-              <Table.Th>증감</Table.Th>
-              <Table.Th>잔액</Table.Th>
-            </tr>
-          </Table.Head>
-          <Table.Body>
-            {rows.map(({ entry, balance }) => (
-              <Table.Row key={entry.id}>
-                <Table.Td align="center">{formatDate(entry.date)}</Table.Td>
-                <Table.Td align="left">
-                  {entry.kind === "SHIPMENT" ? "출고" : "입금"}
-                </Table.Td>
-                <Table.Td align="left" tone="muted">
-                  {formatBasis(entry)}
-                </Table.Td>
-                <Table.Td
-                  align="left"
-                  tone={entry.method ? undefined : "muted"}
-                >
-                  {entry.method ? methodLabel(entry.method) : "—"}
-                </Table.Td>
-                <Table.Td>{formatDelta(entry.delta)}</Table.Td>
-                {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액이다 —
+        <>
+          {/* 좁은 폭에서는 표를 세로 카드로 갈아끼운다. 390px에서 6열 표가 582px를
+              요구해 **`증감`과 `잔액`이 화면 밖**이었고, 밀 수 있다는 표시조차 없었다 —
+              이 화면에 온 사장이 알고 싶은 값이 바로 그 잔액이다(F3) */}
+          <div className="tablet:block hidden">
+            <LedgerCards rows={rows} partnerName={partner.name} />
+          </div>
+          <div className="tablet:hidden">
+            <Table>
+              <Table.Head>
+                <tr>
+                  <Table.Th align="center">일자</Table.Th>
+                  <Table.Th align="left">구분</Table.Th>
+                  <Table.Th align="left">근거</Table.Th>
+                  <Table.Th align="left">결제 수단</Table.Th>
+                  <Table.Th>증감</Table.Th>
+                  <Table.Th>잔액</Table.Th>
+                </tr>
+              </Table.Head>
+              <Table.Body>
+                {rows.map(({ entry, balance }) => (
+                  <Table.Row key={entry.id}>
+                    <Table.Td align="center">{formatDate(entry.date)}</Table.Td>
+                    <Table.Td align="left">
+                      {entry.kind === "SHIPMENT" ? "출고" : "입금"}
+                    </Table.Td>
+                    <Table.Td align="left" tone="muted">
+                      {formatBasis(entry)}
+                    </Table.Td>
+                    <Table.Td
+                      align="left"
+                      tone={entry.method ? undefined : "muted"}
+                    >
+                      {entry.method ? methodLabel(entry.method) : "—"}
+                    </Table.Td>
+                    <Table.Td>{formatDelta(entry.delta)}</Table.Td>
+                    {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액이다 —
                     끝까지 스크롤하지 않아도 최종 잔액을 읽을 수 있다 */}
-                <Table.Td>{formatBalance(balance)}</Table.Td>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table>
+                    <Table.Td>{formatBalance(balance)}</Table.Td>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* 원장이 비어도 계좌 안내와 ℹ는 남는다 — 거래가 없다고 입금할 곳이 없어지지 않는다 */}
