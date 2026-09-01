@@ -8,7 +8,12 @@ import { DescList, DescRow } from "./PaymentSummary";
 import { OrderResultCard } from "./OrderResultCard";
 import { AcceptStatusBadge } from "./OrderStatusBadge";
 import { PartialAcceptDialog } from "./PartialAcceptDialog";
-import { COMPLETE_EMPTY, COMPLETE_TEXT, PARTIAL_TEXT } from "../constants";
+import {
+  COMPLETE_ACTION_ID,
+  COMPLETE_EMPTY,
+  COMPLETE_TEXT,
+  PARTIAL_TEXT,
+} from "../constants";
 import {
   checkingLegs,
   comboSheetsLabel,
@@ -72,6 +77,13 @@ export function OrderCompleteView({
   const checking = checkingLegs(receipt);
   const totals = receiptTotals(receipt);
 
+  /* 모달을 닫으면 포커스가 `<body>`로 떨어진다 — 이 모달은 누른 버튼이 없어서
+     Radix가 되돌릴 자리를 모른다. 화면에서 다음에 할 일이 `주문 내역 보기`라
+     그쪽으로 옮긴다 */
+  const focusNext = () => {
+    document.getElementById(COMPLETE_ACTION_ID)?.focus();
+  };
+
   const handleRetry = () => {
     const resent = rejected.flatMap((leg) =>
       leg.lines.map((line) => line.lineId),
@@ -98,7 +110,9 @@ export function OrderCompleteView({
           }
           action={
             <Button asChild variant="line">
-              <Link href="/orders">{COMPLETE_TEXT.viewOrders}</Link>
+              <Link id={COMPLETE_ACTION_ID} href="/orders">
+                {COMPLETE_TEXT.viewOrders}
+              </Link>
             </Button>
           }
         >
@@ -177,6 +191,7 @@ export function OrderCompleteView({
           receipt={receipt}
           open={!dismissed}
           onOpenChange={(next) => setDismissed(!next)}
+          onCloseFocus={focusNext}
           onRetry={handleRetry}
         />
       ) : null}
