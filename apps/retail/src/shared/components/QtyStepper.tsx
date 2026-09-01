@@ -2,8 +2,7 @@
 
 import { cn } from "@ondo/ui";
 import { Minus, Plus } from "lucide-react";
-import { SKU_ORDER_LIMIT } from "../constants";
-import { clampQty, parseQty } from "../derive";
+import { SKU_ORDER_LIMIT, clampQty, parseQty } from "@/shared/qty";
 
 /**
  * 수량 입력 한 칸 — `−` / 값 / `+`.
@@ -16,6 +15,16 @@ import { clampQty, parseQty } from "../derive";
  *
  * 값을 **상태로 지우지 않는 것**이 이 컴포넌트의 규칙이다 — 못 읽는 글자도
  * 그대로 두고, 부르는 쪽이 그 행에 이유를 적는다.
+ *
+ * **못 읽는 값에서는 −/+ 가 걸린다.** `45.5`가 든 칸에서 `+`를 누르면 `parseQty`가
+ * 0으로 읽은 값에서 다시 세어 칸이 `1`이 되고, 친 글자도 빨간 이유 문구도 같이
+ * 사라졌다. `45.5`를 `45`로 고치려던 손이 `1`을 만드는 것이라, 45배 주문을 막으려고
+ * 값을 지키기로 한 규칙이 ± 경로에서만 새고 있었다. 읽을 수 없는 값에서 1을
+ * 더하거나 뺄 방법은 없으므로 버튼을 막고, 왜 막혔는지는 이미 그 행에 떠 있는
+ * 이유 문구가 말한다.
+ *
+ * **`features/product`에서 `shared/`로 올렸다.** 상품 상세와 장바구니 두 곳이
+ * 같은 칸을 쓴다(Rule of Two). 내용은 그대로고 import 경로만 바뀌었다.
  *
  * **폭이 셀을 따라 줄어든다.** 98px 고정이던 시절에는 390px 옵션 표에서 셀이
  * 68px까지 좁아져 스테퍼가 옆 `소계` 칸 위로 42px 넘어가 그려졌다. −/+ 는 크기를
@@ -34,7 +43,10 @@ export function QtyStepper({
   /** 스크린리더용 이름. `체리레드 S 수량`처럼 어느 조합인지까지 읽혀야 한다 */
   label: string;
 }) {
-  const { qty } = parseQty(value);
+  const { qty, issue } = parseQty(value);
+  /* 상한 초과(OVER_LIMIT)는 값이 500으로 맞춰져 있어 셀 수 있다 — 막을 것은
+     숫자로 읽히지 않는 글자뿐이다 */
+  const unreadable = issue === "NOT_A_NUMBER";
 
   const step = (delta: number) => onChange(String(clampQty(qty + delta)));
 
@@ -48,7 +60,7 @@ export function QtyStepper({
       <button
         type="button"
         aria-label={`${label} 1 줄이기`}
-        disabled={disabled || qty <= 0}
+        disabled={disabled || unreadable || qty <= 0}
         onClick={() => step(-1)}
         className="text-muted-foreground hover:text-foreground grid size-6.5 shrink-0 cursor-pointer place-items-center disabled:cursor-not-allowed disabled:opacity-40"
       >
@@ -72,7 +84,7 @@ export function QtyStepper({
       <button
         type="button"
         aria-label={`${label} 1 늘리기`}
-        disabled={disabled || qty >= SKU_ORDER_LIMIT}
+        disabled={disabled || unreadable || qty >= SKU_ORDER_LIMIT}
         onClick={() => step(1)}
         className="text-muted-foreground hover:text-foreground grid size-6.5 shrink-0 cursor-pointer place-items-center disabled:cursor-not-allowed disabled:opacity-40"
       >

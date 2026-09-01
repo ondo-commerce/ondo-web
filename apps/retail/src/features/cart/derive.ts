@@ -1,5 +1,5 @@
+import { QTY_UNIT, parseQty } from "@/shared/qty";
 import type { CartLine } from "./types";
-import { QTY_UNIT } from "./constants";
 
 /**
  * 장바구니의 파생값. **JSX 안에서 더하지 않는다** — 그룹 요약과 하단 요약과
@@ -48,9 +48,18 @@ export function groupByWholesaler(lines: readonly CartLine[]): CartGroup[] {
   return groups;
 }
 
+/**
+ * 그 줄의 장수. 칸에 있는 **글자**를 숫자로 읽는 곳은 `parseQty` 하나뿐이고,
+ * 화면·행 금액·합계가 전부 이 함수를 거쳐서 같은 값을 본다.
+ * 못 읽는 글자(`45.5`)는 0장이다 — 값을 지어내지 않는다.
+ */
+export function lineQty(line: CartLine): number {
+  return parseQty(line.qtyText).qty;
+}
+
 /** 행 금액 = 판매가 × 장수 */
 export function lineSubtotal(line: CartLine): number {
-  return line.price * line.qty;
+  return line.price * lineQty(line);
 }
 
 export interface CartTotals {
@@ -60,6 +69,11 @@ export interface CartTotals {
   sheets: number;
   /** 합계 금액 */
   amount: number;
+  /**
+   * 아직 못 읽은 입력이 이 묶음에 남아 있는가. 있으면 합계가 그 줄을 0장으로
+   * 세고 있다는 뜻이라, 주문으로 넘기기 전에 화면이 말해야 한다.
+   */
+  hasIssue: boolean;
 }
 
 /**
@@ -70,10 +84,11 @@ export function totalsOf(lines: readonly CartLine[]): CartTotals {
   return lines.reduce<CartTotals>(
     (acc, line) => ({
       comboCount: acc.comboCount + 1,
-      sheets: acc.sheets + line.qty,
+      sheets: acc.sheets + lineQty(line),
       amount: acc.amount + lineSubtotal(line),
+      hasIssue: acc.hasIssue || parseQty(line.qtyText).issue === "NOT_A_NUMBER",
     }),
-    { comboCount: 0, sheets: 0, amount: 0 },
+    { comboCount: 0, sheets: 0, amount: 0, hasIssue: false },
   );
 }
 

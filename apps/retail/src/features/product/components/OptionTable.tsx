@@ -2,7 +2,7 @@
 
 import { Badge, ColorDot, cn } from "@ondo/ui";
 import { BulkQtyPopover } from "./BulkQtyPopover";
-import { QtyStepper } from "./QtyStepper";
+import { QtyStepper } from "@/shared/components/QtyStepper";
 import {
   QTY_FOOTNOTE,
   QTY_ISSUE_TEXT,
