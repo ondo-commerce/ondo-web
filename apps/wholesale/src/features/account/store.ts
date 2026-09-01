@@ -310,3 +310,30 @@ function formatAppliedAt(at: Date): string {
     `${pad(at.getHours())}:${pad(at.getMinutes())}`
   );
 }
+
+/**
+ * 정산 계좌를 등록한다. **첫 계좌는 자동으로 주 계좌다.**
+ *
+ * `isPrimary` 필드를 두지 않는 이유: 계좌가 하나뿐인 순간에 구분할 대상이 없다.
+ * 체크박스를 보여 주면 "안 켜면 어떻게 되나"라는 질문만 생긴다. 다계좌 이슈가
+ * 열릴 때 타입까지 같이 연다.
+ *
+ * `bankPromptSeen`을 같이 세운다 — 등록했으면 온보딩은 이미 지나간 화면이다.
+ */
+export function saveBankAccount(email: string, account: BankAccount): void {
+  patchOverride(email, { bankAccount: account, bankPromptSeen: true });
+}
+
+/**
+ * 계좌 입력을 건너뛴다. **다음 로그인부터 온보딩이 다시 뜨지 않는다.**
+ *
+ * 계좌를 안 넣었다고 ERP 전체를 막으면 계좌와 무관한 업무(주문 확인·재고 입고·
+ * 출고)까지 멈춘다. 매 로그인마다 같은 화면이 뜨면 사장은 내용을 안 읽고 닫는
+ * 법부터 배운다 — 한 번 거절한 안내를 반복하는 것은 안내가 아니라 방해다.
+ *
+ * 대신 안 넣은 사실이 **계정 메뉴에 상시로 남는다.** 헤더는 어느 화면에서나 같은
+ * 자리에 있어서, 사장이 계좌 생각이 났을 때 찾아갈 곳이 하나로 고정된다.
+ */
+export function skipBankPrompt(email: string): void {
+  patchOverride(email, { bankPromptSeen: true });
+}

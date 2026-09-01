@@ -13,4 +13,5 @@ export { ApprovalRejectedView } from "./components/ApprovalRejectedView";
 export { ApprovalStatusView } from "./components/ApprovalStatusView";
 export { ErpGuard } from "./components/ErpGuard";
 export { LoginView } from "./components/LoginView";
+export { OnboardingBankView } from "./components/OnboardingBankView";
 export { SignupView } from "./components/SignupView";

@@ -1,7 +1,10 @@
 import {
+  ACCOUNT_NO_MAX,
+  ACCOUNT_NO_MIN,
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
   APPROVAL_STEP_LABELS,
+  BANK_MESSAGE,
   MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   VALIDATION_MESSAGE,
@@ -10,6 +13,8 @@ import { ACCOUNTS, APPLICATION } from "./fixtures";
 import type {
   Account,
   AccountStatus,
+  BankAccount,
+  BankField,
   Application,
   ApprovalStep,
   AttachedFile,
@@ -428,4 +433,82 @@ export function validateReapply(
   return documents.license || documents.idCard
     ? {}
     : { license: VALIDATION_MESSAGE.reapply };
+}
+
+/* ── 정산 계좌 ────────────────────────────────────────────────────────── */
+
+/**
+ * 계좌번호에 들어갈 수 있는 글자. **숫자와 `-`뿐이다.**
+ *
+ * `type="number"`를 쓰지 않는 이유가 여기 있다 — 브라우저가 `45.5`·`-3`·`1e3`을
+ * 스스로 받아 주고, 값이 유효하지 않으면 `value`를 **빈 문자열로 준다.**
+ * 친 글자가 말없이 사라진다. `type="text"` + `inputMode="numeric"`으로 받고
+ * 판정을 이 한 자리에서 한다.
+ */
+const ACCOUNT_NO_SHAPE = /^[\d-]+$/;
+
+export interface BankAccountValues {
+  bankName: string;
+  accountNo: string;
+  holder: string;
+}
+
+export const EMPTY_BANK_ACCOUNT: BankAccountValues = {
+  bankName: "",
+  accountNo: "",
+  holder: "",
+};
+
+/**
+ * 계좌 폼 검증.
+ *
+ * **계좌번호에 아무 보정도 하지 않는다.** 하이픈을 쳐도 지우지 않고, 앱이 넣지도
+ * 않는다 — Figma `2334:2721`의 저장값이 `110-482-948102`로 구분자를 담고 있어
+ * 저장값에 구분자가 살아 있다는 증거가 있고, 반대로 은행마다 자릿수가 달라
+ * 규칙 없이 끼워 넣으면 진짜 번호가 망가진다. `normalizePhone`·
+ * `normalizeBusinessNo`를 여기 태우지 않는 이유도 같다 — 그 둘은 국가 표준이
+ * 있어 보정하지만 계좌번호에는 그런 표준이 없다.
+ *
+ * 막는 것은 **글자 종류와 길이**뿐이고, 걸리면 왜 안 되는지 칸 아래에서 말한다.
+ */
+export function validateBankAccount(
+  values: BankAccountValues,
+): FieldErrors<BankField> {
+  const errors: FieldErrors<BankField> = {};
+
+  if (!values.bankName) errors.bankName = BANK_MESSAGE.bankName;
+
+  const accountNo = values.accountNo.trim();
+  if (!accountNo) errors.accountNo = BANK_MESSAGE.accountNo;
+  else if (!ACCOUNT_NO_SHAPE.test(accountNo))
+    errors.accountNo = BANK_MESSAGE.accountNoShape;
+  else if (
+    accountNo.length < ACCOUNT_NO_MIN ||
+    accountNo.length > ACCOUNT_NO_MAX
+  )
+    errors.accountNo = BANK_MESSAGE.accountNoLength;
+
+  /* 상호명으로 미리 채우지 않는다 — 개인 통장일 수 있고(Figma 더미도 `서울유통`과
+     `김서울`이 섞여 있다), 틀린 예금주는 송금 반송으로 이어진다 */
+  if (!values.holder.trim()) errors.holder = BANK_MESSAGE.holder;
+
+  return errors;
+}
+
+/** 저장할 모양으로 다듬는다. 앞뒤 공백만 뗀다 — 가운데 글자는 손대지 않는다 */
+export function toBankAccount(values: BankAccountValues): BankAccount {
+  return {
+    bankName: values.bankName,
+    accountNo: values.accountNo.trim(),
+    holder: values.holder.trim(),
+  };
+}
+
+/**
+ * 계정 메뉴가 읽는 한 줄. 소매 `BankAccountRow`와 같은 순서로 말한다
+ * (`${bankName} ${accountNo}`) — 두 앱이 같은 값을 같은 얼굴로 말해야
+ * 사장이 "내가 준 계좌가 이거 맞나"를 눈으로 대조할 수 있다.
+ */
+export function bankAccountSummary(account: BankAccount): string {
+  return `${account.bankName} ${account.accountNo}`;
 }

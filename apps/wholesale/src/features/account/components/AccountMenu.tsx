@@ -1,10 +1,16 @@
 "use client";
 
 import { IconButton, Popover } from "@ondo/ui";
-import { CircleUser, LogOut } from "lucide-react";
+import { CircleUser, LogOut, Wallet } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ACCOUNT_PATH, SESSION_DISCLAIMER } from "../constants";
+import {
+  ACCOUNT_PATH,
+  BANK_MENU_LABEL,
+  SESSION_DISCLAIMER,
+} from "../constants";
+import { bankAccountSummary } from "../derive";
 import { signOut, useSession } from "../store";
 
 /**
@@ -56,6 +62,38 @@ export function AccountMenu() {
                 {account.email}
               </p>
             </div>
+
+            <div className="bg-border mx-1 my-1.5 h-px" />
+
+            {/* 정산 탭의 「내 정산 계좌」는 별건 이슈다(정산 화면에 계좌 관리와
+                선수금이 동시에 들어오는 중이라 그 한가운데를 건드리지 않는다).
+                대신 등록한 계좌를 다시 보는 자리를 여기 하나 둔다 — 헤더는 어느
+                화면에서나 같은 자리라 사장이 찾아갈 곳이 하나로 고정된다.
+
+                등록했으면 **읽기 전용 한 줄**, 안 했으면 **누르면 가는 항목**이다.
+                안 넣은 사실이 상시로 남아야 건너뛴 계좌가 잊히지 않는다 */}
+            {account.bankAccount ? (
+              <p className="text-secondary-foreground text-body flex items-start gap-2 px-2.5 py-1.5">
+                <Wallet aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="text-muted-foreground">
+                    {BANK_MENU_LABEL.registered}
+                  </span>{" "}
+                  <span className="tabular-nums">
+                    {bankAccountSummary(account.bankAccount)}
+                  </span>
+                </span>
+              </p>
+            ) : (
+              <Link
+                href={ACCOUNT_PATH.bankOnboarding}
+                onClick={() => setOpen(false)}
+                className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 items-center gap-2 rounded-md px-2.5"
+              >
+                <Wallet aria-hidden className="size-3.5 shrink-0" />
+                {BANK_MENU_LABEL.empty}
+              </Link>
+            )}
 
             <div className="bg-border mx-1 my-1.5 h-px" />
 

@@ -238,3 +238,41 @@ export const APPROVAL_STEP_STATE_LABEL = {
   current: "지금 단계",
   todo: "다음 단계",
 } as const;
+
+/* ── 정산 계좌 ────────────────────────────────────────────────────────── */
+
+/** 제출할 때 오류를 훑는 순서 = 화면에 놓인 순서 */
+export const BANK_FIELD_ORDER = ["bankName", "accountNo", "holder"] as const;
+
+/**
+ * 계좌번호 길이 범위. **막는 것은 글자 종류와 길이뿐이다.**
+ *
+ * 은행마다 자릿수와 구분자 위치가 달라(Figma 더미만 봐도 `110-482-948102` ·
+ * `829102-01-294812` · `032-094812-01-011`로 셋 다 다르다) 형식을 지어내지
+ * 않는다. 앱이 규칙 없이 하이픈을 끼워 넣으면 **사장이 친 진짜 번호를 앱이
+ * 망가뜨린다.**
+ */
+export const ACCOUNT_NO_MIN = 8;
+export const ACCOUNT_NO_MAX = 20;
+
+/**
+ * 계좌 폼의 검증 문구. `VALIDATION_MESSAGE`와 나누지 않고 같은 상수에 얹지
+ * 않는 이유는 없다 — 다만 계좌만 쓰는 문구라 여기 모아 둔다.
+ */
+export const BANK_MESSAGE = {
+  bankName: "은행을 선택해 주세요.",
+  accountNo: "계좌번호를 입력해 주세요.",
+  /* 무엇이 안 되는지 말한다. 조용히 지우면 사장은 자기가 뭘 잘못 쳤는지 모른다 */
+  accountNoShape: "계좌번호는 숫자와 - 만 넣을 수 있어요.",
+  accountNoLength: `계좌번호를 ${ACCOUNT_NO_MIN}~${ACCOUNT_NO_MAX}자로 입력해 주세요.`,
+  holder: "예금주를 입력해 주세요.",
+} as const;
+
+/** 예금주 길이 상한. 상호명과 같은 자리표시에 서는 값이라 같은 값을 쓴다 */
+export const HOLDER_MAX = 40;
+
+/** 계정 메뉴가 계좌를 말하는 한 줄. 등록 전에는 이 항목이 실행 버튼이 된다 */
+export const BANK_MENU_LABEL = {
+  registered: "정산 계좌",
+  empty: "정산 계좌 등록",
+} as const;

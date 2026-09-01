@@ -124,3 +124,6 @@ export interface Rejection {
   decidedAt: string;
   decidedBy: string;
 }
+
+/** 정산 계좌 폼의 칸 이름. 오류 표시·포커스 이동이 이 이름으로 칸을 찾는다 */
+export type BankField = "bankName" | "accountNo" | "holder";
