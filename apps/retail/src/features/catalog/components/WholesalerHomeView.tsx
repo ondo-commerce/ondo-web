@@ -3,6 +3,7 @@
 import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { CatalogSection } from "./CatalogSection";
 import { ProductGrid } from "./ProductGrid";
 import { LIST_SORTS } from "../constants";
@@ -77,7 +78,7 @@ export function WholesalerHomeView({
           </div>
         </div>
 
-        <WholesalerStats wholesaler={wholesaler} />
+        <StatCards cards={statCardsOf(wholesaler)} />
       </Panel>
 
       {fresh.length > 0 ? (
@@ -118,50 +119,30 @@ export function WholesalerHomeView({
 }
 
 /**
- * 통계 3칸.
+ * 통계 3칸이 쓸 값.
  *
  * **숫자는 전부 더미다.** 누적 주문·진행 중·미결제 잔액의 산식이 도매 정산 모델과
  * §3-D·§3-G에서 끊겨 있어(통합 주문 엔티티·입금 배정 규칙 미결정) 계산할 근거가
  * 없다. 자릿수와 관계(진행 중 = 확정 대기 + 미송)만 맞춰 두고 값은 서버가 준다.
+ *
+ * 카드의 겉모습은 `shared/components/StatCards`가 갖는다 — 정산 화면이 같은 모양을
+ * 쓰게 되면서 올렸다(Rule of Two).
  */
-function WholesalerStats({ wholesaler }: { wholesaler: Wholesaler }) {
+function statCardsOf(wholesaler: Wholesaler): StatCard[] {
   const { stats } = wholesaler;
 
-  const cards = [
-    { key: "누적 주문", value: `${stats.orderCount}건`, sub: null },
+  return [
+    { label: "누적 주문", value: `${stats.orderCount}건`, sub: null },
     {
-      key: "진행 중",
+      label: "진행 중",
       value: `${stats.ongoingCount}건`,
       sub: `확정 대기 ${stats.pendingCount} · 미송 ${stats.backorderCount}`,
     },
     {
-      key: "미결제 잔액",
+      label: "미결제 잔액",
       value: formatWon(stats.unpaidAmount),
       /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63) */
       sub: `마지막 입금 ${stats.lastPaidAt.replaceAll("-", ".")}`,
     },
   ];
-
-  return (
-    <dl className="grid grid-cols-3 gap-2 tablet:grid-cols-1">
-      {cards.map(({ key, value, sub }) => (
-        <div
-          key={key}
-          className="border-border rounded-control border px-4 py-3.5"
-        >
-          <dt className="text-muted-foreground text-body">{key}</dt>
-          <dd className="m-0">
-            <span className="mt-1.5 block text-xl font-medium tabular-nums">
-              {value}
-            </span>
-            {sub ? (
-              <span className="text-muted-foreground mt-1 block text-xs tabular-nums">
-                {sub}
-              </span>
-            ) : null}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
 }
