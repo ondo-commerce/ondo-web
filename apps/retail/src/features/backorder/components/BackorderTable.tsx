@@ -62,7 +62,15 @@ export function BackorderTable({
           (`_base.css` `.tbl tbody tr:last-child td{border-bottom:0}`) */}
       <Table.Body className="[&>tr:last-child>td]:border-b-0">
         {lines.map((line) => (
-          <Table.Row key={line.id}>
+          /*
+            생짜 `<tr>`다. `Table.Row`를 쓰면 hover에서 행 전체에 회색 면이 깔리는데
+            (`hover:[&>td]:before:bg-secondary`), **이 행은 누를 수 없다** — onClick도
+            링크도 없고 실제로 눌리는 것은 오른쪽 끝 `주문 보기` 하나다. 누를 수 있는 것처럼
+            보이는 면을 깔아 두면 사장이 행을 누르고 아무 일도 안 일어나는 걸 보고서야 안다
+            (inventory Q-06 · retail-market F11이 같은 뿌리로 이미 두 번 났다).
+            아래 tfoot도 같은 이유로 생짜 `<tr>`이다.
+          */
+          <tr key={line.id}>
             {/* 상품명은 **텍스트다.** 같은 줄에 같은 목적지 링크를 둘 두면
                 키보드로 두 번 지나야 하고 둘 중 무엇이 다른지도 알 수 없다
                 (retail-market F9). 이 줄의 링크는 `주문 보기` 하나다 */}
@@ -85,7 +93,7 @@ export function BackorderTable({
                 </Link>
               </Button>
             </Table.Td>
-          </Table.Row>
+          </tr>
         ))}
       </Table.Body>
 

@@ -3,10 +3,15 @@ import {
   BACKORDER_LINES,
   BACKORDER_TODAY,
   BackorderView,
+  droppedWholesalerId,
   resolveSort,
   resolveWholesalerId,
   wholesalerChips,
 } from "@/features/backorder";
+/* 상호는 거래처 목록(catalog)만 안다. **feature끼리 직접 잇지 않고 page에서 합친다** —
+   backorder가 catalog를 import하면 미송 목록이 거래처 더미에 묶인다. 여기(조립 지점)에서
+   id 하나를 상호로 바꿔 넘기는 것으로 끝낸다 */
+import { findWholesaler } from "@/features/catalog";
 
 export const metadata: Metadata = { title: "미송 대기 현황" };
 
@@ -26,6 +31,11 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const allowed = wholesalerChips(BACKORDER_LINES).map((chip) => chip.id);
+
+  /* 떨어뜨린 값이 있으면 화면이 그 사실을 말한다(F2). 상호를 못 찾으면 `null`로 넘겨
+     `w-basic 미송은 지금 없어요` 같은 id 노출을 막는다 */
+  const droppedId = droppedWholesalerId(params, allowed);
 
   return (
     <BackorderView
@@ -33,11 +43,13 @@ export default async function Page({
       today={BACKORDER_TODAY}
       /* 미송이 없는 도매처·오타·옛 링크는 여기서 `전체`로 떨어진다 — 칩 4개 중
          아무것도 안 켜진 채 0건이 뜨는 화면을 만들지 않는다 */
-      wholesalerId={resolveWholesalerId(
-        params,
-        wholesalerChips(BACKORDER_LINES).map((chip) => chip.id),
-      )}
+      wholesalerId={resolveWholesalerId(params, allowed)}
       sort={resolveSort(params)}
+      dropped={
+        droppedId === null
+          ? null
+          : { id: droppedId, name: findWholesaler(droppedId)?.name ?? null }
+      }
     />
   );
 }

@@ -3,12 +3,14 @@ import {
   BACKORDER_PATH,
   BACKORDER_SORTS,
   DEFAULT_BACKORDER_SORT,
+  DROPPED_NOTICE,
   FILTER_ALL,
 } from "./constants";
 import type {
   BackorderLine,
   BackorderSort,
   BackorderSummary,
+  DroppedWholesaler,
   EtaState,
   WholesalerChip,
 } from "./types";
@@ -48,6 +50,40 @@ export function resolveWholesalerId(
 ): string {
   const value = one(params, "wholesaler");
   return value && allowed.includes(value) ? value : FILTER_ALL;
+}
+
+/**
+ * `resolveWholesalerId`가 **무엇을 떨어뜨렸는지**. 떨어뜨린 게 없으면 `null`이다.
+ *
+ * 떨어뜨리는 동작(위)과 짝이다. 저쪽만 있으면 `?wholesaler=w-basic`이 조용히 전체
+ * 41장이 되고, 거래처 관리 미송 배지(RT-66)를 타고 온 사장에게는 그게 `더베이직 41장`으로
+ * 읽힌다. 뷰가 안내 한 줄을 띄우려면 **떨어뜨린 값 자체**가 필요하다.
+ *
+ * `all`은 떨어뜨린 게 아니라 고른 것이므로 여기서 빠진다.
+ */
+export function droppedWholesalerId(
+  params: Record<string, string | string[] | undefined>,
+  allowed: readonly string[],
+): string | null {
+  const value = one(params, "wholesaler");
+  if (!value || value === FILTER_ALL || allowed.includes(value)) return null;
+  return value;
+}
+
+/**
+ * 그 사실을 사장의 말로 옮긴다. 걸러진 게 없으면 `null`이고, 뷰는 안내를 안 그린다.
+ *
+ * 상호를 아는 값과 모르는 값이 갈린다 — 모르는 값에 상호 자리를 비워 두면
+ * ` 미송은 지금 없어요`가 되고, id를 그대로 넣으면 `w-basic 미송은 지금 없어요`가 된다.
+ */
+export function droppedNoticeText(
+  dropped: DroppedWholesaler | null,
+): string | null {
+  if (dropped === null) return null;
+
+  return dropped.name === null
+    ? DROPPED_NOTICE.unknown
+    : `${dropped.name} ${DROPPED_NOTICE.knownSuffix}`;
 }
 
 /** 주소의 `?sort=`를 정리한다. 모르는 값(옛 링크·오타)은 기본 `오래된 순`으로 떨어뜨린다 */

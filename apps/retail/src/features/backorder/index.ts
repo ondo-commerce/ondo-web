@@ -4,5 +4,10 @@
  */
 export { BackorderView } from "./components/BackorderView";
 export { BACKORDER_LINES, BACKORDER_TODAY } from "./fixtures";
-export { resolveSort, resolveWholesalerId, wholesalerChips } from "./derive";
-export type { BackorderSort } from "./types";
+export {
+  droppedWholesalerId,
+  resolveSort,
+  resolveWholesalerId,
+  wholesalerChips,
+} from "./derive";
+export type { BackorderSort, DroppedWholesaler } from "./types";

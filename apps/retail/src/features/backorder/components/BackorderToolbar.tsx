@@ -1,5 +1,5 @@
 import { cn } from "@ondo/ui";
-import { ChevronDown } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { QTY_UNIT } from "@/shared/qty";
 import { FILTER_ALL, FILTER_ALL_LABEL, SORT_LABEL } from "../constants";
@@ -78,6 +78,12 @@ export function BackorderToolbar({
           가는 링크 하나로 둔다. 버튼 글자가 **지금 걸린 정렬**이고, 누르면 무엇이
           되는지는 접근 가능한 이름이 말한다 — 글자만 보고는 "지금"인지 "다음"인지
           알 수 없기 때문이다.
+
+          ⚠️ 아이콘이 `ChevronDown`이면 안 된다. 아래를 가리키는 갈매기는 **목록이 열린다**는
+          뜻인데 실제로는 그 자리에서 값이 뒤집힌다 — 확정 와이어프레임이 그린 모양이지만
+          거기는 열리는 드롭다운을 전제한 것이라 우리 동작과 다르다. 보조기술에는
+          `눌러서 최신 순으로 바꾸기`라고 정확히 말하면서 **눈으로 보는 사람에게만**
+          거짓 신호를 주는 자리였다(F5). 위아래 화살표로 바꿔 "뒤집힌다"를 그린다.
         */}
         <Link
           href={backorderHref(wholesalerId, nextSort)}
@@ -85,7 +91,7 @@ export function BackorderToolbar({
           className="text-body hover:bg-secondary text-foreground flex h-8 items-center gap-1 rounded-control px-2 whitespace-nowrap transition-colors"
         >
           {SORT_LABEL[sort]}
-          <ChevronDown aria-hidden className="text-border-strong size-3" />
+          <ArrowUpDown aria-hidden className="text-border-strong size-3.5" />
         </Link>
       </div>
     </div>

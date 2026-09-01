@@ -75,3 +75,30 @@ export const TABLE_HEADERS = {
 export const TABLE_CAPTION = "미송 대기 목록";
 
 export const TOTAL_ROW_LABEL = "합계";
+
+/**
+ * 주소의 `?wholesaler=`를 **못 걸어서 전체를 보여주는 중**이라고 말하는 문구.
+ *
+ * 없으면 화면이 조용히 거짓말을 한다 — 거래처 관리의 미송 배지(RT-66)를 타고
+ * `?wholesaler=w-basic`으로 들어온 사장에게 `더베이직 미송 41장`으로 읽힌다.
+ * 41장은 라비앙·코튼클럽·데님하우스 것이다.
+ *
+ * 상호에 조사를 붙이지 않는다(`더베이직은`/`라비앙은`) — 받침 유무로 은/는이 갈리는데
+ * 상호는 더미에서 오는 값이라 여기서 판정할 수 없다. `<상호> 미송은` 형태로 피한다.
+ */
+export const DROPPED_NOTICE = {
+  /** 실제 거래처인데 지금 미송이 0건이다 */
+  knownSuffix: "미송은 지금 없어요. 전체 목록을 보여드릴게요.",
+  /** 거래처 목록에 없는 값 — 옛 링크·오타 */
+  unknown: "찾으시는 도매처를 확인하지 못했어요. 전체 목록을 보여드릴게요.",
+} as const;
+
+/**
+ * 좁은 폭(≤960px) 카드 목록의 항목 라벨. **표 머리글과 같은 말을 쓴다** —
+ * 같은 값을 폭에 따라 다른 이름으로 부르면 두 화면이 된다.
+ */
+export const CARD_LABEL = {
+  qty: TABLE_HEADERS.qty,
+  orderedAt: TABLE_HEADERS.orderedAt,
+  eta: TABLE_HEADERS.eta,
+} as const;

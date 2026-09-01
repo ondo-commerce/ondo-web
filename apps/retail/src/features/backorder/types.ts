@@ -71,3 +71,20 @@ export interface WholesalerChip {
   id: string;
   name: string;
 }
+
+/**
+ * 주소의 `?wholesaler=`가 **걸리지 않고 `전체`로 떨어진 사실**.
+ *
+ * 떨어뜨리는 것 자체는 맞는 동작이다(S2-AC5) — 칩 하나도 안 켜진 0건 화면보다 낫다.
+ * 문제는 그 사실을 화면이 말하지 않는 것이었다. 이 타입이 있어야 뷰가
+ * "걸렀다"와 "원래 전체였다"를 구분할 수 있다.
+ */
+export interface DroppedWholesaler {
+  /** 주소에 실려 있던 값. `w-basic` 같은 실제 id일 수도, 오타일 수도 있다 */
+  id: string;
+  /**
+   * 거래처 목록에서 찾은 상호. **모르는 값이면 `null`이다** —
+   * 없는 상호를 지어내 `zzz 미송은 지금 없어요`라고 말하지 않는다.
+   */
+  name: string | null;
+}
