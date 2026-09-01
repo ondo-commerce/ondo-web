@@ -7,5 +7,6 @@
  * 그래서 밖으로 나가는 것에 `CheckoutLine` 타입이 들어 있다(가정 A10).
  */
 export { CheckoutView } from "./components/CheckoutView";
+export { OrderCompleteView } from "./components/OrderCompleteView";
 export { resolveScenario } from "./derive";
 export type { CheckoutLine, OrderScenario } from "./types";
