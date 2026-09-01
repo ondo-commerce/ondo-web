@@ -1,13 +1,29 @@
 import { QTY_UNIT } from "@/shared/qty";
-import { CHECKOUT_BLOCKED, PAYMENT_LABEL, PICKUP_LABEL } from "./constants";
+import {
+  CHECKOUT_BLOCKED,
+  DEFAULT_ORDER_SORT,
+  DEFAULT_PERIOD,
+  FILTER_ALL,
+  LINE_PENDING_NOTE,
+  PAYMENT_LABEL,
+  PERIODS,
+  PICKUP_LABEL,
+} from "./constants";
 import type {
   CheckoutLine,
+  OrderFilter,
+  OrderLeg,
+  OrderLine,
   OrderReceipt,
+  OrderRecord,
   OrderScenario,
+  OrderSort,
+  OrderStatus,
   PaymentChoice,
   PaymentMethod,
   PickupChoice,
   PickupMethod,
+  Shipment,
 } from "./types";
 
 /**
@@ -326,4 +342,406 @@ export function receiptTotals(receipt: OrderReceipt): OrderTotals {
       .filter((leg) => leg.status !== "REJECTED")
       .flatMap((leg) => leg.lines),
   );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   접수된 뒤 — 목록 한 줄과 상세 한 장이 **같은 함수들**을 읽는다.
+   원본은 목록 2행이 517,000원인데 상세 행 합이 618,000원이었다(§6에 없던
+   새 결함). 두 화면이 각자 상수를 읽으면 언제든 다시 갈린다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 주문 라인의 소계 = 판매가 × 수량 */
+export function orderLineAmount(line: OrderLine): number {
+  return line.price * line.qty;
+}
+
+/**
+ * 주문 하나의 합. **금액은 라인에서 나온다** — 목록·요약 카드·표 `<tfoot>`가
+ * 전부 이 값을 읽으므로 세 자리가 다른 금액을 말할 수 없다(가정 A5-b·A5-c).
+ */
+export function orderTotals(order: OrderRecord): OrderTotals {
+  return order.lines.reduce<OrderTotals>(
+    (acc, line) => ({
+      comboCount: acc.comboCount + 1,
+      sheets: acc.sheets + line.qty,
+      amount: acc.amount + orderLineAmount(line),
+    }),
+    { comboCount: 0, sheets: 0, amount: 0 },
+  );
+}
+
+/** `무드온 외 1곳` — 도매처가 하나면 이름만 */
+export function wholesalerLabel(order: OrderRecord): {
+  head: string;
+  rest: string | null;
+} {
+  const head = order.legs[0]?.wholesalerName ?? "";
+  return {
+    head,
+    rest: order.legs.length > 1 ? `외 ${order.legs.length - 1}곳` : null,
+  };
+}
+
+export interface ShipmentProgress {
+  /** 출고될 건수 = 취소되지 않은 도매처 건수 */
+  planned: number;
+  /** 실제로 장끼가 나간 건수 */
+  done: number;
+}
+
+/**
+ * `3건 중 2건`.
+ *
+ * `done`을 **장끼 발행 건수**로 정의한 근거는 상세 화면이다 — 데님하우스는
+ * 배지가 `수령 가능`인데 출고 기록에 장끼가 **있다**. 장끼는 나갔고 소매가
+ * 아직 안 가져간 상태이고, §3-0 C(`수령 가능` = 도매 `출고 대기`)와 맞는다.
+ *
+ * `planned`는 **취소되지 않은 도매처 건수**다. 확정된 건수로 정의하면
+ * 와이어프레임의 `3건 중 2건`(3곳 중 1곳은 아직 확정 전)이 `2건 중 2건`이
+ * 되어버린다. 대신 확정 전 주문의 출고 칸이 원본의 `0건 중 0건`이 아니라
+ * `2건 중 0건`이 된다 — 원본이 두 행에서 서로 다른 규칙을 쓴 자리라
+ * 한쪽을 골랐고, 고른 쪽은 AC가 숫자로 못박은 상세 화면이다.
+ */
+export function shipmentProgress(order: OrderRecord): ShipmentProgress {
+  const shipped = new Set(order.shipments.map((s) => s.wholesalerId));
+
+  return {
+    planned: order.legs.filter((leg) => !leg.canceled).length,
+    done: order.legs.filter(
+      (leg) => !leg.canceled && shipped.has(leg.wholesalerId),
+    ).length,
+  };
+}
+
+/**
+ * 통합 행에 뜨는 배지 하나. **위에서부터 처음 맞는 것**(가정 A1).
+ *
+ * ```
+ * 1) 도매처 건이 전부 취소됨          → 취소됨
+ * 2) 장끼 M건이 0 < M < N            → 부분 출고
+ * 3) M === N (>0) 이고 전부 수령함     → 출고 완료
+ * 4) M === N (>0)                    → 수령 가능
+ * 5) 그 밖(M === 0)                  → 확정 대기
+ * ```
+ *
+ * 확정 와이어프레임의 5행에 넣으면 5행 전부 그려진 배지와 같은 값이 나온다.
+ * **한 행에 배지는 하나**이고, 목록·상세가 같은 이 함수를 부른다.
+ */
+export function orderStatus(order: OrderRecord): OrderStatus {
+  if (order.legs.length > 0 && order.legs.every((leg) => leg.canceled)) {
+    return "CANCELED";
+  }
+
+  const { planned, done } = shipmentProgress(order);
+  if (done > 0 && done < planned) return "PARTIAL_SHIPPED";
+
+  if (done > 0 && done === planned) {
+    const alive = order.legs.filter((leg) => !leg.canceled);
+    return alive.every((leg) => leg.received) ? "SHIPPED" : "READY";
+  }
+
+  return "PENDING";
+}
+
+/** 장끼 한 장의 금액 */
+export function shipmentAmount(shipment: Shipment): number {
+  return shipment.lines.reduce((sum, line) => sum + line.price * line.qty, 0);
+}
+
+/**
+ * 미수 잔액. **출고된 건의 금액 합이다**(RT-64) — 주문 금액 전체가 아니다.
+ * 미수는 물건이 나갈 때 생긴다.
+ */
+export function unpaidAmount(order: OrderRecord): number {
+  return order.shipments.reduce((sum, s) => sum + shipmentAmount(s), 0);
+}
+
+/**
+ * 이 주문을 취소할 수 있는가. **도매처가 확정하기 전까지만**이다(RT-49).
+ * 확정됐거나 이미 나간 것이 있으면 잠긴다.
+ */
+export function isCancelable(order: OrderRecord): boolean {
+  return (
+    order.shipments.length === 0 &&
+    order.legs.length > 0 &&
+    order.legs.every((leg) => !leg.confirmed && !leg.canceled)
+  );
+}
+
+/** 라인 상태 아래 12px 둘째 줄. 없으면 안 붙는다 */
+export function lineStatusNote(
+  line: OrderLine,
+  leg: OrderLeg | undefined,
+): string | null {
+  if (line.status === "PENDING") return LINE_PENDING_NOTE;
+
+  if (line.status === "READY" && leg?.pickup) {
+    /* 주소를 여기서 만든다 — 라인 표와 `결제 · 수령` 패널이 같은 `leg`를 읽어야
+       같은 글자가 나온다. 원본은 두 자리가 `데님하우스 지하 1층 12호` /
+       `디오트 지하 1층 12호`로 갈려 있었다(가정 A5-e) */
+    return `${PICKUP_LABEL[leg.pickup]} · ${leg.wholesalerLocation}`;
+  }
+
+  return null;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   주문 내역 필터 3축 · 정렬 — **주소가 곧 상태다**
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 주소의 값이 목록에 없으면(옛 링크·오타) 기본값으로 떨어뜨린다 */
+function resolveOne(
+  value: string | string[] | undefined,
+  allowed: readonly string[],
+  fallback: string,
+): string {
+  const one = Array.isArray(value) ? value[0] : value;
+  return one && allowed.includes(one) ? one : fallback;
+}
+
+const STATUS_VALUES: readonly OrderStatus[] = [
+  "PENDING",
+  "PARTIAL_SHIPPED",
+  "READY",
+  "SHIPPED",
+  "CANCELED",
+];
+
+/** 주소 → 필터 3축. 상세를 갔다 와도 좁혀 둔 조건이 남는 이유가 이것이다 */
+export function resolveOrderFilter(
+  params: Record<string, string | string[] | undefined>,
+  wholesalerIds: readonly string[],
+): OrderFilter {
+  return {
+    period: resolveOne(
+      params.period,
+      PERIODS.map((p) => p.value),
+      DEFAULT_PERIOD,
+    ),
+    wholesaler: resolveOne(params.wholesaler, wholesalerIds, FILTER_ALL),
+    status: resolveOne(params.status, STATUS_VALUES, FILTER_ALL),
+  };
+}
+
+/** 주소 → 정렬. 모르는 값은 기본(최신순)으로 */
+export function resolveOrderSort(
+  params: Record<string, string | string[] | undefined>,
+): OrderSort {
+  const raw = Array.isArray(params.sort) ? params.sort[0] : params.sort;
+  return raw === "oldest" ? "oldest" : DEFAULT_ORDER_SORT;
+}
+
+/** 주소 → 펼쳐 둔 주문. 목록에 없는 값이면 아무것도 안 펼친다 */
+export function resolveOpen(
+  params: Record<string, string | string[] | undefined>,
+): string | null {
+  const raw = Array.isArray(params.open) ? params.open[0] : params.open;
+  return raw ?? null;
+}
+
+/** 주문일 `2026.08.24 10:10` → 비교 가능한 `20260824` */
+function orderDay(order: OrderRecord): string {
+  return order.orderedAt.slice(0, 10).replaceAll(".", "");
+}
+
+/**
+ * 세 축을 **함께** 건다. 기간을 좁힌 채로 도매처를 더 좁힐 수 있어야 한다.
+ *
+ * "최근 N개월"을 `new Date()`로 세지 않는다 — 더미 날짜는 고정인데 오늘을
+ * 기준으로 세면 시간이 지날수록 목록이 저절로 비고, 화면이 비는 이유가
+ * 코드가 아니라 달력에 있게 된다. 기준일은 `fixtures`가 준다.
+ */
+export function filterOrders(
+  orders: readonly OrderRecord[],
+  filter: OrderFilter,
+): OrderRecord[] {
+  const period = PERIODS.find((p) => p.value === filter.period);
+  const since = period?.since ?? null;
+
+  return orders.filter((order) => {
+    if (since && orderDay(order) < since) return false;
+
+    if (
+      filter.wholesaler !== FILTER_ALL &&
+      !order.legs.some((leg) => leg.wholesalerId === filter.wholesaler)
+    ) {
+      return false;
+    }
+
+    return filter.status === FILTER_ALL || orderStatus(order) === filter.status;
+  });
+}
+
+/** 원본 배열을 건드리지 않는다 — fixtures는 모든 화면이 같이 읽는 모듈 하나다 */
+export function sortOrders(
+  orders: readonly OrderRecord[],
+  sort: OrderSort,
+): OrderRecord[] {
+  return [...orders].sort((a, b) =>
+    sort === "oldest"
+      ? a.orderedAt.localeCompare(b.orderedAt)
+      : b.orderedAt.localeCompare(a.orderedAt),
+  );
+}
+
+/** 세 축이 전부 기본값인가. `초기화`를 누를 수 있는지가 여기서 갈린다 */
+export function isOrderFilterEmpty(filter: OrderFilter): boolean {
+  return (
+    filter.period === DEFAULT_PERIOD &&
+    filter.wholesaler === FILTER_ALL &&
+    filter.status === FILTER_ALL
+  );
+}
+
+/**
+ * 지금 주소 위에 한 축만 바꾼 주소.
+ *
+ * 기본값인 축은 **주소에서 뺀다** — 그래야 `초기화`가 그냥 `/orders`가 되고
+ * 아무것도 안 고른 화면의 주소가 짧다. 펼침도 같이 실린다(반복결함 `state-loss`):
+ * 상세에 갔다 뒤로 오면 펼쳐 둔 행이 그대로 있어야 한다.
+ */
+export function ordersHref(
+  current: { filter: OrderFilter; sort: OrderSort; open: string | null },
+  patch: Partial<OrderFilter> & { sort?: OrderSort; open?: string | null },
+): string {
+  const filter = { ...current.filter, ...patch };
+  const sort = patch.sort ?? current.sort;
+  const open = patch.open === undefined ? current.open : patch.open;
+
+  const params = new URLSearchParams();
+  if (filter.period !== DEFAULT_PERIOD) params.set("period", filter.period);
+  for (const key of ["wholesaler", "status"] as const) {
+    if (filter[key] !== FILTER_ALL) params.set(key, filter[key]);
+  }
+  if (sort !== DEFAULT_ORDER_SORT) params.set("sort", sort);
+  if (open) params.set("open", open);
+
+  const query = params.toString();
+  return query ? `/orders?${query}` : "/orders";
+}
+
+/** 도매처 필터에 세울 값. **목록에 실제로 있는 도매처만** 세운다 */
+export function orderWholesalers(
+  orders: readonly OrderRecord[],
+): { id: string; name: string }[] {
+  const seen = new Map<string, string>();
+  for (const order of orders) {
+    for (const leg of order.legs)
+      seen.set(leg.wholesalerId, leg.wholesalerName);
+  }
+
+  return [...seen].map(([id, name]) => ({ id, name }));
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   다시 주문 — 판정은 더미가 갖고(가정 A7) 세는 것만 파생시킨다.
+   없는 판정 로직을 지어내면 서버가 붙을 때 통째로 버려지지만, 세는 코드는 남는다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 담기는 줄인가. `제외` 둘만 빠진다 */
+export function isReorderAddable(line: OrderLine): boolean {
+  const result = line.reorder ?? "ADDED";
+  return result === "ADDED" || result === "PRICE_UP";
+}
+
+/** 다시 담을 때 실제로 들어갈 값. 단가가 올랐으면 **지금 가격**으로 담긴다 */
+export function reorderPrice(line: OrderLine): number {
+  return line.reorder === "PRICE_UP"
+    ? (line.currentPrice ?? line.price)
+    : line.price;
+}
+
+export interface ReorderSummary {
+  /** 담을 수 있는 줄의 장수 합 */
+  sheets: number;
+  /** 담을 수 있는 줄 수 */
+  addable: number;
+  /** 표에 선 줄 수 전부 */
+  total: number;
+}
+
+/** `<tfoot>`의 `30장 · 2건 / 5건`. **표의 실제 행에서 나온다** */
+export function reorderSummary(lines: readonly OrderLine[]): ReorderSummary {
+  const addable = lines.filter(isReorderAddable);
+
+  return {
+    sheets: addable.reduce((sum, line) => sum + line.qty, 0),
+    addable: addable.length,
+    total: lines.length,
+  };
+}
+
+/** 도매처 한 건에 걸린 라인만 */
+export function legLines(
+  order: OrderRecord,
+  wholesalerId: string,
+): OrderLine[] {
+  return order.lines.filter((line) => line.wholesalerId === wholesalerId);
+}
+
+/** 도매처 한 건의 합. 펼친 줄이 이 값을 읽는다 */
+export function legTotals(
+  order: OrderRecord,
+  wholesalerId: string,
+): OrderTotals {
+  return legLines(order, wholesalerId).reduce<OrderTotals>(
+    (acc, line) => ({
+      comboCount: acc.comboCount + 1,
+      sheets: acc.sheets + line.qty,
+      amount: acc.amount + orderLineAmount(line),
+    }),
+    { comboCount: 0, sheets: 0, amount: 0 },
+  );
+}
+
+/**
+ * 도매처 한 건의 상태. 펼친 줄에만 뜬다.
+ *
+ * 통합 행 배지와 **같은 근거**(장끼가 나갔는가 · 받아 갔는가)를 쓴다 —
+ * 펼쳤을 때 위아래가 다른 규칙으로 말하면 무엇을 믿어야 할지 알 수 없다.
+ */
+export function legStatus(order: OrderRecord, leg: OrderLeg): OrderStatus {
+  if (leg.canceled) return "CANCELED";
+
+  const shipped = order.shipments.some(
+    (s) => s.wholesalerId === leg.wholesalerId,
+  );
+  if (shipped) return leg.received ? "SHIPPED" : "READY";
+
+  return "PENDING";
+}
+
+/** 장끼 한 장의 요약 줄 `2026.08.26 21:40 출고 · 화이트/M 20장 · 수령인 박삼촌` */
+export function shipmentSummary(
+  shipment: Shipment,
+  leg: OrderLeg | undefined,
+  receiverName: string,
+): string {
+  const items = shipment.lines
+    .map((line) => `${line.colorLabel}/${line.size} ${formatSheets(line.qty)}`)
+    .join(" · ");
+
+  const how =
+    leg?.pickup === "AGENT"
+      ? `수령인 ${receiverName}`
+      : PICKUP_LABEL[leg?.pickup ?? "DIRECT"];
+
+  return `${shipment.shippedAt} 출고 · ${items} · ${how}`;
+}
+
+/**
+ * 이 출고까지의 **남은 미수**. 장끼 모달의 마지막 줄이 읽는다.
+ *
+ * 출고 순서대로 쌓아 올린 값이다 — 미수는 출고 시점에 생기므로(RT-64) 그
+ * 장끼가 나갔을 때의 잔액은 그때까지 나간 것의 합이다. 입금 배정은 도매 사장이
+ * 수기로 하는 일이라 여기서 빼지 않는다(§3-0 D: FIFO 아님).
+ */
+export function unpaidAfter(order: OrderRecord, statementNo: string): number {
+  let sum = 0;
+  for (const shipment of order.shipments) {
+    sum += shipmentAmount(shipment);
+    if (shipment.statementNo === statementNo) break;
+  }
+
+  return sum;
 }

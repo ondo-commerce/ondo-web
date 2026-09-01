@@ -1,6 +1,16 @@
 import { Badge, cn } from "@ondo/ui";
-import { ACCEPT_LABEL } from "../constants";
-import type { AcceptStatus } from "../types";
+import {
+  ACCEPT_LABEL,
+  LINE_STATUS_LABEL,
+  ORDER_STATUS_LABEL,
+  REORDER_RESULT_LABEL,
+} from "../constants";
+import type {
+  AcceptStatus,
+  OrderLineStatus,
+  OrderStatus,
+  ReorderResult,
+} from "../types";
 
 /**
  * 주문 화면 배지의 모양 3종. **색을 늘리지 않는다** — 윤곽/채움/빨간 윤곽뿐이다.
@@ -60,6 +70,61 @@ export function AcceptStatusBadge({ status }: { status: AcceptStatus }) {
   return (
     <StatusBadge shape={ACCEPT_SHAPE[status]}>
       {ACCEPT_LABEL[status]}
+    </StatusBadge>
+  );
+}
+
+/**
+ * 통합 행 · 도매처 건의 상태 배지.
+ *
+ * **끝난 것만 채움이다**(`출고 완료`). 나머지는 아직 사장이 뭔가 기다리거나
+ * 할 일이 남은 것이라 윤곽으로 둔다 — 색이 아니라 채움 여부가 "끝났는가"를
+ * 말한다(게이트 D1: 강조색을 쓰지 않는다).
+ */
+const ORDER_SHAPE: Record<OrderStatus, BadgeShape> = {
+  PENDING: "outline",
+  PARTIAL_SHIPPED: "outline",
+  READY: "outline",
+  SHIPPED: "fill",
+  CANCELED: "outline",
+};
+
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  return (
+    <StatusBadge shape={ORDER_SHAPE[status]}>
+      {ORDER_STATUS_LABEL[status]}
+    </StatusBadge>
+  );
+}
+
+const LINE_SHAPE: Record<OrderLineStatus, BadgeShape> = {
+  SHIPPED: "fill",
+  BACKORDER: "outline",
+  READY: "outline",
+  PENDING: "outline",
+  CANCELED: "outline",
+};
+
+export function LineStatusBadge({ status }: { status: OrderLineStatus }) {
+  return (
+    <StatusBadge shape={LINE_SHAPE[status]}>
+      {LINE_STATUS_LABEL[status]}
+    </StatusBadge>
+  );
+}
+
+/** 다시 담기 판정. **제외 둘만 빨간 윤곽**이다 — 담기지 않는다는 뜻이다 */
+const REORDER_SHAPE: Record<ReorderResult, BadgeShape> = {
+  ADDED: "fill",
+  PRICE_UP: "outline",
+  SEASON_ENDED: "warn",
+  DELISTED: "warn",
+};
+
+export function ReorderResultBadge({ result }: { result: ReorderResult }) {
+  return (
+    <StatusBadge shape={REORDER_SHAPE[result]}>
+      {REORDER_RESULT_LABEL[result]}
     </StatusBadge>
   );
 }

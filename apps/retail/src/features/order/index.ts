@@ -8,5 +8,19 @@
  */
 export { CheckoutView } from "./components/CheckoutView";
 export { OrderCompleteView } from "./components/OrderCompleteView";
-export { resolveScenario } from "./derive";
-export type { CheckoutLine, OrderScenario } from "./types";
+export { OrderListView } from "./components/OrderListView";
+export {
+  resolveOpen,
+  resolveOrderFilter,
+  resolveOrderSort,
+  resolveScenario,
+  reorderPrice,
+} from "./derive";
+export { ORDERS } from "./fixtures";
+export type {
+  CheckoutLine,
+  OrderFilter,
+  OrderLine,
+  OrderScenario,
+  OrderSort,
+} from "./types";

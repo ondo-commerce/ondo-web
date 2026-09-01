@@ -1,4 +1,12 @@
-import type { AcceptStatus, PaymentMethod, PickupMethod } from "./types";
+import type {
+  AcceptStatus,
+  OrderLineStatus,
+  OrderStatus,
+  OrderSort,
+  PaymentMethod,
+  PickupMethod,
+  ReorderResult,
+} from "./types";
 
 /**
  * 주문 화면들의 고정 문구.
@@ -141,3 +149,128 @@ export const PARTIAL_TEXT = {
   /** 다시 시도한 **뒤에** 뜨는 말. 일어난 일만 과거형으로 적는다 */
   retried: "안 된 건을 다시 보냈어요. 도매처 응답을 기다리는 중이에요.",
 } as const;
+
+/* ────────────────────────────────────────────────────────────────────────
+   접수된 뒤 — 상태 어휘. **표기를 컴포넌트에 적지 않는다**
+   ──────────────────────────────────────────────────────────────────────── */
+
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  PENDING: "확정 대기",
+  PARTIAL_SHIPPED: "부분 출고",
+  READY: "수령 가능",
+  SHIPPED: "출고 완료",
+  CANCELED: "취소됨",
+};
+
+/**
+ * 라인 상태 표기.
+ *
+ * `BACKORDER`가 **`재고 소진 · 미송`**이다 — 장바구니·상품 상세의
+ * `재고 소진 · 미송 가능`(게이트 Q2)과 **일부러 다른 말**이다. 담기 전은
+ * "미송으로 주문할 수 있다"는 가능성이고, 여기는 "이미 미송으로 넘어갔다"는
+ * 사실이다(RT-59: 미송은 도매처가 확정할 때 생긴다). 같은 말로 적으면 사장이
+ * 주문한 물건이 아직 살 수 있는 상태인 줄 안다.
+ */
+export const LINE_STATUS_LABEL: Record<OrderLineStatus, string> = {
+  SHIPPED: "출고 완료",
+  BACKORDER: "재고 소진 · 미송",
+  READY: "수령 가능",
+  PENDING: "확정 대기",
+  CANCELED: "취소됨",
+};
+
+/** 확정 전 라인이 지금 무엇을 기다리는지. 상태 배지만으론 알 수 없다 */
+export const LINE_PENDING_NOTE = "도매처 재고 확인 중";
+
+export const REORDER_RESULT_LABEL: Record<ReorderResult, string> = {
+  ADDED: "담김",
+  PRICE_UP: "단가 인상 · 담김",
+  SEASON_ENDED: "시즌 종료 · 제외",
+  DELISTED: "게시 내림 · 제외",
+};
+
+/** 주문 내역 화면의 문장 전부 */
+export const ORDERS_TEXT = {
+  title: "주문 내역",
+  sub: "여러 도매처에 한 번에 넣은 주문은 한 줄로 묶여요. 펼치면 도매처별 상태를 볼 수 있어요.",
+  reset: "초기화",
+  reorder: "다시 주문",
+  /**
+   * 통합 행 배지 규칙 안내.
+   *
+   * 원본의 `가장 앞선 단계를 한 줄에 보여주고`를 **고쳤다.** 그 문장은 부분 출고
+   * 행을 설명하지 못한다 — 가장 앞선 단계는 라비앙의 `확정 대기`인데 배지는
+   * `부분 출고`다. §6-2·§6-3이 "배지가 어긋난다 / 규칙이 없다"고 이미 지목한
+   * 자리라 문구와 규칙을 같이 정한다(가정 A1-a).
+   */
+  rule: "도매처마다 상태가 다를 때는 묶음 전체의 진행 단계 하나를 보여주고, 출고 칸의 “3건 중 2건”으로 진행을 알려줘요. 자세한 건 펼쳐서 보세요.",
+  empty: {
+    title: "조건에 맞는 주문이 없어요",
+    description: "기간·도매처·상태를 바꾸거나 조건을 지워 보세요.",
+  },
+  /** 담긴 것이 아예 없을 때. 조건 문제가 아니라 아직 주문한 적이 없는 것이다 */
+  noOrders: {
+    title: "아직 주문한 적이 없어요",
+    description: "마음에 드는 상품을 담고 주문해 보세요.",
+  },
+} as const;
+
+/** 다시 주문 모달의 문장 전부 */
+export const REORDER_TEXT = {
+  title: "이 주문을 다시 담을게요",
+  sub: "담기 전에 어떻게 되는지 먼저 보여드려요. 담을 수 없는 상품은 빼고 담아요.",
+  notice:
+    "단가가 오른 상품은 지금 가격으로 담겨요. 제외된 상품은 담기지 않아요.",
+  addable: "담을 수 있는 것",
+  cancel: "취소",
+  submit: "담을 수 있는 것만 담기",
+  /** 담을 것이 없을 때 버튼 옆에 서는 이유 */
+  blocked: "담을 수 있는 상품이 없어요.",
+  toCart: "장바구니로 가기",
+} as const;
+
+/** 담은 **뒤에** 뜨는 말. 예고가 아니라 결과라 과거형이다 */
+export function reorderAddedNotice(count: number): string {
+  return `장바구니에 ${count}개 조합을 담았어요.`;
+}
+
+/**
+ * 필터 축이 안 걸린 상태. **`전체`는 값이 아니라 해제다** — 그래서 주소에서
+ * 빠지고, `초기화`가 그냥 `/orders`가 된다.
+ * (`features/catalog`에도 같은 상수가 있다. feature마다 중복 정의가 정답이다)
+ */
+export const FILTER_ALL = "all";
+export const FILTER_ALL_LABEL = {
+  wholesaler: "도매처 전체",
+  status: "상태 전체",
+} as const;
+
+/**
+ * 기간 축. **기본이 `최근 3개월`이고 해제 상태가 아니다** — 주문 내역은 오래된
+ * 것까지 다 세우면 훑을 수 없는 목록이라 확정 와이어프레임도 3개월로 열린다.
+ *
+ * `since`를 `new Date()`로 만들지 않는다. 더미 날짜는 고정인데 오늘을 기준으로
+ * 세면 시간이 지날수록 목록이 저절로 비고, 화면이 비는 이유가 코드가 아니라
+ * 달력에 있게 된다. API가 붙으면 서버가 기간을 계산한다.
+ */
+export const DEFAULT_PERIOD = "3m";
+
+export const PERIODS: readonly {
+  value: string;
+  label: string;
+  /** `YYYYMMDD`. null이면 기간을 안 건다 */
+  since: string | null;
+}[] = [
+  { value: "1m", label: "최근 1개월", since: "20260801" },
+  { value: DEFAULT_PERIOD, label: "최근 3개월", since: "20260601" },
+  { value: "6m", label: "최근 6개월", since: "20260301" },
+  { value: FILTER_ALL, label: "전체 기간", since: null },
+];
+
+/** 정렬 2종. 늘 하나가 골라져 있어서 해제 상태가 없다 */
+export const ORDER_SORTS: readonly { value: OrderSort; label: string }[] = [
+  { value: "latest", label: "최신순" },
+  { value: "oldest", label: "오래된순" },
+];
+
+export const DEFAULT_ORDER_SORT: OrderSort = "latest";
