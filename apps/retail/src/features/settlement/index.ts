@@ -7,4 +7,5 @@
  * 복제되고 그 순간 두 화면이 서로 다른 금액을 말한다
  * (`CLAUDE.md` — feature끼리 직접 import하지 않는다).
  */
+export { PartnersView } from "./components/PartnersView";
 export { SettlementView } from "./components/SettlementView";

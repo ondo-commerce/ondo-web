@@ -73,10 +73,13 @@ export interface WholesalerStats {
   ongoingCount: number;
   pendingCount: number;
   backorderCount: number;
-  /** 미결제 잔액(원). 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63) */
+  /**
+   * 미결제 잔액(원). 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63).
+   * **음수일 수 있다** — 배정되지 않고 남은 입금이 선수금이 된다(§3-0 E).
+   */
   unpaidAmount: number;
-  /** 마지막 입금일 (ISO 날짜) */
-  lastPaidAt: string;
+  /** 마지막 입금일 (ISO 날짜). **입금 이력이 없으면 null**이고 화면에 `—`가 나간다 */
+  lastPaidAt: string | null;
 }
 
 /** 툴바가 좁히는 네 축. 값은 전부 문자열이고 `전체`는 `FILTER_ALL` 한 값이다 */

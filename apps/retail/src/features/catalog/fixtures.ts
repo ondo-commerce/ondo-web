@@ -19,15 +19,18 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "무",
     location: "청평화패션몰 2층 24호",
     businessHours: "20:00~06:00",
-    /* 통계 3칸은 산식이 §3-D·§3-G에서 끊겨 있다 — 도매 정산 모델과 연결되기 전까지
-       더미 숫자다. 진행 중 3건 = 확정 대기 1 + 미송 2로 자릿수는 맞춰 둔다 */
+    /* 누적 주문·진행 중은 여전히 더미다(§3-D·G에서 산식이 끊겨 있다). 다만
+       **미결제 잔액과 마지막 입금은 더 이상 더미가 아니다** — `features/settlement`의
+       거래 원장이 돈의 원본이 되면서 거기서 나온 값으로 맞췄다. 와이어프레임
+       `03_wholesaler.html`은 마지막 입금을 2026.07.16이라 적었지만 원장과 어긋나므로
+       원장을 따른다(01-pm.md §7-4). 값을 고칠 일이 생기면 원장을 먼저 고친다 */
     stats: {
       orderCount: 18,
       ongoingCount: 3,
       pendingCount: 1,
       backorderCount: 2,
       unpaidAmount: 589000,
-      lastPaidAt: "2026-07-16",
+      lastPaidAt: "2026-08-28",
     },
   },
   {
@@ -36,13 +39,16 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "더",
     location: "APM 3층 12호",
     businessHours: "20:00~05:00",
+    /* **거래 이력이 없는 도매처다** — 거래처 목록(`/wholesalers`) 4곳에 안 든다.
+       목록에 없는 곳이 미결제 잔액을 갖고 있으면 총 미수 859,000원이 어디서
+       나왔는지 화면에서 설명되지 않는다. 마지막 입금은 없으므로 null이다 */
     stats: {
-      orderCount: 7,
-      ongoingCount: 1,
-      pendingCount: 1,
+      orderCount: 0,
+      ongoingCount: 0,
+      pendingCount: 0,
       backorderCount: 0,
       unpaidAmount: 0,
-      lastPaidAt: "2026-07-21",
+      lastPaidAt: null,
     },
   },
   {
@@ -51,28 +57,32 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     initial: "어",
     location: "디오트 4층 41호",
     businessHours: "20:00~06:00",
+    /* 더베이직과 같다 — 주문한 적 없는 도매처라 통계가 전부 0이다 */
     stats: {
-      orderCount: 12,
-      ongoingCount: 2,
+      orderCount: 0,
+      ongoingCount: 0,
       pendingCount: 0,
-      backorderCount: 2,
-      unpaidAmount: 214000,
-      lastPaidAt: "2026-07-09",
+      backorderCount: 0,
+      unpaidAmount: 0,
+      lastPaidAt: null,
     },
   },
   {
     id: "w-lavien",
     name: "라비앙",
     initial: "라",
-    location: "청평화패션몰 3층 7호",
+    /* `3층 7호`가 아니다 — 확정 와이어프레임 `12_partners.html` 기준 */
+    location: "청평화패션몰 3층 8호",
     businessHours: "21:00~06:00",
+    /* 미결제 잔액이 **음수**다. 350,000을 보냈는데 320,000만 주문에 배정돼
+       30,000이 남았고, 화면에는 `선수금 30,000원`으로 나간다(§3-0 E) */
     stats: {
       orderCount: 5,
-      ongoingCount: 0,
+      ongoingCount: 1,
       pendingCount: 0,
-      backorderCount: 0,
-      unpaidAmount: 0,
-      lastPaidAt: "2026-06-30",
+      backorderCount: 1,
+      unpaidAmount: -30000,
+      lastPaidAt: "2026-08-02",
     },
   },
   {
@@ -84,25 +94,27 @@ export const WHOLESALERS: readonly Wholesaler[] = [
     stats: {
       orderCount: 21,
       ongoingCount: 1,
-      pendingCount: 1,
-      backorderCount: 0,
-      unpaidAmount: 96000,
-      lastPaidAt: "2026-07-24",
+      pendingCount: 0,
+      backorderCount: 1,
+      unpaidAmount: 90000,
+      lastPaidAt: "2026-08-18",
     },
   },
   {
     id: "w-denim",
     name: "데님하우스",
     initial: "데",
-    location: "디오트 2층 18호",
+    /* `디오트 2층 18호`가 아니다 — 확정 와이어프레임 2장(`12_partners`·
+       `09_order_detail`)이 `디오트 지하 1층 12호`로 일치한다 */
+    location: "디오트 지하 1층 12호",
     businessHours: "20:00~05:00",
     stats: {
       orderCount: 9,
       ongoingCount: 1,
       pendingCount: 0,
       backorderCount: 1,
-      unpaidAmount: 138000,
-      lastPaidAt: "2026-07-13",
+      unpaidAmount: 180000,
+      lastPaidAt: "2026-08-20",
     },
   },
 ];

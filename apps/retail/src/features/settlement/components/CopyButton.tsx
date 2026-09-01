@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, cn } from "@ondo/ui";
-import { Copy } from "lucide-react";
+import { Button, IconButton, cn } from "@ondo/ui";
+import { Check, Copy, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { COPY_STATUS_MS, COPY_STATUS_TEXT } from "../constants";
 
@@ -110,5 +110,45 @@ export function CopyTextButton({
         복사
       </Button>
     </span>
+  );
+}
+
+/**
+ * 아이콘만 있는 복사 버튼. 거래처 표의 `연락 · 계좌` 칸에 선다.
+ *
+ * 아이콘을 체크로 바꾸는 것에 더해 **글자로도** 결과를 적는다 — 아이콘 하나만
+ * 바뀌면 무슨 일이 일어났는지 단정할 수 없다. 다만 그 자리를 고정 폭으로 잡아
+ * 둔다: 표 칸 안이라 글자가 나타났다 사라지면 열 폭이 흔들려 옆 줄까지 밀린다.
+ */
+export function CopyIconButton({
+  text,
+  label,
+}: {
+  text: string;
+  label: string;
+}) {
+  const [state, copy] = useCopy();
+
+  const Icon =
+    state === "copied" ? Check : state === "failed" ? TriangleAlert : Copy;
+
+  return (
+    <>
+      <IconButton
+        variant="ghost"
+        size="md"
+        aria-label={label}
+        onClick={() => copy(text)}
+        /* 시장에서 휴대폰으로 누르는 화면이라 좁은 폭에서 손가락 크기(44px)로 키운다 */
+        className={cn(
+          "phone:size-11",
+          state === "copied" && "text-success",
+          state === "failed" && "text-destructive-strong",
+        )}
+      >
+        <Icon aria-hidden />
+      </IconButton>
+      <CopyStatus state={state} className="inline-block w-16 text-left" />
+    </>
   );
 }

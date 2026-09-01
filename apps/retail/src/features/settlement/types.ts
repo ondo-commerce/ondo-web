@@ -66,6 +66,27 @@ export interface TradePartner {
   wholesalerId: string;
   name: string;
   bank: BankAccount;
+  /** 사입하러 찾아갈 자리. `디오트 지하 1층 12호` */
+  location: string;
+  /** 마지막 주문일(ISO). 거래처 목록의 정렬 축이다 — **출고일이 아니다** */
+  lastOrderedAt: string;
+  /** 진행 중 건수 = 확정 대기 + 미송 */
+  ongoingCount: number;
+  /** 미송 대기 장수. 0이면 화면에 `—`가 나간다 */
+  backorderSheets: number;
+  /**
+   * 미송 중 약속한 입고일을 넘긴 것이 있는가.
+   * **색이 아니라 `지연`이라는 글자로도** 구분된다 — 색을 못 보면 배지 하나로 읽힌다.
+   */
+  backorderDelayed: boolean;
+  /** `tel:`로 여는 번호. 와이어프레임 표에 없어 `09_order_detail`의 더미를 쓴다 */
+  phone: string;
+}
+
+/** 거래처 목록 한 줄. 거래처 더미 + **원장에서 파생된 미수 잔액**을 합친 것이다 */
+export interface PartnerListRow extends TradePartner {
+  /** 음수면 선수금. 정산 화면의 `미수 잔액`과 같은 함수에서 나온다 */
+  balance: number;
 }
 
 /** 연체 판정 결과. 금액·건수·최장 일수를 같이 들고 다닌다 — 카드와 표가 따로 세지 않게 */

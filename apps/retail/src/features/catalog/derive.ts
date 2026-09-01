@@ -326,3 +326,17 @@ export function moreHref(currentHref: string, shown: number): string {
 
   return `${path}?${params.toString()}`;
 }
+
+/**
+ * 미결제 잔액의 표시. **음수에 `-` 부호를 쓰지 않는다.**
+ *
+ * 잔액이 음수면 더 보낸 돈이 남아 있다는 뜻이고, 그건 `-30,000원`이 아니라
+ * `선수금 30,000원`이다(§3-0 E). `features/settlement/derive.ts`의 `formatBalance`와
+ * 같은 규칙이다 — feature끼리 직접 import하지 않으므로 이 중복이 정답이고
+ * (`CLAUDE.md`), 규칙이 바뀌면 두 곳을 같이 고친다.
+ */
+export function formatUnpaid(amount: number): string {
+  return amount < 0
+    ? `선수금 ${formatWon(Math.abs(amount))}`
+    : formatWon(amount);
+}

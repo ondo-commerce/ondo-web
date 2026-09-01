@@ -27,6 +27,12 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
     wholesalerId: "w-moodon",
     name: "무드온",
     bank: { bankName: "국민", accountNo: "000000-00-000000", holder: "무드온" },
+    location: "청평화패션몰 2층 24호",
+    lastOrderedAt: "2026-08-31",
+    ongoingCount: 1,
+    backorderSheets: 0,
+    backorderDelayed: false,
+    phone: "02-000-0000",
   },
   {
     wholesalerId: "w-denim",
@@ -36,6 +42,14 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
       accountNo: "000000-00-000000",
       holder: "데님하우스",
     },
+    /* `디오트 2층 18호`가 아니다 — 확정 와이어프레임 2장(`12_partners`·
+       `09_order_detail`)이 이 값으로 일치하고, 기존 fixture 값은 근거가 없었다 */
+    location: "디오트 지하 1층 12호",
+    lastOrderedAt: "2026-08-28",
+    ongoingCount: 1,
+    backorderSheets: 10,
+    backorderDelayed: false,
+    phone: "02-000-0000",
   },
   {
     wholesalerId: "w-cotton",
@@ -45,11 +59,25 @@ export const TRADE_PARTNERS: readonly TradePartner[] = [
       accountNo: "000000-00-000000",
       holder: "코튼클럽",
     },
+    location: "디오트 3층 51호",
+    lastOrderedAt: "2026-08-24",
+    ongoingCount: 1,
+    backorderSheets: 15,
+    backorderDelayed: false,
+    phone: "02-000-0000",
   },
   {
     wholesalerId: "w-lavien",
     name: "라비앙",
     bank: { bankName: "국민", accountNo: "000000-00-000000", holder: "라비앙" },
+    location: "청평화패션몰 3층 8호",
+    lastOrderedAt: "2026-08-16",
+    ongoingCount: 1,
+    /* 미송 3건 41장 = 10 + 15 + 16. `10_backorder.html`의 3건과 같은 값이라
+       미송 화면이 생겨도 두 화면이 갈리지 않는다 */
+    backorderSheets: 16,
+    backorderDelayed: true,
+    phone: "02-000-0000",
   },
 ];
 

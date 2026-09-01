@@ -71,3 +71,13 @@ export const COPY_STATUS_TEXT = {
 
 /** 복사 표시가 남아 있는 시간(ms). 너무 짧으면 못 보고, 너무 길면 다음 줄을 눌렀을 때 헷갈린다 */
 export const COPY_STATUS_MS = 2500;
+
+/** 거래처 관리 패널 부제. 미송 배지가 무엇을 여는지 표 위에서 미리 말한다 */
+export const PARTNERS_SUB =
+  "거래한 적 있는 도매처예요. 미송 배지를 누르면 그 도매처만 걸러서 미송 현황이 열려요.";
+
+/** 수량 단위. 소매는 `장`이다(게이트 Q9) — `shared/qty.ts`의 `QTY_UNIT`과 같은 값이다 */
+export const SHEET_UNIT = "장";
+
+/** 미송 배지에 `지연`을 **글자로도** 붙인다 — 색을 못 봐도 어느 줄이 밀렸는지 읽혀야 한다 */
+export const DELAYED_LABEL = "지연";

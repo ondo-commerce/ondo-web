@@ -7,7 +7,7 @@ import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { CatalogSection } from "./CatalogSection";
 import { ProductGrid } from "./ProductGrid";
 import { LIST_SORTS } from "../constants";
-import { formatWon, newArrivals } from "../derive";
+import { formatUnpaid, newArrivals } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
   CatalogFilter,
@@ -140,9 +140,10 @@ function statCardsOf(wholesaler: Wholesaler): StatCard[] {
     },
     {
       label: "미결제 잔액",
-      value: formatWon(stats.unpaidAmount),
-      /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63) */
-      sub: `마지막 입금 ${stats.lastPaidAt.replaceAll("-", ".")}`,
+      value: formatUnpaid(stats.unpaidAmount),
+      /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63).
+         입금한 적이 없으면 `—`다 — 없는 날짜를 지어내지 않는다 */
+      sub: `마지막 입금 ${stats.lastPaidAt ? stats.lastPaidAt.replaceAll("-", ".") : "—"}`,
     },
   ];
 }

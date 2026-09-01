@@ -4,6 +4,7 @@ import type {
   LedgerEntry,
   LedgerRow,
   OverdueInfo,
+  PartnerListRow,
   PartnerSettlement,
   PayMethod,
 } from "./types";
@@ -235,7 +236,12 @@ export function partnerSettlements(): PartnerSettlement[] {
  * 선수금을 빼면 이 값이 "받을 돈"이 아니라 "순채권"이 되어 카드 이름과 어긋난다.
  * 표 `tfoot` 합계도 같은 함수를 부르므로 카드와 표가 다른 값을 말할 수 없다.
  */
-export function totalReceivable(rows: readonly PartnerSettlement[]): number {
+export function totalReceivable(
+  /* 정산 표(`PartnerSettlement`)와 거래처 표(`PartnerListRow`)가 **같은 함수**를
+     부른다. 둘 다 잔액을 들고 있으니 타입이 아니라 모양으로 받는다 — 두 화면의
+     합계가 갈릴 자리를 아예 없앤다 */
+  rows: readonly { balance: number }[],
+): number {
   return rows.reduce((sum, row) => sum + Math.max(row.balance, 0), 0);
 }
 
@@ -321,4 +327,27 @@ export function overdueSummaryText(overdue: OverdueInfo): string {
   return overdue.count === 0
     ? "0건"
     : `${overdue.count}건 · 최장 D+${overdue.maxDays}`;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   거래처 목록
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 거래처 관리 표의 줄 전부. **마지막 주문 최신순**이다.
+ *
+ * `미수 잔액` 열은 여기서 fixture를 읽지 않고 `balanceOf`로 원장에서 파생시킨다 —
+ * 숫자를 두 군데 적는 순간 정산 화면과 이 화면이 다른 금액을 말하고, 그게 이번
+ * 회차가 고치려는 결함이다(도매처 홈 #98이 실제로 그렇게 갈라져 있었다).
+ */
+export function partnerListRows(): PartnerListRow[] {
+  return TRADE_PARTNERS.map((partner) => ({
+    ...partner,
+    balance: balanceOf(ledgerOf(partner.wholesalerId)),
+  })).sort((a, b) => b.lastOrderedAt.localeCompare(a.lastOrderedAt));
+}
+
+/** 미송 합계 장수. 표 `tfoot`의 `41장`이 이 값이고, 41 = 10 + 15 + 16이 화면 위에서 더해진다 */
+export function totalBackorderSheets(rows: readonly PartnerListRow[]): number {
+  return rows.reduce((sum, row) => sum + row.backorderSheets, 0);
 }
