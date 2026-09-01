@@ -26,7 +26,17 @@ import type { Account, BankAccount } from "./types";
  */
 export interface AccountOverride {
   storeName?: string;
+  /** 가입 폼이 적은 값. 승인 대기 요약이 이걸 읽는다 */
+  bizNo?: string;
   status?: Account["status"];
+  /**
+   * 신청 시각. **서버가 없어 브라우저가 찍는다.**
+   *
+   * 더미 상수로 두면 방금 신청한 사장이 남의 날짜를 본다. 클라이언트에서만
+   * 만들어 세션에 넣으므로 서버 렌더와 어긋날 자리가 없다 — 서버는 세션 자체를
+   * 못 읽고, 그 순간은 "판정 전"이다.
+   */
+  appliedAt?: string;
   bankAccount?: BankAccount | null;
   /**
    * 계좌 온보딩을 이미 한 번 지나갔나(등록했거나 건너뛰었거나).
@@ -156,7 +166,13 @@ function getServerSnapshot(): SessionState {
 export type SessionView =
   | { state: "unknown" }
   | { state: "signedOut" }
-  | { state: "signedIn"; account: Account; bankPromptSeen: boolean };
+  | {
+      state: "signedIn";
+      account: Account;
+      bankPromptSeen: boolean;
+      /** 이번 세션에 신청한 시각. 더미 계정으로 로그인만 했으면 `null`이다 */
+      appliedAt: string | null;
+    };
 
 /** 더미 + 이번 세션의 덮어쓰기를 합친 계정 한 건 */
 function resolve(snapshot: SessionState): SessionView {
@@ -172,7 +188,7 @@ function resolve(snapshot: SessionState): SessionView {
   const account: Account = {
     email: snapshot.email,
     storeName: override?.storeName ?? base?.storeName ?? "",
-    bizNo: base?.bizNo ?? "000-00-00000",
+    bizNo: override?.bizNo ?? base?.bizNo ?? "000-00-00000",
     status: override?.status ?? base?.status ?? "PENDING",
     bankAccount:
       override?.bankAccount !== undefined
@@ -184,7 +200,23 @@ function resolve(snapshot: SessionState): SessionView {
     state: "signedIn",
     account,
     bankPromptSeen: override?.bankPromptSeen ?? account.bankAccount !== null,
+    appliedAt: override?.appliedAt ?? null,
   };
+}
+
+/** 이메일 하나의 덮어쓰기를 합쳐 넣는다. 저장과 알림을 한 자리에서만 한다 */
+function patchOverride(email: string, patch: AccountOverride): SessionState {
+  const next: SessionState = {
+    ...state,
+    loaded: true,
+    overrides: {
+      ...state.overrides,
+      [email]: { ...state.overrides[email], ...patch },
+    },
+  };
+  writeStorage(next);
+  commit(next);
+  return next;
 }
 
 /**
@@ -224,4 +256,57 @@ export function signOut(): void {
   const next: SessionState = { ...state, loaded: true, email: null };
   writeStorage(next);
   commit(next);
+}
+
+/**
+ * 가입 신청을 접수하고 그 계정으로 로그인한다.
+ *
+ * 승인은 앱 밖에서 일어나므로 여기서 하는 일은 "심사 중 계정 하나가 생겼다"까지다.
+ * 방금 적은 상호명·사업자 등록번호를 세션에 얹는 이유: 승인 대기 화면이 이 값을
+ * 읽어야 **상수 하나가 늘 같은 이름을 말하는 일**이 없다(`retail-account` F1).
+ *
+ * 신청 시각을 여기서 찍는다 — 사장이 방금 누른 시각이 곧 신청 시각이고,
+ * 이벤트 핸들러 안이라 서버 렌더와 어긋날 자리가 없다.
+ */
+export function applySignup(input: {
+  email: string;
+  storeName: string;
+  bizNo: string;
+}): void {
+  const next = patchOverride(input.email, {
+    storeName: input.storeName,
+    bizNo: input.bizNo,
+    status: "PENDING",
+    appliedAt: formatAppliedAt(new Date()),
+  });
+  const signedIn: SessionState = { ...next, email: input.email };
+  writeStorage(signedIn);
+  commit(signedIn);
+}
+
+/**
+ * 서류를 다시 내고 재심사를 신청한다. **상태가 `심사 중`으로 돌아간다.**
+ *
+ * 무엇을 다시 올렸는지는 담지 않는다 — 보낼 서버가 없어 파일은 화면에 이름을
+ * 남기는 데서 끝나고, 그 이름은 거절 화면이 자기 상태로 들고 있다.
+ */
+export function applyReapply(email: string): void {
+  patchOverride(email, {
+    status: "PENDING",
+    appliedAt: formatAppliedAt(new Date()),
+  });
+}
+
+/**
+ * 신청 일시 표기 `2026.07.17 10:20`. 확정 와이어프레임 형식 그대로다.
+ *
+ * `toLocaleString`을 쓰지 않는 이유: 브라우저 로케일에 따라 표기가 갈려서 같은
+ * 화면이 단말마다 다른 모양의 날짜를 말한다.
+ */
+function formatAppliedAt(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${at.getFullYear()}.${pad(at.getMonth() + 1)}.${pad(at.getDate())} ` +
+    `${pad(at.getHours())}:${pad(at.getMinutes())}`
+  );
 }

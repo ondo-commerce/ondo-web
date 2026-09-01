@@ -1,10 +1,23 @@
 import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
+  APPROVAL_STEP_LABELS,
+  MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
   VALIDATION_MESSAGE,
 } from "./constants";
-import { ACCOUNTS } from "./fixtures";
-import type { Account, FieldErrors, LoginField } from "./types";
+import { ACCOUNTS, APPLICATION } from "./fixtures";
+import type {
+  Account,
+  AccountStatus,
+  Application,
+  ApprovalStep,
+  AttachedFile,
+  DocumentField,
+  FieldErrors,
+  LoginField,
+  SignupField,
+} from "./types";
 
 /**
  * 이메일 형식. 서버 검증을 흉내 내지 않는다 — `@`와 점 하나가 있는지만 본다.
@@ -25,7 +38,7 @@ export function findAccount(email: string): Account | null {
  * 계정 메뉴에는 잘린 글자가 남아 **같은 세션에 두 상호명이 산다**. 자르는 자리가
  * 하나뿐이도록 여기서 내보낸다.
  */
-export const STORE_NAME_MAX = 40;
+export const STORE_NAME_MAX = MAX_LENGTH.storeName;
 
 /**
  * 화면에 실어도 되는 상호명으로 다듬는다.
@@ -160,4 +173,259 @@ export function demoAccountHint(): string {
 /** 계정 메뉴의 이니셜 한 글자. `[0]`으로 자르면 이모지·일부 한자가 반쪽만 남는다 */
 export function storeInitial(storeName: string): string {
   return Array.from(storeName.trim())[0] ?? "";
+}
+
+/* ── 회원가입 ─────────────────────────────────────────────────────────── */
+
+/** 연락처 형식. 국번은 2~3자리(02·031·010)까지 받는다 */
+const PHONE_SHAPE = /^0\d{1,2}-\d{3,4}-\d{4}$/;
+/** 사업자 등록번호 형식. 값이 아니라 **자리수**만 본다 — 실제 대조는 운영자가 한다 */
+const BIZ_NO_SHAPE = /^\d{3}-\d{2}-\d{5}$/;
+
+/**
+ * 구분자만 하이픈으로 맞춘다. **글자를 지우지 않는다.**
+ *
+ * 숫자만 남기는 식으로 정리하면 `45.5`가 `455`가 된다 — 사용자가 친 값과 칸에
+ * 남은 값이 달라지고, 아무도 그 사실을 모른다. 여기서는 `.`·공백·`/`를 `-`로
+ * **바꾸기만** 한다. 자릿수가 넘치면 넘친 채로 남고, 틀렸다는 말은 검증이 한다.
+ */
+export function normalizeSeparators(raw: string): string {
+  return raw.trim().replace(/[.\s/]+/g, "-");
+}
+
+/**
+ * 전화번호를 하이픈 형태로 맞춘다. **여기서도 글자를 지우지 않는다.**
+ *
+ * `normalizeSeparators`만으로는 **구분자가 아예 없는 가장 흔한 입력**
+ * (`01012345678`)이 그대로 남아 형식 검사에서 떨어졌다 — 사장은 왜 자기 번호가
+ * 거부되는지 모른 채 직접 하이픈을 넣어야 했다(`retail-settings` F4).
+ *
+ * 숫자만 10~11자리일 때만 손댄다. 국번 길이는 자리수로 갈린다 — 11자리는
+ * 3-4-4(`010-1234-5678`), 10자리는 `02`로 시작하면 2-4-4(`02-1234-5678`),
+ * 아니면 3-3-4(`031-123-4567`). 그 밖의 값은 **그대로 돌려준다** — 12자리를
+ * 억지로 끼워 맞추면 친 글자가 사라진다.
+ */
+export function normalizePhone(raw: string): string {
+  const separated = normalizeSeparators(raw);
+  if (!/^\d{10,11}$/.test(separated)) return separated;
+
+  if (separated.length === 11)
+    return `${separated.slice(0, 3)}-${separated.slice(3, 7)}-${separated.slice(7)}`;
+  if (separated.startsWith("02"))
+    return `${separated.slice(0, 2)}-${separated.slice(2, 6)}-${separated.slice(6)}`;
+  return `${separated.slice(0, 3)}-${separated.slice(3, 6)}-${separated.slice(6)}`;
+}
+
+/**
+ * 사업자 등록번호를 `000-00-00000`(3-2-5)로 맞춘다.
+ *
+ * ⚠️ **`normalizePhone`을 태우면 안 된다.** 둘 다 숫자 10자리인데 자릿수 규칙이
+ *    다르다 — 전화번호는 3-3-4라 `1234567890`이 `123-456-7890`이 되고, 그건
+ *    **틀린 사업자 등록번호**다. 숫자 10자리라는 것만 같고 규칙이 다르므로
+ *    함수를 나눈다. 계좌번호까지 셋을 하나로 합치지 않는 이유도 같다.
+ */
+export function normalizeBusinessNo(raw: string): string {
+  const separated = normalizeSeparators(raw);
+  if (!/^\d{10}$/.test(separated)) return separated;
+
+  return `${separated.slice(0, 3)}-${separated.slice(3, 5)}-${separated.slice(5)}`;
+}
+
+export interface SignupValues {
+  storeName: string;
+  ownerName: string;
+  email: string;
+  password: string;
+  passwordConfirm: string;
+  phone: string;
+  /** 선택. 휴대전화번호가 이미 필수라 연락 수단은 확보된다 — 시장 매장은 유선이 없는 곳이 있다 */
+  storePhone: string;
+  bizNo: string;
+  address: string;
+  license: AttachedFile | null;
+  idCard: AttachedFile | null;
+  agreeService: boolean;
+  agreePrivacy: boolean;
+}
+
+export const EMPTY_SIGNUP: SignupValues = {
+  storeName: "",
+  ownerName: "",
+  email: "",
+  password: "",
+  passwordConfirm: "",
+  phone: "",
+  storePhone: "",
+  bizNo: "",
+  address: "",
+  license: null,
+  idCard: null,
+  agreeService: false,
+  agreePrivacy: false,
+};
+
+/**
+ * 제출 시점에 전 칸을 한 번에 본다. 문구는 전부 **요청형**이다.
+ *
+ * 약관 동의도 여기서 같이 본다 — 버튼을 잠그는 대신 누르면 이유를 말하기로
+ * 했으므로 동의 여부는 다른 칸과 똑같은 검증 대상이다.
+ *
+ * **사업자 등록번호가 필수인 것이 소매와 다른 유일한 규칙이다.** 소매는 이 칸이
+ * 선택이지만(값이 있을 때만 자리수를 본다), 도매는 서류 2종을 대조해 승인하는
+ * 것이 전제라 대조할 번호가 없으면 심사 자체가 성립하지 않는다.
+ */
+export function validateSignup(values: SignupValues): FieldErrors<SignupField> {
+  const errors: FieldErrors<SignupField> = {};
+
+  if (!values.storeName.trim()) errors.storeName = VALIDATION_MESSAGE.storeName;
+  if (!values.ownerName.trim()) errors.ownerName = VALIDATION_MESSAGE.ownerName;
+
+  if (!values.email.trim()) errors.email = VALIDATION_MESSAGE.email;
+  else if (!EMAIL_SHAPE.test(values.email.trim()))
+    errors.email = VALIDATION_MESSAGE.emailShape;
+
+  if (!values.password) errors.password = VALIDATION_MESSAGE.password;
+  else if (values.password.length < PASSWORD_MIN_LENGTH)
+    errors.password = VALIDATION_MESSAGE.passwordShort;
+
+  if (!values.passwordConfirm)
+    errors.passwordConfirm = VALIDATION_MESSAGE.passwordConfirm;
+  else if (values.passwordConfirm !== values.password)
+    errors.passwordConfirm = VALIDATION_MESSAGE.passwordMismatch;
+
+  if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
+  else if (!PHONE_SHAPE.test(normalizePhone(values.phone)))
+    errors.phone = VALIDATION_MESSAGE.phoneShape;
+
+  /* 비워 두면 통과한다. 적었는데 형식이 안 맞으면 그때만 말한다 —
+     넘친 글자를 몰래 잘라내지 않으므로 여기서 걸린다 */
+  if (
+    values.storePhone.trim() &&
+    !PHONE_SHAPE.test(normalizePhone(values.storePhone))
+  )
+    errors.storePhone = VALIDATION_MESSAGE.storePhoneShape;
+
+  if (!values.bizNo.trim()) errors.bizNo = VALIDATION_MESSAGE.bizNo;
+  else if (!BIZ_NO_SHAPE.test(normalizeBusinessNo(values.bizNo)))
+    errors.bizNo = VALIDATION_MESSAGE.bizNoShape;
+
+  if (!values.address.trim()) errors.address = VALIDATION_MESSAGE.address;
+
+  if (!values.license) errors.license = VALIDATION_MESSAGE.license;
+  if (!values.idCard) errors.idCard = VALIDATION_MESSAGE.idCard;
+
+  if (!values.agreeService)
+    errors.agreeService = VALIDATION_MESSAGE.agreeService;
+  if (!values.agreePrivacy)
+    errors.agreePrivacy = VALIDATION_MESSAGE.agreePrivacy;
+
+  return errors;
+}
+
+/** 첨부 파일 용량 표시. 이름 옆에 붙어 "무엇이 붙었는지"를 마저 말한다 */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+/**
+ * 화면에 실제로 띄울 오류만 남긴다.
+ *
+ * 전 칸 검증은 매 렌더마다 돌지만(순수 함수라 싸다), 그중 **이미 한 번 걸린 칸**의
+ * 것만 보여 준다. 아직 손도 안 댄 칸이 타이핑 도중에 빨개지는 걸 막으면서, 한 번
+ * 빨개진 칸은 고치는 즉시 풀리게 하는 방법이다.
+ *
+ * 이걸 상태로 들고 있지 않는 이유: 값과 오류를 각각 `useState`로 두면 두 칸이
+ * 같은 이벤트에서 바뀔 때 나중 것이 앞 것을 덮어쓴다(약관 체크 2개).
+ */
+export function visibleErrors<K extends string>(
+  all: FieldErrors<K>,
+  revealed: readonly K[],
+): FieldErrors<K> {
+  const shown: FieldErrors<K> = {};
+  for (const field of revealed) {
+    const message = all[field];
+    if (message !== undefined) shown[field] = message;
+  }
+  return shown;
+}
+
+/* ── 가입 심사 진행 ───────────────────────────────────────────────────── */
+
+/**
+ * 신청 요약이 보여 줄 한 건.
+ *
+ * 상호명·사업자 등록번호를 **세션이 들고 있는 계정**에서 갈아 끼운다. 여기서
+ * 더미 상수를 읽으면 누가 로그인했든, 방금 무엇으로 신청했든 늘 같은 상호를
+ * 말한다(`retail-account` F1).
+ *
+ * 소매는 세션이 없어 `/approval?store=…`로 주소에 실어 날랐다. 도매는 세션이
+ * 있으므로 **주소를 고쳐 남의 상호명을 이 화면에 띄울 통로를 만들지 않는다.**
+ */
+export function applicationFor(
+  account: Account | null,
+  appliedAt: string | null,
+): Application {
+  if (!account) return APPLICATION;
+
+  const storeName = normalizeStoreName(account.storeName);
+  return {
+    storeName: storeName ?? APPLICATION.storeName,
+    bizNo: account.bizNo,
+    appliedAt: appliedAt ?? APPLICATION.appliedAt,
+  };
+}
+
+/**
+ * 진행 표시 3단.
+ *
+ * 승인 대기와 거절이 **같은 컴포넌트를 쓰게** 하려고 단계 배열을 여기서 만든다.
+ * 화면 두 곳이 각자 배열을 적으면 라벨이 갈리고, 나중에 단계가 늘 때 한쪽만 는다.
+ */
+export function approvalSteps(status: AccountStatus): ApprovalStep[] {
+  const applied: ApprovalStep = {
+    label: APPROVAL_STEP_LABELS.applied,
+    state: "done",
+  };
+
+  if (status === "REJECTED") {
+    return [
+      applied,
+      { label: APPROVAL_STEP_LABELS.reviewing, state: "done" },
+      /* 지나간 단계가 아니라 지금 멈춰 있는 자리다 */
+      { label: APPROVAL_STEP_LABELS.rejected, state: "current" },
+    ];
+  }
+
+  if (status === "APPROVED") {
+    return [
+      applied,
+      { label: APPROVAL_STEP_LABELS.reviewing, state: "done" },
+      { label: APPROVAL_STEP_LABELS.approved, state: "current" },
+    ];
+  }
+
+  return [
+    applied,
+    { label: APPROVAL_STEP_LABELS.reviewing, state: "current" },
+    { label: APPROVAL_STEP_LABELS.approved, state: "todo" },
+  ];
+}
+
+/**
+ * 재신청 검증. **둘 중 하나만 다시 올려도 통과한다.**
+ *
+ * 거절 사유가 자유 문장이라 어느 서류가 문제인지 코드가 알 수 없다. 두 칸을 다
+ * 요구하면 등록증 하나만 고치면 되는 사장에게 신분증을 다시 찍게 만든다.
+ *
+ * 오류를 `license` 칸에 다는 이유: 아무것도 안 올렸을 때 포커스가 갈 자리가
+ * 하나여야 하고, 화면 순서상 그게 첫 칸이다.
+ */
+export function validateReapply(
+  documents: Record<DocumentField, AttachedFile | null>,
+): FieldErrors<DocumentField> {
+  return documents.license || documents.idCard
+    ? {}
+    : { license: VALIDATION_MESSAGE.reapply };
 }
