@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, IconButton } from "@ondo/ui";
+import { Badge, Checkbox, IconButton } from "@ondo/ui";
 import { X } from "lucide-react";
 import { QtyStepper } from "@/shared/components/QtyStepper";
 import { QTY_ISSUE_TEXT, type QtyIssue } from "@/shared/qty";
@@ -26,10 +26,15 @@ import type { CartLine } from "../types";
 export function CartLineItem({
   line,
   issue,
+  checked,
+  onToggle,
   onChangeQty,
   onRemove,
 }: {
   line: CartLine;
+  /** 이번에 살 것으로 골랐는가 */
+  checked: boolean;
+  onToggle: (on: boolean) => void;
   /** 수량이 걸린 이유. 값과 따로 온다 — 500으로 되돌린 뒤에도 남아야 한다 */
   issue: QtyIssue | null;
   onChangeQty: (next: string) => void;
@@ -40,6 +45,15 @@ export function CartLineItem({
 
   return (
     <li className="border-border flex flex-wrap items-center gap-x-3 gap-y-2.5 border-b py-3 last:border-b-0">
+      {/* 어느 조합인지까지 이름에 넣는다 — `선택`만으로는 네 줄이 전부 같은
+          이름이라 보조기술에서 구분되지 않는다 */}
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(next) => onToggle(next === true)}
+        aria-label={`${line.productName} ${line.colorLabel} ${line.size} 선택`}
+        className="size-4.5"
+      />
+
       <span aria-hidden className="bg-secondary size-13 shrink-0 rounded-md" />
 
       {/* basis-40: 이 칸이 먼저 줄어들다 못해 0이 되면 상품명이 세로로 서 버린다.

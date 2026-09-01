@@ -106,3 +106,56 @@ export function comboSheetsLabel(totals: CartTotals): string {
 export function optionLabel(line: CartLine): string {
   return `${line.colorLabel} · ${line.size} · ${formatWon(line.price)}`;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   선택 — 3층(전체 / 도매처 / 조합)이지만 상태는 조합 집합 하나뿐이다.
+   위 두 층은 그 집합에서 **계산해서** 나온다. 층마다 상태를 두면 조합을
+   하나 껐을 때 그룹 체크가 켜진 채로 남는다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 고른 것만 남긴다. 하단 요약과 `선택 삭제`가 이 결과를 센다 */
+export function selectedLines(
+  lines: readonly CartLine[],
+  selected: ReadonlySet<string>,
+): CartLine[] {
+  return lines.filter((line) => selected.has(line.lineId));
+}
+
+/**
+ * 이 묶음이 전부 켜져 있는가. 그룹 머리 체크와 전체 선택 체크가 같이 쓴다.
+ *
+ * **빈 묶음은 켜진 것이 아니다.** 담긴 게 하나도 없을 때 전체 선택이 켜져
+ * 보이면 아무것도 없는데 다 골랐다고 말하는 화면이 된다.
+ */
+export function allSelected(
+  lines: readonly CartLine[],
+  selected: ReadonlySet<string>,
+): boolean {
+  return lines.length > 0 && lines.every((line) => selected.has(line.lineId));
+}
+
+/** `(3/4)` — 전체 선택 옆 카운터 */
+export function selectionCounter(
+  lines: readonly CartLine[],
+  selected: ReadonlySet<string>,
+): string {
+  return `(${selectedLines(lines, selected).length}/${lines.length})`;
+}
+
+/**
+ * `주문하기`를 못 누르는 이유. null이면 누를 수 있다.
+ *
+ * **`disabled`만 걸고 이유를 안 적으면** 사장이 버튼을 반복해서 누르다 만다.
+ * 순서가 곧 우선순위다 — 아무것도 안 골랐으면 수량 얘기를 할 차례가 아니다.
+ */
+export function orderBlockedReason(totals: CartTotals): string | null {
+  if (totals.comboCount === 0) return "주문할 조합을 하나 이상 골라 주세요.";
+  if (totals.hasIssue) {
+    return "수량을 읽을 수 없는 조합이 있어요. 빨간 글씨가 뜬 줄을 고쳐 주세요.";
+  }
+  if (totals.sheets === 0) {
+    return `고른 조합의 수량이 0${QTY_UNIT}이에요. 살 만큼 넣어 주세요.`;
+  }
+
+  return null;
+}
