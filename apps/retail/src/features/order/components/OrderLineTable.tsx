@@ -3,7 +3,7 @@
 import { IconButton, Table } from "@ondo/ui";
 import { Heart } from "lucide-react";
 import { LineStatusBadge } from "./OrderStatusBadge";
-import { DETAIL_TEXT } from "../constants";
+import { DETAIL_TEXT, LINE_HEADERS } from "../constants";
 import {
   formatSheets,
   formatWon,
@@ -44,15 +44,18 @@ export function OrderLineTable({
       </caption>
       <Table.Head>
         <Table.Row>
-          <Table.Th align="left">상품</Table.Th>
-          <Table.Th align="left">옵션</Table.Th>
-          <Table.Th align="left">도매처</Table.Th>
-          <Table.Th>수량</Table.Th>
-          <Table.Th>단가</Table.Th>
-          <Table.Th>소계</Table.Th>
-          <Table.Th align="center">상태</Table.Th>
-          <Table.Th align="center">
-            <span className="sr-only">찜</span>
+          <Table.Th align="left">{LINE_HEADERS.product}</Table.Th>
+          <Table.Th align="left">{LINE_HEADERS.option}</Table.Th>
+          <Table.Th align="left">{LINE_HEADERS.wholesaler}</Table.Th>
+          <Table.Th>{LINE_HEADERS.qty}</Table.Th>
+          <Table.Th>{LINE_HEADERS.price}</Table.Th>
+          <Table.Th>{LINE_HEADERS.subtotal}</Table.Th>
+          <Table.Th align="center">{LINE_HEADERS.status}</Table.Th>
+          {/* `relative`가 붙은 이유가 폭이다 — `sr-only`는 절대 위치라 위치 기준이
+              없으면 표의 가로 스크롤 상자를 건너뛰고 **페이지 전체를 옆으로
+              민다**(390px에서 문서 폭 713px · F1). 기준을 th로 못박는다 */}
+          <Table.Th align="center" className="relative">
+            <span className="sr-only">{LINE_HEADERS.favorite}</span>
           </Table.Th>
         </Table.Row>
       </Table.Head>

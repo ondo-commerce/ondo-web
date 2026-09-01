@@ -35,6 +35,7 @@ export function StatementDialog({
   receiverStore,
   open,
   onOpenChange,
+  onCloseFocus,
 }: {
   order: OrderRecord;
   shipment: Shipment;
@@ -42,6 +43,11 @@ export function StatementDialog({
   receiverStore: string;
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /**
+   * 닫은 뒤 포커스를 받을 자리. 조건부로 그려지는 모달이라 닫을 때 컴포넌트가
+   * 먼저 사라져 Radix의 되돌리기가 돌지 못한다(F4) — `다시 주문` 모달과 같은 이유다.
+   */
+  onCloseFocus: () => void;
 }) {
   const leg = order.legs.find(
     (it) => it.wholesalerId === shipment.wholesalerId,
@@ -52,7 +58,13 @@ export function StatementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content className="flex max-h-[85dvh] max-w-150 flex-col gap-0 p-0">
+      <Dialog.Content
+        className="flex max-h-[85dvh] max-w-150 flex-col gap-0 p-0"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onCloseFocus();
+        }}
+      >
         <div className="flex items-start gap-3 p-5 pb-0">
           <div className="min-w-0 flex-1">
             <Dialog.Title>

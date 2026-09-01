@@ -26,10 +26,14 @@ export function PaymentPickupPanel({ order }: { order: OrderRecord }) {
             {leg.wholesalerLocation} · {leg.phone} · {leg.businessHours}
           </span>
 
+          {/* 취소된 건에 `확정하면 표시돼요`를 남기지 않는다 — 영영 오지 않을
+              말이라 사장이 기다리게 된다(F3) */}
           <span className="text-muted-foreground ml-auto phone:ml-0">
-            {leg.pickup && leg.payment
-              ? methodLabel(leg.pickup, leg.payment)
-              : DETAIL_TEXT.notConfirmed}
+            {leg.canceled
+              ? DETAIL_TEXT.legCanceled
+              : leg.pickup && leg.payment
+                ? methodLabel(leg.pickup, leg.payment)
+                : DETAIL_TEXT.notConfirmed}
           </span>
         </section>
       ))}

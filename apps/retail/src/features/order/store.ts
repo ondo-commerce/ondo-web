@@ -58,6 +58,15 @@ interface OrderState {
    * `취소됨`으로 선다 — 두 화면이 다른 말을 하지 않는다.
    */
   canceledOrders: ReadonlySet<string>;
+  /**
+   * 방금 취소한 주문 하나. **되돌리기가 이 자리에서 나온다**(F9).
+   *
+   * 확인 모달 대신 되돌릴 길을 남긴다 — 장바구니 `선택 삭제`가 같은 등급의
+   * 실행에 이미 그렇게 해 뒀다(게이트 Q3 ③ · `retail-cart` F1). 한 건만 들고
+   * 있는 이유는 되돌리기가 **방금 그 한 번**에 대한 것이기 때문이다: 다른
+   * 주문을 취소한 뒤에도 남아 있으면 무엇이 되돌아오는지 알 수 없다.
+   */
+  lastCanceled: string | null;
 }
 
 /**
@@ -77,6 +86,7 @@ const INITIAL: OrderState = {
   appliedCount: null,
   receipt: null,
   canceledOrders: new Set(),
+  lastCanceled: null,
 };
 
 /* 모듈 값이라 서버에서도 한 벌 산다. 다만 바꾸는 곳이 이벤트 핸들러뿐이라
@@ -266,6 +276,8 @@ export function submitOrder(input: {
   const receipt: OrderReceipt = {
     orderNo: unifiedOrderNo(at),
     placedAt: formatPlacedAt(at),
+    /* 완료 화면이 주소를 다시 읽지 않도록 결과에 실어 둔다(F10) */
+    scenario: input.scenario,
     agentName: state.agentName.trim(),
     agentPhone: state.agentPhone.trim(),
     legs,
@@ -339,16 +351,42 @@ export function useOrderReceipt(): OrderReceipt | null {
 /**
  * 주문을 취소한다. **도매처가 확정하기 전까지만 되는 일이라**(RT-49) 누를 수
  * 있는지는 화면이 `derive.isCancelable`로 판정하고, 여기서는 사실만 적는다.
+ *
+ * 되돌릴 자리를 같이 남긴다 — 직전에 취소한 것이 있어도 **마지막 한 건만**
+ * 남는다.
  */
 export function cancelOrder(orderId: string): void {
   const canceledOrders = new Set(state.canceledOrders);
   canceledOrders.add(orderId);
 
-  commit({ ...state, canceledOrders });
+  commit({ ...state, canceledOrders, lastCanceled: orderId });
+}
+
+/**
+ * 방금 한 취소를 되돌린다.
+ *
+ * 취소는 **여기서 겹치는 사실 하나**라(`derive.withCancel`) 그 사실을 빼면
+ * 배지·라인 상태·목록 행이 전부 같이 원래대로 돌아간다. 더미 배열을 고쳐
+ * 두었다면 되돌릴 방법이 없었을 자리다.
+ */
+export function undoCancelOrder(): void {
+  const orderId = state.lastCanceled;
+  if (!orderId) return;
+
+  const canceledOrders = new Set(state.canceledOrders);
+  canceledOrders.delete(orderId);
+
+  commit({ ...state, canceledOrders, lastCanceled: null });
 }
 
 /** 이번 세션에서 취소한 주문들. 목록과 상세가 같은 이 집합을 읽는다 */
 export function useCanceledOrders(): ReadonlySet<string> {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
     .canceledOrders;
+}
+
+/** 되돌릴 수 있는 취소 하나. null이면 되돌릴 것이 없다 */
+export function useLastCanceled(): string | null {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+    .lastCanceled;
 }

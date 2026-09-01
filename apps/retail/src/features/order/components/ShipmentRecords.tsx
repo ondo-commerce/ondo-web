@@ -21,7 +21,12 @@ export function ShipmentRecords({
   onOpenStatement,
 }: {
   order: OrderRecord;
-  onOpenStatement: (shipment: Shipment) => void;
+  /**
+   * 장끼를 열 때 **누른 버튼도 같이 넘긴다.** 모달을 닫으면 거기로 포커스가
+   * 돌아가야 하는데, 줄마다 버튼이 하나씩이라 어느 것을 눌렀는지는 눌린
+   * 요소만이 안다(F4).
+   */
+  onOpenStatement: (shipment: Shipment, trigger: HTMLElement) => void;
 }) {
   if (order.shipments.length === 0) {
     return (
@@ -62,7 +67,9 @@ export function ShipmentRecords({
               <Button
                 variant="line"
                 size="sm"
-                onClick={() => onOpenStatement(shipment)}
+                onClick={(event) =>
+                  onOpenStatement(shipment, event.currentTarget)
+                }
               >
                 {DETAIL_TEXT.statement}
               </Button>

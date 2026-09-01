@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Panel } from "@ondo/ui";
+import { Button, Notice, Panel } from "@ondo/ui";
+import { Info } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +20,7 @@ import {
   CHECKOUT_TEXT,
   PAYMENT_LABEL,
   PICKUP_LABEL,
+  SCENARIO_NOTICE,
 } from "../constants";
 import {
   acceptedLineIds,
@@ -110,6 +112,18 @@ export function CheckoutView({
     <div className="mx-auto max-w-wrap">
       <Panel>
         <Panel.Title sub={CHECKOUT_TEXT.sub}>{CHECKOUT_TEXT.title}</Panel.Title>
+
+        {/* 확인용 시나리오로 켠 화면이면 그 사실을 먼저 말한다(F10). 기본
+            주소에는 이 줄이 없다 — 아무 일도 없는데 안내가 서 있으면 그것도
+            거짓말이다 */}
+        {scenario === "default" ? null : (
+          <Notice className="mb-4">
+            <span className="flex items-start gap-2">
+              <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {SCENARIO_NOTICE}
+            </span>
+          </Notice>
+        )}
 
         {lines.length === 0 ? (
           <div className="py-16 text-center">

@@ -1,5 +1,6 @@
 import { QTY_UNIT } from "@/shared/qty";
 import {
+  AGENT_NAME_MAX,
   CHECKOUT_BLOCKED,
   DEFAULT_ORDER_SORT,
   DEFAULT_PERIOD,
@@ -10,6 +11,7 @@ import {
   PICKUP_LABEL,
 } from "./constants";
 import type {
+  CancelLock,
   CheckoutLine,
   OrderFilter,
   OrderLeg,
@@ -233,16 +235,71 @@ export function needsAgent(
   );
 }
 
+/** 연락처 형식. 국번은 2~3자리(02 · 031 · 010)까지 받는다 */
+const PHONE_SHAPE = /^0\d{1,2}-\d{3,4}-\d{4}$/;
+
 /**
- * 연락처 칸이 받을 수 있는 글자인가.
+ * **판정할 때만 쓰는 사본**을 만든다. 화면에 남는 값은 이 함수가 건드리지 않는다.
+ *
+ * 구분자(`.`·공백·`/`)를 하이픈으로 바꾸고, 구분자가 아예 없는 가장 흔한 입력
+ * (`01012345678`)에만 하이픈을 끼운다. 국번 길이는 자리수로 갈린다 — 11자리는
+ * 3-4-4, 10자리는 `02`로 시작하면 2-4-4, 아니면 3-3-4다. 그 밖의 값은 그대로
+ * 돌려준다: 12자리를 억지로 끼워 맞추면 무엇이 틀렸는지 말할 수 없게 된다.
+ *
+ * 규칙은 `features/account`의 `normalizePhone`과 같은 것을 쓴다(`retail-settings`
+ * 커밋 7304c6b). **그 feature를 import 하지는 않는다** — feature끼리 수평 참조를
+ * 만들지 않는다는 규칙이 먼저다. 서버가 붙으면 같이 한 곳으로 올린다.
+ */
+function phoneShapeOf(raw: string): string {
+  const separated = raw.trim().replace(/[.\s/]+/g, "-");
+  if (!/^\d{10,11}$/.test(separated)) return separated;
+
+  if (separated.length === 11) {
+    return `${separated.slice(0, 3)}-${separated.slice(3, 7)}-${separated.slice(7)}`;
+  }
+  if (separated.startsWith("02")) {
+    return `${separated.slice(0, 2)}-${separated.slice(2, 6)}-${separated.slice(6)}`;
+  }
+  return `${separated.slice(0, 3)}-${separated.slice(3, 6)}-${separated.slice(6)}`;
+}
+
+/**
+ * 연락처 칸이 받을 수 있는 값인가.
  *
  * **못 받는 형식이어도 값을 고치지 않는다.** 하이픈을 조용히 지우면 사장은
  * 자기가 무엇을 쳤는지 못 보고, `010 1234 5678`이 `01012345678`이 되어도
  * 그게 자기 입력인지 화면이 고친 것인지 알 수 없다. 판정만 하고 값은 그대로 둔다.
+ *
+ * 글자 종류만 보던 규칙(`/^[\d-]+$/`)으로는 **`-` 한 글자가 통과했다**(F6).
+ * 이 값은 장끼에 수령인으로 적히는 값이라(RT-38) 사입삼촌이 물건을 못 받는다.
+ * 자리수까지 봐야 "연락처로 쓸 수 있는가"를 판정한 것이 된다.
+ *
+ * 빈 값은 여기서 통과시킨다 — 비었다는 사실은 `checkoutBlockedReason`이
+ * 따로 말한다. 아직 아무것도 안 친 칸에 빨간 글자를 띄우지 않는다.
  */
 export function isPhoneAcceptable(raw: string): boolean {
   const text = raw.trim();
-  return text === "" || /^[\d-]+$/.test(text);
+  return text === "" || PHONE_SHAPE.test(phoneShapeOf(text));
+}
+
+/**
+ * 수령인 이름 칸이 받을 수 있는 값인가.
+ *
+ * 두 가지를 본다. ① **글자나 숫자가 한 자는 있어야 한다** — `-`·`.`처럼 부호만
+ * 있는 값이 통과하면 장끼에 `수령인 -`이 찍힌다(F6). ② 상한이 있다 —
+ * 상한이 없으면 80자짜리 이름이 문서 한 줄을 밀어낸다.
+ *
+ * **넘는 글자를 잘라내지 않는다.** `features/account`는 입력 단계에서 40자로
+ * 끊고 그 사실을 알리지만(`retail-settings` F3), 이 화면은 "친 글자를 고치지
+ * 않는다"를 연락처 칸에서 이미 규칙으로 세워 뒀다(S3-3). 한 화면 안에서 두 칸이
+ * 서로 다르게 굴면 사장이 어느 쪽을 믿어야 할지 모른다 — 값은 그대로 두고
+ * 이유만 붙인다.
+ */
+export function isAgentNameAcceptable(raw: string): boolean {
+  const text = raw.trim();
+  return (
+    text === "" || (text.length <= AGENT_NAME_MAX && /[\p{L}\p{N}]/u.test(text))
+  );
 }
 
 /**
@@ -262,6 +319,7 @@ export function checkoutBlockedReason(input: {
     input.agentRequired &&
     (input.agentName.trim() === "" ||
       input.agentPhone.trim() === "" ||
+      !isAgentNameAcceptable(input.agentName) ||
       !isPhoneAcceptable(input.agentPhone))
   ) {
     return CHECKOUT_BLOCKED.agent;
@@ -383,24 +441,31 @@ export function wholesalerLabel(order: OrderRecord): {
 }
 
 export interface ShipmentProgress {
-  /** 출고될 건수 = 취소되지 않은 도매처 건수 */
+  /** 나갈 도매처 건수 = 취소되지 않은 도매처 건수 */
   planned: number;
-  /** 실제로 장끼가 나간 건수 */
+  /** 그중 장끼가 한 장이라도 나간 도매처 건수 */
   done: number;
 }
 
 /**
- * `3건 중 2건`.
+ * `3건 중 2건`. **여기서 `건`은 도매처 한 곳의 출고 건이다.**
  *
- * `done`을 **장끼 발행 건수**로 정의한 근거는 상세 화면이다 — 데님하우스는
+ * 단위를 이 주석 하나에 못박는 이유는, 같은 낱말이 화면마다 다른 것을 세고
+ * 있었기 때문이다(F8) — 출고 칸은 도매처를, 요약 카드의 `미송 N건`은 라인을,
+ * `출고된 N건에서 발생`은 장끼를 세서 한 카드 안에 단위가 셋이었다. 지금은
+ * **`건`이 도매처 건 하나만 가리키고**, 라인은 `라인 N개`, 장끼는 `장끼 N장`으로
+ * 따로 말한다. 목록의 열 이름도 `출고(도매처)`라 무엇을 세는지가 화면에 있다.
+ *
+ * `done`을 **장끼가 나간 도매처 수**로 정의한 근거는 상세 화면이다 — 데님하우스는
  * 배지가 `수령 가능`인데 출고 기록에 장끼가 **있다**. 장끼는 나갔고 소매가
  * 아직 안 가져간 상태이고, §3-0 C(`수령 가능` = 도매 `출고 대기`)와 맞는다.
  *
  * `planned`는 **취소되지 않은 도매처 건수**다. 확정된 건수로 정의하면
  * 와이어프레임의 `3건 중 2건`(3곳 중 1곳은 아직 확정 전)이 `2건 중 2건`이
  * 되어버린다. 대신 확정 전 주문의 출고 칸이 원본의 `0건 중 0건`이 아니라
- * `2건 중 0건`이 된다 — 원본이 두 행에서 서로 다른 규칙을 쓴 자리라
- * 한쪽을 골랐고, 고른 쪽은 AC가 숫자로 못박은 상세 화면이다.
+ * `2건 중 0건`이 된다 — 원본이 두 행에서 서로 다른 규칙을 쓴 자리라 한쪽을
+ * 골랐고, 고른 쪽은 AC가 숫자로 못박은 상세 화면이다. 열 이름이 도매처를
+ * 세는 칸이라고 말하므로 `2건 중 0건`은 "도매처 2곳 중 0곳이 나갔다"로 읽힌다.
  */
 export function shipmentProgress(order: OrderRecord): ShipmentProgress {
   const shipped = new Set(order.shipments.map((s) => s.wholesalerId));
@@ -457,15 +522,36 @@ export function unpaidAmount(order: OrderRecord): number {
 }
 
 /**
+ * `주문 취소`가 잠긴 **이유**. null이면 안 잠겼다.
+ *
+ * 잠기는 사유가 셋인데 안내 문구가 한 벌이면 **셋이 같은 말을 한다** — 방금
+ * 사장이 직접 취소한 주문에까지 `이미 확정돼서 잠겼어요`가 떠서, 머리 배지
+ * (`취소됨`)와 정면으로 부딪쳤다(F3). 사장은 자기가 취소한 것인지 도매처가
+ * 확정해서 막힌 것인지 화면만 보고는 알 수 없었다.
+ *
+ * 위에서부터 처음 맞는 것을 쓴다. 취소가 먼저인 이유는 **취소된 주문에는
+ * 확정이 있을 수 없기 때문**이고, 출고가 확정보다 먼저인 이유는 물건이 나간
+ * 뒤에는 확정 여부보다 그 사실이 더 중요하기 때문이다(반품은 전화로 한다).
+ */
+export function cancelLockReason(order: OrderRecord): CancelLock | null {
+  /* 한 건이라도 취소돼 있으면 잠긴다 — 남은 건만 골라 취소하는 길은 없다(RT-49) */
+  if (order.legs.some((leg) => leg.canceled)) return "CANCELED";
+  if (order.shipments.length > 0) return "SHIPPED";
+  if (order.legs.some((leg) => leg.confirmed)) return "CONFIRMED";
+  /* 도매처 건이 없는 주문은 더미에 없다. 타입상 가능한 자리라 "확정돼서
+     잠겼다"는 거짓말 대신 사실만 말하는 사유를 따로 둔다 */
+  if (order.legs.length === 0) return "EMPTY";
+
+  return null;
+}
+
+/**
  * 이 주문을 취소할 수 있는가. **도매처가 확정하기 전까지만**이다(RT-49).
- * 확정됐거나 이미 나간 것이 있으면 잠긴다.
+ * 잠긴 이유와 **같은 판정 하나**에서 나온다 — 버튼은 잠겼는데 안내는 안 잠겼다고
+ * 말하는 화면이 생기지 않는다.
  */
 export function isCancelable(order: OrderRecord): boolean {
-  return (
-    order.shipments.length === 0 &&
-    order.legs.length > 0 &&
-    order.legs.every((leg) => !leg.confirmed && !leg.canceled)
-  );
+  return cancelLockReason(order) === null;
 }
 
 /** 라인 상태 아래 12px 둘째 줄. 없으면 안 붙는다 */
@@ -694,11 +780,31 @@ export function legTotals(
   );
 }
 
+/** 이 도매처 건에서 미송으로 넘어간 몫. 0장이면 펼친 줄에 안 붙는다 */
+export function legBackorder(
+  order: OrderRecord,
+  wholesalerId: string,
+): { count: number; sheets: number } {
+  const lines = legLines(order, wholesalerId).filter(
+    (line) => line.status === "BACKORDER",
+  );
+
+  return {
+    count: lines.length,
+    sheets: lines.reduce((sum, line) => sum + line.qty, 0),
+  };
+}
+
 /**
  * 도매처 한 건의 상태. 펼친 줄에만 뜬다.
  *
- * 통합 행 배지와 **같은 근거**(장끼가 나갔는가 · 받아 갔는가)를 쓴다 —
- * 펼쳤을 때 위아래가 다른 규칙으로 말하면 무엇을 믿어야 할지 알 수 없다.
+ * 통합 행 배지와 **같은 근거**(장끼가 나갔는가 · 받아 갔는가)를 쓰되, 그
+ * 도매처의 **라인까지 본다.** 장끼 유무와 `received`만 보던 때는 코튼클럽이
+ * `출고 완료`인데 그 도매처 라인 하나가 `재고 소진 · 미송`이었다 — 펼친 줄이
+ * 상세와 반대되는 말을 해서, 사장이 다 끝난 줄 알고 미송 15장을 놓친다(F5).
+ *
+ * 통합 행에 이미 있는 `부분 출고`를 도매처 단위에도 준다. 같은 낱말이 위아래에서
+ * 같은 뜻으로 쓰인다 — 나갈 것이 남았다는 뜻이다.
  */
 export function legStatus(order: OrderRecord, leg: OrderLeg): OrderStatus {
   if (leg.canceled) return "CANCELED";
@@ -706,9 +812,11 @@ export function legStatus(order: OrderRecord, leg: OrderLeg): OrderStatus {
   const shipped = order.shipments.some(
     (s) => s.wholesalerId === leg.wholesalerId,
   );
-  if (shipped) return leg.received ? "SHIPPED" : "READY";
+  if (!shipped) return "PENDING";
 
-  return "PENDING";
+  if (legBackorder(order, leg.wholesalerId).count > 0) return "PARTIAL_SHIPPED";
+
+  return leg.received ? "SHIPPED" : "READY";
 }
 
 /** 장끼 한 장의 요약 줄 `2026.08.26 21:40 출고 · 화이트/M 20장 · 수령인 박삼촌` */

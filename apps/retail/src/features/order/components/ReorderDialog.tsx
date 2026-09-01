@@ -33,11 +33,22 @@ export function ReorderDialog({
   order,
   open,
   onOpenChange,
+  onCloseFocus,
   onAdd,
 }: {
   order: OrderRecord;
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /**
+   * 닫은 뒤 포커스를 받을 자리를 부르는 쪽이 정한다.
+   *
+   * 누른 버튼이 있으니 Radix 기본값으로 충분할 것 같지만 **아니다**(F4).
+   * 부르는 쪽이 `{열렸나 ? <ReorderDialog/> : null}`로 그리기 때문에,
+   * `onOpenChange(false)`가 상태를 지우는 순간 이 컴포넌트가 먼저 사라져
+   * Radix의 되돌리기가 돌 기회를 잃는다. 그러면 표 안의 버튼을 눌러 연
+   * 키보드 사용자가 닫은 뒤 표 맨 위부터 Tab을 다시 밟아야 한다(WCAG 2.4.3).
+   */
+  onCloseFocus: () => void;
   /** 담을 수 있는 줄. 장바구니에 넣는 것은 조립부가 한다(가정 A10) */
   onAdd: (lines: readonly OrderLine[]) => void;
 }) {
@@ -61,7 +72,15 @@ export function ReorderDialog({
         onOpenChange(next);
       }}
     >
-      <Dialog.Content className="flex max-h-[85dvh] max-w-140 flex-col gap-0 p-0">
+      <Dialog.Content
+        className="flex max-h-[85dvh] max-w-140 flex-col gap-0 p-0"
+        /* Radix의 기본 되돌리기를 막고 우리가 정한 자리로 보낸다 —
+           기본값보다 늦게 도는 처리라 여기서 하지 않으면 덮인다 */
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onCloseFocus();
+        }}
+      >
         <div className="flex items-start gap-3 p-5 pb-0">
           <div className="min-w-0 flex-1">
             <Dialog.Title>{REORDER_TEXT.title}</Dialog.Title>
