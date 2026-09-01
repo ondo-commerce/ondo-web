@@ -9,19 +9,21 @@ import { Header } from "@/shared/components/Header";
  * 본문에 overflow를 걸지 않는 것도 의도다 — 장바구니·주문서가 자기 화면 하단에
  * 합계 바를 고정할 수 있어야 한다.
  *
- * `cart`는 헤더 오른쪽 장바구니 뱃지 자리다. 셸이 `features/`를 못 읽어서
- * 실물은 부모 `app/(shop)/layout.tsx`가 넣어 준다.
+ * `cart`·`account`는 헤더 오른쪽 장바구니 뱃지와 계정 칩 자리다. 셸이
+ * `features/`를 못 읽어서 실물은 부모 `app/(shop)/layout.tsx`가 넣어 준다.
  */
 export function AppShell({
   children,
   cart,
+  account,
 }: {
   children: ReactNode;
   cart: ReactNode;
+  account: ReactNode;
 }) {
   return (
     <>
-      <Header cart={cart} />
+      <Header cart={cart} account={account} />
       {/* 여백 8px은 도매 앱 실측값(`_base.css` .main) */}
       <main className="min-w-0 flex-1 p-2">{children}</main>
     </>

@@ -4,17 +4,21 @@ import {
   APPROVAL_STEP_LABELS,
   STORE_QUERY,
   PASSWORD_MIN_LENGTH,
+  VALIDATION_MESSAGE,
   withStoreName,
 } from "./constants";
-import { ACCOUNTS, APPLICATION } from "./fixtures";
+import { ACCOUNTS, APPLICATION, SIGNUP_TERMS } from "./fixtures";
 import type {
   Account,
+  AccountProfile,
   AccountStatus,
   Application,
   ApprovalStep,
   AttachedFile,
   FieldErrors,
   LoginField,
+  PasswordField,
+  SettingsField,
   SignupField,
 } from "./types";
 
@@ -84,11 +88,11 @@ export interface LoginValues {
 export function validateLogin(values: LoginValues): FieldErrors<LoginField> {
   const errors: FieldErrors<LoginField> = {};
 
-  if (!values.email.trim()) errors.email = "이메일을 입력해 주세요.";
+  if (!values.email.trim()) errors.email = VALIDATION_MESSAGE.email;
   else if (!EMAIL_SHAPE.test(values.email.trim()))
-    errors.email = "이메일 형식으로 입력해 주세요. 예: store@example.com";
+    errors.email = VALIDATION_MESSAGE.emailShape;
 
-  if (!values.password) errors.password = "비밀번호를 입력해 주세요.";
+  if (!values.password) errors.password = VALIDATION_MESSAGE.password;
 
   return errors;
 }
@@ -193,25 +197,25 @@ export const EMPTY_SIGNUP: SignupValues = {
 export function validateSignup(values: SignupValues): FieldErrors<SignupField> {
   const errors: FieldErrors<SignupField> = {};
 
-  if (!values.storeName.trim()) errors.storeName = "상호명을 입력해 주세요.";
-  if (!values.ownerName.trim()) errors.ownerName = "대표자명을 입력해 주세요.";
+  if (!values.storeName.trim()) errors.storeName = VALIDATION_MESSAGE.storeName;
+  if (!values.ownerName.trim()) errors.ownerName = VALIDATION_MESSAGE.ownerName;
 
-  if (!values.email.trim()) errors.email = "이메일을 입력해 주세요.";
+  if (!values.email.trim()) errors.email = VALIDATION_MESSAGE.email;
   else if (!EMAIL_SHAPE.test(values.email.trim()))
-    errors.email = "이메일 형식으로 입력해 주세요. 예: store@example.com";
+    errors.email = VALIDATION_MESSAGE.emailShape;
 
-  if (!values.password) errors.password = "비밀번호를 입력해 주세요.";
+  if (!values.password) errors.password = VALIDATION_MESSAGE.password;
   else if (values.password.length < PASSWORD_MIN_LENGTH)
-    errors.password = `비밀번호를 ${PASSWORD_MIN_LENGTH}자 이상으로 입력해 주세요.`;
+    errors.password = VALIDATION_MESSAGE.passwordShort;
 
   if (!values.passwordConfirm)
-    errors.passwordConfirm = "비밀번호를 한 번 더 입력해 주세요.";
+    errors.passwordConfirm = VALIDATION_MESSAGE.passwordConfirm;
   else if (values.passwordConfirm !== values.password)
-    errors.passwordConfirm = "위에 입력한 비밀번호와 같게 입력해 주세요.";
+    errors.passwordConfirm = VALIDATION_MESSAGE.passwordMismatch;
 
-  if (!values.phone.trim()) errors.phone = "연락처를 입력해 주세요.";
+  if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
   else if (!PHONE_SHAPE.test(normalizeSeparators(values.phone)))
-    errors.phone = "연락처를 010-0000-0000 형식으로 입력해 주세요.";
+    errors.phone = VALIDATION_MESSAGE.phoneShape;
 
   /* 비워 두면 통과한다. 적었는데 자리수가 안 맞으면 그때만 말한다 —
      넘친 글자를 몰래 잘라내지 않으므로 여기서 걸린다 */
@@ -219,15 +223,14 @@ export function validateSignup(values: SignupValues): FieldErrors<SignupField> {
     values.bizNo.trim() &&
     !BIZ_NO_SHAPE.test(normalizeSeparators(values.bizNo))
   )
-    errors.bizNo =
-      "사업자등록번호를 000-00-00000 형식(숫자 10자리)으로 입력해 주세요.";
+    errors.bizNo = VALIDATION_MESSAGE.bizNoShape;
 
-  if (!values.license) errors.license = "사업자등록증 파일을 첨부해 주세요.";
+  if (!values.license) errors.license = VALIDATION_MESSAGE.license;
 
   if (!values.agreeService)
-    errors.agreeService = "이용약관을 확인하고 동의해 주세요.";
+    errors.agreeService = VALIDATION_MESSAGE.agreeService;
   if (!values.agreePrivacy)
-    errors.agreePrivacy = "개인정보 수집·이용에 동의해 주세요.";
+    errors.agreePrivacy = VALIDATION_MESSAGE.agreePrivacy;
 
   return errors;
 }
@@ -338,4 +341,129 @@ export function validateReapply(
   return license
     ? {}
     : { license: "다시 올릴 사업자등록증 파일을 첨부해 주세요." };
+}
+
+/* ── 설정 ─────────────────────────────────────────────────────────────── */
+
+/**
+ * 계정 칩의 이니셜 사각형에 들어갈 한 글자.
+ *
+ * `storeName[0]`으로 자르지 않는다 — 그건 UTF-16 한 칸이라 이모지·일부 한자에서
+ * 반쪽만 남는다. 상호명이 바뀌면 이니셜도 **같은 함수 한 번**으로 따라오게 해서
+ * 이름과 이니셜이 갈리지 않게 한다(원본 §6-4 계열 결함).
+ */
+export function storeInitial(storeName: string): string {
+  return Array.from(storeName.trim())[0] ?? "";
+}
+
+/** 설정 화면에서 고칠 수 있는 값 세 개. 잠긴 칸은 폼에 들어오지 않는다 */
+export interface SettingsValues {
+  storeName: string;
+  ownerName: string;
+  phone: string;
+}
+
+/**
+ * 폼의 출발값. **화면이 문자열을 적지 않는다** — 계정 레코드에서 꺼내 온다.
+ *
+ * 이 값을 화면이 아니라 세션 보관소(`store.ts`)가 받아 든다. 화면이 들고 있으면
+ * 다른 탭에 갔다 온 순간 고쳐 둔 값이 통째로 버려진다(도매 9회차 누적 결함
+ * state-loss).
+ */
+export function settingsValuesFrom(account: AccountProfile): SettingsValues {
+  return {
+    storeName: account.storeName,
+    ownerName: account.ownerName,
+    phone: account.phone,
+  };
+}
+
+/**
+ * 설정 저장 검증. 규칙은 회원가입과 **같은 것을 꺼내 쓴다**(문구도 값도).
+ *
+ * 연락처는 구분자만 하이픈으로 맞춰 본다 — `010.1234.5678`도 `01012345678`도
+ * **친 글자를 지우지 않고** 통과 여부만 판정한다. 틀리면 값은 칸에 그대로 남고
+ * 아래 줄이 이유를 말한다.
+ */
+export function validateSettings(
+  values: SettingsValues,
+): FieldErrors<SettingsField> {
+  const errors: FieldErrors<SettingsField> = {};
+
+  if (!values.storeName.trim()) errors.storeName = VALIDATION_MESSAGE.storeName;
+  if (!values.ownerName.trim()) errors.ownerName = VALIDATION_MESSAGE.ownerName;
+
+  if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
+  else if (!PHONE_SHAPE.test(normalizeSeparators(values.phone)))
+    errors.phone = VALIDATION_MESSAGE.phoneShape;
+
+  return errors;
+}
+
+/** 비밀번호 변경 다이얼로그의 세 칸 */
+export interface PasswordValues {
+  currentPassword: string;
+  newPassword: string;
+  newPasswordConfirm: string;
+}
+
+export const EMPTY_PASSWORD: PasswordValues = {
+  currentPassword: "",
+  newPassword: "",
+  newPasswordConfirm: "",
+};
+
+/**
+ * 비밀번호 변경 검증.
+ *
+ * 지금 비밀번호가 **맞는지는 보지 않는다.** 대조할 서버도 저장된 비밀번호도
+ * 없다(`types.ts` — 더미라도 자격증명을 소스에 적지 않는다). 비어 있는지까지가
+ * 화면이 판정할 수 있는 전부이고, 그 사실은 다이얼로그가 글자로 말한다.
+ *
+ * 8자 규칙과 확인 일치 문구는 회원가입과 같은 상수를 읽는다 — 같은 규칙이
+ * 화면마다 다른 말로 나오지 않게.
+ */
+export function validatePasswordChange(
+  values: PasswordValues,
+): FieldErrors<PasswordField> {
+  const errors: FieldErrors<PasswordField> = {};
+
+  if (!values.currentPassword)
+    errors.currentPassword = VALIDATION_MESSAGE.password;
+
+  if (!values.newPassword) errors.newPassword = VALIDATION_MESSAGE.password;
+  else if (values.newPassword.length < PASSWORD_MIN_LENGTH)
+    errors.newPassword = VALIDATION_MESSAGE.passwordShort;
+
+  if (!values.newPasswordConfirm)
+    errors.newPasswordConfirm = VALIDATION_MESSAGE.passwordConfirm;
+  else if (values.newPasswordConfirm !== values.newPassword)
+    errors.newPasswordConfirm = VALIDATION_MESSAGE.passwordMismatch;
+
+  return errors;
+}
+
+/** 동의 내역 한 줄 */
+export interface ConsentRecord {
+  kind: "service" | "privacy";
+  label: string;
+  agreedAt: string;
+}
+
+/**
+ * 약관 동의 내역 2줄.
+ *
+ * 이름은 회원가입 체크박스와 **같은 `SIGNUP_TERMS`**에서, 일시는 신청 레코드에서
+ * 온다 — 화면에 약관 이름도 날짜 문자열도 적지 않는다. 약관이 3종이 되면
+ * `SIGNUP_TERMS`만 늘리면 이 목록도 같이 는다.
+ *
+ * 동의 일시가 둘 다 신청 일시인 건 더미의 한계다. 가입 폼이 두 체크를 한 번에
+ * 받으므로(같은 제출) 실제로도 두 값이 갈릴 일이 지금은 없다.
+ */
+export function consentRecords(): ConsentRecord[] {
+  return (["service", "privacy"] as const).map((kind) => ({
+    kind,
+    label: SIGNUP_TERMS[kind].label,
+    agreedAt: APPLICATION.appliedAt,
+  }));
 }

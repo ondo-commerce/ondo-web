@@ -19,6 +19,27 @@ export interface Account {
   status: AccountStatus;
 }
 
+/**
+ * 설정 화면이 읽는 확장 정보 — 대표자명·연락처가 더 붙는다.
+ *
+ * `Account`에 두 필드를 필수로 올리지 않은 이유: 로그인 분기(`ACCOUNTS`)의 심사
+ * 중·거절 더미에는 대표자명도 연락처도 없다. 필수로 올리면 그 두 건에 **없는
+ * 개인정보를 지어내야** 한다. 설정은 승인 완료 계정 한 건만 보므로 그 한 건만
+ * 확장한다. 값은 자리표시자다(`010-0000-0000`) — 실제 형식의 번호를 소스에
+ * 적지 않는다는 `fixtures.ts`의 기존 원칙 그대로다.
+ */
+export interface AccountProfile extends Account {
+  ownerName: string;
+  phone: string;
+}
+
+/** 설정 화면에서 **고칠 수 있는** 칸 이름. 잠긴 칸은 여기 없다 — 검증 대상이 아니다 */
+export type SettingsField = "storeName" | "ownerName" | "phone";
+
+/** 비밀번호 변경 다이얼로그의 칸 이름 */
+export type PasswordField =
+  "currentPassword" | "newPassword" | "newPasswordConfirm";
+
 /** 로그인 폼의 칸 이름. 오류 표시·포커스 이동이 이 이름으로 칸을 찾는다 */
 export type LoginField = "email" | "password";
 

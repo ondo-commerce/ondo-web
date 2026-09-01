@@ -1,4 +1,10 @@
-import type { Account, Application, Rejection, Terms } from "./types";
+import type {
+  Account,
+  AccountProfile,
+  Application,
+  Rejection,
+  Terms,
+} from "./types";
 
 /*
  * 화면을 그리기 위한 목업. API가 붙으면 이 파일만 지운다.
@@ -13,8 +19,26 @@ import type { Account, Application, Rejection, Terms } from "./types";
  * 실제 인증이 아니다. 세션도 쿠키도 미들웨어도 만들지 않는다 — 이번 회차는
  * "어느 화면으로 가는가"까지다.
  */
+/**
+ * 설정 화면이 보는 계정 한 건. **상호명의 유일한 원본**이다.
+ *
+ * 셸 헤더의 계정 칩도 결국 이 값을 읽는다 — 예전에는 `shared/fixtures.ts`의
+ * `SHELL_ACCOUNT`가 `봄봄상회`를 따로 한 벌 더 들고 있었는데, 그러면 설정에서
+ * 상호명을 고친 순간 헤더와 본문이 **같은 세션에서 다른 이름을 말한다**
+ * (`retail-market` F5와 같은 결함). 문자열을 여기 한 곳에만 둔다.
+ *
+ * 대표자명·연락처는 자리표시자다. 실제 형식의 개인정보를 소스에 적지 않는다.
+ */
+export const SETTINGS_ACCOUNT: AccountProfile = {
+  email: "store@example.com",
+  storeName: "봄봄상회",
+  ownerName: "김봄",
+  phone: "010-0000-0000",
+  status: "APPROVED",
+};
+
 export const ACCOUNTS: Account[] = [
-  { email: "store@example.com", storeName: "봄봄상회", status: "APPROVED" },
+  SETTINGS_ACCOUNT,
   { email: "pending@example.com", storeName: "하늘옷가게", status: "PENDING" },
   {
     email: "rejected@example.com",
@@ -59,7 +83,7 @@ export const SIGNUP_TERMS: Record<"service" | "privacy", Terms> = {
  *    캡처·문서에 실려 나간다. 주민등록번호 형태의 값은 어느 화면에도 없다.
  */
 export const APPLICATION: Application = {
-  storeName: "봄봄상회",
+  storeName: SETTINGS_ACCOUNT.storeName,
   bizNo: "000-00-00000",
   appliedAt: "2026.07.17 10:20",
 };
