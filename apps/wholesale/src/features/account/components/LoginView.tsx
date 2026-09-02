@@ -5,8 +5,10 @@ import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
+  ARRIVAL_MESSAGE,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
@@ -17,14 +19,13 @@ import {
 import {
   demoAccountHint,
   EMPTY_LOGIN,
-  findAccount,
   firstInvalidField,
   homePathFor,
   revalidateField,
   validateLogin,
   type LoginValues,
 } from "../derive";
-import { signIn } from "../store";
+import { lookupAccount, signIn } from "../store";
 import type { FieldErrors, LoginField } from "../types";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
@@ -65,7 +66,12 @@ export function LoginView() {
       return;
     }
 
-    const account = findAccount(values.email);
+    /* `derive.findAccount`가 아니라 세션까지 보는 쪽을 부른다 — 더미 4건만
+       보면 **방금 가입 신청을 마친 이메일로 다시 못 들어온다**. 승인 대기
+       화면의 `로그인 화면으로`를 한 번 누르면 자기 신청서로 돌아갈 길이
+       사라지는데, 같은 화면은 `신청 이력은 계정에 남아요`라고 말한다
+       (`wholesale-account` F7) */
+    const account = lookupAccount(values.email);
     if (!account) {
       /* 실패해도 입력값을 지우지 않는다. 오타 하나 때문에 이메일을 다시 치게
          만들면 그게 곧 다음 실패다 */
@@ -78,11 +84,17 @@ export function LoginView() {
     /* 도착지를 세션이 돌려준 값으로 정한다 — 같은 탭에서 이미 온보딩을 지나간
        계정이면 그 사실이 덮어쓰기에 남아 있고, 훅으로 읽으면 다음 렌더에나 온다 */
     const signedIn = signIn(account.email);
-    router.replace(
+    const home =
       signedIn.state === "signedIn"
         ? homePathFor(signedIn.account, signedIn.bankPromptSeen)
-        : ACCOUNT_PATH.login,
-    );
+        : ACCOUNT_PATH.login;
+
+    /* 누른 버튼이 라우트와 함께 사라진다. 도착 화면이 도착을 말하지 않으면
+       키보드·낭독기 사용자는 실행이 끝났는지 모른다(`wholesale-account` F5).
+       도착지가 상태마다 갈리므로(승인 대기·거절·온보딩·상품) 방금 정한 주소를
+       그대로 넘긴다 */
+    announceArrival(home, ARRIVAL_MESSAGE.signedIn);
+    router.replace(home);
   };
 
   return (

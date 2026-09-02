@@ -4,14 +4,17 @@ import { Button, cn, FormField, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
+  ARRIVAL_MESSAGE,
   DOCUMENT_LABEL,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
   labelId,
+  SESSION_REQUIRED_LEAD,
 } from "../constants";
 import { approvalSteps, validateReapply } from "../derive";
 import { REJECTION } from "../fixtures";
@@ -22,6 +25,7 @@ import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { FieldError, FieldHelp } from "./FieldError";
 import { FileField } from "./FileField";
+import { SessionRequired } from "./SessionRequired";
 import { WarnBadge, WarnNotice } from "./WarnNotice";
 
 /** 두 칸을 한 상태로 든다 — 한쪽을 고를 때 다른 쪽 이름이 사라지면 안 된다 */
@@ -38,6 +42,12 @@ const NO_DOCUMENTS: Documents = { license: null, idCard: null };
  *
  * 재첨부 칸이 **2개**인 것이 소매(1개)와 다르다. 거절 사유가 자유 문장이라
  * 어느 서류를 가리키는지 코드가 알 수 없어서, 한쪽만 다시 올려도 통과시킨다.
+ *
+ * ⚠️ **로그아웃 상태에서는 폼을 내주지 않는다.** 거절 안내 메일의 링크를 새 탭에서
+ *    여는 것이 정확히 그 경로인데(`sessionStorage`는 탭 단위다), 예전에는 사유가
+ *    읽히고 서류가 붙고 `재신청하기`까지 눌린 뒤 **아무것도 저장되지 않은 채**
+ *    `가입 심사 중이에요` 화면으로 넘어갔다 — 사장은 접수됐다고 믿고 결과를
+ *    기다린다(`wholesale-account` F3). 거짓 성공은 실패보다 나쁘다.
  */
 export function ApprovalRejectedView() {
   const router = useRouter();
@@ -49,6 +59,18 @@ export function ApprovalRejectedView() {
   const found = validateReapply(documents);
   const error = revealed ? found.license : undefined;
 
+  /* 훅을 전부 부른 **뒤에** 가른다 — 훅 호출 순서는 렌더마다 같아야 한다 */
+  if (session.state !== "signedIn") {
+    return (
+      <SessionRequired
+        state={session.state}
+        lead={SESSION_REQUIRED_LEAD.rejected}
+      />
+    );
+  }
+
+  const email = session.account.email;
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -59,8 +81,11 @@ export function ApprovalRejectedView() {
     }
 
     /* 접수까지가 이번 범위다. 상태를 `심사 중`으로 되돌리고 그 화면으로 보낸다 —
-       같은 화면에 남겨 두면 버튼을 또 눌러야 하는지 고민하게 된다 */
-    if (session.state === "signedIn") applyReapply(session.account.email);
+       같은 화면에 남겨 두면 버튼을 또 눌러야 하는지 고민하게 된다.
+       **저장이 먼저다.** 이동만 하고 저장을 건너뛰면 화면은 성공을 말하는데
+       상태는 그대로다(`wholesale-account` F3) */
+    applyReapply(email);
+    announceArrival(ACCOUNT_PATH.approval, ARRIVAL_MESSAGE.reapplied);
     router.replace(ACCOUNT_PATH.approval);
   };
 

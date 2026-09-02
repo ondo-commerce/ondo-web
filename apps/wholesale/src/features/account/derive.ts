@@ -30,9 +30,27 @@ import type {
  */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 등록된 계정인지 본다. 없으면 `null` — 어느 칸이 틀렸는지는 호출부가 말하지 않는다 */
+/**
+ * 이메일을 대조·저장에 쓰는 한 가지 모양으로 맞춘다.
+ *
+ * 로그인은 `findAccount`가, 가입은 세션 덮어쓰기의 **키**가 이 값을 쓴다. 두
+ * 자리가 각자 다듬으면 `Kim@Ondo.test`로 신청한 계정을 `kim@ondo.test`로는
+ * 못 찾는다 — 자기 신청서로 돌아갈 길이 사라진다(`wholesale-account` F7).
+ */
+export function normalizeEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+/**
+ * **더미 계정에서만** 찾는다. 없으면 `null`.
+ *
+ * ⚠️ 이번 세션에 가입 신청한 계정은 여기 없다 — 그건 세션 덮어쓰기에 산다.
+ *    로그인처럼 "이 이메일로 들어올 수 있나"를 묻는 자리는 `store.lookupAccount`를
+ *    써야 한다. 이 함수만 보면 방금 신청을 마친 사장이 다시 로그인하지 못한다
+ *    (`wholesale-account` F7).
+ */
 export function findAccount(email: string): Account | null {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmail(email);
   return ACCOUNTS.find((a) => a.email === normalized) ?? null;
 }
 
@@ -367,13 +385,19 @@ export function visibleErrors<K extends string>(
  *
  * 소매는 세션이 없어 `/approval?store=…`로 주소에 실어 날랐다. 도매는 세션이
  * 있으므로 **주소를 고쳐 남의 상호명을 이 화면에 띄울 통로를 만들지 않는다.**
+ *
+ * ⚠️ 계정을 **받아야만** 부를 수 있다. 로그아웃 상태에 더미 신청서를 돌려주던
+ *    폴백을 지웠다 — 주소만 알면 남의 상호명·사업자 등록번호가 그대로 보이는
+ *    통로였다(`wholesale-account` F6). 세션이 없을 때 무엇을 그릴지는 화면이
+ *    정한다(`SessionRequired`).
+ *
+ * 더미 상수는 **빈 줄을 막는 데까지만** 남는다 — 더미 계정으로 로그인만 한
+ * 경우 신청 시각이 없고, 그 자리를 비워 두면 요약에 이름 없는 줄이 선다.
  */
 export function applicationFor(
-  account: Account | null,
+  account: Account,
   appliedAt: string | null,
 ): Application {
-  if (!account) return APPLICATION;
-
   const storeName = normalizeStoreName(account.storeName);
   return {
     storeName: storeName ?? APPLICATION.storeName,

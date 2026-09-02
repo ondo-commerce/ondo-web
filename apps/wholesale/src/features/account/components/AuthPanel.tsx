@@ -1,5 +1,8 @@
+"use client";
+
 import { cn, Panel } from "@ondo/ui";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useArrival } from "../arrival";
 
 /**
  * 계정 5화면의 흰 카드. 배지 + 제목 한 줄 + 보조 설명 한 줄 + 본문.
@@ -8,6 +11,10 @@ import type { ReactNode } from "react";
  * 1. 안쪽 여백이 28px이다(`Panel` 기본은 16px). 로그인 전 화면은 카드 하나가
  *    화면 전부라 ERP 셸 안의 패널보다 넉넉하다.
  * 2. 제목이 `h2`가 아니라 **`h1`**이다. 이 화면에는 이 카드 말고 제목이 없다.
+ *
+ * **실행 뒤 도착을 여기서 받는다**(`arrival.ts`). 이 카드가 계정 화면의 제목을
+ * 소유한 유일한 자리라, 도착 문구를 낭독하고 포커스를 제목으로 옮기는 일도
+ * 여기 한 번만 적으면 화면 5장이 같이 고쳐진다.
  */
 export function AuthPanel({
   badge,
@@ -22,10 +29,30 @@ export function AuthPanel({
   lead?: ReactNode;
   children: ReactNode;
 }) {
+  const arrival = useArrival();
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  /* 실행으로 **도착했을 때만** 옮긴다. 주소로 직접 연 화면에서 포커스를 제목에
+     걸면 Tab 순서가 이유 없이 한 칸 뒤에서 시작한다 */
+  useEffect(() => {
+    if (arrival) heading.current?.focus();
+  }, [arrival]);
+
   return (
     <Panel className="p-7">
+      {/* 빈 채로 먼저 그린다 — 낭독 영역이 글자와 동시에 나타나면 낭독기가
+          그 변화를 놓친다. `arrival.ts`가 다음 커밋에서 채운다 */}
+      <p className="sr-only" role="status">
+        {arrival}
+      </p>
+
       {badge ? <div className="flex">{badge}</div> : null}
-      <h1 className={cn("text-xl leading-7 font-medium", badge && "mt-3")}>
+      {/* `tabIndex={-1}`: Tab 순서에는 넣지 않고 프로그램으로만 포커스를 준다 */}
+      <h1
+        ref={heading}
+        tabIndex={-1}
+        className={cn("text-xl leading-7 font-medium", badge && "mt-3")}
+      >
         {title}
       </h1>
       {lead ? (

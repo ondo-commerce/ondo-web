@@ -59,12 +59,17 @@ export const FIELD_LABEL_CLASS =
   "[&>div>label]:text-body [&>div>label]:font-medium";
 
 /**
- * 오류 난 칸의 테두리.
+ * 오류 난 칸의 테두리. **폼 안의 모든 칸이 이걸 쓴다** —
+ * `Input` · `Select` · `FileField` · `Checkbox`.
  *
- * `packages/ui` `Input`에는 `aria-invalid` 스타일이 없어서, 첨부칸만 빨개지고
- * 글자 칸은 정상 칸과 같은 회색으로 남는다. 한 폼 안에서 오류를 찾는 단서가
- * 갈리지 않게 호출부에서 건다. **값까지 본다** — `aria-invalid="false"`도 붙는
- * 자리라 `aria-invalid:`(속성 유무)로 잡으면 정상 칸이 전부 빨개진다.
+ * `packages/ui`에는 `aria-invalid` 스타일이 없어서 호출부에서 건다. **값까지
+ * 본다** — `aria-invalid="false"`도 붙는 자리라 `aria-invalid:`(속성 유무)로
+ * 잡으면 정상 칸이 전부 빨개진다.
+ *
+ * ⚠️ **한 칸이라도 빠지면 안 된다.** 처음에는 글자·선택·첨부 칸에만 걸어서
+ *    빈 폼을 제출했을 때 약관 체크 상자 2개만 정상 칸과 같은 회색으로 남았다 —
+ *    12칸이 다 틀렸는데 10칸만 빨개지면, 회색으로 남은 두 칸은 통과한 칸으로
+ *    읽힌다(`wholesale-account` F4). 새 입력 요소를 놓을 때 같이 건다.
  */
 export const INVALID_INPUT_CLASS = "aria-[invalid=true]:border-destructive";
 
@@ -89,6 +94,42 @@ export const LOGIN_FIELD_ORDER = ["email", "password"] as const;
  */
 export const LOGIN_FAILED_MESSAGE =
   "이메일 또는 비밀번호를 다시 확인해 주세요.";
+
+/**
+ * 실행 뒤 **도착 화면이 낭독기에 말하는 한 줄**(`arrival.ts`).
+ *
+ * "무슨 일이 일어났고 지금 어디인가" 둘 다 말한다 — 실행 버튼이 라우트와 함께
+ * 사라지므로, 도착한 자리에서 그 둘을 못 들으면 확인할 방법이 없다.
+ */
+export const ARRIVAL_MESSAGE = {
+  signedIn: "로그인했어요.",
+  signedUp: "가입 신청을 접수했어요. 심사 현황 화면이에요.",
+  reapplied: "재신청을 접수했어요. 심사 현황 화면이에요.",
+  bankSaved: "정산 계좌를 등록했어요. 상품 화면이에요.",
+  bankUpdated: "정산 계좌를 바꿨어요. 상품 화면이에요.",
+  bankSkipped: "계좌 등록을 건너뛰었어요. 상품 화면이에요.",
+  bankKept: "계좌를 그대로 뒀어요. 상품 화면이에요.",
+} as const;
+
+/**
+ * 세션이 없을 때 실행을 **막고 이유를 말하는** 화면의 문구.
+ *
+ * `sessionStorage`는 탭 단위라, 거절 안내 메일의 링크를 새 탭에서 열거나
+ * 온보딩 주소를 북마크로 열면 그 탭은 로그아웃 상태다. 예전에는 그 상태에서도
+ * 폼이 그대로 열려 3칸을 다 채우고 버튼까지 눌렸는데 **아무것도 저장되지 않고**
+ * 다음 화면으로 넘어갔다 — 거절 재신청은 심사 중 화면까지 떠서 거짓 성공이었다
+ * (`wholesale-account` F2·F3). 실행되지 않을 일은 **실행 전에** 막는다.
+ */
+export const SESSION_REQUIRED_TITLE = "로그인이 필요해요";
+
+export const SESSION_REQUIRED_LEAD = {
+  approval:
+    "심사 현황은 로그인한 계정의 신청서만 보여드려요. 로그인하면 방금 낸 신청서가 열려요.",
+  rejected:
+    "거절 사유와 재신청은 로그인해야 열려요. 메일 링크를 새 탭에서 열면 로그인이 풀려 있어요 — 로그인하면 서류를 다시 올릴 수 있어요.",
+  bankOnboarding:
+    "계좌는 로그인한 계정에 저장돼요. 로그인하지 않으면 저장할 곳이 없어서 폼을 열지 않아요 — 다 채우고 눌러도 사라지니까요.",
+} as const;
 
 /** 상태 한글 이름. 배지·안내 문구가 같은 말을 쓰게 한다 */
 export const ACCOUNT_STATUS_LABEL = {
@@ -271,8 +312,33 @@ export const BANK_MESSAGE = {
 /** 예금주 길이 상한. 상호명과 같은 자리표시에 서는 값이라 같은 값을 쓴다 */
 export const HOLDER_MAX = 40;
 
-/** 계정 메뉴가 계좌를 말하는 한 줄. 등록 전에는 이 항목이 실행 버튼이 된다 */
+/**
+ * 계정 메뉴가 계좌를 말하는 한 줄. 등록 전에는 이 항목이 실행 버튼이 된다.
+ *
+ * `edit`이 있는 이유: 등록하고 나면 계좌 줄이 읽기 전용이 되고 링크가 사라져서
+ * **한 자 틀린 계좌번호를 화면에서 고칠 길이 없었다**(`wholesale-account` F8).
+ * 소매 사장이 그 번호로 송금하는 값이라 되돌릴 수 없는데, 주소를 직접 쳐서 다시
+ * 들어가도 폼이 빈 칸이라 원래 번호를 보면서 고칠 수도 없었다.
+ */
 export const BANK_MENU_LABEL = {
   registered: "정산 계좌",
   empty: "정산 계좌 등록",
+  edit: "계좌 수정",
+} as const;
+
+/**
+ * 계좌를 저장하기 **직전** 확인 단계의 문구.
+ *
+ * 계좌번호는 되돌릴 수 없는 값이다 — 한 자 틀리면 소매 사장이 그 번호로 송금한다.
+ * 다른 칸처럼 "틀리면 나중에 고치면 되는" 값이 아니라서, 저장 전에 친 값을 그대로
+ * 다시 보여 주고 한 번 더 묻는다(`wholesale-account` F8).
+ */
+export const BANK_CONFIRM = {
+  createTitle: "이 계좌로 등록할까요?",
+  editTitle: "이 계좌로 바꿀까요?",
+  description:
+    "등록한 계좌는 소매 사장님 화면의 「입금 계좌 안내」에 그대로 보여요. 한 자라도 다르면 그 번호로 송금돼요.",
+  cancel: "다시 고치기",
+  createConfirm: "이 계좌로 등록하기",
+  editConfirm: "이 계좌로 바꾸기",
 } as const;

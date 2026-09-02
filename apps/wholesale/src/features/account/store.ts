@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { SESSION_STORAGE_KEY } from "./constants";
-import { findAccount } from "./derive";
+import { findAccount, normalizeEmail } from "./derive";
 import type { Account, BankAccount } from "./types";
 
 /**
@@ -129,18 +129,36 @@ function writeStorage(next: SessionState): void {
 }
 
 /**
+ * 저장소를 아직 안 읽었으면 **지금 읽는다.** 세션을 건드리는 모든 길목이 여기를
+ * 먼저 지난다.
+ *
+ * ⚠️ 읽기를 구독 시점에만 두면 안 된다. `/login`에는 세션을 읽는 컴포넌트가
+ *    하나도 없어서 `subscribe`가 돌지 않고, 모듈 `state`가 `PENDING_STATE`
+ *    (`overrides:{}`)인 채로 남는다. 그 상태에서 `signIn`이 `{...state, email}`을
+ *    저장하면 **저장소에 있던 덮어쓰기를 빈 객체로 덮어쓴다** — 등록한 정산 계좌,
+ *    건너뛴 온보딩 표시, 재신청으로 바꾼 상태가 로그인 한 번에 사라졌다
+ *    (`wholesale-account` F1). 화면이 무엇을 읽는지에 저장 안전이 매달려 있으면
+ *    안 된다.
+ *
+ * 렌더 중에는 부르지 않는다 — 하이드레이션 렌더는 서버 스냅샷을 써야 하고,
+ * 거기서 실제 값이 튀어나오면 서버 HTML과 어긋난다.
+ */
+function ensureLoaded(): SessionState {
+  if (!state.loaded) state = { loaded: true, ...readStorage() };
+  return state;
+}
+
+/**
  * 첫 구독 시점(= 클라이언트에 처음 붙은 순간)에 저장소를 읽는다.
  *
- * 렌더 중에 읽지 않는 이유: 하이드레이션 렌더는 서버 스냅샷을 써야 하고, 거기서
- * 실제 값이 튀어나오면 서버 HTML과 어긋난다. 구독은 커밋 뒤(effect)에 일어나므로
- * 여기서 읽으면 **한 번 더 그리는 것**으로 끝난다.
+ * 구독은 커밋 뒤(effect)에 일어나므로 여기서 읽으면 **한 번 더 그리는 것**으로
+ * 끝난다.
  */
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
 
   if (!state.loaded) {
-    const stored = readStorage();
-    state = { loaded: true, ...stored };
+    ensureLoaded();
     notify();
   }
 
@@ -174,6 +192,49 @@ export type SessionView =
       appliedAt: string | null;
     };
 
+/**
+ * 더미 한 건 + 이번 세션의 덮어쓰기를 합쳐 계정 하나를 만든다.
+ *
+ * 합치는 규칙을 **한 자리에만** 둔다 — 로그인 대조(`lookupAccount`)와 화면이
+ * 보는 세션(`resolve`)이 각자 합치면 같은 이메일이 두 얼굴을 갖는다.
+ */
+function mergeAccount(
+  email: string,
+  base: Account | null,
+  override: AccountOverride | undefined,
+): Account {
+  return {
+    email,
+    storeName: override?.storeName ?? base?.storeName ?? "",
+    bizNo: override?.bizNo ?? base?.bizNo ?? "000-00-00000",
+    status: override?.status ?? base?.status ?? "PENDING",
+    bankAccount:
+      override?.bankAccount !== undefined
+        ? override.bankAccount
+        : (base?.bankAccount ?? null),
+  };
+}
+
+/**
+ * 로그인할 수 있는 계정인지 본다. **더미 4건 + 이번 세션에 신청한 계정**이다.
+ *
+ * `derive.findAccount`만 보면 방금 가입 신청을 마친 사장이 다시 로그인하지
+ * 못한다 — 승인 대기 화면의 `로그인 화면으로`를 한 번 누르면 자기 신청서로
+ * 돌아갈 길이 사라지는데, 같은 화면은 `신청 이력은 계정에 남아요`라고 말한다
+ * (`wholesale-account` F7).
+ */
+export function lookupAccount(email: string): Account | null {
+  const current = ensureLoaded();
+  const normalized = normalizeEmail(email);
+
+  const base = findAccount(normalized);
+  const override = current.overrides[normalized];
+  /* 더미에도 없고 이번 세션에 신청하지도 않은 이메일 = 없는 계정 */
+  if (!base && !override) return null;
+
+  return mergeAccount(normalized, base, override);
+}
+
 /** 더미 + 이번 세션의 덮어쓰기를 합친 계정 한 건 */
 function resolve(snapshot: SessionState): SessionView {
   if (!snapshot.loaded) return { state: "unknown" };
@@ -185,16 +246,7 @@ function resolve(snapshot: SessionState): SessionView {
   /* 더미에 없는 이메일 = 이번 세션에 가입한 계정. 덮어쓰기가 곧 그 계정이다 */
   if (!base && !override) return { state: "signedOut" };
 
-  const account: Account = {
-    email: snapshot.email,
-    storeName: override?.storeName ?? base?.storeName ?? "",
-    bizNo: override?.bizNo ?? base?.bizNo ?? "000-00-00000",
-    status: override?.status ?? base?.status ?? "PENDING",
-    bankAccount:
-      override?.bankAccount !== undefined
-        ? override.bankAccount
-        : (base?.bankAccount ?? null),
-  };
+  const account = mergeAccount(snapshot.email, base, override);
 
   return {
     state: "signedIn",
@@ -204,14 +256,20 @@ function resolve(snapshot: SessionState): SessionView {
   };
 }
 
-/** 이메일 하나의 덮어쓰기를 합쳐 넣는다. 저장과 알림을 한 자리에서만 한다 */
+/**
+ * 이메일 하나의 덮어쓰기를 합쳐 넣는다. 저장과 알림을 한 자리에서만 한다.
+ *
+ * **저장소를 먼저 읽는다**(`ensureLoaded`) — 읽지 않은 채 합치면 이 탭에 이미
+ * 있던 다른 변경이 사라진다.
+ */
 function patchOverride(email: string, patch: AccountOverride): SessionState {
+  const current = ensureLoaded();
   const next: SessionState = {
-    ...state,
+    ...current,
     loaded: true,
     overrides: {
-      ...state.overrides,
-      [email]: { ...state.overrides[email], ...patch },
+      ...current.overrides,
+      [email]: { ...current.overrides[email], ...patch },
     },
   };
   writeStorage(next);
@@ -238,9 +296,18 @@ export function useSession(): SessionView {
  * **로그인한 계정을 그대로 돌려준다.** 부르는 쪽(로그인 화면)이 도착지를
  * 정하려면 이번 세션의 덮어쓰기까지 합친 값이 필요한데, 그건 훅으로 읽으면
  * 다음 렌더에나 온다 — 그 사이에 이미 이동해야 한다.
+ *
+ * **저장소를 먼저 읽는다.** 로그인 화면은 세션을 읽는 컴포넌트가 없어 모듈
+ * `state`가 비어 있을 수 있고, 그대로 저장하면 이 탭의 덮어쓰기를 전부 지운다
+ * (`wholesale-account` F1).
  */
 export function signIn(email: string): SessionView {
-  const next: SessionState = { ...state, loaded: true, email };
+  const current = ensureLoaded();
+  const next: SessionState = {
+    ...current,
+    loaded: true,
+    email: normalizeEmail(email),
+  };
   writeStorage(next);
   commit(next);
   return resolve(next);
@@ -253,7 +320,8 @@ export function signIn(email: string): SessionView {
  * 온보딩이 다시 뜨면, 사장은 자기가 한 일이 남지 않는 앱이라고 배운다.
  */
 export function signOut(): void {
-  const next: SessionState = { ...state, loaded: true, email: null };
+  const current = ensureLoaded();
+  const next: SessionState = { ...current, loaded: true, email: null };
   writeStorage(next);
   commit(next);
 }
@@ -273,13 +341,16 @@ export function applySignup(input: {
   storeName: string;
   bizNo: string;
 }): void {
-  const next = patchOverride(input.email, {
+  /* 덮어쓰기의 **키**가 곧 로그인 대조 값이다. 여기서 다듬어야 `Kim@Ondo.test`로
+     신청한 계정을 `kim@ondo.test`로 다시 찾을 수 있다 */
+  const email = normalizeEmail(input.email);
+  const next = patchOverride(email, {
     storeName: input.storeName,
     bizNo: input.bizNo,
     status: "PENDING",
     appliedAt: formatAppliedAt(new Date()),
   });
-  const signedIn: SessionState = { ...next, email: input.email };
+  const signedIn: SessionState = { ...next, email };
   writeStorage(signedIn);
   commit(signedIn);
 }

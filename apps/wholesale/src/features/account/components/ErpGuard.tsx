@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { useArrival } from "../arrival";
 import { erpRedirectFor } from "../derive";
 import { useSession } from "../store";
 
@@ -22,6 +23,9 @@ import { useSession } from "../store";
 export function ErpGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const session = useSession();
+  /* 로그인·계좌 등록·건너뛰기의 도착지가 ERP다. 계정 화면은 `AuthPanel`이
+     받지만 ERP 쪽에는 제목을 소유한 공통 자리가 없어, 가드가 대신 낭독한다 */
+  const arrival = useArrival();
 
   const redirect =
     session.state === "unknown"
@@ -45,5 +49,14 @@ export function ErpGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  return children;
+  return (
+    <>
+      {/* 빈 채로 먼저 그린다 — 낭독 영역이 글자와 동시에 나타나면 낭독기가 그
+          변화를 놓친다 */}
+      <p className="sr-only" role="status">
+        {arrival}
+      </p>
+      {children}
+    </>
+  );
 }

@@ -5,8 +5,10 @@ import { Info } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
+import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
+  ARRIVAL_MESSAGE,
   DOCUMENT_LABEL,
   errorId,
   fieldId,
@@ -122,6 +124,9 @@ export function SignupView() {
       storeName: normalizeStoreName(values.storeName) ?? values.storeName,
       bizNo: normalizeBusinessNo(values.bizNo),
     });
+    /* 누른 버튼이 라우트와 함께 사라진다. 도착 화면이 접수 사실을 말하지
+       않으면 실행이 끝났는지 알 방법이 없다(`wholesale-account` F5) */
+    announceArrival(ACCOUNT_PATH.approval, ARRIVAL_MESSAGE.signedUp);
     router.replace(ACCOUNT_PATH.approval);
   };
 

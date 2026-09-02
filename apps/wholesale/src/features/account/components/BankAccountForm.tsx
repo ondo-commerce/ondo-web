@@ -30,6 +30,10 @@ import { FieldError, FieldHelp, RequiredLabel } from "./FieldError";
  * 칸을 두 번 적지 않으려고 폼만 떼어 둔다 — 정산 탭의 「내 정산 계좌」 변경
  * 다이얼로그가 별건 이슈로 열릴 때 이걸 그대로 다시 쓴다.
  *
+ * **이미 등록한 계좌를 고칠 때는 그 값으로 채워서 연다**(`initial`). 빈 칸으로
+ * 열면 원래 번호를 보면서 고칠 수가 없어 처음부터 다시 쳐야 하고, 그러면 고치려던
+ * 오타를 확인할 방법이 사라진다(`wholesale-account` F8).
+ *
  * **2열이 아니라 1열이다.** Figma 원본(`2334:3485`)은 512px 패널 안 2열이지만
  * 이 카드는 440px이고 칸이 3개뿐이다. 바깥 배치는 화면 사정을 따른다.
  *
@@ -42,14 +46,24 @@ import { FieldError, FieldHelp, RequiredLabel } from "./FieldError";
  *    이름이면 무엇을 넣는 칸인지 화면에서 읽을 수 없다.
  */
 export function BankAccountForm({
+  initial,
   actions,
   onSubmit,
 }: {
+  /**
+   * 폼을 열 때 채워 둘 값. 없으면 빈 폼(최초 등록)이다.
+   *
+   * 마운트 시점에만 읽는다 — 사장이 고치는 중에 바깥 값이 바뀌어 친 글자를
+   * 덮어쓰는 일이 없어야 한다.
+   */
+  initial?: BankAccountValues;
   /** 칸 아래 버튼들. 부르는 화면마다 다르다 — 제출 버튼은 `type="submit"`이다 */
   actions: ReactNode;
   onSubmit: (account: BankAccount) => void;
 }) {
-  const [values, setValues] = useState<BankAccountValues>(EMPTY_BANK_ACCOUNT);
+  const [values, setValues] = useState<BankAccountValues>(
+    initial ?? EMPTY_BANK_ACCOUNT,
+  );
   const [errors, setErrors] = useState<FieldErrors<BankField>>({});
 
   const setField = (field: BankField, next: string) => {

@@ -7,12 +7,14 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
   DOCUMENT_LABEL,
+  SESSION_REQUIRED_LEAD,
 } from "../constants";
 import { applicationFor, approvalSteps } from "../derive";
 import { signOut, useSession } from "../store";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
+import { SessionRequired } from "./SessionRequired";
 import { SummaryList } from "./SummaryList";
 
 /**
@@ -24,14 +26,26 @@ import { SummaryList } from "./SummaryList";
  * 로그인했든, 방금 무엇으로 신청했든 늘 같은 상호를 말한다(`retail-account` F1).
  * 소매는 세션이 없어 `/approval?store=…`로 주소에 실어 날랐는데, 그러면 주소를
  * 고쳐 **남의 상호명을 이 화면에 띄울 수 있다.** 도매는 그 통로를 만들지 않는다.
+ *
+ * ⚠️ **로그아웃 상태에서는 신청서를 그리지 않는다.** 쿼리스트링을 없애 놓고도
+ *    무세션 접근이라는 같은 통로가 남아 있었다 — 주소만 알면 더미 신청서
+ *    (`상호명 온도의류 · 사업자 등록번호 000-00-00000`)가 그대로 보였다
+ *    (`wholesale-account` F6). 지금은 값이 전부 자리표시자라 실피해가 없지만,
+ *    진짜 인증이 붙는 이슈에서 이 폴백이 남으면 그때는 남의 신청서가 된다.
  */
 export function ApprovalStatusView() {
   const session = useSession();
-  const account = session.state === "signedIn" ? session.account : null;
-  const application = applicationFor(
-    account,
-    session.state === "signedIn" ? session.appliedAt : null,
-  );
+
+  if (session.state !== "signedIn") {
+    return (
+      <SessionRequired
+        state={session.state}
+        lead={SESSION_REQUIRED_LEAD.approval}
+      />
+    );
+  }
+
+  const application = applicationFor(session.account, session.appliedAt);
 
   return (
     <>

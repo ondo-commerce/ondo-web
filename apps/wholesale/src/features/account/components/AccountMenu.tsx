@@ -1,7 +1,7 @@
 "use client";
 
 import { IconButton, Popover } from "@ondo/ui";
-import { CircleUser, LogOut, Wallet } from "lucide-react";
+import { CircleUser, LogOut, Pencil, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -70,20 +70,35 @@ export function AccountMenu() {
                 대신 등록한 계좌를 다시 보는 자리를 여기 하나 둔다 — 헤더는 어느
                 화면에서나 같은 자리라 사장이 찾아갈 곳이 하나로 고정된다.
 
-                등록했으면 **읽기 전용 한 줄**, 안 했으면 **누르면 가는 항목**이다.
-                안 넣은 사실이 상시로 남아야 건너뛴 계좌가 잊히지 않는다 */}
+                등록했으면 **읽기 전용 한 줄 + `계좌 수정`**, 안 했으면 **누르면
+                가는 항목**이다. 안 넣은 사실이 상시로 남아야 건너뛴 계좌가
+                잊히지 않고, 고치는 길이 있어야 오타 하나가 굳지 않는다 */}
             {account.bankAccount ? (
-              <p className="text-secondary-foreground text-body flex items-start gap-2 px-2.5 py-1.5">
-                <Wallet aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                <span className="min-w-0">
-                  <span className="text-muted-foreground">
-                    {BANK_MENU_LABEL.registered}
-                  </span>{" "}
-                  <span className="tabular-nums">
-                    {bankAccountSummary(account.bankAccount)}
+              <>
+                <p className="text-secondary-foreground text-body flex items-start gap-2 px-2.5 py-1.5">
+                  <Wallet aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="text-muted-foreground">
+                      {BANK_MENU_LABEL.registered}
+                    </span>{" "}
+                    <span className="tabular-nums">
+                      {bankAccountSummary(account.bankAccount)}
+                    </span>
                   </span>
-                </span>
-              </p>
+                </p>
+                {/* 읽기 전용 한 줄 **옆에** 고치는 길을 둔다. 등록하고 나면
+                    이 줄만 남아서 한 자 틀린 계좌번호를 화면에서 고칠 방법이
+                    없었다 — 소매 사장이 그 번호로 송금하는 값이라 되돌릴 수도
+                    없다(`wholesale-account` F8). 정산 탭은 건드리지 않는다 */}
+                <Link
+                  href={ACCOUNT_PATH.bankOnboarding}
+                  onClick={() => setOpen(false)}
+                  className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 items-center gap-2 rounded-md px-2.5"
+                >
+                  <Pencil aria-hidden className="size-3.5 shrink-0" />
+                  {BANK_MENU_LABEL.edit}
+                </Link>
+              </>
             ) : (
               <Link
                 href={ACCOUNT_PATH.bankOnboarding}
