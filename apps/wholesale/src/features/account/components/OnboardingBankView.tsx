@@ -11,12 +11,12 @@ import {
   BANK_CONFIRM,
   SESSION_REQUIRED_LEAD,
 } from "../constants";
-import { saveBankAccount, skipBankPrompt, useSession } from "../store";
+import { saveBankAccount, skipBankPrompt } from "../store";
 import type { BankAccount } from "../types";
 import { useReturnFocus } from "../useReturnFocus";
+import { AccountGateNotice, useAccountGate } from "./AccountGate";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { BankAccountForm } from "./BankAccountForm";
-import { SessionRequired } from "./SessionRequired";
 import { SummaryList } from "./SummaryList";
 import { WarnNotice } from "./WarnNotice";
 
@@ -47,7 +47,10 @@ import { WarnNotice } from "./WarnNotice";
  */
 export function OnboardingBankView() {
   const router = useRouter();
-  const session = useSession();
+  /* **승인된 계정만** 계좌를 낸다. 심사 중·거절 계정이 여기서 계좌를 등록해도
+     쓸 자리가 없다 — 소매 화면에 상품이 뜨지 않는 도매처의 계좌다. 상태를 안 보면
+     주소만 알아도 열렸다(`wholesale-account` F11) */
+  const gate = useAccountGate("APPROVED");
   const focus = useReturnFocus();
   /** 확인 단계에 올려 둔 계좌. `null`이면 아직 확인 차례가 아니다 */
   const [pending, setPending] = useState<BankAccount | null>(null);
@@ -57,18 +60,18 @@ export function OnboardingBankView() {
      눌렸는데 아무것도 저장되지 않고 이유 한 줄 없이 `/login`으로 떨어졌다.
      `sessionStorage`는 탭 단위라 주소를 새 탭·북마크로 여는 순간이 정확히 이
      상태다(`wholesale-account` F2) */
-  if (session.state !== "signedIn") {
+  if (!gate.pass) {
     return (
-      <SessionRequired
-        state={session.state}
+      <AccountGateNotice
+        blocked={gate.blocked}
         lead={SESSION_REQUIRED_LEAD.bankOnboarding}
       />
     );
   }
 
-  const email = session.account.email;
+  const email = gate.session.account.email;
   /** 이미 등록한 계좌. 있으면 이 화면은 수정 화면이다 */
-  const current = session.account.bankAccount;
+  const current = gate.session.account.bankAccount;
 
   /* `replace`다 — 뒤로 가기로 이 화면에 돌아오면 이미 낸 계좌를 또 내라고
      말하는 화면이 뜬다 */

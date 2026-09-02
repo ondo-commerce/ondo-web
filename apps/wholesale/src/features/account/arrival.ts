@@ -50,6 +50,13 @@ export function announceArrival(path: string, message: string): void {
  * ⚠️ **마운트한 주소로만 가져간다.** `usePathname`을 매번 보면, 라우트가 바뀌는
  *    도중에 아직 살아 있는 **떠나는 화면**이 새 주소를 먼저 읽고 자기 앞으로 온
  *    말이 아닌 것을 가져가 버린다. 그리고 그 화면은 곧 사라진다.
+ *
+ * ⚠️ **주소가 바뀌면 지운다.** 계정 5화면은 라우트가 바뀌면 컴포넌트가 통째로
+ *    사라져서 문구도 같이 사라지지만, ERP는 `(erp)/layout`의 `ErpGuard`가 한 번
+ *    마운트된 뒤 탭을 옮겨도 언마운트되지 않는다 — 상품 화면에서 받은
+ *    `…상품 화면이에요.`가 주문·재고·정산 화면에도 그대로 남아, 낭독기 사용자가
+ *    **지금 화면 이름을 틀리게 말하는 문장**을 만났다(`wholesale-account` F10).
+ *    도착 문구는 도착한 그 화면에서만 산다.
  */
 export function useArrival(): string | null {
   const pathname = usePathname();
@@ -69,6 +76,14 @@ export function useArrival(): string | null {
     }, 0);
     return () => clearTimeout(timer);
   }, []);
+
+  /* 도착한 자리를 떠나면 그 말은 더 이상 참이 아니다. 화면 이름을 담고 있어서
+     남아 있으면 다음 화면을 틀리게 소개한다 — 시간이 아니라 **주소**로 지운다.
+     낭독기가 언제 읽는지 앱은 알 수 없고, 타이머로 지우면 아직 읽는 중인
+     문장을 앱이 뺏는다 */
+  useEffect(() => {
+    if (pathname !== mountedAt.current) setMessage(null);
+  }, [pathname]);
 
   return message;
 }

@@ -122,6 +122,16 @@ export const ARRIVAL_MESSAGE = {
  */
 export const SESSION_REQUIRED_TITLE = "로그인이 필요해요";
 
+/**
+ * 아직 판정이 안 끝났거나, 자기 상태의 화면으로 옮기는 중에 **낭독기에만** 남기는 말.
+ *
+ * 둘 다 곧 사라질 한 프레임이라 화면에는 글자를 그리지 않는다 — 그때마다 안내가
+ * 번쩍이면 그게 더 눈에 띈다. 다만 화면이 조용히 바뀌면 낭독기 사용자는 아무 일도
+ * 일어나지 않은 것으로 듣기 때문에, 옮기는 중이라는 사실은 남긴다.
+ */
+export const SESSION_CHECKING_MESSAGE = "로그인 상태를 확인하고 있어요";
+export const SESSION_MOVING_MESSAGE = "지금 상태에 맞는 화면으로 옮기고 있어요";
+
 export const SESSION_REQUIRED_LEAD = {
   approval:
     "심사 현황은 로그인한 계정의 신청서만 보여드려요. 로그인하면 방금 낸 신청서가 열려요.",

@@ -10,11 +10,11 @@ import {
   SESSION_REQUIRED_LEAD,
 } from "../constants";
 import { applicationFor, approvalSteps } from "../derive";
-import { signOut, useSession } from "../store";
+import { signOut } from "../store";
+import { AccountGateNotice, useAccountGate } from "./AccountGate";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
-import { SessionRequired } from "./SessionRequired";
 import { SummaryList } from "./SummaryList";
 
 /**
@@ -32,20 +32,27 @@ import { SummaryList } from "./SummaryList";
  *    (`상호명 온도의류 · 사업자 등록번호 000-00-00000`)가 그대로 보였다
  *    (`wholesale-account` F6). 지금은 값이 전부 자리표시자라 실피해가 없지만,
  *    진짜 인증이 붙는 이슈에서 이 폴백이 남으면 그때는 남의 신청서가 된다.
+ *
+ * ⚠️ **`심사 중` 계정만 이 화면에 선다**(`useAccountGate`). 로그인만 보고 열어
+ *    주면 이미 승인된 계정이 자기 상호명으로 `가입 심사 중이에요`를 읽는다
+ *    (`wholesale-account` F11) — 앱이 사실이 아닌 말을 하는 자리다.
  */
 export function ApprovalStatusView() {
-  const session = useSession();
+  const gate = useAccountGate("PENDING");
 
-  if (session.state !== "signedIn") {
+  if (!gate.pass) {
     return (
-      <SessionRequired
-        state={session.state}
+      <AccountGateNotice
+        blocked={gate.blocked}
         lead={SESSION_REQUIRED_LEAD.approval}
       />
     );
   }
 
-  const application = applicationFor(session.account, session.appliedAt);
+  const application = applicationFor(
+    gate.session.account,
+    gate.session.appliedAt,
+  );
 
   return (
     <>

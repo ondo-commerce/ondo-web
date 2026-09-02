@@ -117,6 +117,33 @@ export function erpRedirectFor(account: Account | null): string | null {
   }
 }
 
+/**
+ * 계정 화면(`승인 대기` · `승인 거절` · `계좌 온보딩`)에 **설 자격**을 본다.
+ * `null`이면 그대로 통과, 아니면 이 계정이 서야 할 화면 주소다.
+ *
+ * `erpRedirectFor`의 계정 화면 짝이다. ERP는 상태를 봤는데 계정 화면은 세션
+ * 유무만 봐서, 로그인만 되어 있으면 자기 상태와 무관한 화면이 그대로 열렸다 —
+ * `심사 중` 계정이 주소로 `/approval/rejected`를 열면 **자기가 받은 적 없는
+ * 거절 사유 전문**이 보이고 `재신청하기`까지 눌려 신청 일시가 지금으로
+ * 덮였다(`wholesale-account` F11). 세션을 막은 F6 수정의 남은 절반이다.
+ *
+ * 보낼 곳을 `homePathFor`에 맡긴다 — "이 계정이 있어야 할 화면"을 정하는 규칙이
+ * 로그인 직후와 여기서 갈리면, 같은 계정이 들어온 경로에 따라 다른 화면에 선다.
+ *
+ * ⚠️ **되돌아오는 짝이 없어야 한다.** `homePathFor`가 돌려주는 세 주소는 각각
+ *    자기 상태를 통과시키는 화면이라(`/approval`←PENDING · `/approval/rejected`
+ *    ←REJECTED · 온보딩/`/products`←APPROVED) 여기서 보낸 화면이 다시 돌려보내는
+ *    일은 없다. 화면을 늘릴 때 이 대응을 같이 확인한다.
+ */
+export function accountRedirectFor(
+  account: Account,
+  bankPromptSeen: boolean,
+  allowed: AccountStatus,
+): string | null {
+  if (account.status === allowed) return null;
+  return homePathFor(account, bankPromptSeen);
+}
+
 export interface LoginValues {
   email: string;
   password: string;

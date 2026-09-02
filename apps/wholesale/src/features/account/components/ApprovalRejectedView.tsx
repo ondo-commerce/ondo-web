@@ -18,14 +18,14 @@ import {
 } from "../constants";
 import { approvalSteps, validateReapply } from "../derive";
 import { REJECTION } from "../fixtures";
-import { applyReapply, useSession } from "../store";
+import { applyReapply } from "../store";
 import type { AttachedFile, DocumentField } from "../types";
+import { AccountGateNotice, useAccountGate } from "./AccountGate";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { FieldError, FieldHelp } from "./FieldError";
 import { FileField } from "./FileField";
-import { SessionRequired } from "./SessionRequired";
 import { WarnBadge, WarnNotice } from "./WarnNotice";
 
 /** 두 칸을 한 상태로 든다 — 한쪽을 고를 때 다른 쪽 이름이 사라지면 안 된다 */
@@ -48,10 +48,15 @@ const NO_DOCUMENTS: Documents = { license: null, idCard: null };
  *    읽히고 서류가 붙고 `재신청하기`까지 눌린 뒤 **아무것도 저장되지 않은 채**
  *    `가입 심사 중이에요` 화면으로 넘어갔다 — 사장은 접수됐다고 믿고 결과를
  *    기다린다(`wholesale-account` F3). 거짓 성공은 실패보다 나쁘다.
+ *
+ * ⚠️ **거절된 계정만 이 화면에 선다**(`useAccountGate`). 로그인만 보고 열어 주면
+ *    `심사 중` 계정이 주소로 들어와 **자기가 받은 적 없는 거절 사유 전문**을 읽고
+ *    `재신청하기`까지 눌러 신청 일시를 지금으로 덮었다 — 이미 재신청을 낸 사장이
+ *    거절 화면을 다시 보고 접수가 안 된 줄 알고 또 낸다(`wholesale-account` F11).
  */
 export function ApprovalRejectedView() {
   const router = useRouter();
-  const session = useSession();
+  const gate = useAccountGate("REJECTED");
   const [documents, setDocuments] = useState<Documents>(NO_DOCUMENTS);
   /** 한 번 걸린 뒤에는 파일을 고르는 즉시 문구가 풀린다 */
   const [revealed, setRevealed] = useState(false);
@@ -60,16 +65,16 @@ export function ApprovalRejectedView() {
   const error = revealed ? found.license : undefined;
 
   /* 훅을 전부 부른 **뒤에** 가른다 — 훅 호출 순서는 렌더마다 같아야 한다 */
-  if (session.state !== "signedIn") {
+  if (!gate.pass) {
     return (
-      <SessionRequired
-        state={session.state}
+      <AccountGateNotice
+        blocked={gate.blocked}
         lead={SESSION_REQUIRED_LEAD.rejected}
       />
     );
   }
 
-  const email = session.account.email;
+  const email = gate.session.account.email;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
