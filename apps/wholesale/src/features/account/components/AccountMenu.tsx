@@ -16,25 +16,20 @@ import { signOut, useSession } from "../store";
 /**
  * 상단 헤더 오른쪽 끝 계정 드롭다운.
  *
- * `Popover`(Radix)를 쓰는 이유는 Esc·바깥 클릭·포커스 이동을 직접 만들지 않기
- * 위해서다. `role="menu"`는 쓰지 않는다 — 항목이 링크와 버튼이라 Tab으로
- * 순회하는 게 맞고, menu를 선언하면 화살표 키 조작을 기대하게 만들어 놓고
- * 주지 못한다.
+ * `role="menu"`는 쓰지 않는다 — 항목이 링크와 버튼이라 Tab으로 순회하는 게 맞고,
+ * menu를 선언하면 화살표 키 조작을 기대하게 만들어 놓고 주지 못한다.
  *
- * **상호명을 스스로 알지 않는다.** 셸(`shared/`)이 더미를 따로 들고 있으면
- * 세션이 바뀐 순간 헤더와 본문이 다른 이름을 말한다. 세션 보관소가 원본이다.
- *
- * ⚠️ 이 컴포넌트는 `features/account`에 있고 헤더는 `shared/`에 있다.
- *    `shared → features` 참조는 금지라(ESLint), 끼워 넣는 일은 `app/(erp)/layout.tsx`가
- *    한다 — import 방향이 `app → features → shared` 한 방향으로 남는다.
+ * **상호명을 스스로 알지 않는다.** 셸(`shared/`)이 더미를 따로 들면 세션이 바뀐
+ * 순간 헤더와 본문이 다른 이름을 말한다 — 세션 보관소가 원본이다. 끼워 넣는 일은
+ * `app/(erp)/layout.tsx`가 한다(`shared → features` 참조 금지).
  */
 export function AccountMenu() {
   const router = useRouter();
   const session = useSession();
   const [open, setOpen] = useState(false);
 
-  /* 가드 안쪽에서만 그려지므로 실제로는 늘 로그인 상태다. 판정 전 한 프레임에
-     헤더에서 버튼이 사라졌다 나타나지 않도록, 아이콘 자리는 늘 남긴다 */
+  /* 판정 전 한 프레임에 헤더에서 버튼이 사라졌다 나타나지 않도록 아이콘 자리는
+     늘 남긴다 */
   const account = session.state === "signedIn" ? session.account : null;
 
   return (
@@ -65,14 +60,9 @@ export function AccountMenu() {
 
             <div className="bg-border mx-1 my-1.5 h-px" />
 
-            {/* 정산 탭의 「내 정산 계좌」는 별건 이슈다(정산 화면에 계좌 관리와
-                선수금이 동시에 들어오는 중이라 그 한가운데를 건드리지 않는다).
-                대신 등록한 계좌를 다시 보는 자리를 여기 하나 둔다 — 헤더는 어느
-                화면에서나 같은 자리라 사장이 찾아갈 곳이 하나로 고정된다.
-
-                등록했으면 **읽기 전용 한 줄 + `계좌 수정`**, 안 했으면 **누르면
-                가는 항목**이다. 안 넣은 사실이 상시로 남아야 건너뛴 계좌가
-                잊히지 않고, 고치는 길이 있어야 오타 하나가 굳지 않는다 */}
+            {/* 정산 탭의 「내 정산 계좌」는 별건 이슈라(그쪽에 계좌 관리와 선수금이
+                동시에 들어오는 중이다) 계좌를 보고 고치는 자리를 여기 하나 둔다.
+                안 넣은 사실이 상시로 남아야 건너뛴 계좌가 잊히지 않는다 */}
             {account.bankAccount ? (
               <>
                 <p className="text-secondary-foreground text-body flex items-start gap-2 px-2.5 py-1.5">
@@ -86,10 +76,9 @@ export function AccountMenu() {
                     </span>
                   </span>
                 </p>
-                {/* 읽기 전용 한 줄 **옆에** 고치는 길을 둔다. 등록하고 나면
-                    이 줄만 남아서 한 자 틀린 계좌번호를 화면에서 고칠 방법이
-                    없었다 — 소매 사장이 그 번호로 송금하는 값이라 되돌릴 수도
-                    없다(`wholesale-account` F8). 정산 탭은 건드리지 않는다 */}
+                {/* 읽기 전용 한 줄 **옆에** 고치는 길을 둔다 — 이 줄만 남았을 때
+                    한 자 틀린 계좌번호를 고칠 방법이 없었고, 소매 사장이 그 번호로
+                    송금하는 값이라 되돌릴 수도 없다(`wholesale-account` F8) */}
                 <Link
                   href={ACCOUNT_PATH.bankOnboarding}
                   onClick={() => setOpen(false)}
@@ -117,8 +106,8 @@ export function AccountMenu() {
               onClick={() => {
                 setOpen(false);
                 signOut();
-                /* `replace`다 — 뒤로 가기로 로그아웃 직전 화면에 돌아가면
-                   가드가 다시 튕겨서 화면이 두 번 깜빡인다 */
+                /* `replace`다 — 뒤로 가기로 돌아가면 가드가 다시 튕겨서 화면이
+                   두 번 깜빡인다 */
                 router.replace(ACCOUNT_PATH.login);
               }}
               className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 w-full cursor-pointer items-center gap-2 rounded-md px-2.5"
@@ -127,8 +116,7 @@ export function AccountMenu() {
               로그아웃
             </button>
 
-            {/* 흉내라는 사실을 감추지 않는다. 로그아웃 바로 아래가, 사장이
-                "왜 갑자기 로그아웃됐지"를 묻는 자리다 */}
+            {/* 로그아웃 바로 아래가 "왜 갑자기 로그아웃됐지"를 묻는 자리다 */}
             <p className="text-muted-foreground mt-1.5 px-2.5 pb-1 text-xs leading-4.5">
               {SESSION_DISCLAIMER}
             </p>

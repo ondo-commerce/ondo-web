@@ -43,7 +43,7 @@ import { TwoCol } from "./TwoCol";
 type NoteField = "phone" | "storePhone" | "bizNo";
 type Notes = Partial<Record<NoteField, string>>;
 
-/** 여러 설명을 한 입력에 묶는다. 빈 것은 빼야 존재하지 않는 id를 가리키지 않는다 */
+/** 빈 것은 빼야 존재하지 않는 id를 가리키지 않는다 */
 function describedBy(
   ...ids: (string | false | undefined)[]
 ): string | undefined {
@@ -54,12 +54,9 @@ function describedBy(
 /**
  * 도매 회원가입. **입력 9칸 + 첨부 2종 = 11개.**
  *
- * 소매(7칸 + 첨부 1종)보다 넓은 560px 카드를 쓰는 이유: 같은 440px에 11개를 넣으면
- * 세로가 1.6배가 되고 2열 칸이 각 196px로 좁아져 `매장 대표 전화번호` 같은 긴
- * 라벨이 두 줄로 접힌다. 560px이면 2열이 각 252px로 라벨이 한 줄에 들어간다.
- *
- * 첨부가 2종인 것이 소매와의 결정적 차이다 — 도매를 한 겹 더 확인하기로 한 것이
- * 이 회차의 전제라, 거절 화면의 재첨부 칸도 2개다.
+ * 소매(7칸 + 첨부 1종)보다 넓은 560px 카드를 쓰는 이유: 440px에 11개를 넣으면 2열
+ * 칸이 각 196px로 좁아져 `매장 대표 전화번호` 같은 긴 라벨이 두 줄로 접힌다.
+ * 560px이면 2열이 각 252px로 라벨이 한 줄에 들어간다.
  */
 export function SignupView() {
   const router = useRouter();
@@ -86,10 +83,7 @@ export function SignupView() {
 
   /**
    * 칸을 떠날 때 구분자만 맞춘다. **타이핑 중에는 손대지 않는다** — 커서가 튄다.
-   *
-   * 전화번호와 사업자 등록번호가 **다른 함수**를 쓴다. 둘 다 숫자 10자리인데
-   * 전화번호는 3-3-4, 사업자 등록번호는 3-2-5다. 한 함수가 판정하면 한쪽이
-   * 반드시 틀린다.
+   * 전화번호와 사업자 등록번호가 **다른 함수**를 쓰는 이유는 `derive.ts`에 있다.
    */
   const normalizeOnBlur = (field: NoteField) => {
     const raw = values[field];
@@ -116,16 +110,13 @@ export function SignupView() {
       return;
     }
 
-    /* 보낼 서버가 없다. "심사 중 계정 하나가 생겼다"까지가 이번 범위다.
-       방금 적은 상호명·사업자 등록번호를 세션에 얹어야 다음 화면이 남의 상호를
-       말하지 않는다 */
+    /* 방금 적은 상호명·사업자 등록번호를 세션에 얹어야 다음 화면이 남의 상호를
+       말하지 않는다(`retail-account` F1) */
     applySignup({
       email: values.email.trim().toLowerCase(),
       storeName: normalizeStoreName(values.storeName) ?? values.storeName,
       bizNo: normalizeBusinessNo(values.bizNo),
     });
-    /* 누른 버튼이 라우트와 함께 사라진다. 도착 화면이 접수 사실을 말하지
-       않으면 실행이 끝났는지 알 방법이 없다(`wholesale-account` F5) */
     announceArrival(ACCOUNT_PATH.approval, ARRIVAL_MESSAGE.signedUp);
     router.replace(ACCOUNT_PATH.approval);
   };
@@ -140,7 +131,6 @@ export function SignupView() {
       placeholder: string;
       help?: string;
       maxLength?: number;
-      /** 필수 칸. `*`와 sr-only `(필수)`만이 아니라 속성으로도 전달한다 */
       required?: boolean;
       /** 2열 묶음 안이거나 섹션 마지막 칸이면 아래 여백을 지운다 */
       last?: boolean;
@@ -152,8 +142,7 @@ export function SignupView() {
     const note = notes[field as NoteField];
     const helpId = options.help ? `${fieldId(field)}-help` : undefined;
     const noteId = note ? `${fieldId(field)}-note` : undefined;
-    /* 상한에 닿았다는 사실을 말한다. `maxLength`가 넘는 글자를 애초에 막지만,
-       붙여넣기는 조용히 잘리기 때문에 그 자리에서 이유가 보여야 한다 */
+    /* 붙여넣기는 `maxLength`에서 조용히 잘려서 그 자리에 이유가 보여야 한다 */
     const capped =
       options.maxLength !== undefined && value.length >= options.maxLength;
     const cappedId = capped ? `${fieldId(field)}-cap` : undefined;
@@ -202,7 +191,7 @@ export function SignupView() {
   const fileField = (field: DocumentField) => (
     <FormField
       className={cn("mb-4 last:mb-0", FIELD_LABEL_CLASS)}
-      /* `htmlFor`를 주지 않는다 — 점선 상자가 이미 이 입력의 `<label for>`다 */
+      /* `htmlFor`를 주지 않는다 — 이유는 `FileField` */
       label={
         <span id={labelId(field)}>
           <RequiredLabel>{DOCUMENT_LABEL[field]}</RequiredLabel>
@@ -375,8 +364,7 @@ export function SignupView() {
           </AuthSection>
 
           <AuthSection>
-            {/* 미동의여도 잠그지 않는다. 누르면 못 채운 자리로 데려간다 —
-                잠긴 버튼은 왜 못 누르는지 말하지 않는다 */}
+            {/* 미동의여도 잠그지 않는다 — 잠긴 버튼은 왜 못 누르는지 말하지 않는다 */}
             <Button type="submit" size="lg" className="w-full">
               가입하기
             </Button>

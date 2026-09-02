@@ -24,32 +24,21 @@ import { WarnNotice } from "./WarnNotice";
  * 최초 로그인 정산 계좌 온보딩. **등록한 계좌를 고치는 자리이기도 하다.**
  *
  * 이 값이 **소매 화면의 「입금 계좌 안내」로 그대로 나간다** — 소매 사장은 그걸
- * 보고 자기 은행 앱에서 송금한다. 지금 소매 `features/settlement/fixtures.ts`의
- * 계좌는 마스킹 더미이고, 도매 쪽에 계좌를 받는 자리가 없어서 그 값이 영원히
- * 채워지지 않는다.
+ * 보고 자기 은행 앱에서 송금한다. 정산 탭은 **한 파일도 건드리지 않는다**: 그쪽에
+ * 계좌 관리와 선수금이 동시에 들어오고 있어 한가운데를 건드리면 충돌만 만든다.
  *
- * **건너뛸 수 있다.** 계좌를 안 넣었다고 ERP 전체를 막으면 계좌와 무관한 업무
- * (주문 확인·재고 입고·출고)까지 멈춘다 — 아침에 주문부터 확인해야 하는 사장을
- * 계좌 화면에 가둬 두는 건 업무 순서를 앱이 정하는 일이다. 대신 안 넣은 사실은
- * 상단 계정 메뉴에 상시로 남는다.
+ * **건너뛸 수 있다.** 계좌와 무관한 업무까지 멈추지 않게 — 자세한 이유는
+ * `store.skipBankPrompt`.
  *
- * 정산 탭은 **한 파일도 건드리지 않는다.** 등록한 계좌를 보고 고치는 자리는
- * 이번 회차에서 계정 메뉴와 이 화면 둘이다 — 정산 탭에는 지금 계좌 관리 화면과
- * 선수금이 동시에 들어오고 있어 그 한가운데를 건드리면 충돌만 만든다.
- *
- * 화면이 두 얼굴을 갖는 이유(`wholesale-account` F8):
- * - **계좌 없음** — 최초 등록. 빈 폼 + `나중에 입력하기`.
- * - **계좌 있음** — 수정. **기존 값이 채워진 폼** + `그만두기`. 등록하고 나면
- *   계정 메뉴의 계좌 줄이 읽기 전용이 되어 **한 자 틀린 번호를 고칠 길이 없었다.**
- *   되돌릴 수 없는 값이라(소매 사장이 그 번호로 송금한다) 고칠 통로가 있어야 한다.
- *
- * 그리고 저장 **직전에 확인 단계**를 한 번 둔다 — 등록도 수정도 같다.
+ * 화면이 두 얼굴을 갖는 이유(`wholesale-account` F8): 등록하고 나면 계정 메뉴의
+ * 계좌 줄이 읽기 전용이 되어 **한 자 틀린 번호를 고칠 길이 없었다.** 계좌가 있으면
+ * 기존 값이 채워진 수정 폼, 없으면 빈 등록 폼이다. 저장 **직전 확인 단계**는 둘 다
+ * 거친다.
  */
 export function OnboardingBankView() {
   const router = useRouter();
-  /* **승인된 계정만** 계좌를 낸다. 심사 중·거절 계정이 여기서 계좌를 등록해도
-     쓸 자리가 없다 — 소매 화면에 상품이 뜨지 않는 도매처의 계좌다. 상태를 안 보면
-     주소만 알아도 열렸다(`wholesale-account` F11) */
+  /* **승인된 계정만** 계좌를 낸다 — 소매 화면에 상품이 뜨지 않는 도매처의 계좌는
+     쓸 자리가 없다. 상태를 안 보면 주소만 알아도 열렸다(`wholesale-account` F11) */
   const gate = useAccountGate("APPROVED");
   const focus = useReturnFocus();
   /** 확인 단계에 올려 둔 계좌. `null`이면 아직 확인 차례가 아니다 */
@@ -57,9 +46,7 @@ export function OnboardingBankView() {
 
   /* 훅을 전부 부른 **뒤에** 가른다 — 훅 호출 순서는 렌더마다 같아야 한다.
      세션이 없으면 폼 자체를 내주지 않는다: 예전에는 3칸을 다 채우고 버튼까지
-     눌렸는데 아무것도 저장되지 않고 이유 한 줄 없이 `/login`으로 떨어졌다.
-     `sessionStorage`는 탭 단위라 주소를 새 탭·북마크로 여는 순간이 정확히 이
-     상태다(`wholesale-account` F2) */
+     눌렸는데 아무것도 저장되지 않고 `/login`으로 떨어졌다(`wholesale-account` F2) */
   if (!gate.pass) {
     return (
       <AccountGateNotice
@@ -73,8 +60,7 @@ export function OnboardingBankView() {
   /** 이미 등록한 계좌. 있으면 이 화면은 수정 화면이다 */
   const current = gate.session.account.bankAccount;
 
-  /* `replace`다 — 뒤로 가기로 이 화면에 돌아오면 이미 낸 계좌를 또 내라고
-     말하는 화면이 뜬다 */
+  /* `replace`다 — 뒤로 가기로 돌아오면 이미 낸 계좌를 또 내라는 화면이 뜬다 */
   const leave = (message: string) => {
     announceArrival(ACCOUNT_PATH.erpHome, message);
     router.replace(ACCOUNT_PATH.erpHome);
@@ -108,12 +94,9 @@ export function OnboardingBankView() {
       >
         <AuthSection>
           <BankAccountForm
-            /* 수정으로 열렸으면 지금 값이 채워져 있다. 빈 칸으로 열면 원래
-               번호를 보면서 고칠 수 없다(`wholesale-account` F8) */
             initial={current ?? undefined}
             onSubmit={(account) => {
-              /* 저장하지 않는다 — 확인 단계로 올린다. 되돌릴 수 없는 값이라
-                 친 그대로를 한 번 더 보여 주고 묻는다 */
+              /* 저장하지 않는다 — 확인 단계로 올린다 */
               focus.remember();
               setPending(account);
             }}
@@ -152,10 +135,7 @@ export function OnboardingBankView() {
         </AuthSection>
       </AuthPanel>
 
-      {/* 저장 직전 확인 한 번. 계좌번호는 나중에 고치면 되는 값이 아니다 —
-          한 자 틀리면 소매 사장이 그 번호로 송금한다(`wholesale-account` F8).
-
-          폼 **밖**에 둔다. 다이얼로그 안의 버튼은 Radix Portal을 넘어 부모 폼으로
+      {/* 폼 **밖**에 둔다 — 다이얼로그 안의 버튼은 Radix Portal을 넘어 부모 폼으로
           이벤트가 버블한다(`retail-settings` F2) */}
       <Dialog
         open={pending !== null}
@@ -171,7 +151,7 @@ export function OnboardingBankView() {
 
           {pending ? (
             <div className="mt-4">
-              {/* 친 값을 그대로 다시 보여 준다 — 요약이 아니라 대조용이다 */}
+              {/* 요약이 아니라 대조용이다 — 친 값을 그대로 다시 보여 준다 */}
               <SummaryList
                 items={[
                   { label: "은행", value: pending.bankName },
@@ -184,8 +164,8 @@ export function OnboardingBankView() {
 
           {current ? (
             <div className="mt-4">
-              {/* 수정은 **덮어쓰기**다. 무엇이 무엇으로 바뀌는지 두 값을 같이
-                  보여 주지 않으면 고친 자리를 눈으로 대조할 수 없다 */}
+              {/* 수정은 **덮어쓰기**다 — 두 값을 같이 보여 주지 않으면 고친 자리를
+                  눈으로 대조할 수 없다 */}
               <WarnNotice>
                 지금 등록된 계좌({current.bankName} {current.accountNo})는 이
                 값으로 바뀌어요.
