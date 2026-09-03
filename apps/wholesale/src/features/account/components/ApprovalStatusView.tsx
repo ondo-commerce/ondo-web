@@ -7,30 +7,45 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
   DOCUMENT_LABEL,
+  SESSION_REQUIRED_LEAD,
 } from "../constants";
 import { applicationFor, approvalSteps } from "../derive";
-import { signOut, useSession } from "../store";
+import { signOut } from "../store";
+import { AccountGateNotice, useAccountGate } from "./AccountGate";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { SummaryList } from "./SummaryList";
 
 /**
- * 가입 심사 중 화면.
+ * 가입 심사 중 화면. 하는 일은 "지금 어디쯤이고 언제 끝나는가"를 말하는 것 하나다.
  *
- * 이 화면이 하는 일은 "지금 어디쯤이고 언제 끝나는가"를 말하는 것 하나다.
+ * 상호명·사업자 등록번호를 **세션에서 읽는다** — 더미 상수를 읽으면 누가
+ * 로그인했든 늘 같은 상호를 말한다(`retail-account` F1).
  *
- * 상호명·사업자 등록번호를 **세션에서 읽는다.** 더미 상수를 읽으면 누가
- * 로그인했든, 방금 무엇으로 신청했든 늘 같은 상호를 말한다(`retail-account` F1).
- * 소매는 세션이 없어 `/approval?store=…`로 주소에 실어 날랐는데, 그러면 주소를
- * 고쳐 **남의 상호명을 이 화면에 띄울 수 있다.** 도매는 그 통로를 만들지 않는다.
+ * ⚠️ **로그아웃 상태에서는 신청서를 그리지 않는다.** 주소만 알면 더미 신청서가
+ *    그대로 보였다(`wholesale-account` F6). 지금은 값이 전부 자리표시자라 실피해가
+ *    없지만, 진짜 인증이 붙으면 그때는 남의 신청서가 된다.
+ *
+ * ⚠️ **`심사 중` 계정만 이 화면에 선다**(`useAccountGate`). 로그인만 보고 열어
+ *    주면 이미 승인된 계정이 자기 상호명으로 `가입 심사 중이에요`를 읽는다
+ *    (`wholesale-account` F11) — 앱이 사실이 아닌 말을 하는 자리다.
  */
 export function ApprovalStatusView() {
-  const session = useSession();
-  const account = session.state === "signedIn" ? session.account : null;
+  const gate = useAccountGate("PENDING");
+
+  if (!gate.pass) {
+    return (
+      <AccountGateNotice
+        blocked={gate.blocked}
+        lead={SESSION_REQUIRED_LEAD.approval}
+      />
+    );
+  }
+
   const application = applicationFor(
-    account,
-    session.state === "signedIn" ? session.appliedAt : null,
+    gate.session.account,
+    gate.session.appliedAt,
   );
 
   return (
@@ -50,8 +65,7 @@ export function ApprovalStatusView() {
               { label: "상호명", value: application.storeName },
               { label: "사업자 등록번호", value: application.bizNo },
               { label: "신청 일시", value: application.appliedAt },
-              /* 도매는 서류가 2종이다. 무엇을 냈는지가 화면에 남아야 거절됐을 때
-                 무엇을 다시 내는지 안다 */
+              /* 무엇을 냈는지가 남아야 거절됐을 때 무엇을 다시 내는지 안다 */
               {
                 label: "제출 서류",
                 value: `${DOCUMENT_LABEL.license} · ${DOCUMENT_LABEL.idCard}`,
@@ -74,13 +88,12 @@ export function ApprovalStatusView() {
           </Notice>
         </AuthSection>
 
-        {/* 왼쪽 정렬. 이 화면에는 "지금 해야 할 일"이 없어서 오른쪽 끝으로
-            밀어 두면 확정 액션처럼 읽힌다 */}
+        {/* 왼쪽 정렬 — 이 화면에는 "지금 해야 할 일"이 없어서 오른쪽 끝에 두면
+            확정 액션처럼 읽힌다 */}
         <AuthSection className="flex gap-2">
           {/* `<a>`로 남긴다 — onClick + router.push로 만들면 새 탭 열기가 죽는다.
-              누르면 세션을 푼다: 이 화면에서 로그인 화면으로 돌아간다는 건
-              "다른 계정으로 들어가겠다"는 뜻이고, 세션이 남아 있으면 주소창에
-              `/products`를 쳤을 때 다시 이 화면으로 튕겨 온다 */}
+              누르면 세션을 푸는 이유: 여기서 로그인 화면으로 돌아간다는 건 "다른
+              계정으로 들어가겠다"는 뜻이다 */}
           <Button asChild variant="line">
             <Link href={ACCOUNT_PATH.login} onClick={() => signOut()}>
               로그인 화면으로

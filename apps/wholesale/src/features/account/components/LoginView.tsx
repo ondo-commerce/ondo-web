@@ -5,8 +5,10 @@ import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
+  ARRIVAL_MESSAGE,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
@@ -17,25 +19,22 @@ import {
 import {
   demoAccountHint,
   EMPTY_LOGIN,
-  findAccount,
   firstInvalidField,
   homePathFor,
   revalidateField,
   validateLogin,
   type LoginValues,
 } from "../derive";
-import { signIn } from "../store";
+import { lookupAccount, signIn } from "../store";
 import type { FieldErrors, LoginField } from "../types";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 
 /**
- * 로그인 화면.
- *
- * 실제 인증이 아니다 — **이메일 문자열 대조뿐이고 비밀번호는 검증하지 않는다.**
- * 그 사실을 감추지 않으려고 개발 환경에서는 더미 계정 목록을 화면 아래에 그대로
- * 보여 준다(프로덕션 빌드에서는 통째로 사라진다).
+ * 로그인 화면. 실제 인증이 아니다 — **이메일 문자열 대조뿐이고 비밀번호는 검증하지
+ * 않는다.** 그 사실을 감추지 않으려고 개발 환경에서만 더미 계정 목록을 아래에
+ * 보여 준다.
  */
 export function LoginView() {
   const router = useRouter();
@@ -65,7 +64,9 @@ export function LoginView() {
       return;
     }
 
-    const account = findAccount(values.email);
+    /* `derive.findAccount`가 아니라 세션까지 보는 쪽을 부른다 — 더미 4건만 보면
+     **방금 가입 신청을 마친 이메일로 다시 못 들어온다**(`wholesale-account` F7) */
+    const account = lookupAccount(values.email);
     if (!account) {
       /* 실패해도 입력값을 지우지 않는다. 오타 하나 때문에 이메일을 다시 치게
          만들면 그게 곧 다음 실패다 */
@@ -75,14 +76,16 @@ export function LoginView() {
     }
 
     setBanner(null);
-    /* 도착지를 세션이 돌려준 값으로 정한다 — 같은 탭에서 이미 온보딩을 지나간
-       계정이면 그 사실이 덮어쓰기에 남아 있고, 훅으로 읽으면 다음 렌더에나 온다 */
+    /* 도착지를 세션이 돌려준 값으로 정한다 — 훅으로 읽으면 다음 렌더에나 온다 */
     const signedIn = signIn(account.email);
-    router.replace(
+    const home =
       signedIn.state === "signedIn"
         ? homePathFor(signedIn.account, signedIn.bankPromptSeen)
-        : ACCOUNT_PATH.login,
-    );
+        : ACCOUNT_PATH.login;
+
+    /* 도착지가 상태마다 갈리므로 방금 정한 주소를 그대로 넘긴다(`arrival.ts`) */
+    announceArrival(home, ARRIVAL_MESSAGE.signedIn);
+    router.replace(home);
   };
 
   return (
@@ -186,13 +189,12 @@ export function LoginView() {
         승인 대기 중인 계정으로 로그인하면 심사 현황 화면이 열려요
       </AuthFoot>
 
-      {/* 백엔드가 없어 이 목록 밖의 이메일은 전부 실패한다. 어느 이메일이 어느
-          화면으로 가는지 화면이 말해 주지 않으면 아무도 네 갈래를 볼 수 없다.
+      {/* 어느 이메일이 어느 화면으로 가는지 말해 주지 않으면 네 갈래를 볼 수 없다.
 
-          **개발 환경에서만 그린다.** 확정 와이어프레임에 없는 줄이고, 더미 계정
-          목록이 실서비스 화면에 실려 나가면 안 된다(`retail-account` F6이 정확히
-          이 줄을 프로덕션 빌드로 내보냈다). `process.env.NODE_ENV`는 빌드 때
-          문자열로 박히므로 프로덕션 번들에서는 이 가지가 통째로 사라진다 */}
+          ⚠️ **개발 환경에서만 그린다.** 더미 계정 목록이 실서비스 화면에 실려
+             나가면 안 된다(`retail-account` F6이 정확히 이 줄을 프로덕션 빌드로
+             내보냈다). `process.env.NODE_ENV`는 빌드 때 문자열로 박혀서 프로덕션
+             번들에서는 이 가지가 통째로 사라진다 */}
       {process.env.NODE_ENV === "production" ? null : (
         <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
           화면 확인용 계정 (아직 실제 인증이 없어요 · 비밀번호는 아무 값이나

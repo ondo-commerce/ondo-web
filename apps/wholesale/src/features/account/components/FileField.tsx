@@ -9,18 +9,14 @@ import type { AttachedFile } from "../types";
 /**
  * 점선 첨부칸. **UI까지다** — 고른 파일을 어디로도 보내지 않는다(백엔드 없음).
  *
- * 실제 `<input type="file">`을 화면에서 숨기고 라벨을 상자로 그린다. 상자를
- * `<div onClick>`으로 만들면 키보드로 닿지 않고 화면 낭독기가 폼 컨트롤로 읽지도
- * 않는다. 숨긴 입력은 여전히 포커스를 받으므로 `peer-focus`로 상자에 링을 그린다
- * — 제출 후 이 칸으로 포커스를 옮겼을 때 어디로 갔는지 보여야 하기 때문이다.
+ * 상자를 `<div onClick>`으로 만들면 키보드로 닿지 않고 낭독기가 폼 컨트롤로 읽지도
+ * 않아, 진짜 `<input type="file">`을 숨기고 라벨을 상자로 그린다. 숨긴 입력도
+ * 포커스는 받으므로 `peer-focus`로 상자에 링을 그린다.
  *
- * **`<label for>`는 칸 하나에 하나뿐이다.** 점선 상자가 이미 이 입력의 라벨이라
- * 바깥 이름표까지 `<label for>`이면 두 글이 이어 붙어 한 칸의 이름으로 읽힌다
- * (`사업자 등록증 (필수) 파일 첨부 JPG · PNG · PDF`). 바깥 이름표는 `<span id>`로
- * 두고 입력이 `aria-labelledby`로 가리킨다(`retail-account` F5).
- *
- * 고른 파일은 부모가 들고 있다. 검증에 실패하거나 다른 칸을 고쳐도 이름이
- * 사라지지 않아야 한다.
+ * ⚠️ **`<label for>`는 칸 하나에 하나뿐이다.** 점선 상자가 이미 이 입력의 라벨이라
+ *    바깥 이름표까지 `<label for>`이면 두 글이 이어 붙어 한 칸의 이름으로 읽힌다
+ *    (`사업자 등록증 (필수) 파일 첨부 JPG · PNG · PDF`). 바깥 이름표는 `<span id>`
+ *    로 두고 입력이 `aria-labelledby`로 가리킨다(`retail-account` F5).
  */
 export function FileField({
   id,
@@ -38,7 +34,7 @@ export function FileField({
   file: AttachedFile | null;
   invalid?: boolean;
   required?: boolean;
-  /** 이 칸의 이름표 id. 위 주석의 이유로 `<label for>`가 아니라 이쪽을 쓴다 */
+  /** 위 ⚠️의 이유로 `<label for>`가 아니라 이쪽을 쓴다 */
   labelledBy?: string;
   describedBy?: string;
   onSelect: (file: AttachedFile | null) => void;
