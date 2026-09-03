@@ -52,3 +52,75 @@ export type FieldErrors<K extends string> = Partial<Record<K, string>>;
 
 /** 로그인 폼의 칸 이름. 오류 표시·포커스 이동이 이 이름으로 칸을 찾는다 */
 export type LoginField = "email" | "password";
+
+/**
+ * 첨부한 파일. **이름과 용량만** 든다.
+ *
+ * `File` 객체를 그대로 들고 다니지 않는 이유: 보낼 곳이 없다. 백엔드가 붙기
+ * 전까지 첨부는 화면에 이름을 남기는 데서 끝난다(네트워크 요청 0회).
+ */
+export interface AttachedFile {
+  name: string;
+  size: number;
+}
+
+/**
+ * 회원가입 폼의 칸 이름. **소매보다 네 개 많다** —
+ * `storePhone`(매장 대표 전화) · `address`(사업장 주소) · `idCard`(대표자 신분증).
+ *
+ * 도매를 소매(등록증 1종)보다 한 겹 더 확인하기로 한 것이 이 회차의 전제다.
+ */
+export type SignupField =
+  | "storeName"
+  | "ownerName"
+  | "email"
+  | "password"
+  | "passwordConfirm"
+  | "phone"
+  | "storePhone"
+  | "bizNo"
+  | "address"
+  | "license"
+  | "idCard"
+  | "agreeService"
+  | "agreePrivacy";
+
+/** 두 칸 다 파일이라 재첨부 화면이 같은 이름으로 칸을 찾는다 */
+export type DocumentField = "license" | "idCard";
+
+/** 약관 2종. 둘 다 필수라 선택 항목이 없다 */
+export interface Terms {
+  /** 체크박스에 붙는 이름 */
+  label: string;
+  /** 다이얼로그에 펼치는 전문 — 문단 배열 */
+  body: string[];
+}
+
+/**
+ * 진행 표시 한 칸의 상태.
+ *
+ * `current`를 `done`과 나누는 이유: 켜짐/꺼짐 두 값이면 "지금 어디인가"를 화면이
+ * 말할 수 없다. 거절은 마지막 칸이 `current`다 — 지나간 단계가 아니라
+ * **지금 멈춰 있는 자리**다.
+ */
+export type ApprovalStepState = "done" | "current" | "todo";
+
+export interface ApprovalStep {
+  label: string;
+  state: ApprovalStepState;
+}
+
+/** 승인 대기·거절 화면이 보여 주는 신청 요약 */
+export interface Application {
+  storeName: string;
+  /** 자리표시자만 쓴다. 실제 형식의 번호를 소스에 적지 않는다 */
+  bizNo: string;
+  appliedAt: string;
+}
+
+/** 거절 결과. 사유는 운영자가 쓴 자유 문장이라 코드가 만들지 않는다 */
+export interface Rejection {
+  reason: string;
+  decidedAt: string;
+  decidedBy: string;
+}

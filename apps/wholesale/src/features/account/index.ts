@@ -9,5 +9,8 @@
  * `app/(erp)/layout.tsx`가 여기서 가져다 셸에 끼워 넣는다.
  */
 export { AccountMenu } from "./components/AccountMenu";
+export { ApprovalRejectedView } from "./components/ApprovalRejectedView";
+export { ApprovalStatusView } from "./components/ApprovalStatusView";
 export { ErpGuard } from "./components/ErpGuard";
 export { LoginView } from "./components/LoginView";
+export { SignupView } from "./components/SignupView";
