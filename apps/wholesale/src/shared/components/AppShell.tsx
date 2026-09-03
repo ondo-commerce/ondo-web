@@ -13,10 +13,18 @@ import { Topbar } from "@/shared/components/Topbar";
  * ⚠️ min-h-0이 사슬처럼 이어져야 한다. flex 자식의 기본값은 min-height:auto라
  *    한 군데만 빠져도 자식이 줄어들지 못하고 스크롤이 화면 밖으로 밀린다.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  accountMenu,
+  children,
+}: {
+  /** 헤더 오른쪽 끝 계정 드롭다운. `app/(erp)/layout.tsx`가 끼워 넣는다 —
+      세션을 읽는 물건이라 `features/account`에 있고, `shared`는 그쪽을 볼 수 없다 */
+  accountMenu: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex h-dvh flex-col">
-      <Topbar />
+      <Topbar accountMenu={accountMenu} />
       {/* 페이지 루트는 이 flex 칸을 min-h-0 flex-1로 이어받는다 */}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col p-2">
         {children}
