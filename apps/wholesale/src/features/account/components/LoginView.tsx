@@ -208,8 +208,9 @@ export function LoginView() {
              번들에서는 이 가지가 통째로 사라진다 */}
       {process.env.NODE_ENV === "production" ? null : (
         <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
-          개발용 시드 계정 (도매 API 서버가 떠 있어야 통해요) —{" "}
-          {DEV_SEED_ACCOUNT}
+          {process.env.NEXT_PUBLIC_API_MOCK === "1"
+            ? "목 모드 (NEXT_PUBLIC_API_MOCK=1) — 아무 값이나 승인 완료로 통과해요"
+            : `개발용 시드 계정 (도매 API 서버가 떠 있어야 통해요) — ${DEV_SEED_ACCOUNT}`}
         </p>
       )}
     </>
