@@ -31,7 +31,7 @@ import { signInWithStatus } from "../store";
 import type { FieldErrors, LoginField } from "../types";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
-import { FieldError } from "./FieldError";
+import { FieldError } from "@/shared/components/FieldError";
 
 /**
  * 로그인 화면. **도매 서버에 실제로 로그인한다** — 성공하면 서버가 `SESSION_WHOLESALE`

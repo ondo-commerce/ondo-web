@@ -1,25 +1,25 @@
 import { ColorDot, Chip, Notice } from "@ondo/ui";
 import Link from "next/link";
-import type { Product } from "../types";
+import type { ProductView } from "../types";
 
 /**
  * 게시글이 **없는** 상품의 펼침 내용.
- * 판매가·SKU는 게시글에 붙는 값이라 아직 없다 — 색상별 사이즈만 보여준다.
+ * 판매가·SKU 코드는 게시글에 붙는 값이라 아직 없다 — 색상별 사이즈만 보여준다.
  */
-export function ProductColorSizeList({ product }: { product: Product }) {
+export function ProductColorSizeList({ product }: { product: ProductView }) {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
         {product.colors.map((color) => {
           const sizes = product.skus
-            .filter((s) => s.color === color.name)
+            .filter((s) => s.colorId === color.id)
             .map((s) => s.size);
 
           return (
-            <div key={color.name} className="flex items-center gap-4">
+            <div key={color.id} className="flex items-center gap-4">
               <div className="flex w-32 shrink-0 items-center gap-1.5 text-sm">
                 <ColorDot color={color.hex} />
-                <span>{color.displayName ?? color.name}</span>
+                <span>{color.name}</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {sizes.map((size) => (

@@ -3,19 +3,10 @@
 import { Button, Checkbox, ColorDot, IconButton, Table } from "@ondo/ui";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 import { SIZES } from "../constants";
-import type { PaletteColor } from "../constants";
-import type { SizeName } from "../types";
-import { ChevronDown } from "lucide-react";
-
-export interface OptionDraft {
-  id: string;
-  /** 팔레트 26종 중 하나. 표의 행 하나가 색상 하나다 */
-  color: PaletteColor;
-  sizes: SizeName[];
-}
+import type { ColorItem, OptionDraft, SkuSize } from "../types";
 
 /** SIZES 축 순서를 지키면서 size 하나를 켜고 끈다 */
-function toggleSize(sizes: SizeName[], size: SizeName): SizeName[] {
+function toggleSize(sizes: SkuSize[], size: SkuSize): SkuSize[] {
   return sizes.includes(size)
     ? sizes.filter((s) => s !== size)
     : SIZES.filter((s) => s === size || sizes.includes(s));
@@ -36,10 +27,17 @@ export function ProductOptionMatrix({
   options,
   onChange,
   disabled = false,
+  triggerId,
+  describedBy,
+  invalid = false,
 }: {
   options: OptionDraft[];
   onChange: (next: OptionDraft[]) => void;
   disabled?: boolean;
+  /** `색상 선택` 버튼의 id. 서버가 옵션을 지적하면 여기로 포커스를 옮긴다 */
+  triggerId?: string;
+  describedBy?: string;
+  invalid?: boolean;
 }) {
   const skuCount = options.reduce((n, o) => n + o.sizes.length, 0);
 
@@ -47,19 +45,19 @@ export function ProductOptionMatrix({
    * 팝오버가 팔레트 순서로 돌려주므로 그 순서를 그대로 행 순서로 쓴다.
    * 이미 있던 색은 객체를 그대로 재사용한다 — 새로 만들면 사이즈 선택이 날아간다.
    */
-  const commitColors = (colors: PaletteColor[]) =>
+  const commitColors = (colors: ColorItem[]) =>
     onChange(
       colors.map(
         (color) =>
-          options.find((o) => o.color.name === color.name) ?? {
-            id: `opt-${color.name}`,
+          options.find((o) => o.color.id === color.id) ?? {
+            id: `opt-${color.id}`,
             color,
             sizes: [],
           },
       ),
     );
 
-  const setCellSize = (id: string, size: SizeName) =>
+  const setCellSize = (id: string, size: SkuSize) =>
     onChange(
       options.map((o) =>
         o.id === id ? { ...o, sizes: toggleSize(o.sizes, size) } : o,
@@ -72,11 +70,11 @@ export function ProductOptionMatrix({
    * 머리글 체크박스의 표시와 일괄 토글의 방향이 **같은 식**을 봐야 한다.
    * 보이는 상태와 눌렀을 때의 동작이 어긋나면 정반대로 조작하게 된다.
    */
-  const isEverySize = (size: SizeName) =>
+  const isEverySize = (size: SkuSize) =>
     options.every((o) => o.sizes.includes(size));
 
   /** 전부 켜져 있으면 전부 끄고, 아니면 전부 켠다 */
-  const setAllSize = (size: SizeName) => {
+  const setAllSize = (size: SkuSize) => {
     const everyone = isEverySize(size);
     onChange(
       options.map((o) => ({
@@ -92,19 +90,18 @@ export function ProductOptionMatrix({
     <div className="w-full space-y-1">
       <div className="flex items-center gap-3">
         <ColorPickerPopover
-          selected={options.map((o) => o.color.name)}
+          selected={options.map((o) => o.color.id)}
           onConfirm={commitColors}
         >
-          <Button variant="soft" disabled={disabled}>
+          <Button
+            id={triggerId}
+            variant="soft"
+            disabled={disabled}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
+          >
             색상 선택
           </Button>
-          {/* <button
-            type="button"
-            disabled={disabled}
-            className="border-border bg-card hover:bg-secondary focus-visible:ring-ring inline-flex h-8 items-center gap-1.5 rounded-button border px-2.5 text-sm focus-visible:ring-2 focus-visible:outline-hidden disabled:cursor-not-allowed"
-          >
-            <span aria-hidden>◎</span> 색상 선택
-          </button> */}
         </ColorPickerPopover>
 
         {options.length > 0 ? (
@@ -121,9 +118,7 @@ export function ProductOptionMatrix({
         ) : null}
       </div>
 
-      {options.length === 0 ? (
-        <></>
-      ) : (
+      {options.length === 0 ? null : (
         <Table>
           <Table.Head>
             <tr>

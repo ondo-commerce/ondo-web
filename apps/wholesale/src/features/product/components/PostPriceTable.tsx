@@ -1,23 +1,8 @@
 "use client";
 
 import { ColorDot, Input, Table } from "@ondo/ui";
+import type { PriceRow, PriceValue } from "../types";
 import { formatNumber } from "@/shared/lib/format";
-
-export interface PriceRow {
-  id: string;
-  color: string;
-  colorHex: string;
-  /** 같은 색상의 첫 행에만 색상을 표시한다 */
-  firstOfColor: boolean;
-  size: string;
-  stock: number;
-  avgCost: number;
-}
-
-export interface PriceValue {
-  orderLimit: number;
-  price: number;
-}
 
 /**
  * 옵션별 판매가 & 주문 제한 재고.
@@ -26,6 +11,9 @@ export interface PriceValue {
  *
  * 현재고는 늘 보인다. 재고는 게시글과 별개로 등록되므로 게시글을 쓰는 시점에
  * 이미 값이 있을 수 있다.
+ *
+ * 행은 옵션 매트릭스(색상 × 사이즈)에서 나온다(`priceRows.ts`). 요청의 `variantPrices`가
+ * "전 variant를 빠짐없이" 채워야 하므로(스펙) 행 집합이 곧 보낼 집합이다.
  */
 export function PostPriceTable({
   rows,
@@ -34,6 +22,7 @@ export function PostPriceTable({
   onApplyAll,
   disabled = false,
   showAvgCost = true,
+  describedBy,
 }: {
   rows: PriceRow[];
   values: Record<string, PriceValue>;
@@ -51,9 +40,11 @@ export function PostPriceTable({
    * 0원으로 채워 보여주면 "원가가 0인 상품"으로 읽히므로 열째로 뺀다.
    */
   showAvgCost?: boolean;
+  /** 서버가 가격을 지적했을 때(`PRICE_REQUIRED`) 그 문구의 id. 표 전체가 그 설명을 받는다 */
+  describedBy?: string;
 }) {
   return (
-    <Table>
+    <Table aria-describedby={describedBy}>
       <Table.Head>
         <Table.Row>
           <Table.Th align="left">색상</Table.Th>

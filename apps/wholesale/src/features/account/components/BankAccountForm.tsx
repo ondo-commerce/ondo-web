@@ -22,7 +22,11 @@ import {
 } from "../derive";
 import { BANKS } from "../fixtures";
 import type { BankAccount, BankField, FieldErrors } from "../types";
-import { FieldError, FieldHelp, RequiredLabel } from "./FieldError";
+import {
+  FieldError,
+  FieldHelp,
+  RequiredLabel,
+} from "@/shared/components/FieldError";
 
 /**
  * 정산 계좌 3칸 폼. 온보딩과 (앞으로 생길) 계좌 수정 다이얼로그가 같이 쓰려고

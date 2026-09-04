@@ -17,6 +17,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AddSlot, Chip, ImageSlot, SlotGrid } from "@ondo/ui";
+import Image from "next/image";
+import { isImageUrl } from "../derive";
 
 const MAX_IMAGE_COUNT = 9;
 
@@ -32,12 +34,16 @@ const MAX_IMAGE_COUNT = 9;
  * 이동 버튼까지 얹을 자리가 없어서 키보드 경로를 따로 낼 수가 없었다.
  * dnd-kit의 KeyboardSensor는 같은 조작을 Space(집기) → 화살표 → Space(놓기)로
  * 그대로 복제해준다. 스크린리더 안내 문구도 기본으로 붙는다.
+ *
+ * ⚠️ 추가(`AddSlot`)는 아직 아무 일도 하지 않는다 — 스냅샷에 이미지 업로드 경로가 없다.
+ *    요청의 `images[]`는 URL 문자열이라 서버가 준 것만 다시 보낼 수 있다(04-wire §3-5).
  */
 export function PostImageGrid({
   images,
   onReorder,
   disabled = false,
 }: {
+  /** 이미지 URL. 인덱스가 곧 순서 */
   images: string[];
   /**
    * from 번째를 to 번째 자리로 옮겨달라는 요청. 배열을 직접 고치지 않고
@@ -103,11 +109,23 @@ export function PostImageGrid({
                 isCover={i === 0}
                 disabled={disabled}
               >
-                {img}
+                {isImageUrl(img) ? (
+                  <Image
+                    src={img}
+                    alt={`이미지 ${i + 1}`}
+                    fill
+                    sizes="88px"
+                    // 이미지 호스트가 미정이라 remotePatterns가 없다(ProductDetailPanel 주석)
+                    unoptimized
+                    className="rounded-control object-cover"
+                  />
+                ) : (
+                  img
+                )}
               </SortableImageSlot>
             ))}
             {shown.length < MAX_IMAGE_COUNT ? (
-              <AddSlot disabled={disabled} />
+              <AddSlot disabled={disabled} aria-label="이미지 추가" />
             ) : null}
           </SlotGrid>
         </SortableContext>
