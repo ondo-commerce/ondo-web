@@ -2,7 +2,6 @@ import {
   ACCOUNT_NO_MAX,
   ACCOUNT_NO_MIN,
   ACCOUNT_PATH,
-  ACCOUNT_STATUS_LABEL,
   APPROVAL_STEP_LABELS,
   BANK_MESSAGE,
   MAX_LENGTH,
@@ -79,6 +78,25 @@ export function homePathFor(account: Account, bankPromptSeen: boolean): string {
       return account.bankAccount === null && !bankPromptSeen
         ? ACCOUNT_PATH.bankOnboarding
         : ACCOUNT_PATH.erpHome;
+  }
+}
+
+/**
+ * 로그인 직후 도착지. 승인 상태만 보고 정한다.
+ *
+ * **계좌 온보딩으로 보내지 않는다** — 계좌가 등록돼 있는지는 `GET /bank-accounts`
+ * 를 불러야 알 수 있는데 로그인 응답에는 승인 상태뿐이다. 모르는 채로 온보딩에
+ * 세우면 이미 계좌가 있는 사장에게 등록 화면을 다시 들이민다. 계좌 API를 붙이는
+ * 회차에서 `homePathFor`로 되돌린다.
+ */
+export function homePathForStatus(status: AccountStatus): string {
+  switch (status) {
+    case "PENDING":
+      return ACCOUNT_PATH.approval;
+    case "REJECTED":
+      return ACCOUNT_PATH.rejected;
+    case "APPROVED":
+      return ACCOUNT_PATH.erpHome;
   }
 }
 
@@ -176,21 +194,6 @@ export function revalidateField<K extends string>(
   if (message === undefined) delete next[field];
   else next[field] = message;
   return next;
-}
-
-/**
- * 로그인 화면 맨 아래 "화면 확인용 계정" 한 줄.
- *
- * ⚠️ **그리는 자리는 개발 환경으로 감싼다**(`LoginView`) — 앞 회차
- *    `retail-account` F6이 정확히 이 목록을 프로덕션 빌드로 내보냈다.
- */
-export function demoAccountHint(): string {
-  return ACCOUNTS.map((a) => {
-    const status = ACCOUNT_STATUS_LABEL[a.status];
-    const bank =
-      a.status === "APPROVED" && !a.bankAccount ? " · 계좌 없음" : "";
-    return `${a.email} (${status}${bank})`;
-  }).join(" · ");
 }
 
 /** 계정 메뉴의 이니셜 한 글자. `[0]`으로 자르면 이모지·일부 한자가 반쪽만 남는다 */

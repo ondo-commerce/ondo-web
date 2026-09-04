@@ -75,6 +75,13 @@ export const LOGIN_FAILED_MESSAGE =
   "이메일 또는 비밀번호를 다시 확인해 주세요.";
 
 /**
+ * 자격증명 문제가 **아닌** 실패. 서버가 안 떠 있거나, 닿았는데 500이 온 경우다.
+ * 로그인 실패와 갈라 쓰는 이유: 비밀번호를 다시 치게 만들어도 해결되지 않는다.
+ */
+export const SERVER_UNREACHABLE_MESSAGE =
+  "지금 서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.";
+
+/**
  * 실행 뒤 **도착 화면이 낭독기에 말하는 한 줄**(`arrival.ts`). "무슨 일이 일어났고
  * 지금 어디인가"를 둘 다 말한다 — 실행 버튼이 라우트와 함께 사라지기 때문이다.
  */
@@ -152,6 +159,15 @@ export const VALIDATION_MESSAGE = {
   agreePrivacy: "개인정보 수집·이용에 동의해 주세요.",
   reapply: "다시 올릴 서류를 한 가지 이상 첨부해 주세요.",
 } as const;
+
+/**
+ * BE가 **로컬 서버**에 심는 개발 계정(`LocalDevAccountSeeder`, `@Profile("local")`).
+ * 이제 진짜 인증이라 비밀번호도 맞아야 한다.
+ *
+ * ⚠️ dev 서버(`api-dev.ddmondo.co.kr`)에는 이 계정이 없다 — 거기 쓸 계정은 BE에
+ * 따로 받는다. 승인 대기·거절 계정은 시드에 없어서 그 화면들은 실서버로 확인할 수 없다.
+ */
+export const DEV_SEED_ACCOUNT = "dev@ondo.test / Ondo!2345";
 
 /**
  * 흉내라는 사실을 감추지 않는 한 줄. 계정 메뉴(로그아웃이 있는 자리)에 둔다 —

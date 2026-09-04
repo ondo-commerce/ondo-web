@@ -14,30 +14,35 @@ import {
   FIELD_LABEL_CLASS,
   INVALID_INPUT_CLASS,
   LOGIN_FAILED_MESSAGE,
+  DEV_SEED_ACCOUNT,
   LOGIN_FIELD_ORDER,
+  SERVER_UNREACHABLE_MESSAGE,
 } from "../constants";
 import {
-  demoAccountHint,
   EMPTY_LOGIN,
   firstInvalidField,
-  homePathFor,
+  homePathForStatus,
   revalidateField,
   validateLogin,
   type LoginValues,
 } from "../derive";
-import { lookupAccount, signIn } from "../store";
+import { isCredentialFailure, useLoginMutation } from "../api/session";
+import { signInWithStatus } from "../store";
 import type { FieldErrors, LoginField } from "../types";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 
 /**
- * 로그인 화면. 실제 인증이 아니다 — **이메일 문자열 대조뿐이고 비밀번호는 검증하지
- * 않는다.** 그 사실을 감추지 않으려고 개발 환경에서만 더미 계정 목록을 아래에
- * 보여 준다.
+ * 로그인 화면. **도매 서버에 실제로 로그인한다** — 성공하면 서버가 `SESSION_WHOLESALE`
+ * 쿠키를 심고, 승인 상태에 맞는 화면으로 옮긴다. 미승인 계정도 로그인은 성공하고
+ * (서버가 200을 준다) 심사 화면으로 간다.
+ *
+ * 개발 환경에서만 시드 계정을 아래에 보여 준다.
  */
 export function LoginView() {
   const router = useRouter();
+  const loginMutation = useLoginMutation();
   const [values, setValues] = useState<LoginValues>(EMPTY_LOGIN);
   const [errors, setErrors] = useState<FieldErrors<LoginField>>({});
   /* 폼 **위** 한 줄. 어느 칸이 틀렸는지 말하지 않는 실패는 칸에 붙일 수 없다 */
@@ -51,8 +56,9 @@ export function LoginView() {
     );
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (loginMutation.isPending) return;
 
     const found = validateLogin(values);
     setErrors(found);
@@ -64,26 +70,29 @@ export function LoginView() {
       return;
     }
 
-    /* `derive.findAccount`가 아니라 세션까지 보는 쪽을 부른다 — 더미 4건만 보면
-     **방금 가입 신청을 마친 이메일로 다시 못 들어온다**(`wholesale-account` F7) */
-    const account = lookupAccount(values.email);
-    if (!account) {
+    setBanner(null);
+
+    let status;
+    try {
+      status = await loginMutation.mutateAsync(values);
+    } catch (error) {
       /* 실패해도 입력값을 지우지 않는다. 오타 하나 때문에 이메일을 다시 치게
          만들면 그게 곧 다음 실패다 */
-      setBanner(LOGIN_FAILED_MESSAGE);
+      setBanner(
+        isCredentialFailure(error)
+          ? LOGIN_FAILED_MESSAGE
+          : SERVER_UNREACHABLE_MESSAGE,
+      );
       document.getElementById(fieldId("email"))?.focus();
       return;
     }
 
-    setBanner(null);
-    /* 도착지를 세션이 돌려준 값으로 정한다 — 훅으로 읽으면 다음 렌더에나 온다 */
-    const signedIn = signIn(account.email);
-    const home =
-      signedIn.state === "signedIn"
-        ? homePathFor(signedIn.account, signedIn.bankPromptSeen)
-        : ACCOUNT_PATH.login;
+    /* 서버가 알려준 상태를 세션에 적어 둔다 — `GET /me`가 없어서 새로고침하면
+       다시 물어볼 곳이 없다. 화면들(`ErpGuard`·계정 메뉴)은 이 값을 본다 */
+    signInWithStatus(values.email, status);
 
     /* 도착지가 상태마다 갈리므로 방금 정한 주소를 그대로 넘긴다(`arrival.ts`) */
+    const home = homePathForStatus(status);
     announceArrival(home, ARRIVAL_MESSAGE.signedIn);
     router.replace(home);
   };
@@ -162,9 +171,11 @@ export function LoginView() {
 
           <AuthSection>
             {/* 잠그지 않는다. 못 채운 칸이 있어도 눌리고, 누르면 그 칸으로 간다 —
-                잠긴 버튼은 왜 못 누르는지 말하지 않는다 */}
+                잠긴 버튼은 왜 못 누르는지 말하지 않는다. 중복 제출은 버튼이
+                아니라 핸들러가 막는다(`isPending`). 서버를 실제로 기다리게 된
+                뒤로는 글자로 그 사실을 말한다 — 아무 반응이 없으면 또 누른다 */}
             <Button type="submit" size="lg" className="w-full">
-              로그인
+              {loginMutation.isPending ? "로그인 중…" : "로그인"}
             </Button>
           </AuthSection>
         </form>
@@ -197,8 +208,8 @@ export function LoginView() {
              번들에서는 이 가지가 통째로 사라진다 */}
       {process.env.NODE_ENV === "production" ? null : (
         <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
-          화면 확인용 계정 (아직 실제 인증이 없어요 · 비밀번호는 아무 값이나
-          통과해요) — {demoAccountHint()}
+          개발용 시드 계정 (도매 API 서버가 떠 있어야 통해요) —{" "}
+          {DEV_SEED_ACCOUNT}
         </p>
       )}
     </>
