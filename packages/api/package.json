@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mocks/browser": "./src/mocks/browser.ts"
   },
   "scripts": {
     "codegen": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts --properties-required-by-default",
@@ -17,5 +18,8 @@
     "eslint": "^9.39.5",
     "openapi-typescript": "^7.10.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "msw": "^2.15.0"
   }
 }

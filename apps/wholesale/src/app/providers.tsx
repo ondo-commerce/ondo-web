@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   MutationCache,
   QueryCache,
@@ -29,6 +29,37 @@ function handleSessionLoss(error: unknown): void {
     return;
   }
   window.location.assign("/login");
+}
+
+/**
+ * `NEXT_PUBLIC_API_MOCK=1`이면 MSW worker가 뜬 **뒤에** 화면을 그린다.
+ *
+ * 순서가 전부다. worker보다 첫 쿼리가 먼저 나가면 그 요청은 목이 아니라 실서버로
+ * 새어 나가고, 화면은 절반은 목 절반은 실서버를 본다. 그래서 준비 전엔 아무것도 안 그린다.
+ *
+ * 동적 import인 이유: msw와 스냅샷 JSON이 프로덕션 번들에 실리면 안 된다.
+ * `NEXT_PUBLIC_*`은 빌드 때 문자열로 박히므로 스위치가 꺼진 번들에서 이 가지는 사라진다.
+ * 실서버 연동 뒤에도 지우지 않는다(ADR-0002) — BE가 아플 때 화면 작업이 멈추지 않게.
+ */
+const MOCK_ENABLED = process.env.NEXT_PUBLIC_API_MOCK === "1";
+
+function MockGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(!MOCK_ENABLED);
+
+  useEffect(() => {
+    if (!MOCK_ENABLED) return;
+    let cancelled = false;
+    void import("@ondo/api/mocks/browser")
+      .then((mocks) => mocks.startMockWorker())
+      .then(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return ready ? children : null;
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -64,6 +95,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <MockGate>{children}</MockGate>
+    </QueryClientProvider>
   );
 }
