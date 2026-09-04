@@ -57,8 +57,9 @@ const CONTENT_TYPE_JSON = "application/json";
  *
  * 204는 본문이 없으므로 `undefined`를 준다 — 로그아웃처럼 결과가 없는 호출용이다.
  *
- * **브라우저 전용이다.** 상대경로로만 부르고 next.config.ts의 rewrites가 API 서버로
- * 넘긴다 — 그래야 세션 쿠키가 이 앱 오리진의 퍼스트파티 쿠키가 되고 CORS가 사라진다.
+ * **브라우저 전용이다.** 상대경로로만 부르고 앱의 `app/api/[...path]/route.ts`
+ * 프록시({@link proxyRequest})가 API 서버로 넘긴다 — 그래야 세션 쿠키가 이 앱 오리진의
+ * 퍼스트파티 쿠키가 되고 CORS가 사라진다.
  * 서버 컴포넌트에서는 {@link createServerApi}를 쓴다.
  */
 export async function apiFetch<T>(
