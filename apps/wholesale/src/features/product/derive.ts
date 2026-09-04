@@ -17,6 +17,7 @@ import type {
   PostFormValue,
   PostStatus,
   PostStatusKey,
+  PriceValue,
   ProductCreateRequest,
   ProductDetail,
   ProductField,
@@ -250,6 +251,46 @@ export const EMPTY_POST_FORM: PostFormValue = {
   prices: {},
 };
 
+/** 아직 안 친 칸. 빈 문자열이라 요청에는 0으로 간다(`parseIntegerText`) */
+export const EMPTY_PRICE_VALUE: PriceValue = { orderLimit: "", price: "" };
+
+/**
+ * 가격표 칸에 들어갈 수 있는 글자 — **0 이상 정수의 숫자뿐**이다. 빈 칸도 유효하다(=0).
+ *
+ * 소수점·부호·`e`·쉼표는 여기서 걸린다. `type="number"`에 맡기지 않는 이유는
+ * 브라우저가 `45.5`·`-3`·`1e5`를 스스로 받아 주고, `Number()`로 바꾸면 `455`·`3`·`5`가
+ * 되어 친 값과 다른 값이 저장되기 때문이다(계좌번호 `ACCOUNT_NO_SHAPE`와 같은 규칙).
+ */
+export function isIntegerText(text: string): boolean {
+  return /^\d*$/.test(text);
+}
+
+/** `isIntegerText`를 통과한 문자열만 받는다. 빈 칸은 0 — 주문 제한 0 = 무제한, 가격 0은 서버가 `PRICE_REQUIRED`로 잡는다 */
+export function parseIntegerText(text: string): number {
+  return text === "" ? 0 : Number(text);
+}
+
+/**
+ * 요청에 실릴 행(옵션 매트릭스의 색×사이즈) 가운데 정수가 아닌 값이 든 행의 id.
+ * `prices`에 남은 옛 키(지운 색)는 보지 않는다 — 안 보낼 칸이 저장을 막으면 안 된다.
+ */
+export function invalidPriceRowIds(
+  product: ProductFormValue,
+  post: PostFormValue,
+): string[] {
+  return product.options.flatMap((option) =>
+    option.sizes
+      .map((size) => priceRowId(option.color.id, size))
+      .filter((id) => {
+        const value = post.prices[id];
+        return (
+          value !== undefined &&
+          !(isIntegerText(value.price) && isIntegerText(value.orderLimit))
+        );
+      }),
+  );
+}
+
 /** 상품에 담긴 값을 폼 초기값으로 편다 */
 export function toProductForm(product: ProductView): ProductFormValue {
   const [large, medium, small] = product.categoryPath;
@@ -279,7 +320,8 @@ export function toPostForm(product: ProductView): PostFormValue {
     prices: Object.fromEntries(
       product.skus.map((s) => [
         priceRowId(s.colorId, s.size),
-        { orderLimit: s.orderLimit, price: s.price },
+        // 칸은 문자열을 든다(`PriceValue`). 서버 숫자를 그대로 글자로
+        { orderLimit: String(s.orderLimit), price: String(s.price) },
       ]),
     ),
   };
@@ -309,12 +351,13 @@ export function toListingRequest(
         const known = existing.find(
           (s) => s.colorId === option.color.id && s.size === size,
         );
+        // 정수 문자열이라는 건 `validateProductForm`이 먼저 보장한다
         return {
           ...(known ? { variantId: known.id } : {}),
           colorId: option.color.id,
           size,
-          salePrice: value?.price ?? 0,
-          orderLimit: value?.orderLimit ?? 0,
+          salePrice: parseIntegerText(value?.price ?? ""),
+          orderLimit: parseIntegerText(value?.orderLimit ?? ""),
         };
       }),
     ),
@@ -340,28 +383,63 @@ export function toCreateRequest(
   };
 }
 
+/** 두 게시글 요청이 같은 내용인가. `toListingRequest`가 만든 것끼리만 비교한다 */
+function isSameListingRequest(
+  a: ListingUpsertRequest,
+  b: ListingUpsertRequest,
+): boolean {
+  const aPrices = a.variantPrices ?? [];
+  const bPrices = b.variantPrices ?? [];
+  return (
+    a.title === b.title &&
+    a.description === b.description &&
+    a.isSinglePieceAllowed === b.isSinglePieceAllowed &&
+    (a.images ?? []).join("\n") === (b.images ?? []).join("\n") &&
+    aPrices.length === bPrices.length &&
+    aPrices.every((p, i) => {
+      const q = bPrices[i];
+      return (
+        q !== undefined &&
+        p.variantId === q.variantId &&
+        p.colorId === q.colorId &&
+        p.size === q.size &&
+        p.salePrice === q.salePrice &&
+        p.orderLimit === q.orderLimit
+      );
+    })
+  );
+}
+
 /**
- * PATCH 본문. 생략 = 무변경이라 `listing`은 보낼 이유가 있을 때만 싣는다:
- * 게시글이 있고 잠기지 않았거나(판매중), 없던 상품이 제목을 채웠을 때(→ 서버가 생성 분기).
- * 시즌 종료로 잠긴 폼은 값이 못 바뀌었으므로 안 보낸다.
+ * PATCH 본문에 `listing`을 실을지. 생략 = 무변경이라 보낼 이유가 있을 때만 싣는다.
+ *
+ * - 게시글이 없는 상품: 제목을 채웠을 때(→ 서버가 생성 분기)
+ * - 게시글이 있는 상품: **폼으로 만든 요청이 서버 값으로 만든 요청과 다를 때.**
+ *   게시 상태는 보지 않는다 — 제목·판매가를 고친 뒤 `시즌 종료`로 바꿔 저장하면
+ *   잠긴 폼에 고친 값이 그대로 보이는데 요청에서 빠져 조용히 버려졌다(wire-product F1).
+ *   상태 자체는 PATCH가 받지 않으므로(스펙) 시즌 종료·재개 호출이 따로 뒤따른다.
+ *
+ * 폼끼리가 아니라 **요청끼리** 비교하는 이유: `variantPrices`는 전체 교체라(스펙)
+ * 게시글 칸은 그대로여도 사이즈를 하나 켜면 행이 늘어 보내야 한다.
  */
 export function shouldSendListing(
   current: ProductView,
+  product: ProductFormValue,
   post: PostFormValue,
-  status: PostStatus,
 ): boolean {
-  return current.post !== null
-    ? status !== "SEASON_ENDED"
-    : post.name.trim() !== "";
+  if (current.post === null) return post.name.trim() !== "";
+  return !isSameListingRequest(
+    toListingRequest(product, post, current.skus),
+    toListingRequest(toProductForm(current), toPostForm(current), current.skus),
+  );
 }
 
 export function toUpdateRequest(
   product: ProductFormValue,
   post: PostFormValue,
   current: ProductView,
-  status: PostStatus,
 ): ProductUpdateRequest {
-  const sendListing = shouldSendListing(current, post, status);
+  const sendListing = shouldSendListing(current, product, post);
 
   return {
     name: product.name.trim(),
@@ -400,6 +478,10 @@ export function validateProductForm(
     errors.colorOptions = "색상을 고르고 사이즈를 하나 이상 켜 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
+  // 정수가 아닌 글자는 서버에 못 보낸다(int32). 어느 칸인지는 칸의 aria-invalid가 가리킨다
+  if (post && invalidPriceRowIds(product, post).length > 0)
+    errors["listing.variantPrices"] =
+      "판매가와 주문 제한은 숫자만 입력해 주세요. 소수점·쉼표·부호는 뺍니다.";
   return errors;
 }
 

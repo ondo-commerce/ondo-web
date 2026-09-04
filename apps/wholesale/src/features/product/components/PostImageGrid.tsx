@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { AddSlot, Chip, ImageSlot, SlotGrid } from "@ondo/ui";
 import Image from "next/image";
+import { useId } from "react";
 import { isImageUrl } from "../derive";
 
 const MAX_IMAGE_COUNT = 9;
@@ -35,9 +36,14 @@ const MAX_IMAGE_COUNT = 9;
  * dnd-kit의 KeyboardSensor는 같은 조작을 Space(집기) → 화살표 → Space(놓기)로
  * 그대로 복제해준다. 스크린리더 안내 문구도 기본으로 붙는다.
  *
- * ⚠️ 추가(`AddSlot`)는 아직 아무 일도 하지 않는다 — 스냅샷에 이미지 업로드 경로가 없다.
+ * ⚠️ 추가(`AddSlot`)는 **늘 비활성**이다 — 스냅샷에 이미지 업로드 경로가 없다.
  *    요청의 `images[]`는 URL 문자열이라 서버가 준 것만 다시 보낼 수 있다(04-wire §3-5).
+ *    눌러도 아무 일이 없는 슬롯은 "고장"으로 읽혀서(wire-product F3) 슬롯을 끄고
+ *    그 이유를 한 줄로 적는다. `AddSlot`은 `packages/ui`라 호출부에서만 처리한다.
+ *    TODO(#156): 업로드 API가 오면 `UPLOAD_UNAVAILABLE`을 지우고 슬롯에 파일 선택을 단다.
  */
+const UPLOAD_UNAVAILABLE: boolean = true;
+
 export function PostImageGrid({
   images,
   onReorder,
@@ -54,6 +60,8 @@ export function PostImageGrid({
   disabled?: boolean;
 }) {
   const shown = images.slice(0, MAX_IMAGE_COUNT);
+  // 비활성 슬롯이 왜 눌리지 않는지 낭독기에도 이어 읽히게 문구와 묶는다
+  const uploadNoteId = useId();
 
   const sensors = useSensors(
     // 8px은 끌기와 클릭을 가르는 문턱이다. 없으면 삭제 버튼을 누르려던 손떨림이
@@ -125,11 +133,25 @@ export function PostImageGrid({
               </SortableImageSlot>
             ))}
             {shown.length < MAX_IMAGE_COUNT ? (
-              <AddSlot disabled={disabled} aria-label="이미지 추가" />
+              <AddSlot
+                disabled={disabled || UPLOAD_UNAVAILABLE}
+                aria-disabled={disabled || UPLOAD_UNAVAILABLE}
+                aria-label="이미지 추가"
+                aria-describedby={UPLOAD_UNAVAILABLE ? uploadNoteId : undefined}
+              />
             ) : null}
           </SlotGrid>
         </SortableContext>
       </DndContext>
+      {UPLOAD_UNAVAILABLE ? (
+        <p
+          id={uploadNoteId}
+          className="text-muted-foreground text-xs leading-4.5"
+        >
+          이미지 업로드는 준비 중이에요. 지금은 등록된 이미지의 순서만 바꿀 수
+          있어요.
+        </p>
+      ) : null}
     </div>
   );
 }

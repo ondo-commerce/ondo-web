@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { PostImageGrid } from "./PostImageGrid";
 import { PostPriceTable } from "./PostPriceTable";
 import { errorId, fieldId, INVALID_INPUT_CLASS } from "../constants";
-import type { ProductFormErrors } from "../derive";
+import { EMPTY_PRICE_VALUE, type ProductFormErrors } from "../derive";
 import type { PostFormValue, PostStatus, PriceRow } from "../types";
 import { FieldError } from "@/shared/components/FieldError";
 
@@ -182,10 +182,14 @@ export function PostFormPanel({
               ) : null}
             </FormField>
 
+            {/*
+             * 필수(*) 표시를 붙이지 않는다 — 업로드 API가 없어 지금은 채울 수 없는 칸이다.
+             * 필수라고 써 두고 채울 길이 없으면 사장은 자기가 뭘 빠뜨렸는지 찾는다.
+             * TODO(#156): 업로드 API가 오면 `required`를 되살린다(PostImageGrid 주석 참고).
+             */}
             <FormField
               label="게시글 이미지"
               hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하거나, 슬롯을 선택한 뒤 스페이스바로 집어 방향키로 순서를 바꿀 수 있어요."
-              required
             >
               {/*
                * disabled 를 손으로 내려보내는 유일한 필드다. 위 fieldset 이
@@ -260,10 +264,7 @@ export function PostFormPanel({
                       priceRows.map((r) => [
                         r.id,
                         {
-                          ...(value.prices[r.id] ?? {
-                            orderLimit: 0,
-                            price: 0,
-                          }),
+                          ...(value.prices[r.id] ?? EMPTY_PRICE_VALUE),
                           [field]: v,
                         },
                       ]),
