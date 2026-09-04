@@ -1,13 +1,12 @@
 import {
   ACCOUNT_PATH,
-  ACCOUNT_STATUS_LABEL,
   APPROVAL_STEP_LABELS,
   STORE_QUERY,
   PASSWORD_MIN_LENGTH,
   VALIDATION_MESSAGE,
   withStoreName,
 } from "./constants";
-import { ACCOUNTS, APPLICATION, SIGNUP_TERMS } from "./fixtures";
+import { APPLICATION, SIGNUP_TERMS } from "./fixtures";
 import type {
   Account,
   AccountProfile,
@@ -27,12 +26,6 @@ import type {
  * 여기서 RFC를 따라가면 실제로 쓰는 주소를 틀렸다고 말하는 쪽이 더 흔해진다.
  */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** 등록된 계정인지 본다. 없으면 `null` — 어느 칸이 틀렸는지는 호출부가 말하지 않는다 */
-export function findAccount(email: string): Account | null {
-  const normalized = email.trim().toLowerCase();
-  return ACCOUNTS.find((a) => a.email === normalized) ?? null;
-}
 
 /**
  * 신청 요약 한 줄이 카드 폭을 넘지 않는 길이. 상호명은 이보다 길 이유가 없다.
@@ -69,8 +62,21 @@ export function normalizeStoreName(
  * 누가 로그인했든 같은 더미 상호를 보여 준다.
  */
 export function homePathFor(account: Account): string {
-  const store = normalizeStoreName(account.storeName);
-  switch (account.status) {
+  return homePathForStatus(account.status, account.storeName);
+}
+
+/**
+ * 서버 로그인 응답(승인 상태·상호)으로 도착지를 정한다. `homePathFor`와 같은
+ * 갈림이고, 상호를 주소에 싣는 것도 같다 — 승인 두 화면이 아직 `/me`를 직접
+ * 읽지 않아서다. 가입 연동 회차에서 그 화면들이 `/me`를 읽게 되면 주소의
+ * 상호는 사라지고 이 함수는 상태만 받는다.
+ */
+export function homePathForStatus(
+  status: AccountStatus,
+  storeName: string,
+): string {
+  const store = normalizeStoreName(storeName);
+  switch (status) {
     case "APPROVED":
       return ACCOUNT_PATH.market;
     case "PENDING":
@@ -134,18 +140,6 @@ export function revalidateField<K extends string>(
   if (message === undefined) delete next[field];
   else next[field] = message;
   return next;
-}
-
-/**
- * 로그인 화면 맨 아래 "화면 확인용 계정" 한 줄.
- *
- * 실제 인증이 없어서 이 목록 밖의 이메일은 전부 실패한다. 어느 이메일이 어느
- * 화면으로 가는지 화면이 말해 주지 않으면 세 갈래를 볼 방법이 없다.
- */
-export function demoAccountHint(): string {
-  return ACCOUNTS.map(
-    (a) => `${a.email} (${ACCOUNT_STATUS_LABEL[a.status]})`,
-  ).join(" · ");
 }
 
 /* ── 회원가입 ─────────────────────────────────────────────────────────── */

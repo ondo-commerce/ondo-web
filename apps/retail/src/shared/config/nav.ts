@@ -24,8 +24,8 @@ export const ACCOUNT_MENU_ITEMS: readonly AccountMenuItem[] = [
   { href: "/wishlist", label: "찜 목록" },
   { href: "/settlements", label: "정산 · 미수" },
   { href: "/settings", label: "설정" },
-  /* 세션이 아직 없다. 로그인 화면으로 보내기만 한다 */
-  { href: "/login", label: "로그아웃", separated: true },
+  /* 로그아웃은 여기 없다 — 이동이 아니라 세션을 끊는 조작이라 `AccountMenu`가
+     버튼으로 따로 그린다 */
 ];
 
 export interface Category {

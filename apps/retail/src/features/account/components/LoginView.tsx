@@ -8,20 +8,21 @@ import { useState, type FormEvent } from "react";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
+import { isCredentialFailure, useLoginMutation } from "../api/session";
 import {
   ACCOUNT_PATH,
+  DEV_SEED_ACCOUNT,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
   INVALID_INPUT_CLASS,
   LOGIN_FAILED_MESSAGE,
   LOGIN_FIELD_ORDER,
+  SERVER_UNREACHABLE_MESSAGE,
 } from "../constants";
 import {
-  demoAccountHint,
-  findAccount,
   firstInvalidField,
-  homePathFor,
+  homePathForStatus,
   revalidateField,
   validateLogin,
   type LoginValues,
@@ -30,8 +31,14 @@ import type { FieldErrors, LoginField } from "../types";
 
 const EMPTY: LoginValues = { email: "", password: "" };
 
+/**
+ * 로그인 화면. **소매 서버에 실제로 로그인한다** — 성공하면 서버가 `SESSION_RETAIL`
+ * 쿠키를 심고, 승인 상태에 맞는 화면으로 옮긴다. 미승인 계정도 로그인은 성공하고
+ * (서버가 200을 준다) 심사 화면으로 간다.
+ */
 export function LoginView() {
   const router = useRouter();
+  const loginMutation = useLoginMutation();
   const [values, setValues] = useState<LoginValues>(EMPTY);
   const [errors, setErrors] = useState<FieldErrors<LoginField>>({});
   /* 폼 **위** 한 줄. 어느 칸이 틀렸는지 말하지 않는 실패는 칸에 붙일 수 없다 */
@@ -45,8 +52,9 @@ export function LoginView() {
     );
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (loginMutation.isPending) return;
 
     const found = validateLogin(values);
     setErrors(found);
@@ -58,16 +66,28 @@ export function LoginView() {
       return;
     }
 
-    const account = findAccount(values.email);
-    if (!account) {
+    setBanner(null);
+
+    let me;
+    try {
+      me = await loginMutation.mutateAsync(values);
+    } catch (error) {
       /* 실패해도 입력값을 지우지 않는다. 오타 하나 때문에 이메일을 다시 치게
          만들면 그게 곧 다음 실패다 */
-      setBanner(LOGIN_FAILED_MESSAGE);
+      setBanner(
+        isCredentialFailure(error)
+          ? LOGIN_FAILED_MESSAGE
+          : SERVER_UNREACHABLE_MESSAGE,
+      );
+      document.getElementById(fieldId("email"))?.focus();
       return;
     }
 
-    setBanner(null);
-    router.push(homePathFor(account));
+    /* `replace`다 — 뒤로 가기로 로그인 화면에 돌아오면 이미 세션이 있는 채로
+       폼을 다시 보게 된다. `refresh`는 서버 컴포넌트(셸의 `/me`)가 새 쿠키로
+       다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다 */
+    router.replace(homePathForStatus(me.approvalStatus, me.shopName));
+    router.refresh();
   };
 
   return (
@@ -143,9 +163,11 @@ export function LoginView() {
           </AuthSection>
 
           <AuthSection>
-            {/* 잠그지 않는다. 못 채운 칸이 있어도 눌리고, 누르면 그 칸으로 간다 */}
+            {/* 잠그지 않는다. 못 채운 칸이 있어도 눌리고, 누르면 그 칸으로 간다.
+                중복 제출은 핸들러가 막는다(`isPending`). 서버를 실제로 기다리게 된
+                뒤로는 글자로 그 사실을 말한다 — 아무 반응이 없으면 또 누른다 */}
             <Button type="submit" size="lg" className="w-full">
-              로그인
+              {loginMutation.isPending ? "로그인 중…" : "로그인"}
             </Button>
           </AuthSection>
         </form>
@@ -170,15 +192,13 @@ export function LoginView() {
         승인 대기 중인 계정으로 로그인하면 심사 현황 화면이 열려요
       </AuthFoot>
 
-      {/* 백엔드가 없어 이 목록 밖의 이메일은 전부 실패한다. 어느 이메일이 어느
-          화면으로 가는지 화면이 말해 주지 않으면 아무도 세 갈래를 볼 수 없다.
-
-          **개발 환경에서만 그린다.** 확정 와이어프레임에 없는 줄이고, 더미 계정
+      {/* **개발 환경에서만 그린다.** 확정 와이어프레임에 없는 줄이고, 시드 계정
           목록이 실서비스 화면에 실려 나가면 안 된다. `process.env.NODE_ENV`는
           빌드 때 문자열로 박히므로 프로덕션 번들에서는 이 가지가 통째로 사라진다 */}
       {process.env.NODE_ENV === "production" ? null : (
         <p className="text-muted-foreground mt-3 text-center text-xs leading-4.5">
-          화면 확인용 계정 (아직 실제 인증이 없어요) — {demoAccountHint()}
+          개발용 시드 계정 (소매 API 서버가 떠 있어야 통해요) —{" "}
+          {DEV_SEED_ACCOUNT}
         </p>
       )}
     </>

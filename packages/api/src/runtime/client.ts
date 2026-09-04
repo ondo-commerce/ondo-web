@@ -25,6 +25,12 @@ export interface ApiFetchInit {
   signal?: AbortSignal;
 }
 
+/** 페이징 있는 목록 응답. `data`와 `meta`를 같이 준다 */
+export interface Page<T> {
+  items: readonly T[];
+  meta: PageMeta;
+}
+
 /** 서버 에러 본문. 성공과 달리 `data` 봉투를 쓰지 않는다. */
 interface ErrorPayload {
   code: string;
@@ -33,23 +39,33 @@ interface ErrorPayload {
   traceId?: string;
 }
 
+/**
+ * 어디서 부르느냐에 따라 달라지는 것 **전부**. 봉투·에러 정규화는 같고 이것만 다르다.
+ *
+ * - 브라우저: 상대경로 + 브라우저가 쿠키를 붙인다
+ * - 서버(RSC): 절대경로 + 요청에서 받은 쿠키를 우리가 헤더로 옮긴다
+ */
+interface Transport {
+  baseUrl: string;
+  cookie: string | null;
+}
+
 const CONTENT_TYPE_JSON = "application/json";
 
 /**
  * 단건·비페이징 응답. `{ data }` 봉투를 벗겨 알맹이만 준다.
  *
  * 204는 본문이 없으므로 `undefined`를 준다 — 로그아웃처럼 결과가 없는 호출용이다.
+ *
+ * **브라우저 전용이다.** 상대경로로만 부르고 next.config.ts의 rewrites가 API 서버로
+ * 넘긴다 — 그래야 세션 쿠키가 이 앱 오리진의 퍼스트파티 쿠키가 되고 CORS가 사라진다.
+ * 서버 컴포넌트에서는 {@link createServerApi}를 쓴다.
  */
 export async function apiFetch<T>(
   path: string,
   init: ApiFetchInit = {},
 ): Promise<T> {
-  const response = await request(path, init);
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  const payload = await readJson<{ data: T }>(response);
-  return payload.data;
+  return fetchData<T>(browserTransport(), path, init);
 }
 
 /**
@@ -59,24 +75,82 @@ export async function apiFetch<T>(
 export async function apiFetchPage<T>(
   path: string,
   init: ApiFetchInit = {},
-): Promise<{ items: readonly T[]; meta: PageMeta }> {
-  const response = await request(path, init);
+): Promise<Page<T>> {
+  return fetchPage<T>(browserTransport(), path, init);
+}
+
+export interface ServerApi {
+  fetch: <T>(path: string, init?: ApiFetchInit) => Promise<T>;
+  fetchPage: <T>(path: string, init?: ApiFetchInit) => Promise<Page<T>>;
+}
+
+/**
+ * 서버 컴포넌트·route handler에서 쓰는 호출기. 소매처럼 첫 HTML에 데이터가
+ * 실려야 하는 앱이 쓴다.
+ *
+ * 브라우저와 다른 점은 둘뿐이다. 프록시를 못 타니 **절대 주소**로 가고, 브라우저가
+ * 없으니 요청에 실려 온 **쿠키를 우리가 옮긴다** — 이 둘을 앱이 `cookies()`로 읽어
+ * 넘긴다. 이 패키지는 Next를 모른다.
+ *
+ * 요청마다 새로 만든다. 쿠키가 요청마다 다르므로 모듈 단위로 두면 사장 A의 세션으로
+ * 사장 B의 화면을 그린다.
+ */
+export function createServerApi(options: {
+  /** API 서버 절대 주소. `https://api-dev...` 처럼 끝에 슬래시 없이 */
+  origin: string;
+  /** 들어온 요청의 `Cookie` 헤더 그대로. 없으면 null — 그러면 서버가 401을 준다 */
+  cookie: string | null;
+}): ServerApi {
+  const transport: Transport = {
+    baseUrl: options.origin.replace(/\/$/, ""),
+    cookie: options.cookie,
+  };
+  return {
+    fetch: (path, init = {}) => fetchData(transport, path, init),
+    fetchPage: (path, init = {}) => fetchPage(transport, path, init),
+  };
+}
+
+function browserTransport(): Transport {
+  if (typeof window === "undefined") {
+    throw new Error(
+      "apiFetch는 브라우저에서만 부른다. 서버 컴포넌트에서는 createServerApi를 쓴다 — " +
+        "쿠키를 요청에서 꺼내 넘겨야 세션이 이어진다.",
+    );
+  }
+  return { baseUrl: "", cookie: null };
+}
+
+async function fetchData<T>(
+  transport: Transport,
+  path: string,
+  init: ApiFetchInit,
+): Promise<T> {
+  const response = await request(transport, path, init);
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const payload = await readJson<{ data: T }>(response);
+  return payload.data;
+}
+
+async function fetchPage<T>(
+  transport: Transport,
+  path: string,
+  init: ApiFetchInit,
+): Promise<Page<T>> {
+  const response = await request(transport, path, init);
   const payload = await readJson<{ data: readonly T[]; meta: PageMeta }>(
     response,
   );
   return { items: payload.data, meta: payload.meta };
 }
 
-async function request(path: string, init: ApiFetchInit): Promise<Response> {
-  // 상대경로로만 부른다. next.config.ts의 rewrites가 API 서버로 넘긴다 —
-  // 그래야 세션 쿠키가 이 앱 오리진의 퍼스트파티 쿠키가 되고 CORS가 사라진다.
-  if (typeof window === "undefined") {
-    throw new Error(
-      "apiFetch는 브라우저에서만 부른다. 도매는 클라이언트 Query가 기본이다 — " +
-        "서버 컴포넌트에서 데이터가 필요하면 화면 설계를 먼저 다시 본다.",
-    );
-  }
-
+async function request(
+  transport: Transport,
+  path: string,
+  init: ApiFetchInit,
+): Promise<Response> {
   const { body, contentType } = toRequestBody(init.body);
   const headers = new Headers();
   if (contentType !== undefined) {
@@ -85,17 +159,26 @@ async function request(path: string, init: ApiFetchInit): Promise<Response> {
   if (init.idempotencyKey !== undefined) {
     headers.set("Idempotency-Key", init.idempotencyKey);
   }
+  if (transport.cookie !== null) {
+    headers.set("Cookie", transport.cookie);
+  }
 
   let response: Response;
   try {
-    response = await fetch(buildPath(path, init.searchParams), {
-      method: init.method ?? "GET",
-      headers,
-      body,
-      signal: init.signal,
-      // 세션 쿠키가 실리는 유일한 이유. 빼면 전부 401이 된다.
-      credentials: "include",
-    });
+    response = await fetch(
+      transport.baseUrl + buildPath(path, init.searchParams),
+      {
+        method: init.method ?? "GET",
+        headers,
+        body,
+        signal: init.signal,
+        // 브라우저가 세션 쿠키를 싣는 유일한 이유. 빼면 전부 401이 된다.
+        // 서버(Node fetch)에서는 무시된다 — 거기선 위의 Cookie 헤더가 그 일을 한다
+        credentials: "include",
+        // 세션 붙은 응답을 Next가 요청 사이에 나눠 쓰면 안 된다. 사장마다 다른 값이다
+        cache: "no-store",
+      },
+    );
   } catch {
     throw new ApiError({
       status: 0,

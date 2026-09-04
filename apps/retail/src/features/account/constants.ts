@@ -82,6 +82,20 @@ export const LOGIN_FIELD_ORDER = ["email", "password"] as const;
 export const LOGIN_FAILED_MESSAGE =
   "이메일 또는 비밀번호를 다시 확인해 주세요.";
 
+/**
+ * 자격증명 문제가 **아닌** 실패. 서버가 안 떠 있거나, 닿았는데 500이 온 경우다.
+ * 로그인 실패와 갈라 쓰는 이유: 비밀번호를 다시 치게 만들어도 해결되지 않는다.
+ */
+export const SERVER_UNREACHABLE_MESSAGE =
+  "지금 서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.";
+
+/**
+ * BE가 dev·로컬 DB에 심어 둔 개발 계정(`V2__seed_dev.sql`). 비밀번호는 그 파일에.
+ * 진짜 인증이라 비밀번호도 맞아야 한다.
+ */
+export const DEV_SEED_ACCOUNT =
+  "bombom@ondo.test (승인 완료) · pending@ondo.test (심사 중)";
+
 /** 상태 한글 이름. 배지·안내 문구가 같은 말을 쓰게 한다 */
 export const ACCOUNT_STATUS_LABEL = {
   APPROVED: "승인 완료",
