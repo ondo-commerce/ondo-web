@@ -1,10 +1,4 @@
-import type {
-  Account,
-  AccountProfile,
-  Application,
-  Rejection,
-  Terms,
-} from "./types";
+import type { AccountProfile, Application, Rejection, Terms } from "./types";
 
 /*
  * 화면을 그리기 위한 목업. API가 붙으면 이 파일만 지운다.
@@ -36,16 +30,6 @@ export const SETTINGS_ACCOUNT: AccountProfile = {
   phone: "010-0000-0000",
   status: "APPROVED",
 };
-
-export const ACCOUNTS: Account[] = [
-  SETTINGS_ACCOUNT,
-  { email: "pending@example.com", storeName: "하늘옷가게", status: "PENDING" },
-  {
-    email: "rejected@example.com",
-    storeName: "우리옷가게",
-    status: "REJECTED",
-  },
-];
 
 /**
  * 약관 2종 전문. 법무 검토를 받은 문안이 아니라 **자리를 잡아 두는 더미**다.

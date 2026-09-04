@@ -25,9 +25,12 @@ export function AccountMenu({
   storeName,
   /** 이니셜 사각형 한 글자. 상호명과 같은 곳에서 뽑은 값이다 */
   initial,
+  /** 로그아웃. 무엇을 끊는지는 셸이 모른다 — `features/account`가 넘긴다 */
+  onLogout,
 }: {
   storeName: string;
   initial: string;
+  onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -71,6 +74,19 @@ export function AccountMenu({
               </Link>
             </div>
           ))}
+          {/* 링크가 아니라 버튼이다 — 화면 이동이 아니라 세션을 끊는 조작이다.
+              구분선으로 위 이동 항목들과 떼어 둔다 */}
+          <div className="bg-border mx-1 my-1.5 h-px" />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+            className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 w-full cursor-pointer items-center rounded-md px-2.5"
+          >
+            로그아웃
+          </button>
         </nav>
       </Popover.Content>
     </Popover>
