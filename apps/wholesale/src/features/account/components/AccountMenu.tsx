@@ -11,6 +11,7 @@ import {
   SESSION_DISCLAIMER,
 } from "../constants";
 import { bankAccountSummary } from "../derive";
+import { useLogoutMutation } from "../api/session";
 import { signOut, useSession } from "../store";
 
 /**
@@ -26,6 +27,7 @@ import { signOut, useSession } from "../store";
 export function AccountMenu() {
   const router = useRouter();
   const session = useSession();
+  const logoutMutation = useLogoutMutation();
   const [open, setOpen] = useState(false);
 
   /* 판정 전 한 프레임에 헤더에서 버튼이 사라졌다 나타나지 않도록 아이콘 자리는
@@ -37,7 +39,9 @@ export function AccountMenu() {
       <Popover.Trigger asChild>
         <IconButton
           variant="ghost"
-          aria-label={account ? `${account.storeName} 계정 메뉴` : "계정"}
+          aria-label={
+            account ? `${account.storeName || account.email} 계정 메뉴` : "계정"
+          }
           title="계정"
         >
           <CircleUser aria-hidden />
@@ -50,9 +54,13 @@ export function AccountMenu() {
         {account ? (
           <>
             <div className="px-2.5 py-2">
-              <p className="truncate text-sm font-medium">
-                {account.storeName}
-              </p>
+              {/* 상호명은 서버에 `GET /me`가 생겨야 알 수 있다. 모르면 줄을 아예
+                  그리지 않는다 — 빈 줄은 "상호명이 없는 계정"으로 읽힌다 */}
+              {account.storeName ? (
+                <p className="truncate text-sm font-medium">
+                  {account.storeName}
+                </p>
+              ) : null}
               <p className="text-muted-foreground truncate text-xs">
                 {account.email}
               </p>
@@ -105,6 +113,10 @@ export function AccountMenu() {
               type="button"
               onClick={() => {
                 setOpen(false);
+                /* 서버 세션을 먼저 끊는다. 실패해도 기다리지 않는다 — 쿠키가
+                   남아도 이 브라우저에서 할 수 있는 일이 없고, 로그아웃을 누른
+                   사람을 네트워크 사정 때문에 붙잡아 두면 안 된다 */
+                void logoutMutation.mutateAsync().catch(() => undefined);
                 signOut();
                 /* `replace`다 — 뒤로 가기로 돌아가면 가드가 다시 튕겨서 화면이
                    두 번 깜빡인다 */

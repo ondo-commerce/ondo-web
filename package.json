@@ -33,6 +33,10 @@
       "pnpm --filter @ondo/ui exec eslint --fix",
       "prettier --write"
     ],
+    "packages/api/**/*.{ts,mjs}": [
+      "pnpm --filter @ondo/api exec eslint --fix",
+      "prettier --write"
+    ],
     "*.{json,css}": [
       "prettier --write"
     ]

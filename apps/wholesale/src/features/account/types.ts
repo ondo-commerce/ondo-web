@@ -1,8 +1,13 @@
+import type { WholesaleSchema } from "@ondo/api";
+
 /**
  * 가입 심사 상태 3값. 승인은 **앱 밖에서** 일어난다 — 어드민 화면이 어디에도
  * 없어서 이 값은 더미에 미리 박혀 있고, 화면은 "지금 어느 단계인가"까지만 한다.
+ *
+ * 값 목록은 스펙(`LoginResponse.approvalStatus`)에서 가져온다 — 서버가 상태를 하나 늘리면
+ * 여기 `switch`들이 컴파일에서 걸린다.
  */
-export type AccountStatus = "APPROVED" | "PENDING" | "REJECTED";
+export type AccountStatus = WholesaleSchema<"LoginResponse">["approvalStatus"];
 
 /**
  * 정산 계좌 한 건. **소매가 읽는 모양과 필드 이름·개수를 맞춘다** —

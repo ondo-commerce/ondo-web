@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { SESSION_STORAGE_KEY } from "./constants";
 import { findAccount, normalizeEmail } from "./derive";
-import type { Account, BankAccount } from "./types";
+import type { Account, AccountStatus, BankAccount } from "./types";
 
 /**
  * 로그인 세션 흉내. **서버도 쿠키도 없다** — API가 붙으면 이 파일만 갈아 끼운다.
@@ -271,6 +271,36 @@ export function signIn(email: string): SessionView {
     ...current,
     loaded: true,
     email: normalizeEmail(email),
+  };
+  writeStorage(next);
+  commit(next);
+  return resolve(next);
+}
+
+/**
+ * 서버가 알려준 승인 상태로 세션을 연다. 실제 인증을 마친 뒤 부른다.
+ *
+ * `signIn`과 나눈 이유: 더미에 없는 이메일(= 진짜 서버 계정)로 `signIn`만 하면
+ * `resolve`가 계정을 못 찾아 `signedOut`으로 읽는다. 상태를 덮어쓰기로 함께
+ * 넣어야 화면들이 그 계정을 본다.
+ *
+ * ⚠️ 이건 **서버 답을 적어 두는 캐시**지 판정이 아니다. 서버에 `GET /me` 가
+ * 생기면 이 함수와 저장소를 지우고 그때마다 물어본다.
+ */
+export function signInWithStatus(
+  email: string,
+  status: AccountStatus,
+): SessionView {
+  const normalized = normalizeEmail(email);
+  const current = ensureLoaded();
+  const next: SessionState = {
+    ...current,
+    loaded: true,
+    email: normalized,
+    overrides: {
+      ...current.overrides,
+      [normalized]: { ...current.overrides[normalized], status },
+    },
   };
   writeStorage(next);
   commit(next);

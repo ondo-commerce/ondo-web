@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_KR } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
 // Figma 원본 한글 폰트가 Noto Sans KR이다 (figma-map.md §4-7).
@@ -25,7 +26,7 @@ export default function RootLayout({
     <html lang="ko" className={`${notoSansKr.variable} h-full antialiased`}>
       {/* 문서 스크롤은 여기서 끊는다. 스크롤은 각 패널의 Panel.Body가 받는다 */}
       <body className="bg-background text-foreground flex h-full flex-col overflow-hidden font-sans text-sm">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
