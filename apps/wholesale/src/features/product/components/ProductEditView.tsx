@@ -97,10 +97,11 @@ function ProductEditForm({ product }: { product: ProductView }) {
   /**
    * 저장 = `PATCH /products/{id}` + (상태가 바뀌었으면) 시즌 종료/재개 호출.
    * PATCH는 `listing.status`를 받지 않아서(스펙) 상태만 따로 간다. 순서는 PATCH가 먼저 —
-   * 잠기기 전 마지막 편집이 먼저 남아야 한다.
+   * 잠기기 전 마지막 편집이 먼저 남아야 한다. 그래서 `시즌 종료`로 바꿔 저장해도
+   * 그 전에 고친 제목·판매가는 PATCH에 같이 실린다(`shouldSendListing`은 상태를 안 본다).
    */
   const submit = async () => {
-    const sendListing = shouldSendListing(product, postForm, status);
+    const sendListing = shouldSendListing(product, productForm, postForm);
     const found = validateProductForm(
       productForm,
       sendListing ? postForm : null,
@@ -112,9 +113,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
     }
 
     try {
-      await update.mutateAsync(
-        toUpdateRequest(productForm, postForm, product, status),
-      );
+      await update.mutateAsync(toUpdateRequest(productForm, postForm, product));
       if (product.post && status !== product.post.status) {
         await listingStatus.mutateAsync({
           listingId: product.post.id,

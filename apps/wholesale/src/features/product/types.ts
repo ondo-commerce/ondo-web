@@ -144,9 +144,17 @@ export interface ProductFormValue {
   options: OptionDraft[];
 }
 
+/**
+ * 가격표 한 칸의 값. **숫자가 아니라 친 글자 그대로**다.
+ *
+ * 숫자로 들면 `Number("45.5")`가 칸에 `455`로 돌아오고 `-3`이 `3`이 된다 —
+ * 친 글자와 칸에 남은 값이 달라진 걸 아무도 모른다(계좌번호 `ACCOUNT_NO_SHAPE`와
+ * 같은 이유). 정수 문자열(`isIntegerText`)만 유효하고, 판정은 검증이,
+ * 숫자 변환은 요청 직전(`toListingRequest`)이 한다. 빈 문자열 = 0.
+ */
 export interface PriceValue {
-  orderLimit: number;
-  price: number;
+  orderLimit: string;
+  price: string;
 }
 
 export interface PostFormValue {
