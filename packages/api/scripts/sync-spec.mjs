@@ -79,19 +79,9 @@ console.log(
   `스냅샷 갱신: openapi/wholesale.json  (openapi ${spec.openapi} ← ${source})`,
 );
 
-// 스냅샷이 없으면 package.json 에 codegen 스크립트를 둘 수 없다(레포 전체 typecheck 가 죽는다).
-// 그래서 여기서는 openapi-typescript 를 직접 부른다. 스냅샷을 커밋하는 그 커밋에서
-// package.json 에 아래 한 줄을 넣고, 이 블록은 `pnpm run codegen` 으로 되돌린다.
-//   "codegen": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts"
-mkdirSync(resolve(PACKAGE_ROOT, "src/generated"), { recursive: true });
-execFileSync(
-  "pnpm",
-  [
-    "exec",
-    "openapi-typescript",
-    "./openapi/wholesale.json",
-    "-o",
-    "./src/generated/wholesale.d.ts",
-  ],
-  { cwd: PACKAGE_ROOT, stdio: "inherit" },
-);
+// 타입 생성은 `codegen` 한 곳에만 둔다. CI가 같은 명령으로 drift를 재는데, 여기서 다른
+// 플래그로 만들면 로컬과 CI 결과가 갈려서 통과한 커밋이 CI에서 죽는다.
+execFileSync("pnpm", ["run", "codegen"], {
+  cwd: PACKAGE_ROOT,
+  stdio: "inherit",
+});

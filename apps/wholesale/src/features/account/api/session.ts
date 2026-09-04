@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { apiFetch, isApiError } from "@ondo/api";
+import { apiFetch, isApiError, type WholesaleSchema } from "@ondo/api";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import type { AccountStatus } from "../types";
 
@@ -21,16 +21,8 @@ const AUTH_PATH = {
   logout: "/api/wholesale/auth/logout",
 } as const;
 
-/**
- * 로그인 응답.
- *
- * ⚠️ 손으로 적은 응답 타입이다. 원래는 스펙에서 생성한 것을 써야 하지만
- * (ADR-0002), 서버를 띄우지 못해 코드젠 입력(`/v3/api-docs`)이 아직 없다.
- * 스냅샷이 들어오는 즉시 `components["schemas"]["LoginResponse"]` 별칭으로 바꾼다.
- */
-interface LoginResponse {
-  approvalStatus: AccountStatus;
-}
+/** 스펙에서 생성한 타입이다(ADR-0002). 서버가 필드를 바꾸면 여기가 아니라 `codegen`이 알려준다 */
+type LoginResponse = WholesaleSchema<"LoginResponse">;
 
 /** 성공하면 세션 쿠키가 붙고 승인 상태가 온다. **미승인 계정도 성공(200)이다.** */
 async function login(input: {

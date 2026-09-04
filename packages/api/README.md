@@ -31,16 +31,31 @@ CI가 잡아주는 건 "스냅샷 ↔ 생성물"까지다 — **서버와 스냅
 하지만 **에러 코드 값은 다르다**(미승인이 도매 `NOT_APPROVED`, 소매 `ACCOUNT_NOT_APPROVED`).
 코드 목록은 `runtime/`이 아니라 앱별 상수에 둔다.
 
-## 지금 미완인 것
+## 생성 타입을 쓰는 법
 
-`openapi/wholesale.json` 스냅샷이 아직 없다 — 도매 API 서버를 로컬에서 띄우지 못해서다
-(Docker 미설치 · JDK 21 필요, 현재 17).
-
-그래서 `package.json`에 **`codegen` 스크립트를 아직 넣지 않았다.** 넣어 두면 스냅샷이 없는
-상태에서 `pnpm typecheck`가 레포 전체에서 죽는다. 스냅샷을 얻으면 그 커밋에서 함께 넣는다:
-
-```jsonc
-"codegen": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts"
+```ts
+import type { WholesaleSchema } from "@ondo/api";
+type LoginResponse = WholesaleSchema<"LoginResponse">;
 ```
 
-그 시점부터 `.github/workflows/ci.yml`의 drift 체크가 실제로 동작한다.
+`components["schemas"]`를 앱에서 직접 파지 않는다. 입구를 `WholesaleSchema` 하나로 두면
+생성 파일 위치나 스키마 이름이 바뀌어도 고칠 곳이 이 패키지 안이다.
+
+### 응답 필드가 전부 non-optional인 이유
+
+springdoc은 응답 DTO에 `required`를 안 적는다. 그대로 생성하면 `approvalStatus?: ...`처럼
+**모든 응답 필드가 `T | undefined`**가 되고, 화면마다 있지도 않은 `undefined` 검사를 하게 된다.
+그래서 `codegen`에 `--properties-required-by-default`를 건다.
+
+감수하는 것: **진짜 비어 있을 수 있는 필드도 `string`으로 보인다**(`BankAccountResponse.memo`,
+`approvedAt` 같은 것). 스펙에 `nullable`도 없어서 코드젠이 구분할 방법이 없다. BE가 응답
+record 필드에 `@Schema(nullable = true)`(또는 `requiredMode`)를 달아 주면 이 플래그를 뗀다.
+
+### 스냅샷 출처
+
+`openapi/wholesale.json`은 dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`가 ALB에 막혀
+있어서 BE에게 받은 파일로 만들었다(2026-09-04, `On도 도매 API 0.1.0`). 다음부터는
+`sync-spec <파일>`로 갱신한다.
+
+**소매 API 스펙은 아직 없다.** `apps/retail/src/shared/api/types.ts`의 손으로 적은 타입은
+소매 스냅샷(`openapi/retail.json`)이 들어오면 같은 방식으로 바꾼다.
