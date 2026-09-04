@@ -24,7 +24,7 @@ import { AccountGateNotice, useAccountGate } from "./AccountGate";
 import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
-import { FieldError, FieldHelp } from "./FieldError";
+import { FieldError, FieldHelp } from "@/shared/components/FieldError";
 import { FileField } from "./FileField";
 import { WarnBadge, WarnNotice } from "./WarnNotice";
 

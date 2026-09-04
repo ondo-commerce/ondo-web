@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ProductEditView, findProduct } from "@/features/product";
+import { ProductEditView } from "@/features/product";
 
 export const metadata = { title: "상품 수정 · 온도 ERP" };
 
@@ -9,9 +9,10 @@ export default async function ProductEditPage({
   params: Promise<{ productId: string }>;
 }) {
   const { productId } = await params;
-  const product = findProduct(productId);
+  const id = Number(productId);
 
-  if (!product) notFound();
+  // 스펙의 productId는 int64다. 숫자가 아닌 주소는 서버에 물을 것도 없이 없는 페이지다
+  if (!Number.isInteger(id) || id <= 0) notFound();
 
-  return <ProductEditView product={product} />;
+  return <ProductEditView productId={id} />;
 }

@@ -3,32 +3,34 @@
 import { ColorDot, Table } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { Product, Sku } from "../types";
+import type { ProductView, SkuView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /** 색상 단위로 묶는다. SKU = 색상 × 사이즈라서 색상이 그룹 축이 된다 */
-function groupByColor(skus: Sku[]): Map<string, Sku[]> {
-  const map = new Map<string, Sku[]>();
+function groupByColor(skus: readonly SkuView[]): Map<number, SkuView[]> {
+  const map = new Map<number, SkuView[]>();
   for (const s of skus) {
-    const list = map.get(s.color);
+    const list = map.get(s.colorId);
     if (list) list.push(s);
-    else map.set(s.color, [s]);
+    else map.set(s.colorId, [s]);
   }
   return map;
 }
 
 /** 게시글이 등록된 상품의 펼침 내용. 가격이 붙어 있어 열이 많다 */
-export function ProductSkuTable({ product }: { product: Product }) {
+export function ProductSkuTable({ product }: { product: ProductView }) {
   const groups = [...groupByColor(product.skus)];
   // 첫 색상만 펼쳐 둔다 — 한 화면에 정보가 과하게 쏟아지지 않도록
-  const [openColors, setOpenColors] = useState<string[]>(() => {
+  const [openColors, setOpenColors] = useState<number[]>(() => {
     const firstColor = groups[0]?.[0];
-    return firstColor ? [firstColor] : [];
+    return firstColor === undefined ? [] : [firstColor];
   });
 
-  const toggle = (color: string) =>
+  const toggle = (colorId: number) =>
     setOpenColors((prev) =>
-      prev.includes(color) ? prev.filter((c) => c !== color) : [...prev, color],
+      prev.includes(colorId)
+        ? prev.filter((c) => c !== colorId)
+        : [...prev, colorId],
     );
 
   return (
@@ -45,9 +47,9 @@ export function ProductSkuTable({ product }: { product: Product }) {
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {groups.map(([color, skus]) => {
-          const open = openColors.includes(color);
-          const option = product.colors.find((c) => c.name === color);
+        {groups.map(([colorId, skus]) => {
+          const open = openColors.includes(colorId);
+          const option = product.colors.find((c) => c.id === colorId);
 
           return skus.map((s, i) => {
             if (i > 0 && !open) return null;
@@ -58,7 +60,7 @@ export function ProductSkuTable({ product }: { product: Product }) {
                   {i === 0 ? (
                     <button
                       type="button"
-                      onClick={() => toggle(color)}
+                      onClick={() => toggle(colorId)}
                       aria-expanded={open}
                       className="focus-visible:ring-ring flex items-center gap-1.5 rounded-button focus-visible:ring-2 focus-visible:outline-hidden"
                     >
@@ -66,14 +68,15 @@ export function ProductSkuTable({ product }: { product: Product }) {
                         aria-hidden
                         className={`text-border-strong size-4 transition-transform ${open ? "rotate-90" : ""}`}
                       />
+                      {/* hex는 서버 값이다. 색을 못 찾는 건 응답이 깨진 경우뿐이라 흰 점으로 눕힌다 */}
                       <ColorDot color={option?.hex ?? "#ffffff"} />
-                      <span>{option?.displayName ?? color}</span>
+                      <span>{s.color}</span>
                     </button>
                   ) : null}
                 </Table.Td>
                 <Table.Td align="center">{s.size}</Table.Td>
                 <Table.Td align="left" tone="muted">
-                  {s.id}
+                  {s.code}
                 </Table.Td>
                 <Table.Td tone={s.stock === 0 ? "danger" : "default"}>
                   {formatNumber(s.stock)}
