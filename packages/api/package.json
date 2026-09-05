@@ -8,7 +8,9 @@
     "./mocks/browser": "./src/mocks/browser.ts"
   },
   "scripts": {
-    "codegen": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts --properties-required-by-default",
+    "codegen": "pnpm run codegen:wholesale && pnpm run codegen:retail",
+    "codegen:wholesale": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts --properties-required-by-default",
+    "codegen:retail": "openapi-typescript ./openapi/retail.json -o ./src/generated/retail.d.ts --properties-required-by-default",
     "sync-spec": "node scripts/sync-spec.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts"

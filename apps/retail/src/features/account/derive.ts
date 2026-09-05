@@ -86,6 +86,22 @@ export function homePathForStatus(
   }
 }
 
+/**
+ * 서버의 `approvalStatus`를 화면 상태로 좁힌다.
+ *
+ * 스펙이 enum을 "코드만 내린다"고 적어서 생성 타입은 `string`이다. 모르는 값은
+ * `PENDING`으로 본다 — 승인 전 화면에 머무는 게 마켓을 여는 것보다 안전하다.
+ */
+export function toAccountStatus(raw: string): AccountStatus {
+  switch (raw) {
+    case "APPROVED":
+    case "REJECTED":
+      return raw;
+    default:
+      return "PENDING";
+  }
+}
+
 export interface LoginValues {
   email: string;
   password: string;
