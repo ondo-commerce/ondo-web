@@ -1,3 +1,5 @@
+import type { RetailSchema } from "@ondo/api";
+
 /**
  * 가입 심사 상태. 운영자 승인제(ST-303)의 3값이다.
  *
@@ -7,11 +9,28 @@
  */
 export type AccountStatus = "APPROVED" | "PENDING" | "REJECTED";
 
+/* ── wire (스냅샷 생성 타입 별칭 · ADR-0002) ───────────────────────────── */
+
+/** `POST /auth/sign-up`의 `payload` 파트. 파일은 `bizLicense` 파트로 따로 간다 */
+export type SignUpRequest = RetailSchema<"SignUpRequest">;
+/** 가입 완료 응답. 세션이 없다 — 이 값으로는 아무 화면도 못 연다 */
+export type SignUpResponse = RetailSchema<"SignUpResponse">;
+/** `GET /auth/email-availability` 응답 */
+export type EmailAvailabilityResponse =
+  RetailSchema<"EmailAvailabilityResponse">;
+
 /**
- * 로그인 분기에 필요한 최소 정보.
+ * 서버가 `VALIDATION_FAILED`의 `errors[].field`에 적는 이름 = `SignUpRequest`의
+ * 속성 이름. 폼 칸 이름(`SignupField`)과 다르다 — `shopName`↔`storeName`,
+ * `mobile`↔`phone`, `bizRegNo`↔`bizNo`. 옮기는 표는 `constants.ts`에.
+ */
+export type SignUpRequestField = keyof SignUpRequest;
+
+/**
+ * 설정 화면이 읽는 계정의 뼈대. 로그인·승인 화면은 이제 `/me`(`RetailerResponse`)를
+ * 직접 읽으므로 이 타입을 안 쓴다 — 설정만 남았다(설정 API는 스냅샷에 없다).
  *
- * 비밀번호를 담지 않는다. 확인할 서버가 없고, 더미라도 자격증명 형태를
- * 소스에 적어 두면 그대로 굳는다.
+ * 비밀번호를 담지 않는다. 더미라도 자격증명 형태를 소스에 적어 두면 그대로 굳는다.
  */
 export interface Account {
   email: string;
@@ -52,14 +71,15 @@ export type LoginField = "email" | "password";
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
 
 /**
- * 첨부한 파일. 이름과 용량만 든다.
+ * 첨부한 파일. 화면이 그리는 이름·용량에 더해 **보낼 `File` 자체**를 든다.
  *
- * `File` 객체를 그대로 들고 다니지 않는 이유: 보낼 곳이 없다. 백엔드가 붙기
- * 전까지 첨부는 **화면에 이름을 남기는 데서 끝난다**(네트워크 요청 0회).
+ * 가입은 이 파일을 `bizLicense` 파트로 실어 보낸다. 이름·용량만 들고 있던
+ * 시절(백엔드 없음)의 모양에 `file`만 얹었다 — 그리는 쪽은 그대로다.
  */
 export interface AttachedFile {
   name: string;
   size: number;
+  file: File;
 }
 
 /** 회원가입 폼의 칸 이름 */
@@ -74,6 +94,9 @@ export type SignupField =
   | "license"
   | "agreeService"
   | "agreePrivacy";
+
+/** 약관 2종의 이름. 가입 체크·전문 모달·설정 동의 내역이 같은 키를 쓴다 */
+export type TermsKind = "service" | "privacy";
 
 /** 약관 2종. 둘 다 필수라 선택 항목이 없다 */
 export interface Terms {
@@ -97,7 +120,10 @@ export interface ApprovalStep {
   state: ApprovalStepState;
 }
 
-/** 승인 대기·거절 화면이 보여 주는 신청 요약 */
+/**
+ * 설정 화면의 `사업자 정보` 패널이 읽는 신청 요약(더미). 승인 대기 화면은 이제
+ * `ApplicationView`를 쓴다 — 설정 API가 스냅샷에 없어 이쪽만 남았다.
+ */
 export interface Application {
   storeName: string;
   /** 자리표시자만 쓴다. 실제 형식의 번호를 소스에 적지 않는다 */
@@ -105,9 +131,23 @@ export interface Application {
   appliedAt: string;
 }
 
-/** 거절 결과. 사유는 이력에만 남는다(RT-07) */
-export interface Rejection {
+/**
+ * 승인 대기 화면이 그리는 신청 요약. `/me`에서 `toApplicationView`로 만든다.
+ *
+ * 사업자등록번호가 없다 — `RetailerResponse`가 개인정보(대표자명·연락처·
+ * 사업자번호)를 일부러 뺐다(스펙 설명). 화면도 그 줄을 그리지 않는다.
+ */
+export interface ApplicationView {
+  shopName: string;
+  /** `YYYY.MM.DD HH:mm`으로 다듬은 뒤의 값 */
+  appliedAt: string;
+}
+
+/** 거절 화면이 그리는 사유. `/me`의 `rejection`에서 `toRejectionView`로 만든다 */
+export interface RejectionView {
   reason: string;
-  decidedAt: string;
-  decidedBy: string;
+  /** `YYYY.MM.DD HH:mm`으로 다듬은 뒤의 값 */
+  rejectedAt: string;
+  /** 서버가 늘 `운영자`로 고정해 내린다 */
+  actor: string;
 }

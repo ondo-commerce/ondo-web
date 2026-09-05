@@ -7,7 +7,8 @@ import { formatFileSize } from "../derive";
 import type { AttachedFile } from "../types";
 
 /**
- * 점선 첨부칸. **UI까지다** — 고른 파일을 어디로도 보내지 않는다(백엔드 없음).
+ * 점선 첨부칸. 고른 파일은 부모에게 넘기고, 보내는 건 부모의 몫이다(가입 →
+ * `bizLicense` 파트). 이 컴포넌트는 요청을 모른다.
  *
  * 실제 `<input type="file">`을 화면에서 숨기고 라벨을 상자로 그린다. 상자를
  * `<div onClick>`으로 만들면 키보드로 닿지 않고 화면 낭독기가 폼 컨트롤로 읽지도
@@ -58,8 +59,12 @@ export function FileField({
         aria-describedby={describedBy}
         onChange={(event) => {
           const picked = event.target.files?.[0];
-          /* 이름과 용량만 꺼낸다. 파일 자체를 들고 있어도 보낼 곳이 없다 */
-          onSelect(picked ? { name: picked.name, size: picked.size } : null);
+          /* 이름·용량은 화면용, `file`은 보낼 것. 셋을 한 값으로 묶어 어긋나지 않게 한다 */
+          onSelect(
+            picked
+              ? { name: picked.name, size: picked.size, file: picked }
+              : null,
+          );
         }}
       />
       <label

@@ -1,24 +1,31 @@
+import type { FormErrors } from "@/shared/api/fieldErrors";
+import type { RetailerResponse } from "@/shared/api/types";
 import {
   ACCOUNT_PATH,
   APPROVAL_STEP_LABELS,
-  STORE_QUERY,
+  EMAIL_TAKEN_MESSAGE,
   PASSWORD_MIN_LENGTH,
+  SIGNUP_FIELD_OF_REQUEST,
+  SIGNUP_TERMS,
+  TERMS_CODE,
   VALIDATION_MESSAGE,
-  withStoreName,
 } from "./constants";
-import { APPLICATION, SIGNUP_TERMS } from "./fixtures";
+import { APPLICATION } from "./fixtures";
 import type {
-  Account,
   AccountProfile,
   AccountStatus,
-  Application,
+  ApplicationView,
   ApprovalStep,
   AttachedFile,
   FieldErrors,
   LoginField,
   PasswordField,
+  RejectionView,
   SettingsField,
   SignupField,
+  SignUpRequest,
+  SignUpRequestField,
+  TermsKind,
 } from "./types";
 
 /**
@@ -53,36 +60,22 @@ export function normalizeStoreName(
 }
 
 /**
- * 로그인 직후 도착할 화면.
+ * 승인 상태별로 사장이 있어야 할 화면.
  *
  * 승인 전 계정을 마켓 홈으로 보내면 도매가가 보인다(RT-09 위반). 상태별 목적지를
- * 화면이 아니라 여기 한 곳에서 정하는 이유다.
+ * 화면이 아니라 여기 한 곳에서 정하는 이유다. 로그인 직후의 이동도, 승인 두
+ * 화면이 "이 상태의 화면이 아니면 제자리로 돌려보내는" 판정도 이걸 쓴다.
  *
- * 상호명을 주소에 실어 보낸다 — 승인 화면은 세션이 없어서 이 값이 없으면
- * 누가 로그인했든 같은 더미 상호를 보여 준다.
+ * 상호명을 더는 받지 않는다 — 승인 두 화면이 `/me`를 직접 읽는다.
  */
-export function homePathFor(account: Account): string {
-  return homePathForStatus(account.status, account.storeName);
-}
-
-/**
- * 서버 로그인 응답(승인 상태·상호)으로 도착지를 정한다. `homePathFor`와 같은
- * 갈림이고, 상호를 주소에 싣는 것도 같다 — 승인 두 화면이 아직 `/me`를 직접
- * 읽지 않아서다. 가입 연동 회차에서 그 화면들이 `/me`를 읽게 되면 주소의
- * 상호는 사라지고 이 함수는 상태만 받는다.
- */
-export function homePathForStatus(
-  status: AccountStatus,
-  storeName: string,
-): string {
-  const store = normalizeStoreName(storeName);
+export function homePathForStatus(status: AccountStatus): string {
   switch (status) {
     case "APPROVED":
       return ACCOUNT_PATH.market;
     case "PENDING":
-      return withStoreName(ACCOUNT_PATH.approval, store);
+      return ACCOUNT_PATH.approval;
     case "REJECTED":
-      return withStoreName(ACCOUNT_PATH.rejected, store);
+      return ACCOUNT_PATH.rejected;
   }
 }
 
@@ -307,32 +300,136 @@ export function visibleErrors<K extends string>(
   return shown;
 }
 
-/* ── 가입 심사 진행 ───────────────────────────────────────────────────── */
+/* ── 가입 요청 ────────────────────────────────────────────────────────── */
 
-/**
- * 조회 문자열에서 상호명을 꺼낸다.
- *
- * `?store=a&store=b`처럼 같은 이름이 두 번 오면 Next가 배열을 준다. 첫 값만
- * 쓴다 — 배열을 이어 붙이면 주소로 요약 한 줄을 원하는 만큼 늘릴 수 있다.
- */
-export function readStoreName(
-  params: Record<string, string | string[] | undefined>,
-): string | null {
-  const raw = params[STORE_QUERY];
-  return normalizeStoreName(Array.isArray(raw) ? raw[0] : raw);
+/** 서버는 연락처·사업자등록번호를 **숫자만** 받는다. 화면의 하이픈은 여기서 뗀다 */
+function digitsOnly(raw: string): string {
+  return raw.replace(/\D/g, "");
 }
 
 /**
- * 신청 요약이 보여 줄 한 건.
+ * 폼 값 → `SignUpRequest`(payload 파트). 파일은 여기 없다 — 별도 파트다.
  *
- * 상호명만 **화면 밖에서 온 값**으로 갈아 끼운다 — 로그인한 계정의 것이거나
- * 방금 가입 폼에 적은 것이다. 사업자등록번호·신청 일시는 백엔드가 없어 더미
- * 그대로다(등록번호는 자리표시자여야 한다 · R6). 값이 없으면 더미로 돌아가
- * 직접 주소를 친 경우에도 빈 줄이 생기지 않는다.
+ * 화면은 `010-1234-5678`·`000-00-00000`을 들고 있고 서버는 `\d{10,11}`·`\d{10}`을
+ * 원한다. 바꾸는 자리를 여기 하나로 둔다. 상호는 저장값과 같은 규칙으로 다듬는다.
+ * 약관은 체크된 것만 싣는다 — 둘 다 필수라 미체크면 클라이언트 검증에서 이미
+ * 걸리지만, 그래도 안 한 동의를 했다고 보내지 않는다.
  */
-export function applicationFor(storeName: string | null): Application {
-  const store = normalizeStoreName(storeName);
-  return store ? { ...APPLICATION, storeName: store } : APPLICATION;
+export function toSignUpRequest(values: SignupValues): SignUpRequest {
+  const agreed: TermsKind[] = [];
+  if (values.agreeService) agreed.push("service");
+  if (values.agreePrivacy) agreed.push("privacy");
+
+  return {
+    shopName: normalizeStoreName(values.storeName) ?? "",
+    ownerName: values.ownerName.trim(),
+    email: values.email.trim(),
+    password: values.password,
+    mobile: digitsOnly(values.phone),
+    bizRegNo: digitsOnly(values.bizNo),
+    agreedTerms: agreed.map((kind) => TERMS_CODE[kind]),
+  };
+}
+
+/**
+ * 서버 필드명으로 온 오류를 폼 칸 이름으로 옮긴다. `_form`은 그대로 지난다.
+ *
+ * 같은 폼 칸에 두 서버 필드가 겹치는 일은 지금 없지만(표가 1:1), 생기면 먼저
+ * 온 것을 남긴다 — 칸 아래 한 줄에 둘을 이어 붙이면 읽히지 않는다.
+ */
+export function signupErrorsFromServer(
+  server: FormErrors<SignUpRequestField>,
+): FormErrors<SignupField> {
+  const result: FormErrors<SignupField> = {};
+  for (const [name, message] of Object.entries(server)) {
+    if (message === undefined) continue;
+    const field =
+      name === "_form"
+        ? "_form"
+        : SIGNUP_FIELD_OF_REQUEST[name as SignUpRequestField];
+    if (result[field] === undefined) result[field] = message;
+  }
+  return result;
+}
+
+/**
+ * "이미 가입된 이메일"은 값에 붙는 판정이다 — blur 확인이든 제출 409든, 그렇게
+ * 확인된 이메일이 **지금 칸의 값과 같을 때만** 오류다. 값을 고치면 옛 판정이라
+ * 저절로 사라진다. 지우는 코드가 따로 없어서 어긋날 일도 없다.
+ */
+export function takenEmailError(
+  email: string,
+  takenEmail: string | null,
+): FieldErrors<"email"> {
+  return takenEmail !== null && email.trim() === takenEmail
+    ? { email: EMAIL_TAKEN_MESSAGE }
+    : {};
+}
+
+/**
+ * 화면에 띄울 오류 = 클라이언트 검증 ⊕ 서버가 지적한 것. **클라이언트가 이긴다.**
+ *
+ * 서버 오류는 "보낸 값"에 대한 말이라, 사장이 그 칸을 고치기 시작하면 이미 옛말이다.
+ * 고치는 순간 서버 오류는 호출부가 지우고(`clearServerError`), 그 뒤엔 타이핑마다
+ * 도는 클라이언트 검증만 남는다. 같은 칸에 둘 다 있으면 지금 값에 대한 말인
+ * 클라이언트 쪽을 보여 준다.
+ */
+export function withServerErrors<K extends string>(
+  client: FieldErrors<K>,
+  server: FieldErrors<K>,
+): FieldErrors<K> {
+  return { ...server, ...client };
+}
+
+/* ── 가입 심사 진행 ───────────────────────────────────────────────────── */
+
+/**
+ * 서버 `date-time`(ISO)을 확정 와이어프레임의 `2026.07.17 10:20` 꼴로.
+ *
+ * 시간대를 `Asia/Seoul`로 못 박는다 — 승인 화면은 서버 컴포넌트가 그리는데,
+ * 배포 서버의 시간대(UTC)로 찍으면 사장이 본 신청 시각과 9시간 어긋난다.
+ * 못 읽는 값이면 원문을 그대로 돌려준다 — 조용히 빈 칸이 되는 것보다 낫다.
+ */
+export function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${get("year")}.${get("month")}.${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+/** 승인 대기 화면의 신청 요약. `/me` 한 번으로 그린다 */
+export function toApplicationView(me: RetailerResponse): ApplicationView {
+  return {
+    shopName: me.shopName,
+    appliedAt: formatDateTime(me.appliedAt),
+  };
+}
+
+/**
+ * 거절 화면의 사유. 생성 타입은 `rejection`이 non-optional로 보이지만 REJECTED가
+ * 아니면 null이고(`shared/api/types.ts`), REJECTED여도 이력이 비어 있으면 서버가
+ * null을 내린다 — 그때 화면은 사유 자리를 비운 채로 말한다.
+ */
+export function toRejectionView(me: RetailerResponse): RejectionView | null {
+  const rejection = me.rejection ?? null;
+  if (rejection === null) return null;
+  return {
+    reason: rejection.reason,
+    rejectedAt: formatDateTime(rejection.rejectedAt),
+    actor: rejection.actor,
+  };
 }
 
 /**
@@ -376,7 +473,8 @@ export function approvalSteps(status: AccountStatus): ApprovalStep[] {
  * 재신청 검증. 볼 것이 첨부 하나뿐이라 문구도 하나다.
  *
  * 버튼을 잠그지 않으므로(`01-pm.md` R3) 파일을 안 고르고 눌러도 눌린다 —
- * 그때 이 문구가 뜨고 포커스가 첨부칸으로 간다.
+ * 그때 이 문구가 뜨고 포커스가 첨부칸으로 간다. 통과해도 보낼 API가 아직
+ * 없다(`REAPPLY_UNAVAILABLE_MESSAGE`).
  */
 export function validateReapply(
   license: AttachedFile | null,
@@ -488,7 +586,7 @@ export function validatePasswordChange(
 
 /** 동의 내역 한 줄 */
 export interface ConsentRecord {
-  kind: "service" | "privacy";
+  kind: TermsKind;
   label: string;
   agreedAt: string;
 }
@@ -504,9 +602,11 @@ export interface ConsentRecord {
  * 받으므로(같은 제출) 실제로도 두 값이 갈릴 일이 지금은 없다.
  */
 export function consentRecords(): ConsentRecord[] {
-  return (["service", "privacy"] as const).map((kind) => ({
-    kind,
-    label: SIGNUP_TERMS[kind].label,
-    agreedAt: APPLICATION.appliedAt,
-  }));
+  return (["service", "privacy"] as const satisfies readonly TermsKind[]).map(
+    (kind) => ({
+      kind,
+      label: SIGNUP_TERMS[kind].label,
+      agreedAt: APPLICATION.appliedAt,
+    }),
+  );
 }

@@ -14,7 +14,18 @@ export { ApprovalStatusView } from "./components/ApprovalStatusView";
 export { LoginView } from "./components/LoginView";
 export { SettingsView } from "./components/SettingsView";
 export { SignupView } from "./components/SignupView";
-export { readStoreName } from "./derive";
+/*
+ * 승인 두 화면의 `page.tsx`가 서버에서 `/me`를 읽고 이 순수 함수들로 "이 화면이
+ * 맞는 상태인가"와 "무엇을 그릴까"를 정한다. 세션 읽기(`requireSession`)는
+ * `shared/api/server.ts`의 것을 page가 직접 부른다 — `server-only` 모듈을 여기서
+ * 다시 내보내면 이 index를 읽는 클라이언트 컴포넌트(`useStoreName`)가 깨진다.
+ */
+export {
+  homePathForStatus,
+  toAccountStatus,
+  toApplicationView,
+  toRejectionView,
+} from "./derive";
 /*
  * `useStoreName`이 public API 로 나가는 이유: 주문 상세의 조립부
  * (`app/(shop)/orders/[orderId]/OrderDetailClient.tsx`)가 수령인 상호를

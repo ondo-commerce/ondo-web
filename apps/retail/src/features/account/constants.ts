@@ -1,3 +1,11 @@
+import type {
+  SignupField,
+  SignUpRequest,
+  SignUpRequestField,
+  Terms,
+  TermsKind,
+} from "./types";
+
 /** 계정 화면들이 서로를 가리키는 주소. 문자열을 화면마다 다시 적지 않는다 */
 export const ACCOUNT_PATH = {
   login: "/login",
@@ -32,22 +40,6 @@ export function errorId(field: string): string {
  */
 export function labelId(field: string): string {
   return `account-${field}-label`;
-}
-
-/** 상호명을 실어 나르는 조회 문자열의 이름. 읽는 쪽과 쓰는 쪽이 같은 값을 본다 */
-export const STORE_QUERY = "store";
-
-/**
- * 상호명을 주소에 실어 나른다.
- *
- * 세션도 쿠키도 없어서(백엔드 없음) 로그인·가입 화면이 알아낸 상호명을 승인
- * 화면에 전달할 길이 주소밖에 없다. 상수를 화면에 박아 두면 방금 신청한
- * 사장이 남의 상호를 본다.
- */
-export function withStoreName(path: string, storeName: string | null): string {
-  return storeName
-    ? `${path}?${STORE_QUERY}=${encodeURIComponent(storeName)}`
-    : path;
 }
 
 /**
@@ -96,6 +88,20 @@ export const SERVER_UNREACHABLE_MESSAGE =
 export const DEV_SEED_ACCOUNT =
   "bombom@ondo.test (승인 완료) · pending@ondo.test (심사 중)";
 
+/**
+ * 이메일이 이미 있을 때 칸 아래 붙는 말. blur 확인(`/email-availability`)과
+ * 제출 409(`DUPLICATE_EMAIL`)가 **같은 문구**를 쓴다 — 같은 사실을 두 말로 하지 않는다.
+ */
+export const EMAIL_TAKEN_MESSAGE =
+  "이미 가입된 이메일이에요. 로그인하거나 다른 이메일을 써 주세요.";
+
+/**
+ * 재신청(등록증 다시 올리기) 접수 API가 스냅샷에 없다. 파일까지 골라 눌렀는데
+ * 아무 일도 없으면 안 되므로, 못 보내는 이유를 화면이 글자로 말한다.
+ */
+export const REAPPLY_UNAVAILABLE_MESSAGE =
+  "재신청 접수는 아직 준비 중이에요. 고른 파일은 보내지지 않았어요 — 운영자에게 문의해 주세요.";
+
 /** 상태 한글 이름. 배지·안내 문구가 같은 말을 쓰게 한다 */
 export const ACCOUNT_STATUS_LABEL = {
   APPROVED: "승인 완료",
@@ -121,6 +127,77 @@ export const SIGNUP_FIELD_ORDER = [
   "agreeService",
   "agreePrivacy",
 ] as const;
+
+/**
+ * 서버 `SignUpRequest`의 속성 이름 전부. `VALIDATION_FAILED`의 `errors[].field`가
+ * 이 이름으로 오고, 여기 없는 이름은 폼 위 한 줄(`_form`)로 간다.
+ */
+export const SIGNUP_REQUEST_FIELDS = [
+  "shopName",
+  "ownerName",
+  "email",
+  "password",
+  "mobile",
+  "bizRegNo",
+  "agreedTerms",
+] as const satisfies readonly SignUpRequestField[];
+
+/**
+ * 서버 필드명 → 폼 칸 이름. 이름이 같은 칸(`email`·`password`·`ownerName`)도
+ * 빠짐없이 적는다 — 표가 곧 "서버의 어느 칸이 화면의 어느 칸인가"의 원본이다.
+ *
+ * `agreedTerms`는 약관 둘을 한 배열로 받는 칸이라 체크 하나를 고를 수 없다.
+ * 첫 체크(이용약관)에 붙인다 — 화면 순서상 먼저 눈에 띄는 자리다.
+ */
+export const SIGNUP_FIELD_OF_REQUEST: Record<SignUpRequestField, SignupField> =
+  {
+    shopName: "storeName",
+    ownerName: "ownerName",
+    email: "email",
+    password: "password",
+    mobile: "phone",
+    bizRegNo: "bizNo",
+    agreedTerms: "agreeService",
+  };
+
+/** 약관 체크 → 서버 enum. 둘 다 필수라 제출 시 체크된 것만 골라 보낸다 */
+export const TERMS_CODE: Record<
+  TermsKind,
+  SignUpRequest["agreedTerms"][number]
+> = { service: "SERVICE", privacy: "PRIVACY" };
+
+/**
+ * 약관 2종 전문. **서버 값이 아니다** — 스냅샷에 약관 API가 없고, 법무 검토를
+ * 받은 문안도 아직 없다(실제 문안 미확인). 자리를 잡아 두는 상수라 `fixtures`가
+ * 아니라 여기 산다. 이름은 가입 체크박스와 설정 동의 내역이 같이 읽는다.
+ *
+ * TODO(#173): 법무 검토 문안이 오면 이 값을 통째로 갈아 끼운다.
+ *
+ * 별도 화면(`/terms`)을 파지 않고 모달로 띄운다 — 가입 도중에 주소가 바뀌면
+ * 지금까지 채운 칸이 전부 날아간다(`01-pm.md` Q4).
+ */
+export const SIGNUP_TERMS: Record<TermsKind, Terms> = {
+  service: {
+    label: "이용약관 동의",
+    body: [
+      "제1조 (목적) 이 약관은 온도 마켓(이하 “서비스”)이 제공하는 도매·소매 직거래 중개 서비스의 이용 조건과 절차를 정합니다.",
+      "제2조 (회원 자격) 서비스는 사업자 등록을 마친 소매 사업자에게만 제공됩니다. 운영자는 제출된 사업자등록증을 확인해 가입을 승인하거나 거절할 수 있습니다.",
+      "제3조 (가격 정보) 도매 가격은 승인된 사업자 회원에게만 공개됩니다. 회원은 취득한 가격 정보를 일반 소비자에게 재배포할 수 없습니다.",
+      "제4조 (주문과 결제) 서비스는 주문을 중개할 뿐 결제를 대행하지 않습니다. 대금은 현금 또는 계좌 이체로 도매처에 직접 지급합니다.",
+      "제5조 (이용 제한) 허위 서류를 제출하거나 타인의 사업자 정보를 도용한 경우 승인은 취소되며 재가입이 제한될 수 있습니다.",
+    ],
+  },
+  privacy: {
+    label: "개인정보 수집·이용 동의",
+    body: [
+      "1. 수집 항목 — 상호명, 대표자명, 이메일, 연락처, 사업자등록번호, 사업자등록증 사본.",
+      "2. 이용 목적 — 사업자 자격 확인(가입 심사), 주문·미송·정산 안내, 분쟁 발생 시 사실 확인.",
+      "3. 보유 기간 — 회원 탈퇴 시까지. 다만 관계 법령이 정한 거래 기록은 그 기간 동안 보관합니다.",
+      "4. 안전 조치 — 대표자명·연락처·사업자등록번호·등록증 사본은 암호화해 별도 보관하며, 심사 담당자 외에는 열람할 수 없습니다.",
+      "5. 동의 거부 권리 — 동의를 거부할 수 있으나, 사업자 자격을 확인할 수 없어 가입이 제한됩니다.",
+    ],
+  },
+};
 
 /** 비밀번호 최소 길이. 문구와 검사가 같은 값을 보게 한다 */
 export const PASSWORD_MIN_LENGTH = 8;

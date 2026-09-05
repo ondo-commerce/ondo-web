@@ -6,7 +6,8 @@ import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { SummaryList } from "./SummaryList";
 import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL } from "../constants";
-import { applicationFor, approvalSteps } from "../derive";
+import { approvalSteps } from "../derive";
+import type { ApplicationView } from "../types";
 
 /**
  * 가입 심사 중 화면.
@@ -15,16 +16,14 @@ import { applicationFor, approvalSteps } from "../derive";
  * 승인 전에는 도매가를 못 본다는 전제(RT-09)를 화면이 처음으로 말하는 자리이기도
  * 해서, 왜 심사하는지를 안내로 같이 둔다.
  *
- * 상호명은 **밖에서 받는다.** 여기서 더미 상수를 읽으면 누가 로그인했든, 방금
- * 무엇으로 신청했든 늘 같은 상호를 말하게 된다. 세션이 없어서 주소가 통로다.
+ * 신청 요약은 **밖에서 받는다** — page가 서버에서 `/me`를 읽어 `toApplicationView`로
+ * 만든 것이다. 사업자등록번호 줄이 없다: `/me`가 개인정보를 일부러 안 내린다.
  */
 export function ApprovalStatusView({
-  storeName = null,
+  application,
 }: {
-  storeName?: string | null;
+  application: ApplicationView;
 }) {
-  const application = applicationFor(storeName);
-
   return (
     <>
       <AuthPanel
@@ -39,8 +38,7 @@ export function ApprovalStatusView({
         <AuthSection>
           <SummaryList
             items={[
-              { label: "상호명", value: application.storeName },
-              { label: "사업자등록번호", value: application.bizNo },
+              { label: "상호명", value: application.shopName },
               { label: "신청 일시", value: application.appliedAt },
             ]}
           />
