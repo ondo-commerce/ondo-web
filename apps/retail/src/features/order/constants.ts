@@ -1,35 +1,76 @@
 import { QTY_UNIT } from "@/shared/qty";
 import type {
-  AcceptStatus,
   CancelLock,
   OrderLineStatus,
   OrderStatus,
   OrderSort,
   PaymentMethod,
   PickupMethod,
-  ReorderResult,
 } from "./types";
 
 /**
  * 주문 화면들의 고정 문구.
  *
  * **컴포넌트 안에 상태 문자열과 문장을 적지 않는다.** 같은 말이 화면 넷과
- * 모달 셋에 흩어지면 한쪽만 고쳐진다 — 원본의 §6-2·§6-3(배지 표기가 화면마다
+ * 모달 둘에 흩어지면 한쪽만 고쳐진다 — 원본의 §6-2·§6-3(배지 표기가 화면마다
  * 어긋남)이 정확히 그 사고였다.
  */
 
+/** 이 feature가 부르는 path 전부. 서버(page)와 브라우저(mutations) 양쪽이 쓴다 */
+export const ORDER_API_PATH = {
+  checkout: "/api/retail/checkout",
+  orders: "/api/retail/orders",
+  order: (orderId: number) => `/api/retail/orders/${orderId}`,
+  cancel: (orderId: number) => `/api/retail/orders/${orderId}/cancel`,
+} as const;
+
+/** 화면 경로. 목록·상세·주문서·완료가 서로를 가리킬 때 여기서 만든다 */
+export const ORDER_PATH = {
+  orders: "/orders",
+  order: (orderId: number) => `/orders/${orderId}`,
+  /** 장바구니에서 고른 `cartItemId`를 쉼표로 잇는다 — `GET /checkout?cartItemIds=`로 간다 */
+  checkout: (cartItemIds: readonly number[]) =>
+    cartItemIds.length === 0
+      ? "/checkout"
+      : `/checkout?ids=${cartItemIds.join(",")}`,
+  complete: (orderId: number) => `/checkout/complete?orderId=${orderId}`,
+} as const;
+
+/**
+ * 한 번에 받는 장수. **BE 상한이 100이다**(`OrderController.MAX_PAGE_SIZE` — 넘기면
+ * `VALIDATION_FAILED`). 스펙에는 상한이 안 적혀 있어 여기 적어 둔다(`04-wire.md` §3).
+ *
+ * 기본값 20 대신 상한을 쓰는 이유: 도매처·상태 필터가 서버에 없어서 **받은 장 안에서**
+ * 걸린다. 20건씩 자르면 필터가 "지금 장"만 보는 폭이 넓어진다.
+ */
+export const ORDERS_PAGE_SIZE = 100;
+
+/** 첫 장. 주소의 `?page=`는 1-base이고 서버는 0-base라 여기서 한 번 뺀다 */
+export const FIRST_PAGE = 1;
+
+/** `이전 · 다음` 링크. 2장 이상일 때만 보인다 */
+export const PAGER_LABEL = {
+  prev: "이전",
+  next: "다음",
+  position: (page: number, totalPages: number) =>
+    `${page} / ${totalPages} 페이지`,
+} as const;
+
 export const PICKUP_LABEL: Record<PickupMethod, string> = {
-  DIRECT: "직접 수령",
+  RETAILER: "직접 수령",
   AGENT: "사입삼촌 방문",
 };
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
-  TRANSFER: "계좌 이체",
+  BANK_TRANSFER: "계좌 이체",
   CASH: "현금",
 };
 
 /** 도매처 드롭다운의 첫 항목. 값이 아니라 상태다 — `types.ts`의 `PickupChoice` 참조 */
 export const FOLLOW_BULK_LABEL = "일괄 설정 따름";
+
+/** 계좌 미등록 도매처의 결제 줄 옆에 서는 말. 계좌 이체 항목이 왜 없는지를 말한다 */
+export const BANK_UNREGISTERED = "계좌 미등록 · 현금만 가능";
 
 /**
  * 접수 결과 배지 표기.
@@ -37,11 +78,10 @@ export const FOLLOW_BULK_LABEL = "일괄 설정 따름";
  * `실패`라는 낱말을 쓰지 않는다(RT-43). 안 된 건은 다시 시도하면 되는 일이고,
  * 실패라고 부르면 사장이 주문 전체가 날아갔다고 읽는다.
  */
-export const ACCEPT_LABEL: Record<AcceptStatus, string> = {
-  ACCEPTED: "접수됨",
-  CHECKING: "접수 확인 중…",
-  REJECTED: "접수 안 됨",
-};
+export const ACCEPT_LABEL = {
+  accepted: "접수됨",
+  rejected: "접수 안 됨",
+} as const;
 
 /** 주문서 한 장에 박히는 문장 전부 */
 export const CHECKOUT_TEXT = {
@@ -53,6 +93,9 @@ export const CHECKOUT_TEXT = {
   /** 명세가 읽기 전용인 이유를 상자 아래에서 말한다(RT-37) */
   readOnlyHint:
     "주문 상품은 여기서 고칠 수 없어요. 수량·옵션을 바꾸려면 장바구니로 돌아가세요.",
+  /** 단가를 서버에서 다시 받는다는 사실(스펙). 장바구니와 금액이 다를 수 있다 */
+  repriced:
+    "단가는 지금 도매처 가격으로 다시 받았어요. 장바구니에서 본 금액과 다를 수 있어요.",
   agentSection: "사입삼촌 정보",
   agentNotice:
     "한 도매처라도 사입삼촌 방문이면 꼭 입력해야 해요. 출고 문서(장끼)에 수령인으로 적혀요.",
@@ -61,6 +104,7 @@ export const CHECKOUT_TEXT = {
   /** 되돌릴 수 없는 실행이라 **누르기 전에** 말한다(`retail-cart` F1) */
   irreversible: "접수한 뒤에는 주문서에서 고칠 수 없어요.",
   submit: "주문 접수하기",
+  submitting: "접수하는 중…",
   backToCart: "장바구니로",
   bankLabel: "입금 계좌",
   copy: "복사",
@@ -80,6 +124,10 @@ export const CHECKOUT_BLOCKED = {
   empty: "주문할 조합이 없어요.",
   agent: "사입삼촌 정보를 입력해 주세요.",
 } as const;
+
+/** 접수 요청 자체가 안 갔을 때. 서버가 문구를 안 줬을 때만 쓴다 */
+export const PLACE_FAILED =
+  "주문을 접수하지 못했어요. 잠시 후 다시 눌러 주세요.";
 
 /**
  * `전체 적용` 안내 두 벌.
@@ -136,17 +184,12 @@ export const COMPLETE_TEXT = {
   notice:
     "도매처가 영업시간 안에 30분 안으로 확인해요. 확정될 때 재고가 모자라면 그만큼 미송으로 넘어가요.",
   viewOrders: "주문 내역 보기",
-  delayTitle: "접수가 늦어질 때",
-  delaySub:
-    "도매처 쪽 응답이 늦으면 그 도매처만 “접수 확인 중…”으로 두고 자동으로 다시 시도해요. 끝까지 접수되지 않으면 주문 내역에서 알려드려요.",
+  viewDetail: "이 주문 상세 보기",
 } as const;
 
 /**
- * 접수 결과가 없을 때.
- *
- * 결과는 세션 스토어에 있어서 **새로고침하면 사라진다.** 그때 빈 화면이나
- * 0원짜리 주문서를 그리지 않고 사라졌다는 사실을 말한다 — 사장이 방금 넣은
- * 주문이 없어진 줄 알면 같은 주문을 한 번 더 넣는다.
+ * 접수 결과가 없을 때. `?orderId=`가 없거나 그 주문이 서버에 없는 자리다 —
+ * 빈 화면이나 0원짜리 주문서를 그리지 않고 사실을 말한다.
  */
 export const COMPLETE_EMPTY = {
   title: "방금 접수한 주문이 없어요",
@@ -161,39 +204,22 @@ export const COMPLETE_EMPTY = {
  * 열리자마자 뜬다. Radix는 닫을 때 열기 전에 포커스가 있던 곳으로 되돌리는데,
  * 그 자리가 방금 떠나온 주문서라 포커스가 `<body>`로 떨어진다. 그러면 키보드
  * 사용자는 닫은 뒤 문서 맨 위부터 Tab을 다시 밟아야 한다(WCAG 2.4.3 · 직전
- * 회차 F3).
- *
- * **"누른 버튼이 있으면 Radix 기본값으로 충분하다"고 적어 뒀던 것은 틀렸다**(F4).
- * 세 모달 다 `{열렸나 ? <Dialog/> : null}` 조건부 렌더라, 닫을 때 상태가 지워지면서
- * 컴포넌트가 먼저 사라져 Radix의 되돌리기가 돌 기회를 잃는다. 그래서 지금은
- * 세 모달 모두 `onCloseAutoFocus`로 **부르는 쪽이 정한 자리**로 보낸다.
+ * 회차 F3). 조건부 렌더라 `onCloseAutoFocus`로 **부르는 쪽이 정한 자리**로 보낸다(F4).
  */
 export const COMPLETE_ACTION_ID = "order-complete-view-orders";
 
 /**
- * 취소 · 되돌리기 두 버튼에 박는 id.
+ * 취소 흐름 버튼에 박는 id.
  *
- * 되돌릴 수 없는 실행 뒤에 포커스를 옮길 자리를 찾는 데 쓴다 — `주문 취소`는
- * 누르면 `disabled`가 되고 `되돌리기`는 누르면 사라져서, 그냥 두면 두 번 다
- * 포커스가 `<body>`로 떨어진다(WCAG 2.4.3). `packages/ui`의 `Button`은 ref를
- * 받지 않으므로 장바구니의 `선택 삭제`와 같은 방식으로 id를 쓴다(`retail-cart`).
+ * 되돌릴 수 없는 실행 전후에 포커스를 옮길 자리를 찾는 데 쓴다 — 확인 단계가
+ * 나타나고 사라질 때 그냥 두면 포커스가 `<body>`로 떨어진다(WCAG 2.4.3).
+ * `packages/ui`의 `Button`은 ref를 받지 않으므로 장바구니 `선택 삭제`와 같은
+ * 방식으로 id를 쓴다(`retail-cart`).
  */
 export const CANCEL_ACTION_ID = {
   cancel: "order-detail-cancel",
-  undo: "order-detail-cancel-undo",
+  confirm: "order-detail-cancel-confirm",
 } as const;
-
-/**
- * `?scenario=`로 켠 화면임을 밝히는 줄.
- *
- * 주소 쿼리는 서버가 없어서 부분 접수·지연을 확인할 유일한 길이라 남겨 두지만,
- * **안내 없이 두면 주소만 바꾼 사장이 자기 주문이 진짜로 반려된 줄 안다**(F10 ·
- * `retail-account` F6과 같은 계열). 그래서 켠 화면에만, 켜져 있는 동안만 뜬다 —
- * 기본 주소(`/checkout`)에는 이 줄이 없다. 서버가 붙으면 `OrderScenario`와 함께
- * 이 상수도 같이 지운다.
- */
-export const SCENARIO_NOTICE =
-  "이 화면은 접수 결과를 확인해 보려고 주소로 켠 예시예요. 실제 도매처 응답이 아니고, 주소에서 scenario를 빼면 평소 화면으로 돌아가요.";
 
 /** 부분 접수 모달. **제목·본문·버튼 어디에도 `실패`가 없다**(RT-43) */
 export const PARTIAL_TEXT = {
@@ -201,22 +227,29 @@ export const PARTIAL_TEXT = {
   sub: "접수된 건은 그대로 진행돼요. 안 된 건만 다시 시도하면 되고, 그 상품은 장바구니에 남아 있어요.",
   viewInCart: "장바구니에서 보기",
   toCart: "장바구니로",
-  retry: "안 된 건만 다시 시도",
+  /** 안 된 도매처의 조합만 실은 주문서로 간다 — 서버 없이 "다시 보냈다"고 단정하지 않는다 */
+  retry: "안 된 건만 다시 주문서로",
   noticeTail: "로 접수된 건은 주문 내역에서 확인할 수 있어요.",
-  /** 다시 시도한 **뒤에** 뜨는 말. 일어난 일만 과거형으로 적는다 */
-  retried: "안 된 건을 다시 보냈어요. 도매처 응답을 기다리는 중이에요.",
 } as const;
 
 /* ────────────────────────────────────────────────────────────────────────
    접수된 뒤 — 상태 어휘. **표기를 컴포넌트에 적지 않는다**
    ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * 통합 행 배지 표기. 키는 서버 enum(`ActionBadge`) 그대로다.
+ *
+ * `WAITING_SHIPMENT`(전부 확정 이상, 아직 아무것도 안 나감)는 사양 §4 라벨 통일
+ * 5종(확정 대기 · 접수됨 · 수령 가능 · 출고 완료 · 취소됨)에 없는 상태다. `접수됨`은
+ * 완료 화면의 접수 결과와 겹쳐서 못 쓰고, BE 주석("준비 중이에요")을 따랐다 —
+ * 매핑표 확정은 `04-wire.md` §3에 남겼다.
+ */
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  PENDING: "확정 대기",
-  PARTIAL_SHIPPED: "부분 출고",
-  READY: "수령 가능",
-  SHIPPED: "출고 완료",
-  CANCELED: "취소됨",
+  PENDING_ACCEPT: "확정 대기",
+  WAITING_SHIPMENT: "준비 중",
+  READY_TO_PICK_UP: "수령 가능",
+  DONE: "출고 완료",
+  CANCELLED: "취소됨",
 };
 
 /**
@@ -230,40 +263,38 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
  */
 export const LINE_STATUS_LABEL: Record<OrderLineStatus, string> = {
   SHIPPED: "출고 완료",
-  BACKORDER: "재고 소진 · 미송",
   READY: "수령 가능",
+  BACKORDER: "재고 소진 · 미송",
+  PARTIAL: "부분 출고",
   PENDING: "확정 대기",
+  PREPARING: "준비 중",
   CANCELED: "취소됨",
 };
 
 /** 확정 전 라인이 지금 무엇을 기다리는지. 상태 배지만으론 알 수 없다 */
 export const LINE_PENDING_NOTE = "도매처 재고 확인 중";
 
-export const REORDER_RESULT_LABEL: Record<ReorderResult, string> = {
-  ADDED: "담김",
-  PRICE_UP: "단가 인상 · 담김",
-  SEASON_ENDED: "시즌 종료 · 제외",
-  DELISTED: "게시 내림 · 제외",
-};
+/** 포장은 끝났는데 아직 안 나간 장끼(`shippedAt: null`)의 시각 자리 */
+export const SHIPMENT_PACKED = "포장 완료 · 출고 전";
 
 /** 주문 내역 화면의 문장 전부 */
 export const ORDERS_TEXT = {
   title: "주문 내역",
-  sub: "여러 도매처에 한 번에 넣은 주문은 한 줄로 묶여요. 펼치면 도매처별 상태를 볼 수 있어요.",
+  sub: "여러 도매처에 한 번에 넣은 주문은 한 줄로 묶여요. 펼치면 어느 도매처에 넣었는지 볼 수 있어요.",
   reset: "초기화",
-  reorder: "다시 주문",
   /* 좁은 폭 카드의 펼침 버튼. 표에서는 chevron이 하던 일이라 글자가 필요 없었다 */
-  expand: "도매처별 상태 보기",
-  collapse: "도매처별 상태 접기",
+  expand: "도매처 보기",
+  collapse: "도매처 접기",
+  /** 펼친 줄 끝. 도매처별 상태는 요약 응답에 없어 상세로 안내한다 */
+  legDetail: "도매처별 상태는 상세에서 볼 수 있어요.",
   /**
    * 통합 행 배지 규칙 안내.
    *
-   * 원본의 `가장 앞선 단계를 한 줄에 보여주고`를 **고쳤다.** 그 문장은 부분 출고
-   * 행을 설명하지 못한다 — 가장 앞선 단계는 라비앙의 `확정 대기`인데 배지는
-   * `부분 출고`다. §6-2·§6-3이 "배지가 어긋난다 / 규칙이 없다"고 이미 지목한
-   * 자리라 문구와 규칙을 같이 정한다(가정 A1-a).
+   * 배지는 서버가 "지금 사장이 할 일"로 정한다 — 도매처마다 상태가 다를 때 어느
+   * 상태 이름을 골라도 나머지에 대해 거짓이 되기 때문이다(BE `ActionBadge`).
+   * 출고 칸은 장수를 센다 — `3장 / 12장`은 12장 중 3장을 받았다는 뜻이다.
    */
-  rule: "도매처마다 상태가 다를 때는 묶음 전체의 진행 단계 하나를 보여줘요. 출고 칸은 도매처를 세요 — “3건 중 2건”은 도매처 3곳 중 2곳에서 물건이 나갔다는 뜻이에요. 자세한 건 펼쳐서 보세요.",
+  rule: "도매처마다 상태가 다를 때는 지금 할 일 하나를 배지로 보여줘요. 출고 칸은 장수를 세요 — “3장 / 12장”은 12장 중 3장을 받았다는 뜻이에요. 도매처별 상태는 상세에서 보세요.",
   empty: {
     title: "조건에 맞는 주문이 없어요",
     description: "기간·도매처·상태를 바꾸거나 조건을 지워 보세요.",
@@ -279,12 +310,10 @@ export const ORDERS_TEXT = {
  * 주문 내역 열 이름. **표와 카드가 같은 이 상수를 읽는다.**
  *
  * 960px 아래에서 표가 세로 카드로 바뀌는데(F1), 카드가 라벨을 따로 적으면
- * 폭에 따라 같은 칸이 다른 이름으로 불린다. `retail-backorder`가 `CARD_LABEL`을
- * 표 머리글의 별칭으로 둔 것과 같은 이유다.
+ * 폭에 따라 같은 칸이 다른 이름으로 불린다.
  *
- * `출고(도매처)`에 단위가 붙어 있는 것이 F8의 답이다 — `3건 중 2건`의 `건`이
- * 무엇을 세는지 열 이름이 말한다. 라인은 `라인 N개`, 장끼는 `장끼 N장`으로
- * 따로 부른다.
+ * `출고(장수)`에 단위가 붙어 있는 것이 F8의 답이다 — 요약 응답이 도매처 건이 아니라
+ * **장수**(`receivedQty`·`totalQty`)를 주므로 열 이름이 그것을 말한다.
  */
 export const LIST_HEADERS = {
   expand: "펼치기",
@@ -293,8 +322,7 @@ export const LIST_HEADERS = {
   sheets: "총 장수",
   amount: "금액",
   status: "상태",
-  shipment: "출고(도매처)",
-  reorder: "다시 주문",
+  shipment: "출고(장수)",
 } as const;
 
 /** 주문 상품 표/카드의 열 이름. 위와 같은 이유로 한 곳에 있다 */
@@ -309,34 +337,9 @@ export const LINE_HEADERS = {
   favorite: "찜",
 } as const;
 
-/**
- * 펼친 줄에서 미송 몫을 말하는 한 줄.
- *
- * 도매처 배지가 `부분 출고`로 바뀌는 것만으로는 **얼마가 안 나갔는지**를 알 수
- * 없다(F5). 금액은 주문 금액 그대로 두고 — 펼친 줄 셋의 합이 상세 합계와 같아야
- * 한다(가정 A5-c) — 안 나간 몫만 따로 말한다.
- */
-export function legBackorderNote(sheets: number): string {
+/** 미송 장수 한 줄. 목록 출고 칸과 라인 둘째 줄이 같이 쓴다 */
+export function backorderNote(sheets: number): string {
   return `미송 ${sheets}${QTY_UNIT}`;
-}
-
-/** 다시 주문 모달의 문장 전부 */
-export const REORDER_TEXT = {
-  title: "이 주문을 다시 담을게요",
-  sub: "담기 전에 어떻게 되는지 먼저 보여드려요. 담을 수 없는 상품은 빼고 담아요.",
-  notice:
-    "단가가 오른 상품은 지금 가격으로 담겨요. 제외된 상품은 담기지 않아요.",
-  addable: "담을 수 있는 것",
-  cancel: "취소",
-  submit: "담을 수 있는 것만 담기",
-  /** 담을 것이 없을 때 버튼 옆에 서는 이유 */
-  blocked: "담을 수 있는 상품이 없어요.",
-  toCart: "장바구니로 가기",
-} as const;
-
-/** 담은 **뒤에** 뜨는 말. 예고가 아니라 결과라 과거형이다 */
-export function reorderAddedNotice(count: number): string {
-  return `장바구니에 ${count}개 조합을 담았어요.`;
 }
 
 /**
@@ -354,22 +357,20 @@ export const FILTER_ALL_LABEL = {
  * 기간 축. **기본이 `최근 3개월`이고 해제 상태가 아니다** — 주문 내역은 오래된
  * 것까지 다 세우면 훑을 수 없는 목록이라 확정 와이어프레임도 3개월로 열린다.
  *
- * `since`를 `new Date()`로 만들지 않는다. 더미 날짜는 고정인데 오늘을 기준으로
- * 세면 시간이 지날수록 목록이 저절로 비고, 화면이 비는 이유가 코드가 아니라
- * 달력에 있게 된다. API가 붙으면 서버가 기간을 계산한다.
+ * `months`가 서버 파라미터 `from`이 된다(`derive.periodFrom`) — 기간은 서버가
+ * 거른다. null이면 `from`을 안 보낸다.
  */
 export const DEFAULT_PERIOD = "3m";
 
 export const PERIODS: readonly {
   value: string;
   label: string;
-  /** `YYYYMMDD`. null이면 기간을 안 건다 */
-  since: string | null;
+  months: number | null;
 }[] = [
-  { value: "1m", label: "최근 1개월", since: "20260801" },
-  { value: DEFAULT_PERIOD, label: "최근 3개월", since: "20260601" },
-  { value: "6m", label: "최근 6개월", since: "20260301" },
-  { value: FILTER_ALL, label: "전체 기간", since: null },
+  { value: "1m", label: "최근 1개월", months: 1 },
+  { value: DEFAULT_PERIOD, label: "최근 3개월", months: 3 },
+  { value: "6m", label: "최근 6개월", months: 6 },
+  { value: FILTER_ALL, label: "전체 기간", months: null },
 ];
 
 /** 정렬 2종. 늘 하나가 골라져 있어서 해제 상태가 없다 */
@@ -382,7 +383,6 @@ export const DEFAULT_ORDER_SORT: OrderSort = "latest";
 
 /** 주문 상세 화면의 문장 전부 */
 export const DETAIL_TEXT = {
-  reorderAll: "이 주문 전체 다시 담기",
   stats: {
     amount: "주문 금액",
     progress: "출고 진행",
@@ -396,25 +396,29 @@ export const DETAIL_TEXT = {
    * 가리키고, 라인과 장끼는 자기 낱말로 센다.
    */
   unpaidFrom: (count: number) => `장끼 ${count}장에서 발생`,
+  /** 장끼에 단가가 없어 금액을 못 낸 자리(`04-wire.md` §3) */
+  unpaidUnknown: "장끼 금액을 알 수 없어요",
   backorderWaiting: (count: number) => `미송 라인 ${count}개 대기 중`,
   cancel: "주문 취소",
   /**
-   * 누르기 전에 뜨는 말. **되돌릴 수 있다고 말한 만큼 실제로 되돌아간다** —
-   * 장바구니 `선택 삭제`가 확인 모달 대신 되돌리기를 붙여 둔 것과 같은
-   * 등급이라 같은 장치를 준다(게이트 Q3 ③ · `retail-cart` F1 · F9).
+   * 누르기 전에 뜨는 말. 취소는 **도매처별**로 되고(스펙) 되돌리기 API가 없어
+   * 확인 단계를 둔다(F9 — 되돌릴 수 없는 실행에는 확인 하나가 있어야 한다).
    */
   cancelOpen:
-    "도매처가 확정하기 전까지는 주문을 취소할 수 있어요. 취소한 직후에는 되돌릴 수 있고, 다른 주문을 취소하거나 이 화면을 새로 열면 되돌릴 수 없어요.",
+    "도매처가 확정하기 전까지는 주문을 취소할 수 있어요. 도매처별로 취소되고, 이미 확정된 도매처 건은 그대로 남아요. 취소하면 되돌릴 수 없어요.",
+  /** 확인 단계. 실행 버튼과 그만두기 버튼이 같이 선다 */
+  cancelConfirm: "정말 취소할까요? 되돌릴 수 없어요.",
+  cancelConfirmAction: "취소 확정",
+  cancelDismiss: "그만두기",
+  cancelling: "취소하는 중…",
   /**
    * 잠긴 **이유마다 다른 말**을 한다(F3).
    *
    * 한 벌로 두던 때는 취소된 주문이 `이미 확정돼서 잠겼어요`라고 말해서, 머리
-   * 배지(`취소됨`)와 반대되는 문장이 한 화면에 같이 섰다. 사장이 자기가 취소한
-   * 것인지 도매처가 확정해서 막힌 것인지 알 수 없었다.
+   * 배지(`취소됨`)와 반대되는 문장이 한 화면에 같이 섰다.
    */
   cancelLocked: {
-    CANCELED:
-      "이 주문은 이미 취소됐어요. 같은 상품이 필요하면 “이 주문 전체 다시 담기”로 새로 주문할 수 있어요.",
+    CANCELED: "이 주문은 이미 취소됐어요.",
     SHIPPED:
       "이미 출고된 건이 있어서 주문을 취소할 수 없어요. 반품은 도매처와 전화로 진행해요.",
     CONFIRMED:
@@ -422,8 +426,12 @@ export const DETAIL_TEXT = {
     EMPTY: "이 주문에는 취소할 도매처 건이 없어요.",
   } as Record<CancelLock, string>,
   cancelDone: "주문을 취소했어요.",
-  cancelUndo: "되돌리기",
-  cancelUndone: "취소를 되돌렸어요. 주문이 원래 상태로 돌아왔어요.",
+  /** 일부만 취소됐을 때. 어느 도매처가 왜 안 됐는지는 서버 문구를 그대로 잇는다 */
+  cancelPartial: (done: number, kept: number) =>
+    `${done}곳은 취소했고 ${kept}곳은 취소하지 못했어요.`,
+  cancelNone: "취소된 도매처 건이 없어요.",
+  /** 취소 요청 자체가 안 갔을 때. 서버가 문구를 안 줬을 때만 쓴다 */
+  cancelFailed: "취소 요청이 닿지 않았어요. 잠시 후 다시 눌러 주세요.",
   /** 취소된 도매처 건. `확정하면 표시돼요`는 영영 오지 않을 말이다(F3) */
   legCanceled: "취소된 건이에요",
   lineSection: "주문 상품",
@@ -433,8 +441,6 @@ export const DETAIL_TEXT = {
   shipmentEmpty: "아직 출고된 건이 없어요.",
   statement: "장끼 보기",
   paymentSection: "결제 · 수령",
-  /** 확정 전 도매처가 조용히 빠지지 않게 (가정 A5-d) */
-  notConfirmed: "도매처가 확정하면 여기에 표시돼요",
   returnNotice: "반품은 도매처와 전화로 진행해요. 환불은 지원하지 않아요.",
   notFound: {
     title: "그 주문을 찾을 수 없어요",
@@ -442,6 +448,8 @@ export const DETAIL_TEXT = {
     action: "주문 내역으로",
   },
   total: "합계",
+  /** 도매처별 연번 앞에 붙는 말. 통합 번호와 나란히 선다(RT-40) */
+  legNo: (no: number) => `도매처 연번 ${no}`,
 } as const;
 
 /** 거래명세서(장끼) 모달의 문장 전부 */
@@ -458,6 +466,8 @@ export const STATEMENT_TEXT = {
   /** 잠긴 두 버튼 옆에 글자로 선다. 눌러도 아무 일이 없는 버튼으로 두지 않는다 */
   disabledReason: "인쇄·저장은 아직 준비 중이에요.",
   toSettlement: "정산에서 보기",
+  /** 단가를 못 찾은 줄의 금액 자리 */
+  priceUnknown: "—",
 } as const;
 
 /**

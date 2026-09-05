@@ -42,8 +42,9 @@ function Stat({
  * 세 값이 전부 `derive.ts`에서 나온다. 특히 **주문 금액은 표 `<tfoot>`의 합계와
  * 같은 함수**를 부른다 — 원본은 요약이 517,000원인데 행 합이 618,000원이었다.
  *
- * 미수는 **출고된 건의 금액 합**이다(RT-64). 주문 금액 전체가 미수가 아니다 —
- * 물건이 나가야 갚을 것이 생긴다.
+ * 미수는 **출고된 건의 금액 합**이다(RT-64). 장끼 품목에 단가가 없어(스펙) 주문
+ * 라인에서 찾아 채우는데, 못 찾은 장끼가 있으면 `—`로 그린다 — 틀린 숫자를 맞는
+ * 것처럼 세우지 않는다.
  */
 export function OrderStats({ order }: { order: OrderRecord }) {
   const totals = orderTotals(order);
@@ -67,11 +68,13 @@ export function OrderStats({ order }: { order: OrderRecord }) {
       />
       <Stat
         label={DETAIL_TEXT.stats.unpaid}
-        value={formatWon(unpaid)}
+        value={unpaid === null ? "—" : formatWon(unpaid)}
         sub={
-          order.shipments.length > 0
-            ? DETAIL_TEXT.unpaidFrom(order.shipments.length)
-            : undefined
+          unpaid === null
+            ? DETAIL_TEXT.unpaidUnknown
+            : order.shipments.length > 0
+              ? DETAIL_TEXT.unpaidFrom(order.shipments.length)
+              : undefined
         }
       />
     </div>

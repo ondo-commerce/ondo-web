@@ -5,26 +5,31 @@ import { Info, Printer, X } from "lucide-react";
 import Link from "next/link";
 import { DescList, DescRow } from "./PaymentSummary";
 import {
+  DETAIL_TEXT,
   PICKUP_LABEL,
+  SHIPMENT_PACKED,
   STATEMENT_TEXT,
   STATEMENT_UNPAID_NONE,
 } from "../constants";
 import {
   formatSheets,
   formatWon,
+  lineAmount,
   shipmentAmount,
   unpaidAfter,
 } from "../derive";
-import { PAST_RECEIVER_NAME } from "../fixtures";
 import type { OrderRecord, Shipment } from "../types";
 
 /**
- * 거래명세서(장끼) 모달.
+ * 거래명세서(장끼) 모달. 값은 상세 응답의 `Outbound` 하나다.
  *
  * **문서를 고칠 수 있는 입력칸이 하나도 없다**(RT-54). 시스템이 출고할 때
  * 자동으로 만든 문서라 다시 볼 수만 있다. `인쇄`·`저장`은 확정 와이어프레임이
- * 잠가 둔 자리라 그대로 두되, **왜 못 누르는지를 글자로 옆에 둔다** — 눌러도
- * 아무 일이 없는 버튼으로 두지 않는다(직전 회차 F2).
+ * 잠가 둔 자리라 그대로 두되, **왜 못 누르는지를 글자로 옆에 둔다**.
+ *
+ * 단가·금액은 장끼 품목에 없어서(스펙 `OutboundItem`) 주문 라인에서 찾아 채운
+ * 값이다. 못 찾은 줄은 `—`이고 그 장끼의 합계·미수도 `—`다 — 틀린 숫자를 맞는
+ * 것처럼 세우지 않는다.
  *
  * 미수 문구에 **`FIFO`라는 낱말이 없다**(§3-0 D). 입금 배정은 도매 사장이
  * 건별로 수기로 정하는 일이라, 배정이 없으면 사실만 적는다.
@@ -45,7 +50,7 @@ export function StatementDialog({
   onOpenChange: (next: boolean) => void;
   /**
    * 닫은 뒤 포커스를 받을 자리. 조건부로 그려지는 모달이라 닫을 때 컴포넌트가
-   * 먼저 사라져 Radix의 되돌리기가 돌지 못한다(F4) — `다시 주문` 모달과 같은 이유다.
+   * 먼저 사라져 Radix의 되돌리기가 돌지 못한다(F4).
    */
   onCloseFocus: () => void;
 }) {
@@ -55,6 +60,8 @@ export function StatementDialog({
   const amount = shipmentAmount(shipment);
   const remaining = unpaidAfter(order, shipment.statementNo);
   const sheets = shipment.lines.reduce((sum, line) => sum + line.qty, 0);
+  const won = (value: number | null) =>
+    value === null ? STATEMENT_TEXT.priceUnknown : formatWon(value);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,26 +98,27 @@ export function StatementDialog({
             </DescRow>
             <DescRow term={STATEMENT_TEXT.receiver}>{receiverStore}</DescRow>
             <DescRow term={STATEMENT_TEXT.shippedAt}>
-              {shipment.shippedAt}
+              {shipment.shippedAt ?? SHIPMENT_PACKED}
             </DescRow>
             <DescRow term={STATEMENT_TEXT.receiverName}>
               {leg?.pickup === "AGENT" ? (
                 <>
-                  {PAST_RECEIVER_NAME}{" "}
+                  {order.agentName}{" "}
                   <span className="text-muted-foreground">
                     {PICKUP_LABEL.AGENT}
                   </span>
                 </>
               ) : (
                 <span className="text-muted-foreground">
-                  {PICKUP_LABEL.DIRECT}
+                  {PICKUP_LABEL.RETAILER}
                 </span>
               )}
             </DescRow>
-            {/* 통합 주문번호와 도매처별 주문번호가 **같이** 있다(RT-40) —
+            {/* 통합 주문번호와 도매처별 연번이 **같이** 있다(RT-40) —
                 도매처에 전화할 때 필요한 번호가 뒤쪽이다 */}
             <DescRow term={STATEMENT_TEXT.origin}>
-              {order.orderId} · {leg?.orderNo ?? ""}
+              {order.orderNo}
+              {leg ? ` · ${DETAIL_TEXT.legNo(leg.legNo)}` : ""}
             </DescRow>
           </DescList>
 
@@ -132,14 +140,20 @@ export function StatementDialog({
 
             <Table.Body>
               {shipment.lines.map((line) => (
-                <Table.Row key={`${line.colorLabel}-${line.size}`}>
+                <Table.Row
+                  key={`${line.productName}-${line.colorLabel}-${line.size}`}
+                >
                   <Table.Td align="left">{line.productName}</Table.Td>
                   <Table.Td align="left">
                     {line.colorLabel} · {line.size}
                   </Table.Td>
                   <Table.Td>{formatSheets(line.qty)}</Table.Td>
-                  <Table.Td>{formatWon(line.price)}</Table.Td>
-                  <Table.Td>{formatWon(line.price * line.qty)}</Table.Td>
+                  <Table.Td>
+                    {won(line.priceKnown ? line.price : null)}
+                  </Table.Td>
+                  <Table.Td>
+                    {won(line.priceKnown ? lineAmount(line) : null)}
+                  </Table.Td>
                 </Table.Row>
               ))}
             </Table.Body>
@@ -153,24 +167,30 @@ export function StatementDialog({
                   {formatSheets(sheets)}
                 </Table.Td>
                 <Table.Td />
-                <Table.Td className="font-medium">{formatWon(amount)}</Table.Td>
+                <Table.Td className="font-medium">{won(amount)}</Table.Td>
               </Table.Row>
             </tfoot>
           </Table>
 
-          <Notice className="mt-3.5">
-            <span className="flex items-start gap-2">
-              <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-              <span>
-                이 출고로 미수{" "}
-                <b className="font-medium tabular-nums">+{formatWon(amount)}</b>
-                이 생겼어요 · {STATEMENT_UNPAID_NONE} · 남은 미수{" "}
-                <b className="font-medium tabular-nums">
-                  {formatWon(remaining)}
-                </b>
+          {/* 미수는 출고 시점에 생긴다(RT-64). 금액을 모르는 장끼면 이 줄을 아예
+              안 세운다 — `+—원이 생겼어요`는 읽을 수 없다 */}
+          {amount !== null && remaining !== null ? (
+            <Notice className="mt-3.5">
+              <span className="flex items-start gap-2">
+                <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  이 출고로 미수{" "}
+                  <b className="font-medium tabular-nums">
+                    +{formatWon(amount)}
+                  </b>
+                  이 생겼어요 · {STATEMENT_UNPAID_NONE} · 남은 미수{" "}
+                  <b className="font-medium tabular-nums">
+                    {formatWon(remaining)}
+                  </b>
+                </span>
               </span>
-            </span>
-          </Notice>
+            </Notice>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 p-5 pt-0">

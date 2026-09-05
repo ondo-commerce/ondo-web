@@ -7,8 +7,8 @@ import { DETAIL_TEXT, LINE_HEADERS } from "../constants";
 import {
   formatSheets,
   formatWon,
+  lineAmount,
   lineStatusNote,
-  orderLineAmount,
   orderTotals,
 } from "../derive";
 import type { OrderRecord } from "../types";
@@ -19,9 +19,8 @@ import type { OrderRecord } from "../types";
  * `<tfoot>` 합계가 **행에서 파생된다** — 원본은 합계가 517,000원인데 행 합이
  * 618,000원이었다(§6에 없던 새 결함). 두 자리가 다른 상수를 읽지 않는다.
  *
- * 라인 둘째 줄(`직접 수령 · 디오트 지하 1층 12호`)의 주소는 **도매처 건에서**
- * 온다. 원본은 이 자리와 `결제 · 수령` 패널이 서로 다른 주소를 적고 있었다 —
- * 사입삼촌에게 넘길 주소라 한 곳에서 나와야 한다(가정 A5-e).
+ * 라인 둘째 줄(`직접 수령 · 청평화패션몰 2층 24호`)의 주소는 **도매처 건에서**
+ * 온다 — 이 자리와 `결제 · 수령` 패널이 같은 값을 읽는다.
  *
  * 찜 하트는 **눌린 대로 바뀌고**(`aria-pressed`·라벨·아이콘 모두) 상품 상세와
  * 같은 집합을 읽는다. 화면을 떠났다 와도 끈 사실이 남는다.
@@ -40,7 +39,7 @@ export function OrderLineTable({
   return (
     <Table>
       <caption className="sr-only">
-        {order.orderId} 주문의 상품별 수량·단가·상태
+        {order.orderNo} 주문의 상품별 수량·단가·상태
       </caption>
       <Table.Head>
         <Table.Row>
@@ -77,7 +76,7 @@ export function OrderLineTable({
               <Table.Td align="left">{leg?.wholesalerName ?? ""}</Table.Td>
               <Table.Td>{formatSheets(line.qty)}</Table.Td>
               <Table.Td>{formatWon(line.price)}</Table.Td>
-              <Table.Td>{formatWon(orderLineAmount(line))}</Table.Td>
+              <Table.Td>{formatWon(lineAmount(line))}</Table.Td>
               <Table.Td align="center">
                 <LineStatusBadge status={line.status} />
                 {note ? (
