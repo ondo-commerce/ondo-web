@@ -1,23 +1,30 @@
 import type { Metadata } from "next";
-import { ApprovalRejectedView, readStoreName } from "@/features/account";
+import { redirect } from "next/navigation";
+import {
+  ApprovalRejectedView,
+  homePathForStatus,
+  toAccountStatus,
+  toRejectionView,
+} from "@/features/account";
+import { requireSession } from "@/shared/api/server";
 import { AuthLayout } from "@/shared/components/AuthLayout";
 
 export const metadata: Metadata = { title: "승인 거절" };
 
+export const dynamic = "force-dynamic";
+
 /*
- * 상호명을 조회 문자열로 받아 재신청 뒤 승인 대기 화면까지 들고 간다.
- * 이 화면 자체는 상호를 그리지 않지만 여기서 끊으면 다음 화면이 더미로 돌아간다.
+ * `/me`의 `rejection`이 원본이다. 거절된 계정이 아니면 제 화면으로 돌려보낸다 —
+ * 승인 대기 page와 같은 규칙이다.
  */
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const storeName = readStoreName(await searchParams);
+export default async function Page() {
+  const me = await requireSession();
+  const status = toAccountStatus(me.approvalStatus);
+  if (status !== "REJECTED") redirect(homePathForStatus(status));
 
   return (
     <AuthLayout width="wide">
-      <ApprovalRejectedView storeName={storeName} />
+      <ApprovalRejectedView rejection={toRejectionView(me)} />
     </AuthLayout>
   );
 }

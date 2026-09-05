@@ -1,10 +1,10 @@
 "use client";
 
 import { Checkbox } from "@ondo/ui";
-import { errorId, fieldId } from "../constants";
-import { SIGNUP_TERMS } from "../fixtures";
+import { errorId, fieldId, SIGNUP_TERMS } from "../constants";
 import { FieldError } from "./FieldError";
 import { TermsDialog } from "./TermsDialog";
+import type { TermsKind } from "../types";
 
 /**
  * 약관 동의 한 줄 = 체크 + 이름 + `전문 보기`.
@@ -22,7 +22,7 @@ export function TermsCheck({
   error,
   onChange,
 }: {
-  kind: "service" | "privacy";
+  kind: TermsKind;
   checked: boolean;
   error?: string;
   onChange: (next: boolean) => void;

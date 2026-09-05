@@ -87,9 +87,7 @@ export function LoginView() {
     /* `replace`다 — 뒤로 가기로 로그인 화면에 돌아오면 이미 세션이 있는 채로
        폼을 다시 보게 된다. `refresh`는 서버 컴포넌트(셸의 `/me`)가 새 쿠키로
        다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다 */
-    router.replace(
-      homePathForStatus(toAccountStatus(me.approvalStatus), me.shopName),
-    );
+    router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };
 

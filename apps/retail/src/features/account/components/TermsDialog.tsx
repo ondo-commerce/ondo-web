@@ -2,7 +2,8 @@
 
 import { Button, Dialog } from "@ondo/ui";
 import type { ReactNode } from "react";
-import { SIGNUP_TERMS } from "../fixtures";
+import { SIGNUP_TERMS } from "../constants";
+import type { TermsKind } from "../types";
 import { useReturnFocus } from "../useReturnFocus";
 
 /**
@@ -19,7 +20,7 @@ export function TermsDialog({
   kind,
   trigger,
 }: {
-  kind: "service" | "privacy";
+  kind: TermsKind;
   /** 누르는 것. `asChild`로 넘어가므로 하나의 실제 버튼이어야 한다 */
   trigger: ReactNode;
 }) {
