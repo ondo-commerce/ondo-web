@@ -81,6 +81,23 @@ export const CART_ACTION_FAILED =
   "장바구니를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 
 /**
+ * `선택 삭제`가 **일부만** 됐을 때. 일괄 API가 없어 줄마다 DELETE가 따로 나가고
+ * 그중 몇은 서버가 받았다 — "못 바꿨어요" 한마디는 거짓말이다. 남은 줄은
+ * refresh가 그 자리에 다시 그리므로 사장이 다시 골라 지우면 된다.
+ */
+export function removeFailedText(total: number, failed: number): string {
+  return `${total}개 중 ${failed}개를 못 지웠어요. 남은 조합을 다시 골라 지워 주세요.`;
+}
+
+/**
+ * `되돌리기`가 **일부만** 됐을 때. 이미 다시 담긴 줄은 버퍼에서 빠져서, 다시
+ * 누르면 남은 것만 담는다 — 같은 SKU를 두 번 담으면 서버가 수량을 합산한다.
+ */
+export function restoreFailedText(total: number, failed: number): string {
+  return `${total}개 중 ${failed}개를 되돌리지 못했어요. 되돌리기를 다시 누르면 남은 것만 담아요.`;
+}
+
+/**
  * 수량 칸의 글자가 멈춘 뒤 저장까지 기다리는 시간. `1` → `10`을 치는 사이에
  * 앞 값이 먼저 저장되지 않게 한다. 상품 목록 검색의 300ms보다 조금 길다 —
  * 두 자리 수를 치는 손이 그보다 느리다.

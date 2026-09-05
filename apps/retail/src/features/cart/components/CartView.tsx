@@ -10,13 +10,20 @@ import { RemovedNotice } from "./RemovedNotice";
 import { WholesalerGroup } from "./WholesalerGroup";
 import { SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
 import {
+  describeBatchFailure,
   describeCartError,
   useCartBusy,
   useQtySaver,
   useRemoveCartItemsMutation,
   useRestoreCartItemsMutation,
 } from "../api/mutations";
-import { BACKORDER_NOTICE, CART_ACTION_ID, CART_SUB_TAIL } from "../constants";
+import {
+  BACKORDER_NOTICE,
+  CART_ACTION_ID,
+  CART_SUB_TAIL,
+  removeFailedText,
+  restoreFailedText,
+} from "../constants";
 import {
   allSelected,
   applyDrafts,
@@ -31,6 +38,7 @@ import {
 } from "../derive";
 import {
   clearRemoved,
+  forgetRestored,
   hideLines,
   prune,
   rememberRemoved,
@@ -48,9 +56,11 @@ import type { CartLine } from "../types";
  * 담긴 목록은 **서버가 준다** — 부모 `app/(shop)/cart/page.tsx`가 `GET /cart-items`를
  * 받아 `lines`로 넘긴다. 이 컴포넌트가 스토어(`../store`)에서 읽는 것은 서버가
  * 모르는 UI 상태뿐이다: 무엇을 골랐는지 · 칸에 무엇을 치는 중인지 · 방금 무엇을
- * 뺐는지. 쓰기(수량 · 빼기 · 되돌리기)는 `../api/mutations`가 보내고, 성공하면
+ * 뺐는지. 쓰기(수량 · 빼기 · 되돌리기)는 `../api/mutations`가 보내고, 끝나면
  * `router.refresh()`가 이 페이지와 헤더 뱃지를 같이 다시 그린다 — 뱃지와 본문이
- * 같은 서버 값을 본다(원본 §6-4 결함의 반대).
+ * 같은 서버 값을 본다(원본 §6-4 결함의 반대). 빼기·되돌리기는 줄마다 요청이
+ * 따로 나가므로 **일부만 성공해도** refresh는 돈다 — 화면이 서버의 실제 상태를
+ * 보여 주고, 실패 문구는 몇 개 중 몇 개인지를 말한다.
  *
  * **세 층의 숫자가 각자 놀지 않는다.** 행 금액 · 그룹 요약 · 하단 요약이 전부
  * `derive.ts`의 `totalsOf` 하나를 부르고, 무엇을 넣어 부르는지만 다르다 —
@@ -102,10 +112,15 @@ export function CartView({
     saveQty(line.lineId, { cartItemId: line.cartItemId, qty });
   };
 
+  /* 묶음 요청은 reject하지 않고 성공분·실패분을 갈라 돌려준다(`BatchResult`).
+     `onError`는 그 밖의 예외(코드 결함)만 받는 안전망이다 */
   const removeOne = (line: CartLine) => {
     setFailure(null);
     remove.mutate([line.cartItemId], {
-      onSuccess: () => hideLines([line.lineId]),
+      onSuccess: (result) => {
+        if (result.done.length > 0) hideLines([line.lineId]);
+        setFailure(describeBatchFailure(result, removeFailedText));
+      },
       onError: (error) => setFailure(describeCartError(error)),
     });
   };
@@ -113,6 +128,10 @@ export function CartView({
   /**
    * 고른 조합을 전부 뺀다. **고르지 않은 조합은 남는다.** 지우는 대상을 화면(DOM)이
    * 아니라 선택 집합에서 뽑는다 — 접힘·필터가 나중에 생겨도 대상이 달라지지 않는다.
+   *
+   * 일부만 지워졌으면 **지워진 줄만** 숨기고 되돌리기 버퍼에 넣는다. 못 지운 줄은
+   * 그대로 남고(선택도 그대로) 문구가 몇 개 남았는지 말한다 — refresh가 서버에
+   * 실제로 남은 것을 다시 그린다.
    */
   const removePicked = () => {
     if (picked.length === 0) return;
@@ -120,9 +139,14 @@ export function CartView({
     remove.mutate(
       picked.map((line) => line.cartItemId),
       {
-        onSuccess: () => {
-          hideLines(picked.map((line) => line.lineId));
-          rememberRemoved(toRemovedLines(picked));
+        onSuccess: (result) => {
+          const doneIds = new Set(result.done);
+          const removed = picked.filter((line) => doneIds.has(line.cartItemId));
+          if (removed.length > 0) {
+            hideLines(removed.map((line) => line.lineId));
+            rememberRemoved(toRemovedLines(removed));
+          }
+          setFailure(describeBatchFailure(result, removeFailedText));
         },
         onError: (error) => setFailure(describeCartError(error)),
       },
@@ -137,16 +161,20 @@ export function CartView({
     const removed = ui.lastRemoved;
     if (!removed) return;
     setFailure(null);
-    restore.mutate(
-      removed.map(({ variantId, qty }) => ({ variantId, qty })),
-      {
-        onSuccess: () => {
+    restore.mutate(removed, {
+      onSuccess: (result) => {
+        /* 다시 담긴 줄은 버퍼에서 뺀다 — 남은 것만 재시도하게. 전부 담겼으면
+           버튼이 사라지므로 포커스를 옮긴다 */
+        if (result.failed.length === 0) {
           clearRemoved();
           focusAfterRestore.current = true;
-        },
-        onError: (error) => setFailure(describeCartError(error)),
+        } else {
+          forgetRestored(result.done.map((line) => line.lineId));
+        }
+        setFailure(describeBatchFailure(result, restoreFailedText));
       },
-    );
+      onError: (error) => setFailure(describeCartError(error)),
+    });
   };
   useEffect(() => {
     if (!focusAfterRestore.current || serverLines.length === 0) return;

@@ -34,12 +34,16 @@ import type {
  * "listingId":null,"title":null,…,"isOrderable":false}]}`). 여기서 한 번만 좁히고
  * 화면은 모른다. 도매처가 null인 묶음은 이름 자리에 `MISSING_WHOLESALER_NAME`을
  * 두고 id는 빈 문자열이다 — 그런 묶음이 둘이면 한 상자로 합쳐진다.
+ *
+ * `groups`·`items` 두 배열도 같은 급으로 좁힌다. 스냅샷에 nullable 표기가 없어
+ * 타입은 배열이지만 `wholesaler`가 그랬듯 서버가 빈 장바구니를 `groups: null`로
+ * 주는 날 `/cart`·`/checkout`이 서버 컴포넌트째 죽는다 — 좁히는 자리는 여기 하나다.
  */
 export function toCartLines(wire: CartWire): CartLine[] {
-  return wire.groups.flatMap((group) => {
+  return (wire.groups ?? []).flatMap((group) => {
     const wholesaler = (group.wholesaler ?? null) as
       CartGroupWire["wholesaler"] | null;
-    return group.items.map((item) =>
+    return (group.items ?? []).map((item) =>
       toCartLine(item, {
         id: wholesaler === null ? "" : String(wholesaler.id),
         name: wholesaler?.name ?? MISSING_WHOLESALER_NAME,

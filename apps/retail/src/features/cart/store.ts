@@ -189,6 +189,18 @@ export function clearRemoved(): void {
 }
 
 /**
+ * 되돌리기가 **일부만** 됐을 때, 다시 담긴 줄을 버퍼에서 뺀다. 남겨 두면 다음
+ * `되돌리기`가 이미 담긴 SKU에 POST를 또 보내고 서버는 수량을 합산한다(스펙) —
+ * 누를 때마다 성공했던 줄의 수량이 배가된다. 다 빠지면 null이라 버튼도 사라진다.
+ */
+export function forgetRestored(lineIds: readonly string[]): void {
+  if (state.lastRemoved === null || lineIds.length === 0) return;
+  const gone = new Set(lineIds);
+  const rest = state.lastRemoved.filter((line) => !gone.has(line.lineId));
+  commit({ ...state, lastRemoved: rest.length > 0 ? rest : null });
+}
+
+/**
  * 서버 목록에 더는 없는 줄의 흔적을 지운다. `hidden`은 refresh가 닿았다는 뜻이고,
  * 나머지는 다른 탭에서 뺐거나 주문으로 넘어간 줄이다.
  * 바뀔 게 없으면 commit하지 않는다 — 렌더마다 부르는 자리라 무한 재렌더가 된다.
