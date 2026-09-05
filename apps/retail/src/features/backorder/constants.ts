@@ -1,7 +1,38 @@
 import type { BackorderSort } from "./types";
 
-/** 이 화면의 경로. 칩·정렬 링크가 전부 여기서 주소를 만든다 */
+/** 이 화면의 경로. 칩·정렬·페이지 링크가 전부 여기서 주소를 만든다 */
 export const BACKORDER_PATH = "/backorders";
+
+/** 서버 path. 이 feature가 부르는 유일한 path다 — 스냅샷 `GET /api/retail/backorders` */
+export const BACKORDER_API_PATH = "/api/retail/backorders";
+
+/**
+ * 한 번에 받는 장수. **BE 상한이 100이다**(`BackorderController.MAX_PAGE_SIZE` — 넘기면
+ * `VALIDATION_FAILED`). 스펙에는 상한이 안 적혀 있어 여기 적어 둔다(`04-wire.md` §3).
+ *
+ * 기본값 20 대신 상한을 쓰는 이유: 화면에 페이저가 없었고 요약 3카드가 **받은 목록**으로
+ * 계산된다. 20건씩 자르면 카드가 "지금 장"만 세는 폭이 넓어진다. 100을 넘는 사장에게만
+ * `이전 · 다음`이 붙는다.
+ */
+export const BACKORDER_PAGE_SIZE = 100;
+
+/** 첫 장. 주소의 `?page=`는 1-base이고 서버는 0-base라 여기서 한 번 뺀다 */
+export const FIRST_PAGE = 1;
+
+/**
+ * 서버 사이즈 코드 → 화면 라벨. `FREE`만 다르다(사양 §4 라벨 통일 — `F`·`FREE`가 아니라 `Free`).
+ * 나머지(`S`·`M`·`L`…)는 코드가 곧 라벨이라 여기 없다.
+ */
+export const SIZE_LABEL: Readonly<Record<string, string>> = { FREE: "Free" };
+
+/** `이전 · 다음` 링크. 2장 이상일 때만 보인다 */
+export const PAGER_LABEL = {
+  prev: "이전",
+  next: "다음",
+  /** `1 / 3 페이지` 꼴로 위치를 말한다 */
+  position: (page: number, totalPages: number) =>
+    `${page} / ${totalPages} 페이지`,
+} as const;
 
 /**
  * 도매처를 안 좁힌 상태. `features/catalog`에도 같은 이름의 상수가 있는데
@@ -87,10 +118,13 @@ export const TOTAL_ROW_LABEL = "합계";
  * 상호는 더미에서 오는 값이라 여기서 판정할 수 없다. `<상호> 미송은` 형태로 피한다.
  */
 export const DROPPED_NOTICE = {
-  /** 실제 거래처인데 지금 미송이 0건이다 */
+  /** 상호를 아는 경우. **지금은 쓰이지 않는다** — 소매 스펙에 도매처 조회 path가 없다(§3) */
   knownSuffix: "미송은 지금 없어요. 전체 목록을 보여드릴게요.",
-  /** 거래처 목록에 없는 값 — 옛 링크·오타 */
-  unknown: "찾으시는 도매처를 확인하지 못했어요. 전체 목록을 보여드릴게요.",
+  /**
+   * 상호를 모르는 경우. 실제 거래처인데 미송이 0건인 것과 오타·옛 링크를 서버 응답만으로는
+   * 가를 수 없어서, 둘 다 참인 말로 적는다 — "확인하지 못했다"고 하면 실제 거래처에겐 거짓이다.
+   */
+  unknown: "그 도매처의 미송은 지금 없어요. 전체 목록을 보여드릴게요.",
 } as const;
 
 /**

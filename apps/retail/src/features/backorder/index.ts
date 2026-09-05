@@ -3,11 +3,15 @@
  * 이 파일에 없는 것은 feature 밖에서 import 하지 않는다 (ESLint로 강제).
  */
 export { BackorderView } from "./components/BackorderView";
-export { BACKORDER_LINES, BACKORDER_TODAY } from "./fixtures";
+export { BACKORDER_API_PATH, BACKORDER_PAGE_SIZE } from "./constants";
 export {
   droppedWholesalerId,
+  resolvePage,
   resolveSort,
   resolveWholesalerId,
+  toBackorderLine,
+  toBackorderPage,
+  todayKst,
   wholesalerChips,
 } from "./derive";
-export type { BackorderSort, DroppedWholesaler } from "./types";
+export type { BackorderSort, BackorderWire, DroppedWholesaler } from "./types";

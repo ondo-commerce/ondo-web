@@ -79,7 +79,7 @@ export function BackorderTable({
             <Table.Td align="left">{optionLabel(line)}</Table.Td>
             <Table.Td>{qtyLabel(line.qty)}</Table.Td>
             <Table.Td align="center" numeric>
-              {formatDate(line.orderedAt)}
+              {formatDate(line.orderedDate)}
             </Table.Td>
             <Table.Td align="center" numeric={false}>
               <EtaCell line={line} today={today} />

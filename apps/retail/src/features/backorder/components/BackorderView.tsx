@@ -1,5 +1,6 @@
 import { Notice, Panel } from "@ondo/ui";
 import { BackorderCards } from "./BackorderCards";
+import { BackorderPager } from "./BackorderPager";
 import { BackorderSummary } from "./BackorderSummary";
 import { BackorderTable } from "./BackorderTable";
 import { BackorderToolbar } from "./BackorderToolbar";
@@ -11,7 +12,12 @@ import {
   summarize,
   wholesalerChips,
 } from "../derive";
-import type { BackorderLine, BackorderSort, DroppedWholesaler } from "../types";
+import type {
+  BackorderLine,
+  BackorderPage,
+  BackorderSort,
+  DroppedWholesaler,
+} from "../types";
 
 /**
  * 미송 대기 현황 한 장 — 패널 2개(머리 + 요약 / 툴바 + 표).
@@ -24,6 +30,9 @@ import type { BackorderLine, BackorderSort, DroppedWholesaler } from "../types";
  * 서버 컴포넌트다. 필터·정렬을 `useState`로 들면 뒤로 가기와 새로고침에서 통째로
  * 사라지고(retail-market F6), 거래처 관리의 미송 배지(RT-66)가 걸 주소도 없어진다.
  *
+ * `lines`는 **서버가 준 한 장(100건)**이다. 서버에 도매처·정렬 파라미터가 없어서 필터와
+ * 정렬은 이 장 안에서만 걸린다 — 2장 이상이면 `BackorderPager`가 그 사실을 보여준다.
+ *
  * 입력칸이 하나도 없다. 소매는 미송을 만들지도 고치지도 못하고(RT-59), 배분은
  * 도매의 일이다(`glossary` §4.8 · §3-0 E) — 읽기 전용인 것이 이 화면의 성격이다.
  */
@@ -33,9 +42,10 @@ export function BackorderView({
   wholesalerId,
   sort,
   dropped,
+  paging,
 }: {
   lines: readonly BackorderLine[];
-  /** `fixtures.ts`의 고정 상수. 렌더 중에 `new Date()`를 부르지 않는다 */
+  /** page가 요청 시점에 `todayKst`로 한 번 만든 값. 렌더 중에 `new Date()`를 부르지 않는다 */
   today: string;
   /** 주소에서 정리돼 들어온 값. 여기 도달한 시점에는 반드시 칩 목록 안의 값이다 */
   wholesalerId: string;
@@ -45,6 +55,8 @@ export function BackorderView({
    * 상호는 `features/catalog`만 아는 값이라 page가 찾아 넘긴다.
    */
   dropped: DroppedWholesaler | null;
+  /** 서버 페이지 위치. 2장 이상일 때만 페이저가 선다 */
+  paging: BackorderPage;
 }) {
   const visible = sortByOrderedAt(
     filterByWholesaler(lines, wholesalerId),
@@ -111,6 +123,12 @@ export function BackorderView({
             totalQty={summary.totalQty}
           />
         </div>
+
+        <BackorderPager
+          paging={paging}
+          wholesalerId={wholesalerId}
+          sort={sort}
+        />
       </Panel>
     </div>
   );

@@ -1,27 +1,28 @@
 import type { Metadata } from "next";
 import {
-  BACKORDER_LINES,
-  BACKORDER_TODAY,
+  BACKORDER_API_PATH,
+  BACKORDER_PAGE_SIZE,
   BackorderView,
   droppedWholesalerId,
+  resolvePage,
   resolveSort,
   resolveWholesalerId,
+  toBackorderLine,
+  toBackorderPage,
+  todayKst,
   wholesalerChips,
+  type BackorderWire,
 } from "@/features/backorder";
-/* 상호는 거래처 목록(catalog)만 안다. **feature끼리 직접 잇지 않고 page에서 합친다** —
-   backorder가 catalog를 import하면 미송 목록이 거래처 더미에 묶인다. 여기(조립 지점)에서
-   id 하나를 상호로 바꿔 넘기는 것으로 끝낸다 */
-import { findWholesaler } from "@/features/catalog";
+import { serverApi } from "@/shared/api/server";
 
 export const metadata: Metadata = { title: "미송 대기 현황" };
 
 /**
  * 요청마다 서버에서 그린다.
  *
- * 이 화면을 정적으로 굳히면 빌드가 만든 첫 HTML이 늘 `전체`다 — 거래처 관리의 미송
- * 배지(RT-66)를 눌러 `?wholesaler=w-lavien`으로 들어온 사장이 하이드레이션이 끝날
- * 때까지 3줄짜리 전체 목록을 보다가 갑자기 1줄로 바뀌는 걸 본다(retail-shell F4).
- * 주소가 곧 상태인 화면이라 정적 생성과 맞바꾼다. 검색 결과 화면과 같은 처방이다.
+ * 세션 쿠키로 `GET /api/retail/backorders`를 부르는 화면이라 정적으로 굳힐 수 없고,
+ * 주소(`?wholesaler=`·`?sort=`·`?page=`)가 곧 상태라 첫 HTML부터 그 상태여야 한다 —
+ * 하이드레이션 뒤에 3줄이 1줄로 바뀌는 걸 보이지 않는다(retail-shell F4).
  */
 export const dynamic = "force-dynamic";
 
@@ -31,25 +32,34 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const allowed = wholesalerChips(BACKORDER_LINES).map((chip) => chip.id);
+  const page = resolvePage(params);
 
-  /* 떨어뜨린 값이 있으면 화면이 그 사실을 말한다(F2). 상호를 못 찾으면 `null`로 넘겨
-     `w-basic 미송은 지금 없어요` 같은 id 노출을 막는다 */
+  /* 서버가 아는 파라미터는 `page`·`size` 둘뿐이다. 도매처·정렬은 받은 장 안에서 건다.
+     401은 `(shop)` 레이아웃의 `requireSession`이 먼저 걸러 여기까지 안 온다.
+     그 밖의 실패는 그대로 던져 `(shop)/error.tsx`가 받는다 */
+  const api = await serverApi();
+  const result = await api.fetchPage<BackorderWire>(BACKORDER_API_PATH, {
+    searchParams: { page: page - 1, size: BACKORDER_PAGE_SIZE },
+  });
+
+  const lines = result.items.map(toBackorderLine);
+  const allowed = wholesalerChips(lines).map((chip) => chip.id);
+
+  /* 떨어뜨린 값이 있으면 화면이 그 사실을 말한다(F2). 상호는 늘 `null`이다 —
+     소매 스펙에 도매처를 id로 찾는 path가 없고, `features/catalog`의 더미 id(`w-lavien`)는
+     서버 id와 다른 축이라 거기서 찾아도 맞지 않는다 */
   const droppedId = droppedWholesalerId(params, allowed);
 
   return (
     <BackorderView
-      lines={BACKORDER_LINES}
-      today={BACKORDER_TODAY}
+      lines={lines}
+      today={todayKst(new Date())}
       /* 미송이 없는 도매처·오타·옛 링크는 여기서 `전체`로 떨어진다 — 칩 4개 중
          아무것도 안 켜진 채 0건이 뜨는 화면을 만들지 않는다 */
       wholesalerId={resolveWholesalerId(params, allowed)}
       sort={resolveSort(params)}
-      dropped={
-        droppedId === null
-          ? null
-          : { id: droppedId, name: findWholesaler(droppedId)?.name ?? null }
-      }
+      dropped={droppedId === null ? null : { id: droppedId, name: null }}
+      paging={toBackorderPage(result.meta)}
     />
   );
 }
