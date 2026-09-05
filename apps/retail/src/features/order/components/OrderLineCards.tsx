@@ -7,8 +7,8 @@ import { DETAIL_TEXT, LINE_HEADERS } from "../constants";
 import {
   formatSheets,
   formatWon,
+  lineAmount,
   lineStatusNote,
-  orderLineAmount,
   orderTotals,
 } from "../derive";
 import type { OrderRecord } from "../types";
@@ -20,8 +20,7 @@ import type { OrderRecord } from "../types";
  * 화면에 없었다**(F1). 접는 경계와 방식은 목록·미송·정산과 같다.
  *
  * 값은 표와 **같은 함수**에서 나오고(`derive.ts`) 라벨도 표 머리글과 같은
- * 상수를 읽는다. 합계는 여기서 다시 더하지 않고 `orderTotals` 하나를 부른다 —
- * 원본이 요약 517,000원 / 행 합 618,000원으로 갈려 있던 자리다.
+ * 상수를 읽는다. 합계는 여기서 다시 더하지 않고 `orderTotals` 하나를 부른다.
  */
 export function OrderLineCards({
   order,
@@ -82,7 +81,7 @@ export function OrderLineCards({
                   {LINE_HEADERS.subtotal}
                 </dt>
                 <dd className="font-medium tabular-nums">
-                  {formatWon(orderLineAmount(line))}
+                  {formatWon(lineAmount(line))}
                 </dd>
 
                 <dt className="text-muted-foreground">{LINE_HEADERS.status}</dt>

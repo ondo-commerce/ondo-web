@@ -3,112 +3,108 @@
 import { Button, Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { OrderLineCards } from "./OrderLineCards";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderStats } from "./OrderStats";
-import { OrderStatusBadge } from "./OrderStatusBadge";
 import { PaymentPickupPanel } from "./PaymentPickupPanel";
-import { ReorderDialog } from "./ReorderDialog";
 import { ShipmentRecords } from "./ShipmentRecords";
 import { StatementDialog } from "./StatementDialog";
-import { CANCEL_ACTION_ID, DETAIL_TEXT } from "../constants";
 import {
-  cancelLockReason,
-  detailSubtitle,
-  orderStatus,
-  withCancel,
-} from "../derive";
-import {
-  cancelOrder,
-  undoCancelOrder,
-  useCanceledOrders,
-  useLastCanceled,
-} from "../store";
-import type { OrderLine, OrderRecord, Shipment } from "../types";
+  describeOrderError,
+  useCancelOrderMutation,
+  useOrderBusy,
+} from "../api/mutations";
+import { CANCEL_ACTION_ID, DETAIL_TEXT, ORDER_PATH } from "../constants";
+import { cancelLockReason, cancellableLegIds, detailSubtitle } from "../derive";
+import type { OrderRecord, Shipment } from "../types";
+
+/** 취소 흐름의 자리. 확인 → 보내는 중 → 결과 한 줄 */
+type CancelStep = "idle" | "confirming" | "done";
 
 /**
- * 주문 상세 — 패널 4장.
+ * 주문 상세 — 패널 4장. 값은 `GET /orders/{orderId}`다.
  *
- * **머리 배지가 주문 내역 목록과 같은 함수에서 나온다**(`orderStatus`). 목록과
- * 상세가 같은 주문을 두고 다른 배지를 보이면 어느 쪽을 믿어야 할지 알 수 없다.
- *
- * 취소도 같은 이유로 스토어가 든다 — 여기서 취소한 주문이 목록에서도 `취소됨`이
- * 된다. 더미 배열을 직접 고치지 않는 이유는 `derive.withCancel` 주석에 있다.
+ * 취소는 **도매처별**이고 되돌리기 API가 없다(스펙). 되돌릴 수 없는 실행이라
+ * 확인 단계를 둔다(F9) — 누르면 `취소 확정`·`그만두기`가 그 자리에 서고, 확정하면
+ * `POST /orders/{id}/cancel`을 보낸 뒤 `router.refresh()`로 서버 값을 다시 그린다.
+ * 화면이 배지를 직접 `취소됨`으로 바꾸지 않는다 — 일부만 취소될 수 있어서
+ * 무엇이 어떻게 됐는지는 서버가 말한다.
  */
 export function OrderDetailView({
-  order: source,
+  order,
   receiverStore,
   favorites,
   onToggleFavorite,
-  onReorder,
 }: {
   order: OrderRecord;
   receiverStore: string;
   favorites: ReadonlySet<string>;
   onToggleFavorite: (productId: string) => void;
-  onReorder: (lines: readonly OrderLine[]) => void;
 }) {
-  const canceledOrders = useCanceledOrders();
-  const lastCanceled = useLastCanceled();
-  const [reordering, setReordering] = useState(false);
-  const [statement, setStatement] = useState<Shipment | null>(null);
-  const [undone, setUndone] = useState(false);
-  /* 모달을 닫은 뒤 포커스를 돌려 놓을 자리. `packages/ui`의 `Button`은 ref를
-     받지 않아서 눌린 요소를 그때 붙잡아 둔다(F4) */
-  const reorderTrigger = useRef<HTMLElement | null>(null);
-  const statementTrigger = useRef<HTMLElement | null>(null);
+  const router = useRouter();
+  const cancel = useCancelOrderMutation();
+  const busy = useOrderBusy();
+  const [step, setStep] = useState<CancelStep>("idle");
+  const [result, setResult] = useState<string | null>(null);
+  const [statement, setStatement] = useState<{
+    shipment: Shipment;
+    trigger: HTMLElement;
+  } | null>(null);
 
-  /* 취소 사실을 한 번 겹친 사본을 그린다. 배지·라인 상태·취소 버튼이 전부
-     이 하나에서 나오므로 세 자리가 서로 다른 말을 할 수 없다 */
-  const order = withCancel(source, canceledOrders.has(source.orderId));
   const lock = cancelLockReason(order);
   const cancelable = lock === null;
-  /* 방금 이 주문을 취소했는가. 되돌리기가 이 값에서 나온다(F9) */
-  const justCanceled = lastCanceled === order.orderId;
 
-  /* 취소하면 `주문 취소`가 그 자리에서 `disabled`가 돼 포커스가 `<body>`로
-     떨어진다. 다음에 할 수 있는 일이 되돌리기라 그쪽으로 옮긴다(WCAG 2.4.3 ·
-     장바구니 `선택 삭제`와 같은 방식) */
+  /* 확인 단계가 나타나면 `취소 확정`으로, 사라지면 `주문 취소`로 포커스를 옮긴다 —
+     버튼이 그 자리에서 바뀌어 그냥 두면 포커스가 `<body>`로 떨어진다(WCAG 2.4.3) */
   useEffect(() => {
-    if (justCanceled) document.getElementById(CANCEL_ACTION_ID.undo)?.focus();
-  }, [justCanceled]);
+    const id =
+      step === "confirming"
+        ? CANCEL_ACTION_ID.confirm
+        : step === "done"
+          ? CANCEL_ACTION_ID.cancel
+          : null;
+    if (id) document.getElementById(id)?.focus();
+  }, [step]);
 
-  const handleCancel = () => {
-    setUndone(false);
-    cancelOrder(order.orderId);
-  };
-
-  /* 되돌리면 `되돌리기`가 사라진다 — 목록을 먼저 그린 뒤에 포커스를 옮겨야
-     아직 없는 버튼을 찾지 않는다 */
-  const handleUndo = () => {
-    flushSync(() => undoCancelOrder());
-    setUndone(true);
-    document.getElementById(CANCEL_ACTION_ID.cancel)?.focus();
+  const handleConfirm = () => {
+    cancel.mutate(
+      { orderId: order.orderId, wholesaleOrderIds: cancellableLegIds(order) },
+      {
+        onSuccess: (response) => {
+          const results = response.results ?? [];
+          const done = results.filter((leg) => leg.isCancelled ?? false);
+          const kept = results.filter((leg) => !(leg.isCancelled ?? false));
+          /* 서버 문구를 그대로 잇는다 — 왜 안 됐는지는 도매처마다 다르다 */
+          const reasons = kept
+            .map((leg) => leg.message ?? "")
+            .filter((message) => message !== "")
+            .join(" ");
+          const summary =
+            done.length === 0
+              ? DETAIL_TEXT.cancelNone
+              : kept.length === 0
+                ? DETAIL_TEXT.cancelDone
+                : DETAIL_TEXT.cancelPartial(done.length, kept.length);
+          setResult(reasons === "" ? summary : `${summary} ${reasons}`);
+          setStep("done");
+          /* 배지·라인·버튼은 서버 값이다. 다시 받아 그린다 */
+          router.refresh();
+        },
+        onError: (error) => {
+          setResult(describeOrderError(error, DETAIL_TEXT.cancelFailed));
+          setStep("done");
+        },
+      },
+    );
   };
 
   return (
     <div className="mx-auto max-w-wrap">
       <Panel>
-        <Panel.Title
-          sub={detailSubtitle(order)}
-          action={
-            <div className="flex items-center gap-2">
-              <OrderStatusBadge status={orderStatus(order)} />
-              <Button
-                variant="line"
-                onClick={(event) => {
-                  reorderTrigger.current = event.currentTarget;
-                  setReordering(true);
-                }}
-              >
-                {DETAIL_TEXT.reorderAll}
-              </Button>
-            </div>
-          }
-        >
-          <span className="tabular-nums">{order.orderId}</span>
+        <Panel.Title sub={detailSubtitle(order)}>
+          <span className="tabular-nums">{order.orderNo}</span>
         </Panel.Title>
 
         <OrderStats order={order} />
@@ -124,44 +120,54 @@ export function OrderDetailView({
           </Notice>
 
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {/* 못 누를 때는 **진짜 `disabled`**다. `aria-disabled`만 걸면
-                잠긴 주문에서도 눌린다(직전 회차 F11) */}
-            <Button
-              id={CANCEL_ACTION_ID.cancel}
-              variant="soft"
-              disabled={!cancelable}
-              onClick={handleCancel}
-            >
-              {DETAIL_TEXT.cancel}
-            </Button>
+            {step === "confirming" ? (
+              <>
+                <Button
+                  id={CANCEL_ACTION_ID.confirm}
+                  variant="soft"
+                  disabled={busy}
+                  onClick={handleConfirm}
+                >
+                  {busy
+                    ? DETAIL_TEXT.cancelling
+                    : DETAIL_TEXT.cancelConfirmAction}
+                </Button>
+                <Button
+                  variant="line"
+                  disabled={busy}
+                  onClick={() => setStep("idle")}
+                >
+                  {DETAIL_TEXT.cancelDismiss}
+                </Button>
+              </>
+            ) : (
+              /* 못 누를 때는 **진짜 `disabled`**다. `aria-disabled`만 걸면
+                 잠긴 주문에서도 눌린다(직전 회차 F11) */
+              <Button
+                id={CANCEL_ACTION_ID.cancel}
+                variant="soft"
+                disabled={!cancelable || busy}
+                onClick={() => {
+                  setResult(null);
+                  setStep("confirming");
+                }}
+              >
+                {DETAIL_TEXT.cancel}
+              </Button>
+            )}
 
-            {/* 실행 결과가 버튼 옆에서 바뀐다 — 배지도 같이 `취소됨`이 되므로
-                같은 버튼을 또 눌러야 하는지 사장이 알 수 있다.
-                되돌릴 수 없는 실행에 확인 모달 대신 **되돌리기**를 붙인다 —
-                장바구니 `선택 삭제`가 같은 등급에 이미 그렇게 해 뒀다(F9).
-                `role=status` 노드는 비어 있을 때도 자리를 지킨다: 지운 뒤에 새로
-                생기는 노드는 보조기술이 못 읽고 지나갈 수 있다 */}
+            {/* 확인 질문과 실행 결과가 같은 자리에서 바뀐다. `role=status` 노드는
+                비어 있을 때도 자리를 지킨다: 지운 뒤에 새로 생기는 노드는 보조기술이
+                못 읽고 지나갈 수 있다 */}
             <p
               role="status"
               className="text-secondary-foreground text-body empty:hidden"
             >
-              {justCanceled ? (
-                <>
-                  {DETAIL_TEXT.cancelDone}{" "}
-                  <Button
-                    id={CANCEL_ACTION_ID.undo}
-                    variant="link"
-                    className="text-foreground text-body font-semibold underline underline-offset-2"
-                    onClick={handleUndo}
-                  >
-                    {DETAIL_TEXT.cancelUndo}
-                  </Button>
-                </>
-              ) : undone ? (
-                DETAIL_TEXT.cancelUndone
-              ) : (
-                ""
-              )}
+              {step === "confirming"
+                ? DETAIL_TEXT.cancelConfirm
+                : step === "done"
+                  ? (result ?? "")
+                  : ""}
             </p>
           </div>
         </section>
@@ -195,10 +201,9 @@ export function OrderDetailView({
         </Panel.Title>
         <ShipmentRecords
           order={order}
-          onOpenStatement={(shipment, trigger) => {
-            statementTrigger.current = trigger;
-            setStatement(shipment);
-          }}
+          onOpenStatement={(shipment, trigger) =>
+            setStatement({ shipment, trigger })
+          }
         />
       </Panel>
 
@@ -214,29 +219,16 @@ export function OrderDetailView({
         </Notice>
       </Panel>
 
-      {/* 목록과 **같은 모달**이다 — 두 벌 만들면 한쪽만 고쳐진다 */}
-      {reordering ? (
-        <ReorderDialog
-          order={order}
-          open
-          onOpenChange={(next) => {
-            if (!next) setReordering(false);
-          }}
-          onCloseFocus={() => reorderTrigger.current?.focus()}
-          onAdd={onReorder}
-        />
-      ) : null}
-
       {statement ? (
         <StatementDialog
           order={order}
-          shipment={statement}
+          shipment={statement.shipment}
           receiverStore={receiverStore}
           open
           onOpenChange={(next) => {
             if (!next) setStatement(null);
           }}
-          onCloseFocus={() => statementTrigger.current?.focus()}
+          onCloseFocus={() => statement.trigger.focus()}
         />
       ) : null}
     </div>
@@ -256,7 +248,7 @@ export function OrderNotFound() {
             {DETAIL_TEXT.notFound.description}
           </p>
           <Button asChild variant="line" className="mt-3.5">
-            <Link href="/orders">{DETAIL_TEXT.notFound.action}</Link>
+            <Link href={ORDER_PATH.orders}>{DETAIL_TEXT.notFound.action}</Link>
           </Button>
         </div>
       </Panel>

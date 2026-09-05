@@ -27,6 +27,7 @@ import {
 import {
   allSelected,
   applyDrafts,
+  checkoutHref,
   groupByWholesaler,
   orderBlockedReason,
   selectedIds,
@@ -242,6 +243,7 @@ export function CartView({
             <CartSummaryBar
               totals={totals}
               blockedReason={orderBlockedReason(totals)}
+              href={checkoutHref(picked)}
             />
           </>
         )}

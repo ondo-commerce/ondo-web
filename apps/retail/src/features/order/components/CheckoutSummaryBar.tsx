@@ -8,24 +8,25 @@ import { formatWon } from "../derive";
 /**
  * 패널 바닥의 합계 바(`.sumbar`). 장바구니의 `CartSummaryBar`와 같은 구조다.
  *
- * **화면 하단 고정이 아니라 패널 바닥이다** — 확정 와이어프레임의 `.sumbar`가
- * sticky가 아니고, 이미 만든 장바구니·상품 상세도 패널 바닥이다. 바깥 구조는
- * 코드가 이긴다.
- *
  * `주문 접수하기`는 **되돌릴 수 없는 실행**이라 두 가지를 지킨다.
  * ① 누르기 전에 그 사실을 글자로 말한다(`접수한 뒤에는 …`).
  * ② 못 누를 때는 **진짜 `disabled` 버튼**이고 그 옆에 이유가 있다.
  *    `asChild + Link`로 두면 `disabled`가 `<a>`에 아무 효력이 없어 잠긴 채로도
  *    넘어가고, `aria-disabled`만 걸면 눌리기까지 한다(직전 회차 F11).
+ * ③ 요청이 나가 있는 동안도 잠긴다 — 멱등키가 두 번째를 막지만 눌리는 버튼을
+ *    두면 사장은 "안 눌렸나" 하고 또 누른다.
  */
 export function CheckoutSummaryBar({
   amount,
   blockedReason,
+  busy,
   onSubmit,
 }: {
   amount: number;
   /** 못 누르는 이유. null이면 누를 수 있다 */
   blockedReason: string | null;
+  /** 접수 요청이 나가 있는가 */
+  busy: boolean;
   onSubmit: () => void;
 }) {
   return (
@@ -45,11 +46,11 @@ export function CheckoutSummaryBar({
             <Link href="/cart">{CHECKOUT_TEXT.backToCart}</Link>
           </Button>
           <Button
-            disabled={blockedReason !== null}
+            disabled={blockedReason !== null || busy}
             onClick={onSubmit}
             className="phone:flex-1"
           >
-            {CHECKOUT_TEXT.submit}
+            {busy ? CHECKOUT_TEXT.submitting : CHECKOUT_TEXT.submit}
           </Button>
         </div>
       </div>

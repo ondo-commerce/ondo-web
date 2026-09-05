@@ -5,33 +5,34 @@ import { Copy } from "lucide-react";
 import { useState } from "react";
 import { CHECKOUT_TEXT } from "../constants";
 import { formatWon } from "../derive";
-import { bankAccountOf } from "../fixtures";
+import type { BankAccount } from "../types";
 
 /**
- * 계좌 이체를 고른 도매처에만 붙는 입금 계좌 줄(`.bank`).
+ * 계좌 이체를 고른 도매처에만 붙는 입금 계좌 줄(`.bank`). 계좌는 서버가 도매처와
+ * 같이 준다(`WholesalerWithBank`) — 미등록 도매처는 이 줄이 아예 안 그려진다.
  *
  * **`현금`으로 바꾸면 이 줄이 사라진다**(RT-36) — 현금으로 낼 도매처에 계좌가
  * 남아 있으면 사장이 그리로 돈을 보낸다.
  *
- * `복사`는 **눌린 결과가 보여야 한다.** 앞 회차에서 onClick도 href도 없는 버튼이
- * 결함으로 잡혔고, 클립보드는 권한·보안 컨텍스트에 따라 조용히 실패하는 API라
- * 성공·실패 둘 다 그 자리에서 말한다.
+ * `복사`는 **눌린 결과가 보여야 한다.** 클립보드는 권한·보안 컨텍스트에 따라
+ * 조용히 실패하는 API라 성공·실패 둘 다 그 자리에서 말한다.
  */
 export function BankAccountRow({
   wholesalerName,
+  bank,
   amount,
 }: {
   wholesalerName: string;
+  bank: BankAccount;
   /** 이 도매처에 보낼 금액. 상자 머리 금액과 **같은 파생 함수**에서 온다 */
   amount: number;
 }) {
-  const account = bankAccountOf(wholesalerName);
-  const accountText = `${account.bankName} ${account.accountNo}`;
+  const accountText = `${bank.bankName} ${bank.accountNo}`;
   const [notice, setNotice] = useState<string | null>(null);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(account.accountNo);
+      await navigator.clipboard.writeText(bank.accountNo);
       setNotice(CHECKOUT_TEXT.copied);
     } catch {
       /* 클립보드가 막힌 브라우저에서도 버튼이 조용히 아무 일도 안 하지 않는다.
@@ -45,7 +46,7 @@ export function BankAccountRow({
       <div className="text-body flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <span className="text-muted-foreground">{CHECKOUT_TEXT.bankLabel}</span>
         <span className="font-medium tabular-nums">{accountText}</span>
-        <span className="text-muted-foreground">예금주 {account.holder}</span>
+        <span className="text-muted-foreground">예금주 {bank.holder}</span>
 
         <span className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
           <span className="font-medium tabular-nums">{formatWon(amount)}</span>

@@ -1,45 +1,36 @@
 import { AcceptStatusBadge } from "./OrderStatusBadge";
 import { WholesalerOrderCard } from "./WholesalerOrderCard";
-import { formatWon, methodLabel, totalsOf } from "../derive";
-import { bankAccountOf } from "../fixtures";
-import type { ReceiptLeg } from "../types";
+import { DETAIL_TEXT } from "../constants";
+import { formatWon, legGroup, methodLabel, totalsOf } from "../derive";
+import type { OrderLeg, OrderRecord } from "../types";
 
 /**
- * 접수된 도매처 한 건.
+ * 접수된 도매처 한 건. 값은 `GET /orders/{id}`의 도매처 건에서 온다.
  *
- * 바닥 줄(`.grp-box__foot`)이 **주문서에서 고른 것을 그대로 되돌려 준다.**
- * 코튼클럽을 `사입삼촌 방문 · 현금`으로 골랐으면 여기도 그렇고, 수령인은
- * 주문서에 친 이름이다 — 완료 화면이 자기 더미를 갖는 순간 두 화면이 다른
- * 말을 하게 된다.
+ * 바닥 줄(`.grp-box__foot`)이 **주문서에서 고른 것을 그대로 되돌려 준다** —
+ * 서버가 저장한 수령·결제·수령인이라 완료 화면이 지어낼 것이 없다.
  *
  * 계좌 이체면 `입금액`, 사입삼촌 방문이면 `수령인`이 붙는다. **입금액은 상자
  * 머리 금액과 같은 `totalsOf` 하나에서 나온다** — 원본은 소계 327,000인데
- * 입금액이 318,000이었다(§6-1). 두 값이 다른 상수에서 오면 언제든 또 갈린다.
+ * 입금액이 318,000이었다(§6-1).
  */
 export function OrderResultCard({
+  order,
   leg,
-  agentName,
-  agentPhone,
 }: {
-  leg: ReceiptLeg;
-  agentName: string;
-  agentPhone: string;
+  order: OrderRecord;
+  leg: OrderLeg;
 }) {
-  const amount = totalsOf(leg.lines).amount;
-  const account = bankAccountOf(leg.wholesalerName);
+  const group = legGroup(order, leg);
+  const amount = totalsOf(group.lines).amount;
 
   return (
     <WholesalerOrderCard
-      group={{
-        wholesalerId: leg.wholesalerId,
-        wholesalerName: leg.wholesalerName,
-        wholesalerLocation: leg.wholesalerLocation,
-        lines: leg.lines,
-      }}
-      badge={<AcceptStatusBadge status={leg.status} />}
+      group={group}
+      badge={<AcceptStatusBadge accepted />}
       meta={
         <span className="text-muted-foreground tabular-nums">
-          {leg.orderNo}
+          {DETAIL_TEXT.legNo(leg.legNo)}
         </span>
       }
       foot={
@@ -49,14 +40,14 @@ export function OrderResultCard({
           </span>
 
           <span className="ml-auto tabular-nums phone:ml-0 phone:w-full">
-            {leg.payment === "TRANSFER" ? (
+            {leg.payment === "BANK_TRANSFER" && leg.bank !== null ? (
               <>
                 입금 계좌{" "}
                 <span className="font-medium">
-                  {account.bankName} {account.accountNo}
+                  {leg.bank.bankName} {leg.bank.accountNo}
                 </span>{" "}
                 <span className="text-muted-foreground">
-                  예금주 {account.holder}
+                  예금주 {leg.bank.holder}
                 </span>{" "}
                 · 입금액{" "}
                 <span className="font-medium">{formatWon(amount)}</span>
@@ -65,9 +56,13 @@ export function OrderResultCard({
 
             {leg.pickup === "AGENT" ? (
               <>
-                {leg.payment === "TRANSFER" ? " · " : null}
-                수령인 <span className="font-medium">{agentName}</span>{" "}
-                <span className="text-muted-foreground">{agentPhone}</span>
+                {leg.payment === "BANK_TRANSFER" ? " · " : null}
+                수령인 <span className="font-medium">
+                  {order.agentName}
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  {order.agentPhone}
+                </span>
               </>
             ) : null}
           </span>
