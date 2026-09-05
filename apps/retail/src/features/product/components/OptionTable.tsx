@@ -3,12 +3,7 @@
 import { Badge, ColorDot, cn } from "@ondo/ui";
 import { BulkQtyPopover } from "./BulkQtyPopover";
 import { QtyStepper } from "@/shared/components/QtyStepper";
-import {
-  QTY_FOOTNOTE,
-  QTY_ISSUE_TEXT,
-  SOLD_OUT_BADGE,
-  colorHex,
-} from "../constants";
+import { QTY_FOOTNOTE, QTY_ISSUE_TEXT, SOLD_OUT_BADGE } from "../constants";
 import {
   formatWon,
   optionSummaryText,
@@ -53,7 +48,7 @@ export function OptionTable({
   onBulkApply: (group: ColorGroup, value: string) => void;
   /** 일괄 입력 직후의 결과 신호. 어느 그룹에 몇 장이 들어갔는지 */
   bulkNotice: string | null;
-  /** 게시 내림·시즌 종료면 수량을 넣을 수 없다 */
+  /** 담기 요청이 나가 있는 동안. 보내는 중에 칸을 고치면 무엇을 담았는지 어긋난다 */
   disabled: boolean;
 }) {
   return (
@@ -118,16 +113,14 @@ export function OptionTable({
         </thead>
 
         {product.colorGroups.map((group, groupIndex) => (
-          <tbody key={group.color}>
+          <tbody key={group.colorId}>
             <tr>
               {/* 색상 머리는 표 밖의 상자가 아니라 표의 한 줄이다 — 밖에 두면
                   같은 표를 그룹 수만큼 끊어야 한다 */}
               <td colSpan={4} className={cn("p-0", groupIndex > 0 && "pt-3")}>
                 <div className="bg-secondary text-body flex items-center gap-2 rounded-md px-3 py-2.5 font-medium">
-                  <ColorDot
-                    color={colorHex(group.color)}
-                    className="size-3.5"
-                  />
+                  {/* 색값은 서버가 준다(`ListingColor.hex`). 팔레트 조회가 없다 */}
+                  <ColorDot color={group.hex} className="size-3.5" />
                   {group.displayName}
                   <BulkQtyPopover
                     colorLabel={group.displayName}

@@ -108,15 +108,23 @@ export function useRemoveCartItemsMutation() {
 }
 
 /**
- * 상품 상세의 `장바구니 담기`가 부를 것. **이 회차는 만들어 export만 한다** —
- * 상세 화면이 `variantId`를 아직 fixtures에서 읽고 있어 연결은 #163 몫이다.
+ * 상품 상세의 `장바구니 담기`가 부른다(#163, `ProductDetailClient.tsx`).
+ *
+ * `refresh: false`는 조합 여럿을 한 번에 담는 쪽이 쓴다 — 조합마다 이 뮤테이션이
+ * 성공할 때마다 `router.refresh()`가 돌면 상세 화면 전체가 N번 다시 그려지고
+ * (`/me`·`/categories`·`/listings/{id}`·`/cart-items/count`가 N번), 뱃지는 한 번만
+ * 갱신되면 된다. 그때는 부르는 쪽이 전부 끝난 뒤 한 번 refresh 한다(F3).
  */
-export function useAddCartItemMutation() {
+export function useAddCartItemMutation({
+  refresh = true,
+}: { refresh?: boolean } = {}) {
   const router = useRouter();
   return useMutation({
     mutationKey: cartKeys.add(),
     mutationFn: addItem,
-    onSuccess: () => router.refresh(),
+    onSuccess: () => {
+      if (refresh) router.refresh();
+    },
   });
 }
 

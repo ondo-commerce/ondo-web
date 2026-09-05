@@ -24,6 +24,17 @@ export function isNotApproved(error: unknown): boolean {
 }
 
 /**
+ * 없는 자원을 부른 요청인가(404 `RESOURCE_NOT_FOUND`). 상품 상세처럼 주소에 id가
+ * 실리는 화면이 이걸로 갈라 `notFound()`로 보낸다 — 빈 상세를 그리지 않는다.
+ * dev 실측(2026-09-05): `GET /listings/1` → 404 `{"code":"RESOURCE_NOT_FOUND"}`.
+ */
+export function isNotFound(error: unknown): boolean {
+  return (
+    isApiError(error) && error.code === RETAIL_ERROR_CODE.RESOURCE_NOT_FOUND
+  );
+}
+
+/**
  * 서버 컴포넌트가 API를 부르는 유일한 창구.
  *
  * 요청마다 만든다 — 들어온 요청의 쿠키를 그대로 API로 넘겨야 세션이 이어진다.

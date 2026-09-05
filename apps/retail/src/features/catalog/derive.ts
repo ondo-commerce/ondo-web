@@ -1,23 +1,105 @@
+import type { SearchParams } from "@ondo/api";
 import {
-  COLOR_PALETTE,
   FILTER_ALL,
+  LIST_PARAM,
+  MAX_PAGE_SIZE,
   PAGE_SIZE,
   PRICE_BANDS,
-  SIZES,
-  type PaletteColor,
 } from "./constants";
 import type {
   CatalogFilter,
+  CatalogOptions,
+  CatalogPaging,
   CatalogProduct,
   CatalogSort,
-  SizeName,
+  CategoryWire,
+  FilterOptionsWire,
+  ListingDetailWire,
+  ListingSummaryWire,
+  Wholesaler,
 } from "./types";
 
 /**
  * 화면이 읽는 값은 전부 여기서 나온다. **JSX 안에서 계산하지 않는다** —
- * 건수·최저가·정렬은 QA가 눈으로 검증하는 지점이라 한 곳에 모여 있어야
+ * 건수·최저가는 QA가 눈으로 검증하는 지점이라 한 곳에 모여 있어야
  * "무엇과 무엇이 같아야 하는지"를 말할 수 있다.
  */
+
+/* ────────────────────────────────────────────────────────────────────────
+   wire → 뷰. 화면은 wire 모양을 모른다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 목록 카드 한 장. `thumbnailUrl`은 생성 타입상 non-optional이지만 소매 스펙이
+ * `nullable`을 안 적어서(README) 사진 없는 게시글이 null로 올 수 있다 — 여기서
+ * 빈 문자열로 좁히고 카드는 비어 있으면 회색 슬롯을 그린다.
+ */
+export function toCatalogProduct(wire: ListingSummaryWire): CatalogProduct {
+  return {
+    id: String(wire.listingId),
+    name: wire.title,
+    wholesalerId: String(wire.wholesaler.id),
+    wholesalerName: wire.wholesaler.name,
+    thumbnailUrl: wire.thumbnailUrl ?? "",
+    colorCount: wire.colorCount,
+    sizeCount: wire.sizeCount,
+    priceMin: wire.minSalePrice,
+  };
+}
+
+/**
+ * 상세 응답으로 만든 카드. **찜 목록만 쓴다** — 그 화면은 목록 API를 못 부르고
+ * (찜 집합이 브라우저에만 있다) 상세를 하나씩 받는다. 가짓수는 게시된 옵션에서
+ * 다시 센다: 색상은 `colorOptions` 수, 사이즈는 겹치지 않는 `size` 수.
+ * 대표 이미지는 `images[0]` — 서버가 `sortOrder` 순으로 정렬해 준다(스펙).
+ */
+export function toCatalogProductFromDetail(
+  wire: ListingDetailWire,
+): CatalogProduct {
+  const sizes = new Set(
+    wire.colorOptions.flatMap((c) => c.variants.map((v) => v.size)),
+  );
+
+  return {
+    id: String(wire.listingId),
+    name: wire.title,
+    wholesalerId: String(wire.wholesaler.id),
+    wholesalerName: wire.wholesaler.name,
+    thumbnailUrl: wire.images[0]?.url ?? "",
+    colorCount: wire.colorOptions.length,
+    sizeCount: sizes.size,
+    priceMin: wire.minSalePrice,
+  };
+}
+
+/**
+ * 카테고리 바·필터가 세울 선택지. **카테고리는 최상위 한 단만이다** — 스펙의
+ * `CategoryResponse`는 설명("3단 트리")과 달리 `id`·`name`뿐이고 `children`이
+ * 없다. 스냅샷에 없는 필드는 없는 것이라(ADR-0002) 하위 단은 안 그린다
+ * (`04-wire.md` §3). 컬러는 그룹을 펼치되 순서는 서버가 준 대로 둔다.
+ */
+export function toCatalogOptions(
+  categories: readonly CategoryWire[],
+  filterOptions: FilterOptionsWire | null,
+): CatalogOptions {
+  return {
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+    colors:
+      filterOptions?.colorGroups.flatMap((group) =>
+        group.colors.map((color) => ({
+          id: color.id,
+          name: color.name,
+          hex: color.hex,
+          groupName: group.name,
+        })),
+      ) ?? [],
+    sizes: filterOptions?.sizes ?? [],
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   카드 표기
+   ──────────────────────────────────────────────────────────────────────── */
 
 /** 12,500 → `12,500원`. 금액 표기가 화면마다 갈리지 않게 여기 한 곳을 쓴다 */
 export function formatWon(amount: number): string {
@@ -25,47 +107,33 @@ export function formatWon(amount: number): string {
 }
 
 /**
- * 카드에 찍히는 가격. **조합마다 값이 달라서 최솟값 + `~`** 로 적는다.
- * 단일가면 `~`를 붙이지 않는다 — 붙이면 더 비싼 조합이 있다고 잘못 읽힌다.
+ * 카드에 찍히는 가격. **늘 최저가 + `~`다** — 목록 응답은 `minSalePrice`만 주고
+ * 스펙이 그 값을 "카드에 `12,500원~`으로 그린다"고 적었다. 단일가인지는 상세에
+ * 가야 안다.
  */
 export function priceLabel(product: CatalogProduct): string {
-  return product.priceMax > product.priceMin
-    ? `${formatWon(product.priceMin)}~`
-    : formatWon(product.priceMin);
-}
-
-/** 상품 상세 머리의 큰 가격. `12,500 ~ 13,500` — 단위 `원`은 화면이 따로 붙인다 */
-export function priceRangeLabel(product: CatalogProduct): string {
-  return product.priceMax > product.priceMin
-    ? `${product.priceMin.toLocaleString("ko-KR")} ~ ${product.priceMax.toLocaleString("ko-KR")}`
-    : product.priceMin.toLocaleString("ko-KR");
+  return `${formatWon(product.priceMin)}~`;
 }
 
 /**
- * `컬러 3 · 사이즈 5`.
- *
- * 사이즈가 하나뿐이면 개수 대신 그 이름을 쓴다(`사이즈 Free`) — 확정
- * 와이어프레임이 그렇고, `사이즈 1`은 정보가 없는 말이라 자리만 먹는다.
+ * `컬러 3 · 사이즈 5`. 목록 응답은 가짓수만 주므로 사이즈가 하나뿐이어도 이름
+ * (`사이즈 Free`)을 못 쓴다 — 이름은 상세에만 있다.
  */
 export function optionSummary(product: CatalogProduct): string {
-  const size =
-    product.sizes.length === 1 ? product.sizes[0] : product.sizes.length;
-
-  return `컬러 ${product.colors.length} · 사이즈 ${size}`;
+  return `컬러 ${product.colorCount} · 사이즈 ${product.sizeCount}`;
 }
 
-/** 지금 주문할 수 있는가. 시즌 종료·게시 내림은 링크도 걸지 않는다 */
-export function isOrderable(product: CatalogProduct): boolean {
-  return product.status === "ON_SALE";
-}
+/* ────────────────────────────────────────────────────────────────────────
+   주소 ↔ 필터 ↔ 서버 파라미터. **주소가 곧 상태다**(상품 상세를 갔다 와도
+   좁혀 둔 조건이 남는 이유). 걸러 내는 것은 서버다 — 화면은 받은 것을 그린다.
+   ──────────────────────────────────────────────────────────────────────── */
 
-/**
- * 카드 좌하단 배지. 한 장에 하나만 붙는다 —
- * 주문할 수 없다는 사실이 구매 이력보다 먼저 읽혀야 한다.
- */
-export function cardBadge(product: CatalogProduct): string | null {
-  if (product.status === "SEASON_ENDED") return "시즌 종료";
-  return product.purchased ? "구매 이력" : null;
+function one(
+  params: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const raw = params[key];
+  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 /** 주소의 값이 목록에 없으면(옛 링크·오타) `전체`로 떨어뜨린다 — 화면이 빈 채로 남지 않게 */
@@ -77,46 +145,55 @@ function resolveOne(
 }
 
 /**
- * 주소 → 필터. **주소가 곧 상태다**(상품 상세를 갔다 와도 좁혀 둔 조건이 남는 이유).
- *
- * 카테고리만 허용 목록을 밖에서 받는다 — 셸 카테고리 바(`shared/config/nav.ts`)와
- * 같은 축이라 목록의 원본이 이 feature 밖에 있다.
+ * 주소 → 필터. 허용 목록이 서버 값(`options`)이라 카테고리·컬러 id가 사라지면
+ * 그 축은 저절로 `전체`가 된다.
  */
 export function resolveFilter(
   params: Record<string, string | string[] | undefined>,
-  categorySlugs: readonly string[],
+  options: CatalogOptions,
 ): CatalogFilter {
-  const one = (key: string) => {
-    const raw = params[key];
-    return Array.isArray(raw) ? raw[0] : raw;
-  };
-
   return {
-    category: resolveOne(one("category"), categorySlugs),
-    color: resolveOne(
-      one("color"),
-      COLOR_PALETTE.flatMap((g) => g.colors.map((c) => c.name)),
+    category: resolveOne(
+      one(params, LIST_PARAM.category),
+      options.categories.map((c) => String(c.id)),
     ),
-    size: resolveOne(one("size"), SIZES),
+    color: resolveOne(
+      one(params, LIST_PARAM.color),
+      options.colors.map((c) => String(c.id)),
+    ),
+    size: resolveOne(one(params, LIST_PARAM.size), options.sizes),
     price: resolveOne(
-      one("price"),
+      one(params, LIST_PARAM.price),
       PRICE_BANDS.map((b) => b.value),
     ),
   };
 }
 
-/** 주소 → 정렬. 이 화면이 못 고르는 값이 실려 오면 첫 번째(기본값)로 떨어뜨린다 */
-export function resolveSort(
-  params: Record<string, string | string[] | undefined>,
-  allowed: readonly CatalogSort[],
-): CatalogSort {
-  const raw = params.sort;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const fallback = allowed[0] ?? "latest";
+/**
+ * 필터 → `GET /listings` 파라미터. 이름은 스냅샷의 `parameters` 그대로다
+ * (`categoryId` · `colorIds` · `sizes` · `priceFrom` · `priceTo` · `page` · `size`).
+ * 화면은 축마다 하나만 고르므로 배열 파라미터에도 값 하나만 실린다.
+ *
+ * `page`는 늘 0이다 — 화면의 `더 보기`는 장을 넘기는 게 아니라 **첫 장을 더 크게**
+ * 받는다(`shown` → `size`). 그래야 8장 보다가 16장으로 펼친 뒤 뒤로 가기를 해도
+ * 주소 하나로 같은 화면이 나온다.
+ */
+export function toListingParams(
+  filter: CatalogFilter,
+  size: number,
+): SearchParams {
+  const band = PRICE_BANDS.find((b) => b.value === filter.price);
 
-  return allowed.includes(value as CatalogSort)
-    ? (value as CatalogSort)
-    : fallback;
+  return {
+    categoryId:
+      filter.category === FILTER_ALL ? undefined : Number(filter.category),
+    colorIds: filter.color === FILTER_ALL ? undefined : Number(filter.color),
+    sizes: filter.size === FILTER_ALL ? undefined : filter.size,
+    priceFrom: band?.min,
+    priceTo: band?.max ?? undefined,
+    page: 0,
+    size,
+  };
 }
 
 /** 네 축이 모두 `전체`인가. `초기화` 버튼을 띄울지, 빈 상태에 무엇을 적을지가 갈린다 */
@@ -129,75 +206,136 @@ export function isFilterEmpty(filter: CatalogFilter): boolean {
   );
 }
 
-function matchesPrice(product: CatalogProduct, bandValue: string): boolean {
-  const band = PRICE_BANDS.find((b) => b.value === bandValue);
-  if (!band) return true;
-
-  /* 상품은 가격이 **범위**다. 구간과 조금이라도 겹치면 걸린다 —
-     최저가만 보면 `12,500 ~ 32,000`짜리가 `3만원 이상`에서 사라진다 */
-  const overMin = band.max === null || product.priceMin <= band.max;
-  return product.priceMax >= band.min && overMin;
-}
-
-/** 네 축을 **함께** 건다. 컬러를 좁힌 채로 사이즈를 더 좁힐 수 있어야 한다 */
-export function filterProducts(
-  products: readonly CatalogProduct[],
-  filter: CatalogFilter,
-): CatalogProduct[] {
-  return products.filter(
-    (p) =>
-      (filter.category === FILTER_ALL || p.categorySlug === filter.category) &&
-      (filter.color === FILTER_ALL || p.colors.includes(filter.color)) &&
-      (filter.size === FILTER_ALL ||
-        p.sizes.includes(filter.size as SizeName)) &&
-      (filter.price === FILTER_ALL || matchesPrice(p, filter.price)),
-  );
-}
-
-/** 원본 배열을 건드리지 않는다 — fixtures는 모듈 하나를 모든 화면이 같이 읽는다 */
-export function sortProducts(
-  products: readonly CatalogProduct[],
-  sort: CatalogSort,
-): CatalogProduct[] {
-  const list = [...products];
-
-  switch (sort) {
-    case "price-asc":
-      return list.sort((a, b) => a.priceMin - b.priceMin);
-    case "price-desc":
-      return list.sort((a, b) => b.priceMin - a.priceMin);
-    case "favorited-desc":
-      /* 찜한 적 없는 것은 뒤로 — 찜 목록 밖에서 이 정렬을 쓸 일은 없지만
-         빈 값이 앞에 오면 목록이 통째로 뒤집혀 보인다 */
-      return list.sort((a, b) =>
-        (b.favoritedAt ?? "").localeCompare(a.favoritedAt ?? ""),
-      );
-    case "latest":
-    default:
-      return list.sort((a, b) => b.listedAt.localeCompare(a.listedAt));
+/**
+ * 지금 주소 위에 한 축만 바꾼 주소를 만든다.
+ *
+ * 기본값(`전체`)인 축은 **주소에서 빼 버린다** — 그래야 `초기화`가 그냥 기본
+ * 경로가 되고, 아무것도 안 고른 화면의 주소가 공유했을 때도 짧다. 펼침(`shown`)은
+ * 싣지 않는다 — 필터를 바꾸면 펼침이 저절로 접혀야 건수와 카드 수가 맞는다.
+ */
+export function catalogHref(
+  basePath: string,
+  current: CatalogFilter,
+  patch: Partial<CatalogFilter>,
+): string {
+  const next = { ...current, ...patch };
+  const params = new URLSearchParams();
+  for (const key of ["category", "color", "size", "price"] as const) {
+    if (next[key] !== FILTER_ALL) params.set(LIST_PARAM[key], next[key]);
   }
+
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   `상품 더 보기` — 펼친 정도도 주소가 갖는다.
+
+   화면 안의 `useState`로 두면 카드 하나를 열어 보고 뒤로 왔을 때 다시 8장으로
+   접힌다. 필터가 이미 주소에 있는 것과 같은 이유다 — 화면을 떠났다 오는 것이
+   이 화면의 기본 동선이다. 서버는 `size=shown`으로 첫 장을 그만큼 크게 준다.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 주소 → 펼친 장수. 못 읽는 값(`abc`·`-8`·`1e3`·소수)은 **접힌 상태로 떨어뜨린다** —
+ * 링크를 손으로 고쳐 넣은 값 때문에 화면이 비거나 통째로 펼쳐지지 않게.
+ * 서버 상한(`MAX_PAGE_SIZE`)을 넘는 값은 상한으로 — 넘겨 보내면 400이다.
+ */
+export function resolveShown(raw: string | string[] | undefined): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === undefined || !/^\d+$/.test(value)) return PAGE_SIZE;
+
+  return Math.min(Math.max(Number(value), PAGE_SIZE), MAX_PAGE_SIZE);
 }
 
 /**
- * 컬러 필터에 세울 색. **지금 이 목록에 실제로 있는 색만** 세운다 —
- * 26종을 다 세우면 고르는 순간 0건이 되는 칸이 대부분이다.
- * 순서·표시명·색값은 팔레트가 정한다(클릭 순서가 아니라 팔레트 순서).
+ * `상품 더 보기`가 갈 주소. **지금 주소 위에 `shown`만 얹는다** —
+ * 필터를 바꾸면 `catalogHref`가 이 값을 안 싣기 때문에 펼침이 저절로 접힌다.
  */
-export function availableColors(
-  products: readonly CatalogProduct[],
-): PaletteColor[] {
-  const used = new Set(products.flatMap((p) => p.colors));
+export function moreHref(currentHref: string, shown: number): string {
+  const [path, query] = currentHref.split("?");
+  const params = new URLSearchParams(query);
+  params.set(LIST_PARAM.shown, String(shown));
 
-  return COLOR_PALETTE.flatMap((g) => g.colors).filter((c) => used.has(c.name));
+  return `${path}?${params.toString()}`;
 }
 
-/** 사이즈 필터에 세울 값. 같은 이유로 실제로 있는 것만, 순서는 `SIZES`가 정한다 */
-export function availableSizes(
-  products: readonly CatalogProduct[],
-): SizeName[] {
-  const used = new Set(products.flatMap((p) => p.sizes));
+/** 서버 `meta.totalElements`와 실제로 그린 카드 수. 건수 표기와 `더 보기`가 같은 값을 본다 */
+export function toCatalogPaging(shown: number, total: number): CatalogPaging {
+  return { shown, total };
+}
 
-  return SIZES.filter((s) => used.has(s));
+/**
+ * 더 펼칠 수 있는가. 전체가 더 남았고 **서버 상한에 아직 안 닿았을 때**만이다 —
+ * 상한에서 `더 보기`를 그대로 두면 눌러도 같은 화면이 온다.
+ */
+export function canShowMore(paging: CatalogPaging): boolean {
+  return paging.shown < paging.total && paging.shown < MAX_PAGE_SIZE;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   도매처 홈
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 받은 목록에서 이 도매처 것만. **서버가 도매처로 못 거른다** — `GET /listings`에
+ * `wholesalerId` 파라미터가 없고 도매처를 id로 찾는 path도 없다(`04-wire.md` §3).
+ * 그래서 도매처 홈은 첫 장을 상한까지 받아 여기서 거른다.
+ */
+export function productsOfWholesaler(
+  products: readonly CatalogProduct[],
+  wholesalerId: string,
+): CatalogProduct[] {
+  return products.filter((p) => p.wholesalerId === wholesalerId);
+}
+
+/**
+ * 도매처 홈 머리. 상호는 그 도매처 게시글의 `wholesaler.name`에서 온다 —
+ * 게시글이 하나도 없으면 상호를 알 길이 없어 null이고 화면은 `notFound()`로 간다.
+ * **필터를 안 건 목록으로 부른다** — 필터로 0건이 된 목록에서 찾으면 그 도매처가
+ * 안 파는 축을 고른 것만으로 없는 도매처가 된다(F1).
+ */
+export function wholesalerOf(
+  products: readonly CatalogProduct[],
+  wholesalerId: string,
+): Wholesaler | null {
+  const first = products.find((p) => p.wholesalerId === wholesalerId);
+  if (!first) return null;
+
+  return {
+    id: wholesalerId,
+    name: first.wholesalerName,
+    initial: first.wholesalerName.slice(0, 1),
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   찜 목록
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 찜 집합(문자열 id) → 상세를 부를 숫자 id. 못 읽는 값(옛 세션의 `p-…`)은 버린다 */
+export function favoriteListingIds(favorites: ReadonlySet<string>): number[] {
+  return [...favorites].filter((id) => /^\d+$/.test(id)).map(Number);
+}
+
+/** 주소 → 정렬. 이 화면이 못 고르는 값이 실려 오면 첫 번째(기본값)로 떨어뜨린다 */
+export function resolveSort(
+  params: Record<string, string | string[] | undefined>,
+  allowed: readonly CatalogSort[],
+): CatalogSort {
+  const value = one(params, LIST_PARAM.sort);
+  const fallback = allowed[0] ?? "favorited-desc";
+
+  return allowed.includes(value as CatalogSort)
+    ? (value as CatalogSort)
+    : fallback;
+}
+
+/** 주소의 `?seller=`. 목록에 없는 도매처인지는 화면이 찜 집합을 받은 뒤 다시 본다 */
+export function resolveSeller(
+  params: Record<string, string | string[] | undefined>,
+): string {
+  return one(params, LIST_PARAM.seller) ?? FILTER_ALL;
 }
 
 /** 찜 목록의 도매처 칩. 찜한 상품이 없는 도매처가 칩으로 나오지 않게 목록에서 만든다 */
@@ -210,63 +348,6 @@ export function availableWholesalers(
   return [...seen].map(([id, name]) => ({ id, name }));
 }
 
-/**
- * 지금 주소 위에 한 축만 바꾼 주소를 만든다.
- *
- * 기본값(`전체`·기본 정렬)인 축은 **주소에서 빼 버린다** — 그래야 `초기화`가
- * 그냥 기본 경로가 되고, 아무것도 안 고른 화면의 주소가 공유했을 때도 짧다.
- */
-export function catalogHref(
-  basePath: string,
-  current: { filter: CatalogFilter; sort: CatalogSort },
-  patch: Partial<CatalogFilter> & { sort?: CatalogSort },
-  defaultSort: CatalogSort,
-): string {
-  const next = { ...current.filter, ...patch };
-  const sort = patch.sort ?? current.sort;
-
-  const params = new URLSearchParams();
-  for (const key of ["category", "color", "size", "price"] as const) {
-    if (next[key] !== FILTER_ALL) params.set(key, next[key]);
-  }
-  if (sort !== defaultSort) params.set("sort", sort);
-
-  const query = params.toString();
-  return query ? `${basePath}?${query}` : basePath;
-}
-
-/* ────────────────────────────────────────────────────────────────────────
-   도매처 홈 · 찜 목록
-   ──────────────────────────────────────────────────────────────────────── */
-
-/**
- * 도매처 홈의 `신상` — 기준일 이후에 올라온 것.
- *
- * "최근 7일"을 `new Date()`로 계산하지 않는다. 더미 데이터는 날짜가 고정인데
- * 오늘을 기준으로 세면 시간이 지날수록 신상이 0건이 되고, 화면이 비는 이유가
- * 코드가 아니라 달력에 있게 된다. 기준일은 fixtures가 준다.
- */
-export function newArrivals(
-  products: readonly CatalogProduct[],
-  since: string,
-): CatalogProduct[] {
-  return sortProducts(
-    products.filter((p) => p.listedAt >= since),
-    "latest",
-  );
-}
-
-/** 주소의 `?seller=`를 정리한다. 지금 찜 목록에 없는 도매처면 `전체`로 떨어뜨린다 */
-export function resolveSeller(
-  params: Record<string, string | string[] | undefined>,
-  allowed: readonly string[],
-): string {
-  const raw = params.seller;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-
-  return value && allowed.includes(value) ? value : FILTER_ALL;
-}
-
 /** 도매처 칩으로 좁힌다. `전체`면 그대로 */
 export function filterBySeller(
   products: readonly CatalogProduct[],
@@ -277,6 +358,33 @@ export function filterBySeller(
     : products.filter((p) => p.wholesalerId === seller);
 }
 
+/**
+ * 찜 목록 정렬. `최근 찜한 순`은 **찜 집합의 삽입 순서를 뒤집은 것**이다 —
+ * 서버에 찜이 없어 시각이 없고, `Set`이 넣은 순서를 지키므로 그것이 곧 시각이다.
+ * 원본 배열은 건드리지 않는다.
+ */
+export function sortWishlist(
+  products: readonly CatalogProduct[],
+  favoriteOrder: readonly string[],
+  sort: CatalogSort,
+): CatalogProduct[] {
+  const list = [...products];
+
+  switch (sort) {
+    case "price-asc":
+      return list.sort((a, b) => a.priceMin - b.priceMin);
+    case "price-desc":
+      return list.sort((a, b) => b.priceMin - a.priceMin);
+    case "favorited-desc":
+    default: {
+      const rank = new Map(favoriteOrder.map((id, i) => [id, i]));
+      return list.sort(
+        (a, b) => (rank.get(b.id) ?? -1) - (rank.get(a.id) ?? -1),
+      );
+    }
+  }
+}
+
 /** 찜 목록의 주소. 기본값인 축은 빼서 `초기 상태 = 그냥 /wishlist`가 되게 한다 */
 export function wishlistHref(
   seller: string,
@@ -284,47 +392,11 @@ export function wishlistHref(
   defaultSort: CatalogSort,
 ): string {
   const params = new URLSearchParams();
-  if (seller !== FILTER_ALL) params.set("seller", seller);
-  if (sort !== defaultSort) params.set("sort", sort);
+  if (seller !== FILTER_ALL) params.set(LIST_PARAM.seller, seller);
+  if (sort !== defaultSort) params.set(LIST_PARAM.sort, sort);
 
   const query = params.toString();
   return query ? `/wishlist?${query}` : "/wishlist";
-}
-
-/* ────────────────────────────────────────────────────────────────────────
-   `상품 더 보기` — 펼친 정도도 주소가 갖는다.
-
-   화면 안의 `useState`로 두면 카드 하나를 열어 보고 뒤로 왔을 때 다시 8장으로
-   접힌다. 19개 중 8개만 첫 화면이라 훑다가 하나 열어 보는 동선에서 매번 겪는다.
-   필터·정렬이 이미 주소에 있는 것과 같은 이유다 — 화면을 떠났다 오는 것이
-   이 화면의 기본 동선이다.
-   ──────────────────────────────────────────────────────────────────────── */
-
-/** 몇 장까지 펼쳤는지. 주소에 실리는 이름 */
-export const SHOWN_PARAM = "shown";
-
-/**
- * 주소 → 펼친 장수. 못 읽는 값(`abc`·`-8`·`1e3`·소수)은 **접힌 상태로 떨어뜨린다** —
- * 링크를 손으로 고쳐 넣은 값 때문에 화면이 비거나 통째로 펼쳐지지 않게.
- */
-export function resolveShown(raw: string | null): number {
-  if (raw === null || !/^\d+$/.test(raw)) return PAGE_SIZE;
-
-  const value = Number(raw);
-  return value > PAGE_SIZE ? value : PAGE_SIZE;
-}
-
-/**
- * `상품 더 보기`가 갈 주소. **지금 주소 위에 `shown`만 얹는다** —
- * 필터를 바꾸면 `catalogHref`가 이 값을 안 싣기 때문에 펼침이 저절로 접힌다.
- * 좁힌 뒤에도 16장이 펼쳐져 있으면 건수와 카드 수가 어긋나 보인다.
- */
-export function moreHref(currentHref: string, shown: number): string {
-  const [path, query] = currentHref.split("?");
-  const params = new URLSearchParams(query);
-  params.set(SHOWN_PARAM, String(shown));
-
-  return `${path}?${params.toString()}`;
 }
 
 /**

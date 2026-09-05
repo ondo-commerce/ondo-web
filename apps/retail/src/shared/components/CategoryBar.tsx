@@ -5,15 +5,28 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import {
-  CATEGORIES,
-  DEFAULT_CATEGORY_SLUG,
-  resolveCategorySlug,
+  ALL_CATEGORY_LABEL,
+  CATEGORY_PARAM,
+  categoryHref,
+  resolveCategoryId,
+  type CategoryChip,
 } from "@/shared/config/nav";
 
 /** 규격은 도매 GNB 탭과 같다 — h32 · radius 8 · px12. 선택은 밑줄이 아니라 회색 알약이다 */
-function CategoryLinks({ current }: { current: string }) {
+function CategoryLinks({
+  categories,
+  current,
+}: {
+  categories: readonly CategoryChip[];
+  current: number | null;
+}) {
+  const chips: { id: number | null; label: string }[] = [
+    { id: null, label: ALL_CATEGORY_LABEL },
+    ...categories.map((c) => ({ id: c.id, label: c.name })),
+  ];
+
   return (
-    /* 8항목은 390px에서 493px다 — 접거나 줄이지 않고 이 줄만 가로로 흘린다
+    /* 항목이 늘면 390px에서 넘친다 — 접거나 줄이지 않고 이 줄만 가로로 흘린다
        (`_base.css:332` `.cats{overflow-x:auto;padding-bottom:10px}`).
        칩을 줄이면 손가락 타깃이 무너지고, 접으면 어느 축인지 안 보인다.
        scroll-slim은 막대를 평소 숨긴다 — 페이지 안의 다른 스크롤 영역과 같은 규칙 */
@@ -21,14 +34,14 @@ function CategoryLinks({ current }: { current: string }) {
       aria-label="카테고리"
       className="scroll-slim flex items-center gap-0.5 px-3 pb-2 tablet:overflow-x-auto tablet:pb-2.5"
     >
-      {CATEGORIES.map(({ slug, label }) => {
-        const active = slug === current;
+      {chips.map(({ id, label }) => {
+        const active = id === current;
 
         return (
           <Link
-            key={slug}
+            key={id ?? "all"}
             /* 상품 상세에서 눌러도 목록으로 돌아가야 한다 — 목적지는 늘 홈이다 */
-            href={slug === DEFAULT_CATEGORY_SLUG ? "/" : `/?category=${slug}`}
+            href={categoryHref(id)}
             aria-current={active ? "page" : undefined}
             className={cn(
               /* shrink-0: 가로 스크롤 컨테이너 안에서 칩이 눌려 글자가 잘리면
@@ -48,17 +61,25 @@ function CategoryLinks({ current }: { current: string }) {
   );
 }
 
-function CategoryLinksFromQuery() {
+function CategoryLinksFromQuery({
+  categories,
+}: {
+  categories: readonly CategoryChip[];
+}) {
   /* 주소가 선택 상태의 원본이다. 컴포넌트가 따로 기억하면 뒤로 가기에서 어긋난다.
-     목록에 없는 값은 `전체`로 떨어뜨린다 — resolveCategorySlug 참조 */
-  const current = resolveCategorySlug(useSearchParams().get("category"));
+     목록에 없는 값은 `전체`로 떨어뜨린다 — resolveCategoryId 참조 */
+  const current = resolveCategoryId(
+    useSearchParams().get(CATEGORY_PARAM),
+    categories,
+  );
 
-  return <CategoryLinks current={current} />;
+  return <CategoryLinks categories={categories} current={current} />;
 }
 
 /**
  * 헤더 아래 카테고리 줄. 붙는 화면은 홈과 상품 상세 **둘뿐**이고, 그래서 두 화면을
  * 묶는 `(browse)` 레이아웃이 그린다 — `page.tsx`마다 붙이면 둘이 갈라진다.
+ * 항목은 그 레이아웃이 `GET /categories`로 받아 넘긴다.
  *
  * **기능줄과 한 흰 블록이어야 한다.** 확정 와이어프레임 `.topbar`는 56px 줄과
  * `.cats`를 한 상자에 담고 선을 맨 아래 하나만 긋는다. 코드에서는 헤더가 `(shop)`
@@ -71,7 +92,11 @@ function CategoryLinksFromQuery() {
  * 음수 여백은 `<main>`의 8px 안쪽 여백을 되돌려 헤더처럼 화면 끝까지 붙이기 위한 것.
  * sticky 기준 `top-14`는 선을 뺀 기능줄 높이(56px) 그대로다.
  */
-export function CategoryBar() {
+export function CategoryBar({
+  categories,
+}: {
+  categories: readonly CategoryChip[];
+}) {
   return (
     <div
       data-category-bar
@@ -80,8 +105,10 @@ export function CategoryBar() {
       {/* useSearchParams는 정적 프리렌더를 막는다 — 경계를 컴포넌트가 스스로 갖는다.
           홈은 `?category=`가 곧 상태라 화면 쪽을 force-dynamic으로 돌렸고,
           그래서 이 fallback은 실제 화면에는 나오지 않는다 */}
-      <Suspense fallback={<CategoryLinks current={DEFAULT_CATEGORY_SLUG} />}>
-        <CategoryLinksFromQuery />
+      <Suspense
+        fallback={<CategoryLinks categories={categories} current={null} />}
+      >
+        <CategoryLinksFromQuery categories={categories} />
       </Suspense>
     </div>
   );

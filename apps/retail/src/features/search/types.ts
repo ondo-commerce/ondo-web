@@ -1,70 +1,54 @@
-/**
- * 통합 검색이 훑는 세 축. 상품·도매처·**내 주문**이다 —
- * 전에 주문했던 건에서도 찾아 주는 것이 이 화면의 존재 이유다(RT-15).
- */
+import type { RetailSchema } from "@ondo/api";
 
-/** 검색 결과 줄에 서는 상품. 목록 화면의 카드보다 적은 값을 쓴다 */
+/* ------------------------------------------------------------------------
+ * wire — 스펙에서 생성한 타입의 별칭(ADR-0002). 손으로 쓴 Response 타입은 없다.
+ *
+ * 통합 검색이 부르는 path는 `GET /listings?q=` 하나다. 도매처 검색·내 주문 검색
+ * path가 스펙에 없어(`04-wire.md` §3) 도매처는 상품 결과에서 파생하고, 내 주문 탭은
+ * 이번 회차에 없다(`GET /orders`에 `q`가 없다).
+ * ------------------------------------------------------------------------ */
+
+export type ListingSummaryWire = RetailSchema<"ListingSummaryResponse">;
+
+/* ------------------------------------------------------------------------
+ * 뷰 — 화면이 받는 모양. `derive.ts`의 `toSearchProduct(wire)`로만 만든다.
+ * ------------------------------------------------------------------------ */
+
+/** 검색 결과 줄에 서는 상품. 목록 화면의 카드와 같은 응답을 다른 모양으로 본다 */
 export interface SearchProduct {
+  /** `String(listingId)` */
   id: string;
   name: string;
-  /** 품번. 도매 `SU-18` 형식이다(게이트 Q3) — `품번 정확 일치`의 비교 대상 */
-  code: string;
+  /** `String(wholesaler.id)` */
   wholesalerId: string;
   wholesalerName: string;
+  thumbnailUrl: string;
   colorCount: number;
-  /** 사이즈가 하나뿐이면 이름 그대로 쓴다(`사이즈 Free`) */
-  sizeLabel: string;
+  sizeCount: number;
+  /** 목록 응답은 최저가만 준다 — 줄은 `12,500원~`으로 그린다 */
   priceMin: number;
-  /** 최저가보다 비싼 조합이 있는가. 있으면 `~`를 붙인다 */
-  hasRange: boolean;
-  /* 찜 상태는 여기 없다 — `features/catalog`의 세션 저장소 한 곳이 갖는다.
-     결과 줄과 카드가 각자 값을 들고 있으면 같은 상품을 두고 두 화면이 반대되는
-     말을 한다 */
+  /* 품번(`SU-18`)이 없다 — `ListingSummaryResponse`에 `productNumber`가 없다.
+     그래서 fixtures 시절의 `품번 정확 일치` 배지·우선 정렬도 없다(§3).
+     찜 상태도 여기 없다 — `features/catalog`의 세션 저장소 한 곳이 갖는다 */
 }
 
+/**
+ * 도매처 결과 줄. **상품 결과에서 파생한다** — 이름이 검색어와 맞는 도매처만.
+ * 위치는 목록 응답(`WholesalerBrief`)에 없어 줄에 없다.
+ */
 export interface SearchWholesaler {
   id: string;
   name: string;
   initial: string;
-  location: string;
-}
-
-/**
- * 주문 검색 결과 한 줄.
- *
- * **통합 주문**(여러 도매처를 한 번에 담아 넣은 주문)이 소매의 기본 단위다.
- * 그래서 도매처가 `무드온 외 1곳`처럼 적히고, 상태는 통합 주문 하나의 상태다.
- * (통합 주문 엔티티 자체는 §3-B 미결정이라 여기서는 더미 값이다.)
- */
-export interface SearchOrder {
-  id: string;
-  /** 통합 주문번호 `20260717-1152-0088` */
-  orderNo: string;
-  /** 주문일 (ISO 날짜) */
-  orderedAt: string;
-  /** 이 주문에 걸린 상품명들 — 검색어와 맞춘 결과를 사장에게 되짚어 준다 */
-  productName: string;
-  productCode: string;
-  /** `블랙/M 5장 · 블랙/L 4장` — 색상/사이즈 조합과 장수 */
-  optionSummary: string;
-  wholesalerSummary: string;
-  /** 총 장수. 소매의 수량 단위는 `장`이다(게이트 Q9) */
-  totalSheets: number;
-  totalAmount: number;
-  statusLabel: string;
 }
 
 /** 결과 분류 탭. 값은 주소의 `?tab=`에 그대로 실린다 */
-export type SearchTab = "all" | "products" | "wholesalers" | "orders";
+export type SearchTab = "all" | "products" | "wholesalers";
 
-/** 세 축을 한 번에 훑은 결과 */
+/** 두 축을 한 번에 훑은 결과 */
 export interface SearchResult {
-  products: MatchedProduct[];
+  products: SearchProduct[];
   wholesalers: SearchWholesaler[];
-  orders: SearchOrder[];
-}
-
-export interface MatchedProduct extends SearchProduct {
-  /** 품번이 검색어와 **정확히** 같다. 배지가 붙고 목록 맨 위로 올라간다 */
-  exactCode: boolean;
+  /** 서버가 아는 상품 결과 전체 수(`meta.totalElements`). 받은 것보다 많을 수 있다 */
+  productTotal: number;
 }

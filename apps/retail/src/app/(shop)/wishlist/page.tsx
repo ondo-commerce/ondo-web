@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
 import {
-  CATALOG_PRODUCTS,
   WISHLIST_SORTS,
   WishlistView,
-  availableWholesalers,
   resolveSeller,
   resolveSort,
 } from "@/features/catalog";
 
 export const metadata: Metadata = { title: "찜 목록" };
 
+/**
+ * 찜 목록. **서버가 받는 목록이 없다** — 찜 집합이 브라우저 세션에만 있고
+ * (찜 API 없음, `04-wire.md` §4) 서버 컴포넌트는 그 집합을 모른다. 그래서
+ * 이 페이지는 주소만 읽어 넘기고, 카드는 `WishlistView`가 브라우저에서 찜한
+ * id마다 `GET /listings/{id}`로 받는다.
+ */
 export default async function Page({
   searchParams,
 }: {
@@ -17,18 +21,11 @@ export default async function Page({
 }) {
   const query = await searchParams;
 
-  /* **찜한 것만 골라 내리지 않는다.** 무엇이 목록에 서는지는 화면에 들어온
-     순간의 찜 집합이 정하고(게이트 Q7), 그 집합은 서버가 모른다 — 사장이 홈에서
-     방금 찜한 상품도 다음에 들어올 때 여기 서야 한다 */
   return (
     <WishlistView
-      products={CATALOG_PRODUCTS}
-      /* 아예 없는 도매처 슬러그(옛 링크·오타)는 여기서 `전체`로 떨어뜨리고,
-         "지금 목록에 없는 도매처"인지는 화면이 다시 한 번 본다 */
-      seller={resolveSeller(
-        query,
-        availableWholesalers(CATALOG_PRODUCTS).map((w) => w.id),
-      )}
+      /* 없는 도매처 슬러그(옛 링크·오타)는 화면이 찜 집합을 받은 뒤 `전체`로
+         떨어뜨린다 — 여기서는 어느 도매처가 있는지 모른다 */
+      seller={resolveSeller(query)}
       sort={resolveSort(query, WISHLIST_SORTS)}
     />
   );

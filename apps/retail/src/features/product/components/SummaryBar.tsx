@@ -17,8 +17,8 @@ import { formatWon, type OrderTotals } from "../derive";
  *
  * `바로 주문하기`는 **주문서로 가는 링크다.** onClick도 href도 없이 눌리기만
  * 하던 자리라 사장이 누르고 또 눌러도 주소·화면·문구 어느 것도 안 바뀌었다.
- * 확정 와이어프레임도 `06_checkout.html`로 간다. 담은 수량을 주문서가 아직
- * 받지 못하는 것은 장바구니 회차 몫이고, 그 전이라도 **눌린 결과는 보여야 한다.**
+ * 확정 와이어프레임도 `06_checkout.html`로 간다. 담은 수량을 주문서가 받는 것은
+ * 주문 연동(#166) 몫이고, 그 전이라도 **눌린 결과는 보여야 한다.**
  */
 export function SummaryBar({
   totals,
@@ -26,7 +26,9 @@ export function SummaryBar({
   favorited,
   onToggleFavorite,
   onAddToCart,
+  adding,
   addedNotice,
+  failed,
   alreadyAdded,
 }: {
   totals: OrderTotals;
@@ -35,8 +37,12 @@ export function SummaryBar({
   favorited: boolean;
   onToggleFavorite: () => void;
   onAddToCart: () => void;
-  /** 담은 결과. 무엇이 몇 장 들어갔는지 */
+  /** 요청이 나가 있는 동안. 두 번 눌리면 같은 조합이 두 번 더해진다(스펙) */
+  adding: boolean;
+  /** 담은 결과 또는 실패 이유. 무엇이 몇 장 들어갔는지 */
   addedNotice: string | null;
+  /** `addedNotice`가 실패 문구인가 — 색만 다르고 자리는 같다 */
+  failed: boolean;
   /** 담은 뒤 수량이 그대로다. 또 누를 이유가 없다는 것을 버튼이 스스로 말한다 */
   alreadyAdded: boolean;
 }) {
@@ -75,10 +81,14 @@ export function SummaryBar({
           </Button>
           <Button
             variant="line"
-            disabled={blocked || alreadyAdded}
+            disabled={blocked || alreadyAdded || adding}
             onClick={onAddToCart}
           >
-            {alreadyAdded ? "장바구니에 담김" : "장바구니 담기"}
+            {adding
+              ? "담는 중…"
+              : alreadyAdded
+                ? "장바구니에 담김"
+                : "장바구니 담기"}
           </Button>
           {/* 못 누를 때는 진짜 disabled 버튼이다 — asChild + Link 로 두면
               `disabled`가 <a>에 아무 효력이 없어 잠긴 상품에서도 이동한다 */}
@@ -98,7 +108,11 @@ export function SummaryBar({
         role="status"
         className={cn(
           "text-body mt-2.5",
-          blocked ? "text-muted-foreground" : "text-secondary-foreground",
+          failed
+            ? "text-destructive"
+            : blocked
+              ? "text-muted-foreground"
+              : "text-secondary-foreground",
         )}
       >
         {disabledReason ?? addedNotice ?? ""}

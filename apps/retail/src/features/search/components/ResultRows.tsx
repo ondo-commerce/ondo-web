@@ -1,15 +1,16 @@
 "use client";
 
-import { Badge, Button, IconButton, cn } from "@ondo/ui";
+import { Button, IconButton, cn } from "@ondo/ui";
 import { Heart, ImageIcon } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { orderMeta, rowMeta, rowPriceLabel } from "../derive";
-import type { MatchedProduct, SearchOrder, SearchWholesaler } from "../types";
+import { rowMeta, rowPriceLabel } from "../derive";
+import type { SearchProduct, SearchWholesaler } from "../types";
 import { useProductFavorite } from "@/features/catalog";
 
 /**
- * 검색 결과의 줄. 카드가 아니라 줄인 이유는 세 축(상품·도매처·주문)이 한 화면에
+ * 검색 결과의 줄. 카드가 아니라 줄인 이유는 두 축(상품·도매처)이 한 화면에
  * 세로로 이어지기 때문이다 — 격자로 그리면 축이 바뀌는 지점이 안 보인다.
  */
 function Row({ children }: { children: ReactNode }) {
@@ -26,7 +27,7 @@ export function RowGroup({ children }: { children: ReactNode }) {
   return <div className="flex flex-col">{children}</div>;
 }
 
-export function ProductResultRow({ product }: { product: MatchedProduct }) {
+export function ProductResultRow({ product }: { product: SearchProduct }) {
   const href = `/products/${product.id}`;
   /* 찜은 검색이 아니라 catalog가 갖는다 — 여기서 켠 하트가 홈 카드·상품 상세에도
      그대로 켜져 있어야 한다 */
@@ -36,9 +37,21 @@ export function ProductResultRow({ product }: { product: MatchedProduct }) {
     <Row>
       <span
         aria-hidden
-        className="bg-secondary text-border-strong grid size-14 shrink-0 place-items-center rounded-md"
+        className="bg-secondary text-border-strong relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-md"
       >
-        <ImageIcon className="size-5" />
+        {product.thumbnailUrl ? (
+          /* 이미지 호스트가 `next.config`에 없어 최적화 파이프를 안 탄다 */
+          <Image
+            src={product.thumbnailUrl}
+            alt=""
+            fill
+            unoptimized
+            sizes="56px"
+            className="object-cover"
+          />
+        ) : (
+          <ImageIcon className="size-5" />
+        )}
       </span>
 
       <div className="min-w-0 flex-1">
@@ -47,11 +60,7 @@ export function ProductResultRow({ product }: { product: MatchedProduct }) {
             줄에서 상세로 가는 문은 `상품 보기` 하나다 — 확정 와이어프레임
             `parts/01_search.html`도 상품명이 `div.b` 텍스트다 (카드에서
             이미지 링크를 눌러 둔 것과 같은 이유) */}
-        <p className="flex flex-wrap items-center gap-1.5 font-medium">
-          {product.name}
-          {/* 왜 이 줄이 맨 위인지를 배지가 말한다 — 없으면 순서가 임의로 보인다 */}
-          {product.exactCode ? <Badge>품번 정확 일치</Badge> : null}
-        </p>
+        <p className="font-medium">{product.name}</p>
         <p className="text-muted-foreground text-body mt-0.5 truncate">
           {rowMeta(product)}
         </p>
@@ -98,46 +107,13 @@ export function WholesalerResultRow({
 
       <div className="min-w-0 flex-1">
         {/* 상품 줄과 같은 규칙이다 — 문은 `도매처 홈` 하나.
-            확정 와이어프레임 `parts/12_partners.html`의 표도 이름은 글자이고
-            링크는 `도매처 홈` 버튼뿐이다 */}
+            위치 줄이 없다 — 목록 응답의 `WholesalerBrief`는 id·상호뿐이다 */}
         <p className="font-medium">{wholesaler.name}</p>
-        <p className="text-muted-foreground text-body mt-0.5 truncate">
-          {wholesaler.location}
-        </p>
       </div>
 
       <div className="ml-auto phone:ml-0">
         <Button asChild variant="line" size="sm">
           <Link href={`/wholesalers/${wholesaler.id}`}>도매처 홈</Link>
-        </Button>
-      </div>
-    </Row>
-  );
-}
-
-export function OrderResultRow({ order }: { order: SearchOrder }) {
-  return (
-    <Row>
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">
-          {order.productName}{" "}
-          <span className="text-muted-foreground font-normal">
-            {order.optionSummary}
-          </span>
-        </p>
-        <p className="text-muted-foreground text-body mt-0.5 truncate tabular-nums">
-          {orderMeta(order)}
-        </p>
-      </div>
-
-      <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-end">
-        <Badge>{order.statusLabel}</Badge>
-        {/* 다시 주문 모달은 주문 회차가 만든다. 여기서는 그 화면까지 데려다만 준다 */}
-        <Button asChild variant="line" size="sm">
-          <Link href={`/orders/${order.id}?reorder=1`}>다시 주문</Link>
-        </Button>
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/orders/${order.id}`}>주문 보기</Link>
         </Button>
       </div>
     </Row>
