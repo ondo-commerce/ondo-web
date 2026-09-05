@@ -1,11 +1,16 @@
 import type { BadgeProps } from "@ondo/ui";
-import type { PostStatusKey, SizeName } from "./types";
+import type { PostStatusKey, ProductField, SkuSize } from "./types";
 
 /** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
 
-export const SIZES: readonly SizeName[] = [
-  "Free",
+/**
+ * 사이즈 축의 **화면 순서.** 값은 스펙 enum 그대로고 순서만 여기서 정한다 —
+ * 스펙은 `XS…2XL, FREE` 순인데 표에서는 Free를 앞에 세운다(잡화가 Free 하나뿐이라
+ * 맨 뒤에 두면 한 칸만 저 끝에 켜진다).
+ */
+export const SIZES: readonly SkuSize[] = [
+  "FREE",
   "XS",
   "S",
   "M",
@@ -14,105 +19,29 @@ export const SIZES: readonly SizeName[] = [
   "2XL",
 ];
 
-export interface PaletteColor {
-  name: string;
-  hex: string;
-}
-
-export interface PaletteGroup {
-  group: string;
-  colors: PaletteColor[];
-}
-
 /**
- * 색상 마스터 — 고정 팔레트 26종 6그룹. 자유 입력이 아니다.
- * 색상 = 시스템 값(필터·집계용), 색상 표기 = 노출용 이름(자유 텍스트).
- * 여기에 값을 추가하려면 색상 마스터를 먼저 고쳐야 한다.
+ * 목록 한 페이지 크기. 스펙 상한(`size > 100`이면 400)이다.
+ * 기본값 20을 안 쓰는 이유: 이 표는 세로 스크롤을 직접 받는 100행 밀도로 설계됐고,
+ * 게시 필터가 서버에 없어 페이지 안에서 거른다(§3-1) — 페이지가 클수록 덜 샌다.
  */
-export const COLOR_PALETTE: readonly PaletteGroup[] = [
-  {
-    group: "무채색",
-    colors: [
-      { name: "블랙", hex: "#191f28" },
-      { name: "차콜", hex: "#4e5968" },
-      { name: "그레이", hex: "#b0b8c1" },
-      { name: "화이트", hex: "#ffffff" },
-      { name: "아이보리", hex: "#f3efe3" },
-      { name: "크림", hex: "#f7ecd7" },
-    ],
-  },
-  {
-    group: "베이지·브라운",
-    colors: [
-      { name: "베이지", hex: "#d8c3a5" },
-      { name: "카멜", hex: "#b5813f" },
-      { name: "브라운", hex: "#6b4a2f" },
-      { name: "카키", hex: "#6b6b45" },
-    ],
-  },
-  {
-    group: "블루",
-    colors: [
-      { name: "네이비", hex: "#1f2a44" },
-      { name: "블루", hex: "#3182f6" },
-      { name: "소라", hex: "#a5c9e8" },
-    ],
-  },
-  {
-    group: "데님 워싱",
-    colors: [
-      { name: "연청", hex: "#a9c3dc" },
-      { name: "중청", hex: "#5b7fa6" },
-      { name: "진청", hex: "#2b4160" },
-    ],
-  },
-  {
-    group: "컬러",
-    colors: [
-      { name: "레드", hex: "#d63b3b" },
-      { name: "버건디", hex: "#6e2233" },
-      { name: "핑크", hex: "#f0a3bb" },
-      { name: "오렌지", hex: "#f08030" },
-      { name: "옐로우", hex: "#f2c94c" },
-      { name: "그린", hex: "#3f7d4f" },
-      { name: "민트", hex: "#8fd6c4" },
-      { name: "퍼플", hex: "#7b5ea7" },
-    ],
-  },
-  {
-    group: "특수",
-    colors: [
-      { name: "골드", hex: "#c9a227" },
-      { name: "실버", hex: "#c0c4c9" },
-    ],
-  },
-];
-
-/** 팔레트 색 이름 → hex. 목록·표에서 색 점을 그릴 때 쓴다 */
-const COLOR_HEX: Record<string, string> = Object.fromEntries(
-  COLOR_PALETTE.flatMap((g) => g.colors.map((c) => [c.name, c.hex])),
-);
-
-/** 팔레트에 없는 이름(옛 데이터 등)이 와도 화면이 깨지지 않게 흰색으로 떨어뜨린다 */
-export function colorHex(name: string): string {
-  return COLOR_HEX[name] ?? "#ffffff";
-}
-
-/** 카테고리 3단 — 실제 마스터가 붙기 전까지 쓰는 최소 목록 */
-export const CATEGORY_TREE: Record<string, Record<string, string[]>> = {
-  여성: {
-    의류: ["상의", "하의", "아우터", "원피스"],
-    잡화: ["가방", "신발", "액세서리"],
-  },
-  남성: {
-    의류: ["상의", "하의", "아우터"],
-    잡화: ["가방", "신발", "액세서리"],
-  },
-};
+export const PAGE_SIZE = 100;
 
 /**
- * 게시 상태 라벨. **`null`(미게시)까지 포함해 세 값이다** — 상품은 게시글 없이도 존재하고
- * (`Product.post === null`), 목록에서는 그 상태도 한 칸에 같이 그려야 한다.
+ * 목록 화면의 URL 파라미터. 검색·필터·페이지·선택이 전부 URL에 산다(ADR-0003).
+ * 새로고침·뒤로가기·등록 후 "상세로 이동"이 이 이름들로 동작한다.
+ */
+export const LIST_PARAM = {
+  query: "q",
+  status: "status",
+  /** 1-base. 서버 `page`는 0-base라 보낼 때 1 뺀다 */
+  page: "page",
+  /** 우측 상세에 열린 상품. 등록 직후 여기로 보낸다 */
+  productId: "productId",
+} as const;
+
+/**
+ * 게시 상태 라벨. **`NONE`(미게시)까지 포함해 세 값이다** — 상품은 게시글 없이도 존재하고
+ * (`ProductView.post === null`), 목록에서는 그 상태도 한 칸에 같이 그려야 한다.
  * 상세 패널·수정 화면이 같은 문구를 쓰도록 여기 둔다(주문 탭 `ORDER_STATUS_LABEL`과 같은 자리).
  */
 export const POST_STATUS_LABEL: Record<PostStatusKey, string> = {
@@ -174,3 +103,37 @@ export const POST_FILTER_LABEL: Record<PostFilterValue, string> = {
   ...ALL_STATUS_LABEL,
   ...POST_STATUS_LABEL,
 };
+
+/**
+ * 서버 검증 실패(`errors[].field`)를 폼 칸에 붙일 때 아는 이름들. 순서는 화면 순서 —
+ * 첫 오류 칸으로 포커스를 옮길 때 이 순서로 찾는다.
+ *
+ * ⚠️ 서버가 실제로 쓰는 필드명은 **미확인**이다(스펙에 없다). Spring 검증의 관례
+ * (`listing.title`처럼 점으로 잇는다)로 적었고, 여기 없는 이름은 `toFieldErrors`가
+ * `_form`으로 모아 폼 위에 올린다 — 틀려도 사장이 아무 말도 못 보는 일은 없다.
+ */
+export const PRODUCT_FIELD_ORDER: readonly ProductField[] = [
+  "name",
+  "categoryId",
+  "colorOptions",
+  "listing.title",
+  "listing.description",
+  "listing.images",
+  "listing.variantPrices",
+];
+
+/**
+ * 입력칸의 DOM id 접두어. 제출 후 **첫 오류 칸으로 포커스를 옮기려면** 칸을 id로
+ * 찾아야 한다. 계정 feature와 같은 규칙이지만 접두어를 따로 둔다 — 상수를 feature
+ * 사이에서 나누지 않는다.
+ */
+export function fieldId(field: ProductField): string {
+  return `product-${field.replace(".", "-")}`;
+}
+
+export function errorId(field: ProductField): string {
+  return `${fieldId(field)}-error`;
+}
+
+/** `aria-invalid`가 켜진 칸의 테두리. 색은 토큰이 정한다 */
+export const INVALID_INPUT_CLASS = "aria-[invalid=true]:border-destructive";

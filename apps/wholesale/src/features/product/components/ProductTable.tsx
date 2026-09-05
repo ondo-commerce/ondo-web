@@ -3,7 +3,7 @@
 import { Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { ProductRow } from "./ProductRow";
-import type { Product } from "../types";
+import type { ProductRowView } from "../types";
 
 /**
  * 상품 목록 표 5열 + 맨 앞의 펼침 열.
@@ -20,16 +20,16 @@ import type { Product } from "../types";
  * 품번과 구성이 세로로 훑히기 때문이다 — 아코디언에서는 같은 값이 행마다 다른 자리에 놓였다.
  */
 export function ProductTable({
-  products,
+  rows,
   openProductId,
   onToggle,
   renderDetail,
 }: {
-  products: readonly Product[];
-  openProductId: string | null;
-  onToggle: (productId: string) => void;
+  rows: readonly ProductRowView[];
+  openProductId: number | null;
+  onToggle: (productId: number) => void;
   /** 펼침 영역 내용. 펼쳐진 행에만 부른다 */
-  renderDetail: (product: Product) => ReactNode;
+  renderDetail: (row: ProductRowView) => ReactNode;
 }) {
   return (
     <Table stickyHead>
@@ -44,16 +44,16 @@ export function ProductTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {products.map((product) => {
-          const open = openProductId === product.id;
+        {rows.map((row) => {
+          const open = openProductId === row.id;
           return (
             <ProductRow
-              key={product.id}
-              product={product}
+              key={row.id}
+              row={row}
               open={open}
-              onToggle={() => onToggle(product.id)}
+              onToggle={() => onToggle(row.id)}
             >
-              {open ? renderDetail(product) : null}
+              {open ? renderDetail(row) : null}
             </ProductRow>
           );
         })}

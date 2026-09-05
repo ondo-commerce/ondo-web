@@ -1,12 +1,86 @@
-import { COLOR_PALETTE, colorHex } from "./constants";
 import type { Product, Sku, SizeName } from "./types";
 
 /*
- * 화면을 그리기 위한 목업. API가 붙으면 이 파일만 지운다.
+ * ⚠️ 상품 탭은 이 파일을 더 이상 쓰지 않는다 (#156에서 실서버 연동).
  *
- * ⚠️ 파생값(marginRate)도 여기에 값으로 박혀 있다. 화면에서 계산하지 않는다 —
- *    원가 계산은 서버 몫이고, 여기서 계산식을 만들면 나중에 서버와 어긋난다.
+ * 남아 있는 이유: 재고 탭(`features/inventory`)·주문 탭(`features/order`)의 fixtures가
+ * `PRODUCTS`를 import 한다. 그 feature가 연동되는 회차에 이 파일과 `types.ts` 아래쪽의
+ * 옛 타입(`Product`·`Sku`·`SizeName`)을 같이 지운다. 상품 feature 안에서는 import 하지 않는다.
+ *
+ * 파생값(marginRate)도 여기에 값으로 박혀 있다. 화면에서 계산하지 않는다 —
+ * 원가 계산은 서버 몫이고, 여기서 계산식을 만들면 나중에 서버와 어긋난다.
  */
+
+/** 옛 팔레트. 실제 색상 마스터는 `GET /colors`다 — 여기 hex는 목업 색 점을 그릴 뿐이다 */
+const COLOR_PALETTE: readonly {
+  group: string;
+  colors: { name: string; hex: string }[];
+}[] = [
+  {
+    group: "무채색",
+    colors: [
+      { name: "블랙", hex: "#191f28" },
+      { name: "차콜", hex: "#4e5968" },
+      { name: "그레이", hex: "#b0b8c1" },
+      { name: "화이트", hex: "#ffffff" },
+      { name: "아이보리", hex: "#f3efe3" },
+      { name: "크림", hex: "#f7ecd7" },
+    ],
+  },
+  {
+    group: "베이지·브라운",
+    colors: [
+      { name: "베이지", hex: "#d8c3a5" },
+      { name: "카멜", hex: "#b5813f" },
+      { name: "브라운", hex: "#6b4a2f" },
+      { name: "카키", hex: "#6b6b45" },
+    ],
+  },
+  {
+    group: "블루",
+    colors: [
+      { name: "네이비", hex: "#1f2a44" },
+      { name: "블루", hex: "#3182f6" },
+      { name: "소라", hex: "#a5c9e8" },
+    ],
+  },
+  {
+    group: "데님 워싱",
+    colors: [
+      { name: "연청", hex: "#a9c3dc" },
+      { name: "중청", hex: "#5b7fa6" },
+      { name: "진청", hex: "#2b4160" },
+    ],
+  },
+  {
+    group: "컬러",
+    colors: [
+      { name: "레드", hex: "#d63b3b" },
+      { name: "버건디", hex: "#6e2233" },
+      { name: "핑크", hex: "#f0a3bb" },
+      { name: "오렌지", hex: "#f08030" },
+      { name: "옐로우", hex: "#f2c94c" },
+      { name: "그린", hex: "#3f7d4f" },
+      { name: "민트", hex: "#8fd6c4" },
+      { name: "퍼플", hex: "#7b5ea7" },
+    ],
+  },
+  {
+    group: "특수",
+    colors: [
+      { name: "골드", hex: "#c9a227" },
+      { name: "실버", hex: "#c0c4c9" },
+    ],
+  },
+];
+
+const COLOR_HEX: Record<string, string> = Object.fromEntries(
+  COLOR_PALETTE.flatMap((g) => g.colors.map((c) => [c.name, c.hex])),
+);
+
+function colorHex(name: string): string {
+  return COLOR_HEX[name] ?? "#ffffff";
+}
 
 /**
  * 현재고 말고 나머지 수량 3종. 목업 대부분이 0이라 위치 인자로 늘리지 않고 묶었다

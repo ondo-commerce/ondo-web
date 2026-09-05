@@ -1,46 +1,34 @@
-import type { OptionDraft } from "./components/ProductOptionMatrix";
-import type { PriceRow } from "./components/PostPriceTable";
-import { colorHex } from "./constants";
-import type { Product } from "./types";
+import { priceRowId } from "./derive";
+import type { OptionDraft, PriceRow, SkuView } from "./types";
 
 /**
- * 가격표의 행은 항상 **색상 × 사이즈**다.
- * 등록 화면은 아직 저장 전이라 옵션 카드에서, 수정 화면은 이미 만들어진 SKU에서 뽑는다.
+ * 가격표의 행은 항상 **색상 × 사이즈**이고, 옵션 매트릭스가 그 원본이다.
+ *
+ * 등록·수정이 같은 함수를 쓴다. 수정 화면은 `existing`(서버가 준 SKU)을 같이 넘겨
+ * 현재고·평균원가를 채우고, 등록 화면은 아직 입고가 없어 둘 다 0이다.
+ * 수정 화면에서 새로 켠 색×사이즈는 기존 SKU가 없으므로 역시 0이다 — 그 행은
+ * 저장할 때 `variantId` 없이 나가 서버가 새 variant를 만든다.
  */
-
-export function priceRowsFromOptions(options: OptionDraft[]): PriceRow[] {
-  return options.flatMap((option) => {
+export function priceRowsFromOptions(
+  options: readonly OptionDraft[],
+  existing: readonly SkuView[] = [],
+): PriceRow[] {
+  return options.flatMap((option) =>
     // 사이즈를 아직 안 고른 색은 SKU가 없다
-    return option.sizes.map((size, i) => ({
-      id: `${option.id}-${size}`,
-      color: option.color.name,
-      colorHex: option.color.hex,
-      firstOfColor: i === 0,
-      size,
-      // 새로 만드는 상품은 아직 입고가 없다. 재고·원가는 입고가 붙어야 생긴다
-      stock: 0,
-      avgCost: 0,
-    }));
-  });
-}
-
-export function priceRowsFromProduct(product: Product): PriceRow[] {
-  const seen = new Set<string>();
-
-  return product.skus.map((sku) => {
-    const firstOfColor = !seen.has(sku.color);
-    seen.add(sku.color);
-
-    return {
-      id: sku.id,
-      color:
-        product.colors.find((c) => c.name === sku.color)?.displayName ??
-        sku.color,
-      colorHex: colorHex(sku.color),
-      firstOfColor,
-      size: sku.size,
-      stock: sku.stock,
-      avgCost: sku.avgCost,
-    };
-  });
+    option.sizes.map((size, i) => {
+      const known = existing.find(
+        (s) => s.colorId === option.color.id && s.size === size,
+      );
+      return {
+        id: priceRowId(option.color.id, size),
+        colorId: option.color.id,
+        color: option.color.name,
+        colorHex: option.color.hex,
+        firstOfColor: i === 0,
+        size,
+        stock: known?.stock ?? 0,
+        avgCost: known?.avgCost ?? 0,
+      };
+    }),
+  );
 }

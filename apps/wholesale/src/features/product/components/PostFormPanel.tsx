@@ -11,31 +11,11 @@ import {
 } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { PostImageGrid } from "./PostImageGrid";
-import {
-  PostPriceTable,
-  type PriceRow,
-  type PriceValue,
-} from "./PostPriceTable";
-import type { PostStatus } from "../types";
-
-export interface PostFormValue {
-  name: string;
-  description: string;
-  images: string[];
-  allowSinglePiece: boolean;
-  prices: Record<string, PriceValue>;
-}
-
-export const EMPTY_POST_FORM: PostFormValue = {
-  name: "",
-  description: "",
-  // TODO(임시): 슬롯 너비 눈으로 확인하려고 채워둔 더미. 확인 끝나면 [] 로 되돌린다.
-  // 값을 서로 다르게 두는 건 취향이 아니라 필요다 — 순서 변경이 URL을 그대로
-  // 정렬 ID로 쓰기 때문에, 전부 "IMG"면 어느 칸을 옮겼는지 구분되지 않는다.
-  images: Array.from({ length: 9 }, (_, i) => `IMG ${i + 1}`),
-  allowSinglePiece: false,
-  prices: {},
-};
+import { PostPriceTable } from "./PostPriceTable";
+import { errorId, fieldId, INVALID_INPUT_CLASS } from "../constants";
+import { EMPTY_PRICE_VALUE, type ProductFormErrors } from "../derive";
+import type { PostFormValue, PostStatus, PriceRow } from "../types";
+import { FieldError } from "@/shared/components/FieldError";
 
 /**
  * 게시글 등록/수정 패널.
@@ -50,6 +30,7 @@ export function PostFormPanel({
   status,
   onStatusChange,
   action,
+  errors = {},
 }: {
   title: string;
   value: PostFormValue;
@@ -60,7 +41,10 @@ export function PostFormPanel({
    * 등록 화면은 아직 입고가 없어 원가가 존재하지 않으므로 끈다.
    */
   showAvgCost?: boolean;
-  /** 수정 화면에서만 넘긴다. 없으면 세그먼트 토글이 나오지 않는다 */
+  /**
+   * 수정 화면에서 **게시글이 있을 때만** 넘긴다. 없으면 세그먼트 토글이 나오지 않는다 —
+   * 끝내거나 재개할 listing 자체가 없다(시즌 종료·재개는 `listingId`를 받는 별도 호출).
+   */
   status?: PostStatus;
   onStatusChange?: (next: PostStatus) => void;
   /**
@@ -71,6 +55,7 @@ export function PostFormPanel({
    * 우측에서 내려온 이유다.
    */
   action?: ReactNode;
+  errors?: ProductFormErrors;
 }) {
   const disabled = status === "SEASON_ENDED";
 
@@ -147,31 +132,64 @@ export function PostFormPanel({
               이미 "게시글"이라 첫 묶음까지 이름 붙이면 같은 말이 두 번 나온다.
               구분은 아래 "판매 조건" 쪽 제목과 구분선이 맡는다 */}
           <Panel.Section>
-            <FormField label="게시글 이름" required htmlFor="post-name-input">
+            <FormField
+              label="게시글 이름"
+              required
+              htmlFor={fieldId("listing.title")}
+            >
               <Input
-                id="post-name-input"
+                id={fieldId("listing.title")}
+                className={`max-w-70 ${INVALID_INPUT_CLASS}`}
                 value={value.name}
                 onChange={(e) => onChange({ ...value, name: e.target.value })}
                 placeholder="예: [신상] 루즈 오버핏 셔츠 데일리 남방"
-                className="max-w-70"
+                maxLength={100}
+                aria-invalid={errors["listing.title"] !== undefined}
+                aria-describedby={
+                  errors["listing.title"] ? errorId("listing.title") : undefined
+                }
               />
+              {errors["listing.title"] ? (
+                <FieldError id={errorId("listing.title")}>
+                  {errors["listing.title"]}
+                </FieldError>
+              ) : null}
             </FormField>
 
-            <FormField label="상세 설명" htmlFor="post-desc">
+            <FormField
+              label="상세 설명"
+              htmlFor={fieldId("listing.description")}
+            >
               <Textarea
-                id="post-desc"
+                id={fieldId("listing.description")}
+                className={INVALID_INPUT_CLASS}
                 value={value.description}
                 onChange={(e) =>
                   onChange({ ...value, description: e.target.value })
                 }
                 rows={3}
+                aria-invalid={errors["listing.description"] !== undefined}
+                aria-describedby={
+                  errors["listing.description"]
+                    ? errorId("listing.description")
+                    : undefined
+                }
               />
+              {errors["listing.description"] ? (
+                <FieldError id={errorId("listing.description")}>
+                  {errors["listing.description"]}
+                </FieldError>
+              ) : null}
             </FormField>
 
+            {/*
+             * 필수(*) 표시를 붙이지 않는다 — 업로드 API가 없어 지금은 채울 수 없는 칸이다.
+             * 필수라고 써 두고 채울 길이 없으면 사장은 자기가 뭘 빠뜨렸는지 찾는다.
+             * TODO(#156): 업로드 API가 오면 `required`를 되살린다(PostImageGrid 주석 참고).
+             */}
             <FormField
               label="게시글 이미지"
               hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하거나, 슬롯을 선택한 뒤 스페이스바로 집어 방향키로 순서를 바꿀 수 있어요."
-              required
             >
               {/*
                * disabled 를 손으로 내려보내는 유일한 필드다. 위 fieldset 이
@@ -185,6 +203,11 @@ export function PostFormPanel({
                 disabled={disabled}
                 onReorder={handleImageReorder}
               />
+              {errors["listing.images"] ? (
+                <FieldError id={errorId("listing.images")}>
+                  {errors["listing.images"]}
+                </FieldError>
+              ) : null}
             </FormField>
           </Panel.Section>
 
@@ -223,6 +246,11 @@ export function PostFormPanel({
                 rows={priceRows}
                 values={value.prices}
                 showAvgCost={showAvgCost}
+                describedBy={
+                  errors["listing.variantPrices"]
+                    ? errorId("listing.variantPrices")
+                    : undefined
+                }
                 onChange={(id, next) =>
                   onChange({
                     ...value,
@@ -236,10 +264,7 @@ export function PostFormPanel({
                       priceRows.map((r) => [
                         r.id,
                         {
-                          ...(value.prices[r.id] ?? {
-                            orderLimit: 0,
-                            price: 0,
-                          }),
+                          ...(value.prices[r.id] ?? EMPTY_PRICE_VALUE),
                           [field]: v,
                         },
                       ]),
@@ -247,6 +272,11 @@ export function PostFormPanel({
                   })
                 }
               />
+              {errors["listing.variantPrices"] ? (
+                <FieldError id={errorId("listing.variantPrices")}>
+                  {errors["listing.variantPrices"]}
+                </FieldError>
+              ) : null}
             </FormField>
           </Panel.Section>
         </fieldset>
