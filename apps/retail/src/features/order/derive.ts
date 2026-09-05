@@ -9,6 +9,7 @@ import {
   FIRST_PAGE,
   LINE_PENDING_NOTE,
   ORDER_PATH,
+  ORDER_STATUS_LABEL,
   PAYMENT_LABEL,
   PERIODS,
   PICKUP_LABEL,
@@ -146,9 +147,31 @@ export function periodFrom(period: string, now: Date): string | undefined {
   const months = PERIODS.find((p) => p.value === period)?.months ?? null;
   if (months === null) return undefined;
 
-  const at = new Date(now.getTime() + KST_OFFSET_MS);
-  at.setUTCMonth(at.getUTCMonth() - months);
-  return at.toISOString().slice(0, 10);
+  const today = new Date(now.getTime() + KST_OFFSET_MS);
+
+  /* 월 산술은 **1일에서** 하고 날짜는 그 달의 말일로 자른다. `setUTCMonth(m − N)`을
+     31일에 그대로 부르면 짧은 달로 넘어가며 다음 달로 넘쳐서(3/31 − 1개월 → 3/3)
+     2/28~3/2 주문이 목록에서 사라졌다(wire 회차 F2). 서버가 `from`으로 거르므로
+     화면에선 빠진 것을 알 길이 없다.
+     검산(테스트 러너가 없어 여기 적는다 — 2026년, 윤년 아님):
+       3/31 − 1개월 → 2026-02-28 · 5/31 − 3개월 → 2026-02-28 · 10/31 − 1개월 → 2026-09-30
+       1/31 − 1개월 → 2025-12-31(해 넘김) · 9/5 − 1개월 → 2026-08-05(말일 아니면 그대로) */
+  const firstOfTarget = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - months, 1),
+  );
+  const lastDayOfTarget = new Date(
+    Date.UTC(
+      firstOfTarget.getUTCFullYear(),
+      firstOfTarget.getUTCMonth() + 1,
+      0,
+    ),
+  ).getUTCDate();
+  const day = Math.min(today.getUTCDate(), lastDayOfTarget);
+
+  return (
+    `${firstOfTarget.getUTCFullYear()}-` +
+    `${pad(firstOfTarget.getUTCMonth() + 1, 2)}-${pad(day, 2)}`
+  );
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -723,10 +746,27 @@ export function receivedLabel(summary: OrderSummary): string {
   return `${formatSheets(summary.receivedQty)} / ${formatSheets(summary.totalQty)}`;
 }
 
+/**
+ * 이 장끼가 **나갔는가**. `Outbound.shippedAt`이 null이면 포장만 끝난 상태다(스펙).
+ *
+ * 출고 진행·미수 잔액·장끼 모달의 미수 줄·취소 잠금 사유가 전부 **이 판정 하나**를
+ * 읽는다. 넷이 `shipments`를 세기만 하고 `shippedAt`을 안 보던 때는 같은 화면이
+ * 한 줄은 `포장 완료 · 출고 전`이라 부르면서 요약은 `출고 1건 · 미수 62,500원`이라
+ * 말했다(wire 회차 F1). 미수는 물건이 나갈 때 생긴다(RT-64) — 포장은 아직 아니다.
+ */
+export function isShipped(shipment: Shipment): boolean {
+  return shipment.shippedAt !== null;
+}
+
+/** 나간 장끼만. 포장만 끝난 장끼는 출고 기록 목록에는 보이지만 여기엔 안 든다 */
+export function shippedShipments(order: OrderRecord): Shipment[] {
+  return order.shipments.filter(isShipped);
+}
+
 export interface ShipmentProgress {
   /** 나갈 도매처 건수 = 취소되지 않은 도매처 건수 */
   planned: number;
-  /** 그중 장끼가 한 장이라도 나간 도매처 건수 */
+  /** 그중 장끼가 한 장이라도 **나간**(`shippedAt` 있음) 도매처 건수 */
   done: number;
 }
 
@@ -738,7 +778,7 @@ export interface ShipmentProgress {
  * `라인 N개`, 장끼는 `장끼 N장`으로 따로 말한다.
  */
 export function shipmentProgress(order: OrderRecord): ShipmentProgress {
-  const shipped = new Set(order.shipments.map((s) => s.wholesalerId));
+  const shipped = new Set(shippedShipments(order).map((s) => s.wholesalerId));
 
   return {
     planned: order.legs.filter((leg) => !leg.canceled).length,
@@ -763,13 +803,14 @@ export function shipmentAmount(shipment: Shipment): number | null {
 }
 
 /**
- * 미수 잔액. **출고된 건의 금액 합이다**(RT-64) — 주문 금액 전체가 아니다.
- * 미수는 물건이 나갈 때 생긴다. 입금 배정은 이 응답에 없어 빼지 않는다(§3-0 D).
- * 어느 장끼라도 금액을 모르면 null — 화면은 `—`로 그린다.
+ * 미수 잔액. **나간 장끼(`isShipped`)의 금액 합이다**(RT-64) — 주문 금액 전체도,
+ * 포장만 끝난 장끼도 아니다. 미수는 물건이 나갈 때 생긴다. 입금 배정은 이 응답에
+ * 없어 빼지 않는다(§3-0 D). 나간 장끼 중 어느 하나라도 금액을 모르면 null —
+ * 화면은 `—`로 그린다.
  */
 export function unpaidAmount(order: OrderRecord): number | null {
   let sum = 0;
-  for (const shipment of order.shipments) {
+  for (const shipment of shippedShipments(order)) {
     const amount = shipmentAmount(shipment);
     if (amount === null) return null;
     sum += amount;
@@ -780,15 +821,20 @@ export function unpaidAmount(order: OrderRecord): number | null {
 /**
  * 이 출고까지의 **남은 미수**. 장끼 모달의 마지막 줄이 읽는다.
  *
- * 출고 순서대로 쌓아 올린 값이다 — 미수는 출고 시점에 생기므로(RT-64) 그
- * 장끼가 나갔을 때의 잔액은 그때까지 나간 것의 합이다.
+ * 나간 장끼를 순서대로 쌓아 올린 값이다 — 미수는 출고 시점에 생기므로(RT-64) 그
+ * 장끼가 나갔을 때의 잔액은 그때까지 나간 것의 합이다. **아직 안 나간 장끼면
+ * null** — 그 장끼로 생긴 미수가 아직 없으니 모달은 미수 줄을 세우지 않는다.
+ * 금액을 모를 때와 같은 null이지만 뜻은 같다: "이 줄은 그리지 말라".
  */
 export function unpaidAfter(
   order: OrderRecord,
   statementNo: string,
 ): number | null {
+  const target = order.shipments.find((s) => s.statementNo === statementNo);
+  if (target === undefined || !isShipped(target)) return null;
+
   let sum = 0;
-  for (const shipment of order.shipments) {
+  for (const shipment of shippedShipments(order)) {
     const amount = shipmentAmount(shipment);
     if (amount === null) return null;
     sum += amount;
@@ -804,12 +850,14 @@ export function unpaidAfter(
  * 취소는 도매처별이고 **`isCancellable`은 서버 판정**이다(스펙: NEW일 때만 true).
  * 한 건이라도 취소할 수 있으면 열려 있다 — 다른 건이 이미 확정됐어도 그렇다.
  * 잠기는 사유가 셋인데 안내 문구가 한 벌이면 셋이 같은 말을 한다(F3).
+ * `SHIPPED`는 **나간 장끼**가 있을 때만이다 — 포장만 끝난 주문은 도매처가
+ * 확정해서 잠긴 것이지 출고돼서 잠긴 게 아니다(`isShipped`).
  */
 export function cancelLockReason(order: OrderRecord): CancelLock | null {
   if (order.legs.length === 0) return "EMPTY";
   if (order.legs.every((leg) => leg.canceled)) return "CANCELED";
   if (order.legs.some((leg) => leg.cancellable)) return null;
-  if (order.shipments.length > 0) return "SHIPPED";
+  if (order.shipments.some(isShipped)) return "SHIPPED";
   return "CONFIRMED";
 }
 
@@ -946,6 +994,20 @@ function resolveOne(
   fallback: string,
 ): string {
   return value && allowed.includes(value) ? value : fallback;
+}
+
+/**
+ * 통합 행 배지의 글자. **모르는 값이면 서버 키를 그대로 세운다.**
+ *
+ * `ActionBadge`는 스냅샷에서 닫힌 enum이라 여기 새 값이 오는 건 BE가 값을 늘렸다는
+ * 뜻이다. 그때 빈 알약은 "상태 없음"으로 읽히고(wire 회차 F8), `확인 필요` 같은
+ * 대체 표기는 진짜 상태처럼 읽혀 사장이 뭔가 해야 하는 줄 안다. 서버 키가 그대로
+ * 보이면 어긋난 값이 무엇인지 그 글자를 읽어 주는 것만으로 전해진다 — 도매처 건
+ * 배지가 서버 `label`을 그대로 쓰는 것과 같은 결이다. 필터 축은 지금처럼
+ * `STATUS_VALUES` 밖이면 `상태 전체`로 떨어진다.
+ */
+export function orderStatusLabel(status: OrderStatus): string {
+  return status in ORDER_STATUS_LABEL ? ORDER_STATUS_LABEL[status] : status;
 }
 
 export const STATUS_VALUES: readonly OrderStatus[] = [

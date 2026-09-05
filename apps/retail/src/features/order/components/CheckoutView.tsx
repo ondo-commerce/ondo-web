@@ -70,7 +70,14 @@ export function CheckoutView({ groups }: { groups: readonly CheckoutGroup[] }) {
   const router = useRouter();
   const setting = useCheckoutSetting();
   const place = usePlaceOrderMutation();
-  const busy = useOrderBusy();
+  /**
+   * 요청이 나가 있는 동안 **그리고 성공한 뒤에도** 잠근다. 응답이 오면
+   * `useIsMutating`은 바로 0이 되는데 `router.replace`가 완료 화면(RSC)을 받아
+   * 그리기까지 한 박자가 있다 — 그 사이 `주문 접수하기`가 다시 눌렸다(wire 회차 F4).
+   * 되돌릴 수 없는 버튼은 누를 수 있는 순간이 한 번뿐이어야 한다. 접수된 주문서는
+   * 어차피 이 화면을 떠나므로 `isSuccess`가 한 번 켜지면 다시 열 일이 없다.
+   */
+  const busy = useOrderBusy() || place.isSuccess;
   const [failure, setFailure] = useState<string | null>(null);
   /**
    * 멱등키. **주문서를 연 순간 한 번 만들고 다시 시도해도 같은 키**다 — 연타나

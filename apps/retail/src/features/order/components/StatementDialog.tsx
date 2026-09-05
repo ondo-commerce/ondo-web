@@ -14,6 +14,7 @@ import {
 import {
   formatSheets,
   formatWon,
+  isShipped,
   lineAmount,
   shipmentAmount,
   unpaidAfter,
@@ -172,9 +173,11 @@ export function StatementDialog({
             </tfoot>
           </Table>
 
-          {/* 미수는 출고 시점에 생긴다(RT-64). 금액을 모르는 장끼면 이 줄을 아예
-              안 세운다 — `+—원이 생겼어요`는 읽을 수 없다 */}
-          {amount !== null && remaining !== null ? (
+          {/* 미수는 출고 시점에 생긴다(RT-64). **아직 안 나간 장끼**(포장만 끝남)면
+              생긴 미수가 없으니 이 줄이 없고, 금액을 모르는 장끼도 아예 안 세운다 —
+              `+—원이 생겼어요`는 읽을 수 없다. `unpaidAfter`도 같은 판정으로 null을
+              주지만, 왜 없는지가 여기서 읽히게 `isShipped`를 같이 본다 */}
+          {isShipped(shipment) && amount !== null && remaining !== null ? (
             <Notice className="mt-3.5">
               <span className="flex items-start gap-2">
                 <Info aria-hidden className="mt-0.5 size-4 shrink-0" />

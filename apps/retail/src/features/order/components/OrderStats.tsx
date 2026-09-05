@@ -5,6 +5,7 @@ import {
   formatWon,
   orderTotals,
   shipmentProgress,
+  shippedShipments,
   unpaidAmount,
 } from "../derive";
 import type { OrderRecord } from "../types";
@@ -42,15 +43,17 @@ function Stat({
  * 세 값이 전부 `derive.ts`에서 나온다. 특히 **주문 금액은 표 `<tfoot>`의 합계와
  * 같은 함수**를 부른다 — 원본은 요약이 517,000원인데 행 합이 618,000원이었다.
  *
- * 미수는 **출고된 건의 금액 합**이다(RT-64). 장끼 품목에 단가가 없어(스펙) 주문
- * 라인에서 찾아 채우는데, 못 찾은 장끼가 있으면 `—`로 그린다 — 틀린 숫자를 맞는
- * 것처럼 세우지 않는다.
+ * 미수는 **나간 장끼의 금액 합**이다(RT-64). 포장만 끝난 장끼(`shippedAt: null`)는
+ * 출고 기록엔 보여도 여기엔 안 든다 — `장끼 N장에서 발생`의 N도 나간 장끼만 센다.
+ * 장끼 품목에 단가가 없어(스펙) 주문 라인에서 찾아 채우는데, 못 찾은 장끼가 있으면
+ * `—`로 그린다 — 틀린 숫자를 맞는 것처럼 세우지 않는다.
  */
 export function OrderStats({ order }: { order: OrderRecord }) {
   const totals = orderTotals(order);
   const progress = shipmentProgress(order);
   const backorders = backorderCount(order);
   const unpaid = unpaidAmount(order);
+  const shippedCount = shippedShipments(order).length;
 
   return (
     <div className="grid grid-cols-3 gap-2 phone:grid-cols-1">
@@ -72,8 +75,8 @@ export function OrderStats({ order }: { order: OrderRecord }) {
         sub={
           unpaid === null
             ? DETAIL_TEXT.unpaidUnknown
-            : order.shipments.length > 0
-              ? DETAIL_TEXT.unpaidFrom(order.shipments.length)
+            : shippedCount > 0
+              ? DETAIL_TEXT.unpaidFrom(shippedCount)
               : undefined
         }
       />

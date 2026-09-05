@@ -1,9 +1,6 @@
 import { Badge, cn } from "@ondo/ui";
-import {
-  ACCEPT_LABEL,
-  LINE_STATUS_LABEL,
-  ORDER_STATUS_LABEL,
-} from "../constants";
+import { ACCEPT_LABEL, LINE_STATUS_LABEL } from "../constants";
+import { orderStatusLabel } from "../derive";
 import type { OrderLineStatus, OrderStatus } from "../types";
 
 /**
@@ -77,10 +74,15 @@ const ORDER_SHAPE: Record<OrderStatus, BadgeShape> = {
   CANCELLED: "outline",
 };
 
+/** 모르는 값은 윤곽 — 끝났다고 단정할 근거가 없다. 표기는 `derive.orderStatusLabel` */
+function orderShape(status: OrderStatus): BadgeShape {
+  return status in ORDER_SHAPE ? ORDER_SHAPE[status] : "outline";
+}
+
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
   return (
-    <StatusBadge shape={ORDER_SHAPE[status]}>
-      {ORDER_STATUS_LABEL[status]}
+    <StatusBadge shape={orderShape(status)}>
+      {orderStatusLabel(status)}
     </StatusBadge>
   );
 }
