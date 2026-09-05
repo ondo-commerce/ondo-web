@@ -18,8 +18,6 @@ export type SignUpResponse = RetailSchema<"SignUpResponse">;
 /** `GET /auth/email-availability` 응답 */
 export type EmailAvailabilityResponse =
   RetailSchema<"EmailAvailabilityResponse">;
-/** `/me`의 거절 사유. REJECTED일 때만 실린다 */
-export type Rejection = RetailSchema<"Rejection">;
 
 /**
  * 서버가 `VALIDATION_FAILED`의 `errors[].field`에 적는 이름 = `SignUpRequest`의
