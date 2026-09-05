@@ -1,21 +1,23 @@
 "use client";
 
-import { Notice, Panel } from "@ondo/ui";
-import { ChevronRight, Info } from "lucide-react";
+import { Panel } from "@ondo/ui";
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { OptionTable } from "./OptionTable";
 import { ProductGallery } from "./ProductGallery";
 import { SummaryBar } from "./SummaryBar";
-import { LOCKED_NOTICE, PRICE_HINT, QTY_UNIT, TRADE_TERMS } from "../constants";
+import { PRICE_HINT, QTY_UNIT, TRADE_TERMS } from "../constants";
 import {
+  describeAddToCartError,
   draftKey,
   orderTotals,
   parseQty,
   priceRangeLabel,
+  toCartItems,
   type QtyIssue,
 } from "../derive";
-import type { ColorGroup, ProductDetail } from "../types";
+import type { CartItemDraft, ColorGroup, ProductDetail } from "../types";
 import { useProductFavorite } from "@/features/catalog";
 
 /**
@@ -25,14 +27,23 @@ import { useProductFavorite } from "@/features/catalog";
  * **수량** 상태를 이 화면 하나가 통째로 들고 있다. 옵션 표(오른쪽 열 안)와 합계
  * 바(패널 바닥)는 DOM에서 멀리 떨어져 있지만 같은 값을 본다 — 각자 세면 한쪽만
  * 안 따라오는 화면이 된다. 그래서 상세 전체가 클라이언트 컴포넌트다(첫 HTML은
- * 여전히 서버에서 완성돼 내려간다).
+ * 여전히 서버에서 완성돼 내려간다 — `product`는 `page.tsx`가 `serverApi()`로 받았다).
+ *
+ * 잠긴 상태(시즌 종료·게시 내림)의 배너가 없다 — 상세 응답에 그 신호가 없고,
+ * dev 실측으로 내려간 게시글은 404라 이 화면에 오지 않는다(`04-wire.md` §3).
+ *
+ * `장바구니 담기`는 `features/cart`의 뮤테이션이 보낸다. feature끼리 직접 잇지
+ * 않으므로 `app/`의 조립부가 `onAddToCart`로 넘긴다 — 이 화면은 무엇을 보낼지만
+ * 만들고(`toCartItems`) 결과를 받아 문구로 바꾼다.
  */
-export function ProductDetailView({ product }: { product: ProductDetail }) {
-  /* 상태값에서 문구를 바로 뽑는다. `주문 가능한가`를 boolean으로 먼저 좁히면
-     타입이 다시 세 값으로 넓어져서, 어느 문구를 쓸지 컴파일러가 못 고른다 */
-  const lockedNotice =
-    product.status === "ON_SALE" ? null : LOCKED_NOTICE[product.status];
-
+export function ProductDetailView({
+  product,
+  onAddToCart,
+}: {
+  product: ProductDetail;
+  /** 조합마다 하나씩 `POST /cart-items`. 하나라도 실패하면 reject */
+  onAddToCart: (items: readonly CartItemDraft[]) => Promise<unknown>;
+}) {
   /* 칸에 있는 **글자 그대로**를 들고 있다. 숫자로 바꿔 두면 `45.5`를 친 사장에게
      무엇이 잘못됐는지 되돌려 줄 방법이 없다 (`parseQty` 주석 참조) */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -47,6 +58,8 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
   /** 마지막으로 담은 수량의 지문. 지금 값과 같으면 또 담을 이유가 없다 */
   const [addedKey, setAddedKey] = useState<string | null>(null);
   const [addedNotice, setAddedNotice] = useState<string | null>(null);
+  const [addFailed, setAddFailed] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const totals = orderTotals(product, drafts);
   const currentKey = draftKey(product, drafts);
@@ -65,6 +78,7 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
     /* 손으로 한 칸이라도 고치면 직전 일괄 입력 안내는 낡은 말이 된다 */
     setBulkNotice(null);
     setAddedNotice(null);
+    setAddFailed(null);
   };
 
   const bulkApply = (group: ColorGroup, value: string) => {
@@ -86,52 +100,46 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
       `${group.displayName} 사이즈 ${group.rows.length}칸에 ${qty}${QTY_UNIT}씩 넣었어요.`,
     );
     setAddedNotice(null);
+    setAddFailed(null);
   };
 
-  /* 못 담는 이유를 문장 하나로 좁힌다. 잠긴 상품 → 못 읽는 칸 → 0장 순서인 건
+  /* 못 담는 이유를 문장 하나로 좁힌다. 못 읽는 칸 → 0장 순서인 건
      사장이 먼저 고쳐야 하는 것이 그 순서라서다 */
-  const disabledReason = lockedNotice
-    ? lockedNotice
-    : totals.hasIssue
-      ? "수량 칸에 못 읽는 값이 있어요. 빨간 글씨가 붙은 줄을 고치면 담을 수 있어요."
-      : totals.sheets === 0
-        ? `수량을 1${QTY_UNIT} 이상 넣어야 담거나 주문할 수 있어요.`
-        : null;
+  const disabledReason = totals.hasIssue
+    ? "수량 칸에 못 읽는 값이 있어요. 빨간 글씨가 붙은 줄을 고치면 담을 수 있어요."
+    : totals.sheets === 0
+      ? `수량을 1${QTY_UNIT} 이상 넣어야 담거나 주문할 수 있어요.`
+      : null;
 
-  const addToCart = () => {
-    setAddedKey(currentKey);
-    setAddedNotice(
-      `장바구니에 ${totals.comboCount}개 조합 · ${totals.sheets}${QTY_UNIT}을 담았어요. 수량을 바꾸면 다시 담을 수 있어요.`,
-    );
+  const addToCart = async () => {
     setBulkNotice(null);
+    setAddFailed(null);
+    setAdding(true);
+    try {
+      await onAddToCart(toCartItems(product, drafts));
+      setAddedKey(currentKey);
+      setAddedNotice(
+        `장바구니에 ${totals.comboCount}개 조합 · ${totals.sheets}${QTY_UNIT}을 담았어요. 수량을 바꾸면 다시 담을 수 있어요.`,
+      );
+    } catch (error) {
+      /* 조합이 여럿이면 일부는 이미 담겼을 수 있다 — 지문을 굳히지 않아 다시
+         누를 수 있게 두고, 무엇이 실패했는지는 서버 문구로 말한다 */
+      setAddFailed(describeAddToCartError(error));
+    } finally {
+      setAdding(false);
+    }
   };
 
   return (
     <div className="mx-auto max-w-wrap">
-      <Breadcrumb category={product.category} />
+      <Breadcrumb categoryPath={product.categoryPath} />
 
       <Panel>
         <div className="grid grid-cols-[minmax(0,480px)_minmax(0,1fr)] items-start gap-7 tablet:grid-cols-1">
-          <ProductGallery
-            imageCount={product.imageCount}
-            productName={product.name}
-          />
+          <ProductGallery images={product.images} productName={product.name} />
 
           <div>
             <SellerCard product={product} />
-
-            {lockedNotice ? (
-              /* 잠긴 이유를 **옵션 표보다 먼저** 말한다. 아래에서 수량을 다 넣고
-                 나서야 못 산다는 걸 알게 되면 그 시간이 통째로 버려진다 */
-              <div className="mt-6">
-                <Notice className="border-destructive text-destructive bg-card border">
-                  <span className="flex items-start gap-2">
-                    <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-                    {lockedNotice}
-                  </span>
-                </Notice>
-              </div>
-            ) : null}
 
             <section className="mt-6">
               <h1 className="text-xl font-medium">{product.name}</h1>
@@ -156,7 +164,7 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
               onChangeQty={changeQty}
               onBulkApply={bulkApply}
               bulkNotice={bulkNotice}
-              disabled={lockedNotice !== null}
+              disabled={adding}
             />
 
             <TradeTermsList />
@@ -169,7 +177,9 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
           favorited={favorited}
           onToggleFavorite={toggleFavorite}
           onAddToCart={addToCart}
-          addedNotice={addedNotice}
+          adding={adding}
+          addedNotice={addFailed ?? addedNotice}
+          failed={addFailed !== null}
           alreadyAdded={alreadyAdded}
         />
       </Panel>
@@ -178,14 +188,14 @@ export function ProductDetailView({ product }: { product: ProductDetail }) {
 }
 
 /**
- * `홈 › 여성 › 의류 › 상의` — 도매 3단(대>중>소) 그대로다(게이트 Q2).
+ * `홈 › 여성 › 의류 › 상의` — 서버의 `categoryPath`(루트 → 리프) 그대로다(게이트 Q2).
  *
- * **홈만 링크다.** 대·중 축에는 갈 화면이 아직 없다 — 링크처럼 보이게 해 두고
- * 아무 데도 안 가는 것보다 글자로 두는 편이 낫다. 소 축을 셸 카테고리 슬러그로
- * 이어 주는 것은 축 대응표(§4 Q2)가 확정된 뒤에 한다.
+ * **홈만 링크다.** 중간 축에는 갈 화면이 아직 없다 — 링크처럼 보이게 해 두고
+ * 아무 데도 안 가는 것보다 글자로 두는 편이 낫다. 리프를 셸 카테고리로 이어 주는
+ * 것은 카테고리 바가 최상위 한 단만 그리는 지금은 맞지 않는다(`04-wire.md` §3).
  */
-function Breadcrumb({ category }: { category: [string, string, string] }) {
-  const [major, middle, minor] = category;
+function Breadcrumb({ categoryPath }: { categoryPath: readonly string[] }) {
+  const last = categoryPath.length - 1;
 
   return (
     <nav
@@ -195,12 +205,14 @@ function Breadcrumb({ category }: { category: [string, string, string] }) {
       <Link href="/" className="hover:text-foreground">
         홈
       </Link>
-      <ChevronRight aria-hidden className="text-border-strong size-3.5" />
-      <span>{major}</span>
-      <ChevronRight aria-hidden className="text-border-strong size-3.5" />
-      <span>{middle}</span>
-      <ChevronRight aria-hidden className="text-border-strong size-3.5" />
-      <span className="text-foreground">{minor}</span>
+      {categoryPath.map((name, index) => (
+        <span key={`${index}-${name}`} className="contents">
+          <ChevronRight aria-hidden className="text-border-strong size-3.5" />
+          <span className={index === last ? "text-foreground" : undefined}>
+            {name}
+          </span>
+        </span>
+      ))}
     </nav>
   );
 }
@@ -219,9 +231,12 @@ function SellerCard({ product }: { product: ProductDetail }) {
       </span>
       <div className="min-w-0">
         <p className="truncate font-medium">{wholesaler.name}</p>
-        <p className="text-muted-foreground text-body truncate">
-          {wholesaler.location}
-        </p>
+        {/* 위치가 비어 오면 줄을 안 그린다 — 빈 줄은 "주소 없음"으로 읽힌다 */}
+        {wholesaler.location ? (
+          <p className="text-muted-foreground text-body truncate">
+            {wholesaler.location}
+          </p>
+        ) : null}
       </div>
       <Link
         href={`/wholesalers/${wholesaler.id}`}

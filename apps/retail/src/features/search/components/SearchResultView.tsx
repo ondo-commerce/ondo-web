@@ -1,11 +1,6 @@
 import { Notice, Panel } from "@ondo/ui";
 import { Info, Search } from "lucide-react";
-import {
-  OrderResultRow,
-  ProductResultRow,
-  RowGroup,
-  WholesalerResultRow,
-} from "./ResultRows";
+import { ProductResultRow, RowGroup, WholesalerResultRow } from "./ResultRows";
 import { SearchTabs } from "./SearchTabs";
 import {
   EMPTY_SECTION_TEXT,
@@ -20,7 +15,8 @@ import type { SearchResult, SearchTab } from "../types";
  * 훑는 화면(홈·도매처 홈·찜 목록)은 폭을 꽉 쓴다.
  *
  * 서버 컴포넌트다. 이 화면에는 입력도 상태도 없다 — 검색어는 셸의 통합 검색이
- * 소유하고, 탭은 주소가 소유한다. 그래서 첫 HTML이 곧 완성된 결과다.
+ * 소유하고, 탭은 주소가 소유한다. 결과는 `page.tsx`가 `GET /listings?q=`로 받아
+ * 넘긴다. 그래서 첫 HTML이 곧 완성된 결과다.
  */
 export function SearchResultView({
   query,
@@ -49,8 +45,14 @@ export function SearchResultView({
               <h3 className="text-muted-foreground text-body mb-2.5">
                 {SEARCH_TAB_LABEL[section]}{" "}
                 <span className="tabular-nums">{counts[section]}건</span>
-                {section === "orders" ? (
-                  <span> · 전에 주문했던 건에서도 찾아줘요</span>
+                {/* 서버가 상한(100)보다 더 갖고 있으면 그 사실만 따로 말한다 —
+                    줄 수와 탭 숫자는 실제로 그린 것과 같아야 한다 */}
+                {section === "products" &&
+                result.productTotal > counts.products ? (
+                  <span className="tabular-nums">
+                    {" "}
+                    · 전체 {result.productTotal}건 중 앞 {counts.products}건
+                  </span>
                 ) : null}
               </h3>
 
@@ -75,11 +77,6 @@ export function SearchResultView({
                         <WholesalerResultRow key={w.id} wholesaler={w} />
                       ))
                     : null}
-                  {section === "orders"
-                    ? result.orders.map((o) => (
-                        <OrderResultRow key={o.id} order={o} />
-                      ))
-                    : null}
                 </RowGroup>
               )}
             </section>
@@ -90,7 +87,7 @@ export function SearchResultView({
   );
 }
 
-/** 세 축이 모두 0건. 탭별 안내를 세 번 반복하지 않고 화면 하나로 말한다 */
+/** 두 축이 모두 0건. 탭별 안내를 두 번 반복하지 않고 화면 하나로 말한다 */
 function EmptyResult({ query }: { query: string }) {
   return (
     <div className="flex flex-col items-center gap-1.5 px-5 py-16 text-center">
@@ -99,8 +96,8 @@ function EmptyResult({ query }: { query: string }) {
       </span>
       <h3 className="text-base font-medium">“{query}” 결과가 없어요.</h3>
       <p className="text-muted-foreground text-body">
-        품번은 `SU-18` 처럼 붙임표까지 넣어 보고, 상품명은 한두 글자만 쳐
-        보세요.
+        상품명은 한두 글자만 쳐 보세요. 도매처가 올린 상품이 아직 없을 수도
+        있어요.
       </p>
     </div>
   );
@@ -122,8 +119,7 @@ export function SearchGuide() {
           </span>
           <h3 className="text-base font-medium">검색어를 입력해 주세요.</h3>
           <p className="text-muted-foreground text-body">
-            위 검색창에 품번 · 상품명 · 도매처 이름을 넣으면 결과가 여기에
-            나와요.
+            위 검색창에 상품명을 넣으면 결과가 여기에 나와요.
           </p>
         </div>
       </Panel>

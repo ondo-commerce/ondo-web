@@ -2,9 +2,13 @@
 
 import { Panel } from "@ondo/ui";
 import { CatalogSection } from "./CatalogSection";
-import { LIST_SORTS } from "../constants";
 import { useFavorites } from "../useFavorites";
-import type { CatalogFilter, CatalogProduct, CatalogSort } from "../types";
+import type {
+  CatalogFilter,
+  CatalogOptions,
+  CatalogPaging,
+  CatalogProduct,
+} from "../types";
 
 /**
  * 쇼핑몰 홈. 패널 한 장 안에 툴바 → 구분선 → 카드 격자 → `상품 더 보기`가 든다.
@@ -12,17 +16,20 @@ import type { CatalogFilter, CatalogProduct, CatalogSort } from "../types";
  * **1180px 중앙 정렬(`.wrap`)을 쓰지 않는다** — 확정 와이어프레임의 홈은 패널이
  * 화면 폭을 꽉 쓴다. 중앙 정렬은 검색 결과와 상품 상세 둘뿐이다.
  *
- * 필터·정렬·펼침은 주소가 원본이라 이 컴포넌트가 기억하지 않는다. 찜은
- * 화면 밖 세션 저장소(`useFavorites`)가 갖는다 — 상세·검색과 같은 값을 봐야 한다.
+ * 카드·선택지·건수는 전부 서버에서 받은 값이다(`app/(shop)/(browse)/page.tsx`).
+ * 필터·펼침은 주소가 원본이라 이 컴포넌트가 기억하지 않는다. 찜은 화면 밖
+ * 세션 저장소(`useFavorites`)가 갖는다 — 상세·검색과 같은 값을 봐야 한다.
  */
 export function HomeView({
   products,
   filter,
-  sort,
+  options,
+  paging,
 }: {
   products: readonly CatalogProduct[];
   filter: CatalogFilter;
-  sort: CatalogSort;
+  options: CatalogOptions;
+  paging: CatalogPaging;
 }) {
   const { favorites, toggleFavorite } = useFavorites();
 
@@ -40,9 +47,8 @@ export function HomeView({
         basePath="/"
         products={products}
         filter={filter}
-        sort={sort}
-        sorts={LIST_SORTS}
-        defaultSort="latest"
+        options={options}
+        paging={paging}
         favorites={favorites}
         onToggleFavorite={toggleFavorite}
       />

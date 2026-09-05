@@ -3,50 +3,43 @@
 import { Button } from "@ondo/ui";
 import { ChevronDown, RotateCcw, SearchX } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import {
-  FilterDropdown,
-  SortDropdown,
-  type FilterOption,
-} from "./FilterDropdown";
+import { FilterDropdown, type FilterOption } from "./FilterDropdown";
 import { ProductGrid } from "./ProductGrid";
 import {
   FILTER_ALL,
   FILTER_ALL_LABEL,
   PAGE_SIZE,
   PRICE_BANDS,
-  SORT_LABEL,
 } from "../constants";
-import {
-  availableColors,
-  availableSizes,
-  catalogHref,
-  filterProducts,
-  isFilterEmpty,
-  moreHref,
-  resolveShown,
-  SHOWN_PARAM,
-  sortProducts,
-} from "../derive";
-import type { CatalogFilter, CatalogProduct, CatalogSort } from "../types";
-import { CATEGORIES } from "@/shared/config/nav";
+import { canShowMore, catalogHref, isFilterEmpty, moreHref } from "../derive";
+import type {
+  CatalogFilter,
+  CatalogOptions,
+  CatalogPaging,
+  CatalogProduct,
+} from "../types";
 
 /**
  * 필터 툴바 + 구분선 + 카드 격자 + `상품 더 보기`. 홈과 도매처 홈의 `전체 상품`이
  * 같은 것을 쓴다 — 두 화면에서 필터가 갈리면 같은 상품이 다르게 걸린다.
  *
- * **건수 표기가 화면에 실제로 그려진 카드 수와 같다.** 필터로 가려진 상품도,
- * 아직 `더 보기`로 펼치지 않은 상품도 이 숫자에 남지 않는다 — 도매 5회차에서
- * 네 번 재발한 "가려진 대상이 집계에 남는" 결함을 여기서 끊는다. 아직 안 펼친
- * 나머지가 있으면 `· 전체 N개`를 덧붙여 더 있다는 사실만 따로 말한다.
+ * **거르는 것은 서버다.** 이 컴포넌트는 받은 카드를 그리고, 필터 링크는 주소만
+ * 바꾼다 — 그러면 `page.tsx`가 새 파라미터로 `GET /listings`를 다시 부른다.
+ *
+ * **건수 표기가 화면에 실제로 그려진 카드 수와 같다.** 아직 `더 보기`로 펼치지
+ * 않은 상품은 이 숫자에 남지 않는다 — 도매 5회차에서 네 번 재발한 "가려진 대상이
+ * 집계에 남는" 결함을 여기서 끊는다. 나머지가 있으면 `· 전체 N개`(서버의
+ * `totalElements`)를 덧붙여 더 있다는 사실만 따로 말한다.
+ *
+ * 정렬 드롭다운이 없다 — `GET /listings`에 정렬 파라미터가 없어 서버 순서 그대로다
+ * (`04-wire.md` §3).
  */
 export function CatalogSection({
   basePath,
   products,
   filter,
-  sort,
-  sorts,
-  defaultSort,
+  options,
+  paging,
   showPriceFilter = true,
   favorites,
   onToggleFavorite,
@@ -54,12 +47,12 @@ export function CatalogSection({
   noun = "상품",
 }: {
   basePath: string;
-  /** 이 화면이 다루는 상품 전부. 필터·정렬은 여기서 건다 */
+  /** 서버가 이미 걸러 준 카드들 */
   products: readonly CatalogProduct[];
   filter: CatalogFilter;
-  sort: CatalogSort;
-  sorts: readonly CatalogSort[];
-  defaultSort: CatalogSort;
+  /** 드롭다운에 세울 선택지. `GET /categories` · `GET /filter-options` */
+  options: CatalogOptions;
+  paging: CatalogPaging;
   /** 도매처 홈에는 가격대 필터가 없다 — 한 도매처 안이라 가격 폭이 좁다 */
   showPriceFilter?: boolean;
   favorites: ReadonlySet<string>;
@@ -67,18 +60,8 @@ export function CatalogSection({
   columns?: 4 | 5;
   noun?: string;
 }) {
-  /* 펼친 정도도 주소가 갖는다 — 화면 상태로 두면 카드 하나를 열어 보고 뒤로
-     왔을 때 다시 8장으로 접힌다(필터·정렬이 주소에 있는 것과 같은 이유) */
-  const visibleCount = resolveShown(useSearchParams().get(SHOWN_PARAM));
-
-  const matched = sortProducts(filterProducts(products, filter), sort);
-  /* 필터가 좁아져 남은 수가 이미 적으면 slice가 알아서 전부 준다 —
-     펼침 상태를 따로 되돌리지 않아도 건수와 카드 수가 어긋나지 않는다 */
-  const visible = matched.slice(0, visibleCount);
-  const hasMore = visible.length < matched.length;
-
-  const href = (patch: Partial<CatalogFilter> & { sort?: CatalogSort }) =>
-    catalogHref(basePath, { filter, sort }, patch, defaultSort);
+  const href = (patch: Partial<CatalogFilter>) =>
+    catalogHref(basePath, filter, patch);
 
   const allOption = (key: keyof CatalogFilter): FilterOption => ({
     value: FILTER_ALL,
@@ -86,27 +69,28 @@ export function CatalogSection({
     href: href({ [key]: FILTER_ALL }),
   });
 
-  const categoryOptions: FilterOption[] = CATEGORIES.map((c) => ({
-    /* 셸 카테고리 바가 쓰는 `all`이 곧 `전체`다 — 값을 새로 만들면 카테고리 줄과
-       이 필터가 서로 다른 것을 켠다 */
-    value: c.slug === "all" ? FILTER_ALL : c.slug,
-    label: c.label,
-    href: href({ category: c.slug === "all" ? FILTER_ALL : c.slug }),
-  }));
+  const categoryOptions: FilterOption[] = [
+    allOption("category"),
+    ...options.categories.map((c) => ({
+      value: String(c.id),
+      label: c.name,
+      href: href({ category: String(c.id) }),
+    })),
+  ];
 
   const colorOptions: FilterOption[] = [
     allOption("color"),
-    ...availableColors(products).map((c) => ({
-      value: c.name,
+    ...options.colors.map((c) => ({
+      value: String(c.id),
       label: c.name,
-      href: href({ color: c.name }),
+      href: href({ color: String(c.id) }),
       hex: c.hex,
     })),
   ];
 
   const sizeOptions: FilterOption[] = [
     allOption("size"),
-    ...availableSizes(products).map((s) => ({
+    ...options.sizes.map((s) => ({
       value: s,
       label: s,
       href: href({ size: s }),
@@ -122,16 +106,10 @@ export function CatalogSection({
     })),
   ];
 
-  const sortOptions: FilterOption[] = sorts.map((s) => ({
-    value: s,
-    label: SORT_LABEL[s],
-    href: href({ sort: s }),
-  }));
-
-  const selected = (options: FilterOption[], value: string) =>
+  const selected = (opts: FilterOption[], value: string) =>
     value === FILTER_ALL
       ? undefined
-      : options.find((o) => o.value === value)?.label;
+      : opts.find((o) => o.value === value)?.label;
 
   const clean = isFilterEmpty(filter);
   const resetHref = href({
@@ -144,7 +122,7 @@ export function CatalogSection({
   return (
     <>
       {/* flex-wrap: 390px에서 필터 4개가 한 줄에 못 선다. 원본도 ≤40rem에서
-          `.toolbar{flex-wrap:wrap}`으로 접고 건수·정렬 묶음을 아래 줄로 내린다 */}
+          `.toolbar{flex-wrap:wrap}`으로 접고 건수 묶음을 아래 줄로 내린다 */}
       <div className="flex flex-wrap items-center gap-2 pb-3">
         <FilterDropdown
           label="카테고리"
@@ -202,18 +180,13 @@ export function CatalogSection({
         <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
           <ResultCount
             noun={noun}
-            visible={visible.length}
-            total={matched.length}
-          />
-          <SortDropdown
-            options={sortOptions}
-            value={sort}
-            selectedLabel={SORT_LABEL[sort]}
+            visible={products.length}
+            total={paging.total}
           />
         </div>
       </div>
 
-      {matched.length === 0 ? (
+      {products.length === 0 ? (
         <CatalogEmpty resetHref={resetHref} filtered={!clean} />
       ) : (
         <>
@@ -221,18 +194,18 @@ export function CatalogSection({
           <div className="bg-border -mx-4 h-px" />
 
           <ProductGrid
-            products={visible}
+            products={products}
             favorites={favorites}
             onToggleFavorite={onToggleFavorite}
             columns={columns}
           />
 
-          {hasMore ? (
+          {canShowMore(paging) ? (
             /* 버튼이 아니라 링크다 — 펼친 정도가 주소에 남아야 뒤로 가기에서
                살아남는다. `scroll={false}`: 다음 8장은 화면 아래에 붙는데
                맨 위로 튀면 방금 어디를 보고 있었는지 잃는다 */
             <Link
-              href={moreHref(href({}), visible.length + PAGE_SIZE)}
+              href={moreHref(href({}), paging.shown + PAGE_SIZE)}
               scroll={false}
               className="border-border text-secondary-foreground hover:bg-secondary text-body -mx-4 -mb-4 flex h-10 items-center justify-center gap-1 rounded-b-panel border-t font-medium"
             >
