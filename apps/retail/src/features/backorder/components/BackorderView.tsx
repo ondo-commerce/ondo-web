@@ -4,10 +4,12 @@ import { BackorderPager } from "./BackorderPager";
 import { BackorderSummary } from "./BackorderSummary";
 import { BackorderTable } from "./BackorderTable";
 import { BackorderToolbar } from "./BackorderToolbar";
+import { EmptyBackorders } from "./EmptyBackorders";
 import { BACKORDER_SUB } from "../constants";
 import {
   droppedNoticeText,
   filterByWholesaler,
+  hasNoBackorders,
   sortByOrderedAt,
   summarize,
   wholesalerChips,
@@ -64,6 +66,7 @@ export function BackorderView({
   );
   const summary = summarize(visible, today);
   const droppedNotice = droppedNoticeText(dropped);
+  const empty = hasNoBackorders(lines);
 
   return (
     <div className="mx-auto max-w-wrap">
@@ -89,46 +92,60 @@ export function BackorderView({
           <Notice className="mb-3">{droppedNotice}</Notice>
         ) : null}
 
-        <BackorderToolbar
-          chips={wholesalerChips(lines)}
-          wholesalerId={wholesalerId}
-          sort={sort}
-          summary={summary}
-        />
+        {empty ? (
+          /*
+            받은 장이 0건이면 툴바·표·카드·페이저 자리를 통째로 빈 상태로 바꾼다.
+            요약 3카드는 위 패널에 그대로 선다 — `0건 / 총 0장`은 거짓이 아니다.
 
-        {/* 패널 안쪽 여백을 지나 좌우 끝까지 긋는다 (`_base.css` `.hr{margin:0 -16px}`).
-            색은 `border-soft`(gray-100)다 — 바로 아래 표의 행 구분선과 같은 단계여야 한다.
-            `border`(gray-200)로 두면 이 한 줄만 유독 진하게 튄다(F4 · retail-shell F13) */}
-        <div className="bg-border-soft -mx-4 h-px" />
+            툴바까지 숨기는 이유: 칩은 `전체` 하나뿐이고 정렬은 뒤집을 행이 없다.
+            주문 내역이 0건에도 툴바를 남기는 것은 **필터 때문에** 0건일 수 있어서인데,
+            이 화면의 0행은 필터가 만들지 못한다(`hasNoBackorders` 주석).
+          */
+          <EmptyBackorders />
+        ) : (
+          <>
+            <BackorderToolbar
+              chips={wholesalerChips(lines)}
+              wholesalerId={wholesalerId}
+              sort={sort}
+              summary={summary}
+            />
 
-        {/*
-          같은 목록을 폭에 따라 **다른 모양으로** 그린다. 값은 둘 다 `visible` ·
-          `summary.totalQty` 하나에서 나오므로 폭이 바뀌어도 말이 갈리지 않는다.
+            {/* 패널 안쪽 여백을 지나 좌우 끝까지 긋는다 (`_base.css` `.hr{margin:0 -16px}`).
+                색은 `border-soft`(gray-100)다 — 바로 아래 표의 행 구분선과 같은 단계여야 한다.
+                `border`(gray-200)로 두면 이 한 줄만 유독 진하게 튄다(F4 · retail-shell F13) */}
+            <div className="bg-border-soft -mx-4 h-px" />
 
-          경계가 `tablet`(≤960px)인 이유는 `BackorderCards`의 주석에 있다 —
-          표가 안 잘리는 최소 뷰포트가 744px이라 640px에서 갈면 그 사이가 남는다.
-        */}
-        <div className="hidden pt-3 tablet:block">
-          <BackorderCards
-            lines={visible}
-            today={today}
-            totalQty={summary.totalQty}
-          />
-        </div>
+            {/*
+              같은 목록을 폭에 따라 **다른 모양으로** 그린다. 값은 둘 다 `visible` ·
+              `summary.totalQty` 하나에서 나오므로 폭이 바뀌어도 말이 갈리지 않는다.
 
-        <div className="tablet:hidden">
-          <BackorderTable
-            lines={visible}
-            today={today}
-            totalQty={summary.totalQty}
-          />
-        </div>
+              경계가 `tablet`(≤960px)인 이유는 `BackorderCards`의 주석에 있다 —
+              표가 안 잘리는 최소 뷰포트가 744px이라 640px에서 갈면 그 사이가 남는다.
+            */}
+            <div className="hidden pt-3 tablet:block">
+              <BackorderCards
+                lines={visible}
+                today={today}
+                totalQty={summary.totalQty}
+              />
+            </div>
 
-        <BackorderPager
-          paging={paging}
-          wholesalerId={wholesalerId}
-          sort={sort}
-        />
+            <div className="tablet:hidden">
+              <BackorderTable
+                lines={visible}
+                today={today}
+                totalQty={summary.totalQty}
+              />
+            </div>
+
+            <BackorderPager
+              paging={paging}
+              wholesalerId={wholesalerId}
+              sort={sort}
+            />
+          </>
+        )}
       </Panel>
     </div>
   );
