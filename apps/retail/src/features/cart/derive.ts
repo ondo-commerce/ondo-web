@@ -214,6 +214,16 @@ export function totalsOf(lines: readonly CartLine[]): CartTotals {
   );
 }
 
+/**
+ * `주문하기`가 갈 주소. 고른 조합의 `cartItemId`를 주소에 실어 주문서로 넘긴다 —
+ * 주문서는 `GET /checkout?cartItemIds=`로 **그것만** 받아 단가를 다시 받는다(스펙).
+ * 세션 스토어의 선택 상태를 주문 feature가 읽지 않게 하는 통로가 이 주소다.
+ */
+export function checkoutHref(picked: readonly CartLine[]): string {
+  const ids = picked.map((line) => line.cartItemId);
+  return ids.length === 0 ? "/checkout" : `/checkout?ids=${ids.join(",")}`;
+}
+
 /** 12,500 → `12,500원` */
 export function formatWon(amount: number): string {
   return `${amount.toLocaleString("ko-KR")}원`;

@@ -20,17 +20,19 @@ import { formatWon, type CartTotals } from "../derive";
  * 두면 `disabled`가 `<a>`에 아무 효력이 없어 0개를 고른 채로도 넘어간다
  * (직전 회차 F11).
  *
- * 이번 회차의 `주문하기`는 **주문서로 가는 것까지**다. 통합 주문 엔티티
- * (`order_group`)가 도매 데이터 모델에 없어서 무엇이 만들어지는지 아직
- * 정해지지 않았다(게이트 Q1 · 🔴 미결). 없는 주문을 만든 척하지 않는다.
+ * `주문하기`는 **주문서로 가는 것까지**다. 고른 조합의 `cartItemId`를 주소에
+ * 실어 넘기고(`checkoutHref`), 접수는 주문서(`features/order`)가 한다.
  */
 export function CartSummaryBar({
   totals,
   blockedReason,
+  href,
 }: {
   totals: CartTotals;
   /** 못 넘어가는 이유. null이면 넘어갈 수 있다 */
   blockedReason: string | null;
+  /** 주문서 주소. 고른 조합의 id가 실려 있다 */
+  href: string;
 }) {
   return (
     <div className="border-border bg-accent -mx-4 -mb-4 mt-4 rounded-b-panel border-t px-4 py-3.5">
@@ -56,7 +58,7 @@ export function CartSummaryBar({
             </Button>
           ) : (
             <Button asChild className="phone:w-full">
-              <Link href="/checkout">주문하기</Link>
+              <Link href={href}>주문하기</Link>
             </Button>
           )}
         </div>

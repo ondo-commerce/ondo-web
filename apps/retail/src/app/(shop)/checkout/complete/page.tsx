@@ -1,17 +1,49 @@
 import type { Metadata } from "next";
-import { CompleteClient } from "./CompleteClient";
+import { isApiError } from "@ondo/api";
+import {
+  ORDER_API_PATH,
+  OrderCompleteView,
+  resolveOrderId,
+  toOrderDetail,
+  type OrderDetailWire,
+  type OrderRecord,
+} from "@/features/order";
+import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
+import { serverApi } from "@/shared/api/server";
 
 export const metadata: Metadata = { title: "주문 완료" };
 
 /**
- * 주문 완료. 접수 결과는 세션 스토어에 있어서 서버가 모른다 — 화면이 통째로
- * 클라이언트다. **새로고침하면 결과가 사라지고**, 그때 빈 화면 대신
- * `방금 접수한 주문이 없어요`가 뜬다.
+ * 주문 완료. 접수 응답 자체는 주소로 옮길 수 없어(안 된 도매처의 사유가 자유
+ * 문장이다) **`?orderId=`로 `GET /orders/{id}`를 다시 읽어** 그린다 — 새로고침해도
+ * 같은 화면이다. 안 된 도매처는 `CheckoutView`가 세션에 남긴 것을 뷰가 읽는다.
  *
- * `?scenario=`는 주문서에서 접수할 때 이미 결과에 반영됐다. 주소에 남겨 두는
- * 것은 어떤 결과를 보고 있는지 링크만으로 알 수 있게 하려는 것이고, 이 화면이
- * 다시 읽지는 않는다 — 읽으면 접수한 결과와 주소가 서로 다른 말을 할 수 있다.
+ * `orderId`가 없거나 서버에 없는 주문이면 빈 화면 대신 `방금 접수한 주문이 없어요`.
  */
-export default function Page() {
-  return <CompleteClient />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const orderId = resolveOrderId((await searchParams).orderId);
+  if (orderId === null) return <OrderCompleteView order={null} />;
+
+  const api = await serverApi();
+  let order: OrderRecord | null;
+  try {
+    order = toOrderDetail(
+      await api.fetch<OrderDetailWire>(ORDER_API_PATH.order(orderId)),
+    );
+  } catch (error) {
+    if (
+      isApiError(error) &&
+      error.code === RETAIL_ERROR_CODE.RESOURCE_NOT_FOUND
+    ) {
+      order = null;
+    } else {
+      throw error;
+    }
+  }
+
+  return <OrderCompleteView order={order} />;
 }
