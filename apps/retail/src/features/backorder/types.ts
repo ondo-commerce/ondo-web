@@ -1,3 +1,5 @@
+import type { RetailSchema } from "@ondo/api";
+
 /**
  * 미송 = **도매처가 주문을 확정할 때** 생기는, 아직 못 받은 SKU 잔량이다(RT-59).
  *
@@ -6,30 +8,56 @@
  * feature의 타입에는 **쓰기용 필드가 하나도 없다** — 화면도 입력칸 없이 읽기만 한다.
  */
 
+/* ────────────────────────────────────────────────────────────────────────
+   wire — 스냅샷에서 생성한 타입의 별칭. 손으로 쓴 Response 타입은 없다(ADR-0002)
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * `GET /api/retail/backorders`의 한 줄. 생성 타입 그대로다.
+ *
+ * 생성 타입은 전부 non-optional로 보이지만 `expectedInboundDate`·`expectedInboundReason`은
+ * 스펙 설명대로 null이 온다(README "응답 필드가 전부 non-optional인 이유"). 읽는 쪽
+ * (`toBackorderLine`)이 `?? null`로 좁힌다.
+ */
+export type BackorderWire = RetailSchema<"BackorderResponse">;
+
+/* ────────────────────────────────────────────────────────────────────────
+   뷰 — 화면이 읽는 모양. wire → 뷰 변환은 `derive.ts`의 `toBackorderLine` 한 곳이다
+   ──────────────────────────────────────────────────────────────────────── */
+
 /** 미송 목록 한 줄 = SKU 하나(상품 × 색상 × 사이즈). 옵션 축은 색상 × 사이즈뿐이다 */
 export interface BackorderLine {
+  /** `backorderId`를 문자열로. React key와 URL에 그대로 쓰려고 숫자를 풀어 둔다 */
   id: string;
   productName: string;
-  /** 도매처 ID. `features/catalog`가 쓰는 값과 같은 축이다 — 거래처 관리(RT-66)가 이 키로 링크를 건다 */
+  /**
+   * 도매처 id(`wholesaler.id`)를 문자열로. `?wholesaler=` 주소값과 칩 id가 이 값이다.
+   * ⚠️ `features/catalog`의 `w-lavien` 같은 더미 id와는 **다른 축**이다 — 거래처 관리(RT-66)가
+   * 이 화면으로 링크를 걸려면 그쪽도 서버 id로 바뀌어야 한다.
+   */
   wholesalerId: string;
   wholesalerName: string;
   colorName: string;
-  /** 사이즈 표시명. `F`가 아니라 `Free`다(사양 §4 라벨 통일) */
+  /** 사이즈 표시명. 서버의 `FREE`는 `Free`로 바꿔 보여준다(사양 §4 라벨 통일) */
   sizeName: string;
-  /** 못 받은 장수. 단위는 `장`(`shared/qty.ts`의 `QTY_UNIT`) */
+  /** 못 받은 장수. 단위는 `장`(`shared/qty.ts`의 `QTY_UNIT`). **원래 미송량**이고 배분돼도 안 줄어든다(스펙) */
   qty: number;
-  /** 주문일 (ISO). 정렬 축이 이것이다(RT-56) */
+  /** 주문 시각 (ISO date-time, 오프셋 포함). 정렬 축이 이것이다(RT-56) */
   orderedAt: string;
+  /** `orderedAt`을 한국 날짜(`YYYY-MM-DD`)로 자른 것. 화면의 `주문일` 열이 읽는다 */
+  orderedDate: string;
   /**
-   * 도매처가 안내한 예상 입고일 (ISO). 아직 못 정했으면 `null`이다.
+   * 도매처가 안내한 예상 입고일 (ISO date). 아직 못 정했으면 `null`이다.
    *
    * **지난 날짜도 그대로 들고 있는다.** 화면은 `지연` 배지만 보여주고 날짜를 숨기지만
    * (§5-2 — 소매 화면에 변동 사유를 적을 자리가 없다), 판정 자체가 이 값에서
    * 나오므로 데이터에서 지우면 `지연`을 셀 수 없다.
    */
   etaDate: string | null;
-  /** 통합 주문번호 `20260824-1010-0098`. `주문 보기`의 목적지가 된다 */
+  /** 화면에 보여주는 통합 주문번호 */
   orderNo: string;
+  /** 주문 상세로 갈 때 쓰는 id. 스펙이 "주문 상세로 넘어갈 때 쓴다"고 못박은 값이다 */
+  orderId: number;
 }
 
 /**
@@ -66,7 +94,7 @@ export interface BackorderSummary {
   delayedCount: number;
 }
 
-/** 도매처 필터 칩 하나. 목록은 미송 데이터에서 만든다 — 상호를 두 번 적지 않는다 */
+/** 도매처 필터 칩 하나. 목록은 받은 행의 `wholesaler`에서 만든다 — 상호를 두 번 적지 않는다 */
 export interface WholesalerChip {
   id: string;
   name: string;
@@ -80,11 +108,24 @@ export interface WholesalerChip {
  * "걸렀다"와 "원래 전체였다"를 구분할 수 있다.
  */
 export interface DroppedWholesaler {
-  /** 주소에 실려 있던 값. `w-basic` 같은 실제 id일 수도, 오타일 수도 있다 */
+  /** 주소에 실려 있던 값. 서버 id일 수도, 옛 링크의 `w-basic` 같은 더미 id일 수도 있다 */
   id: string;
   /**
-   * 거래처 목록에서 찾은 상호. **모르는 값이면 `null`이다** —
-   * 없는 상호를 지어내 `zzz 미송은 지금 없어요`라고 말하지 않는다.
+   * 상호. **지금은 늘 `null`이다** — 소매 스펙에 도매처를 id로 조회하는 path가 없어서
+   * 목록에 없는 도매처의 상호를 알 길이 없다. 없는 상호를 지어내지 않는다.
    */
   name: string | null;
+}
+
+/**
+ * 서버 페이지 위치. 목록 한 장(`size=100`)이 화면 하나다.
+ *
+ * 화면에 페이저가 없던 이유는 더미가 3건이었기 때문이고, 서버는 자른다. 2장 이상일 때만
+ * `이전 · 다음`이 붙는다 — 요약 카드는 **지금 장** 기준이라는 한계가 생긴다(`04-wire.md` §3).
+ */
+export interface BackorderPage {
+  /** 1-base. 주소의 `?page=`와 같다 */
+  page: number;
+  totalPages: number;
+  totalElements: number;
 }

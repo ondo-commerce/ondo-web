@@ -62,7 +62,7 @@ export function BackorderCards({
               <dd className="font-medium tabular-nums">{qtyLabel(line.qty)}</dd>
 
               <dt className="text-muted-foreground">{CARD_LABEL.orderedAt}</dt>
-              <dd className="tabular-nums">{formatDate(line.orderedAt)}</dd>
+              <dd className="tabular-nums">{formatDate(line.orderedDate)}</dd>
 
               <dt className="text-muted-foreground">{CARD_LABEL.eta}</dt>
               {/* 표와 **같은 컴포넌트**다. 3상태 판정이 폭마다 갈리면 안 된다 */}

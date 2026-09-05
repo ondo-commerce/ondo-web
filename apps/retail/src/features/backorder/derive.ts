@@ -1,3 +1,4 @@
+import type { PageMeta } from "@ondo/api";
 import { QTY_UNIT } from "@/shared/qty";
 import {
   BACKORDER_PATH,
@@ -5,11 +6,15 @@ import {
   DEFAULT_BACKORDER_SORT,
   DROPPED_NOTICE,
   FILTER_ALL,
+  FIRST_PAGE,
+  SIZE_LABEL,
 } from "./constants";
 import type {
   BackorderLine,
+  BackorderPage,
   BackorderSort,
   BackorderSummary,
+  BackorderWire,
   DroppedWholesaler,
   EtaState,
   WholesalerChip,
@@ -23,7 +28,74 @@ import type {
  * "목록은 1줄인데 카드는 3건"이 된다(shipments F8 · settlements F7이 이미 두 번 겪었다).
  * 그래서 화면은 `filterByWholesaler` → `sortByOrderedAt`으로 **보이는 목록을 먼저 만들고**,
  * 그 하나를 `summarize`와 표에 같이 넘긴다.
+ *
+ * 그 집합은 **서버가 준 한 장(`size=100`)**이다. 서버에 도매처·정렬 파라미터가 없어서
+ * (`04-wire.md` §3) 필터와 정렬은 받은 장 안에서만 걸린다.
  */
+
+/* ────────────────────────────────────────────────────────────────────────
+   wire → 뷰
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** 한국 표준시 오프셋. DST가 없어 상수로 둔다 */
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/**
+ * ISO date-time(오프셋 포함) → 한국 날짜 `YYYY-MM-DD`.
+ *
+ * 서버의 `orderedAt`은 `OffsetDateTime`이라 `+09:00`일 수도 `Z`일 수도 있다. 앞 10글자를
+ * 그냥 자르면 UTC로 온 밤 주문이 하루 전 날짜가 된다. `Intl`을 안 쓰는 이유는 서버(Node)와
+ * 브라우저의 ICU 데이터가 갈릴 수 있어서다 — 오프셋 덧셈은 어디서나 같은 답을 낸다.
+ */
+export function toKstDate(isoDateTime: string): string {
+  return new Date(Date.parse(isoDateTime) + KST_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * 이 화면이 쓰는 **오늘**. page가 요청 시점의 `Date`를 넘기고, 뷰는 이 문자열만 본다.
+ *
+ * 렌더 중에 `new Date()`를 여기저기서 부르지 않는 이유: 판정(`etaStateOf`)이 한 요청 안에서
+ * 같은 날짜를 봐야 카드와 배지가 같은 말을 한다. 서버 컴포넌트라 하이드레이션 불일치는 없다.
+ */
+export function todayKst(now: Date): string {
+  return toKstDate(now.toISOString());
+}
+
+/**
+ * 서버 한 줄 → 화면 한 줄. **화면이 wire를 직접 읽지 않는다** — 필드 이름·null·단위
+ * 변환이 전부 여기 한 곳이다.
+ *
+ * 생성 타입은 `expectedInboundDate`·`expectedInboundReason`을 non-optional로 보이지만
+ * 스펙 설명은 "아직 안 적었으면 null"이다. `?? null`로 좁혀 `CHECKING` 판정에 넘긴다.
+ * `expectedInboundReason`은 옮기지 않는다 — 소매 화면에 사유를 적을 자리가 없다(§5-2).
+ */
+export function toBackorderLine(wire: BackorderWire): BackorderLine {
+  return {
+    id: String(wire.backorderId),
+    productName: wire.title,
+    wholesalerId: String(wire.wholesaler.id),
+    wholesalerName: wire.wholesaler.name,
+    colorName: wire.colorName,
+    sizeName: SIZE_LABEL[wire.size] ?? wire.size,
+    qty: wire.qty,
+    orderedAt: wire.orderedAt,
+    orderedDate: toKstDate(wire.orderedAt),
+    etaDate: wire.expectedInboundDate ?? null,
+    orderNo: wire.orderNo,
+    orderId: wire.orderId,
+  };
+}
+
+/** 서버 `meta`(0-base) → 화면 페이지 위치(1-base) */
+export function toBackorderPage(meta: PageMeta): BackorderPage {
+  return {
+    page: meta.page + 1,
+    totalPages: meta.totalPages,
+    totalElements: meta.totalElements,
+  };
+}
 
 /* ────────────────────────────────────────────────────────────────────────
    주소 → 상태
@@ -55,9 +127,9 @@ export function resolveWholesalerId(
 /**
  * `resolveWholesalerId`가 **무엇을 떨어뜨렸는지**. 떨어뜨린 게 없으면 `null`이다.
  *
- * 떨어뜨리는 동작(위)과 짝이다. 저쪽만 있으면 `?wholesaler=w-basic`이 조용히 전체
- * 41장이 되고, 거래처 관리 미송 배지(RT-66)를 타고 온 사장에게는 그게 `더베이직 41장`으로
- * 읽힌다. 뷰가 안내 한 줄을 띄우려면 **떨어뜨린 값 자체**가 필요하다.
+ * 떨어뜨리는 동작(위)과 짝이다. 저쪽만 있으면 `?wholesaler=12`가 조용히 전체가 되고,
+ * 거래처 관리 미송 배지(RT-66)를 타고 온 사장에게는 그게 그 도매처의 미송으로 읽힌다.
+ * 뷰가 안내 한 줄을 띄우려면 **떨어뜨린 값 자체**가 필요하다.
  *
  * `all`은 떨어뜨린 게 아니라 고른 것이므로 여기서 빠진다.
  */
@@ -74,7 +146,7 @@ export function droppedWholesalerId(
  * 그 사실을 사장의 말로 옮긴다. 걸러진 게 없으면 `null`이고, 뷰는 안내를 안 그린다.
  *
  * 상호를 아는 값과 모르는 값이 갈린다 — 모르는 값에 상호 자리를 비워 두면
- * ` 미송은 지금 없어요`가 되고, id를 그대로 넣으면 `w-basic 미송은 지금 없어요`가 된다.
+ * ` 미송은 지금 없어요`가 되고, id를 그대로 넣으면 `12 미송은 지금 없어요`가 된다.
  */
 export function droppedNoticeText(
   dropped: DroppedWholesaler | null,
@@ -98,16 +170,35 @@ export function resolveSort(
 }
 
 /**
- * 칩·정렬 링크의 주소. **기본값인 축은 주소에서 뺀다** — 아무것도 안 고른 화면의
+ * 주소의 `?page=`(1-base)를 정리한다. 숫자가 아니거나 1 미만이면 첫 장이다.
+ *
+ * 범위를 넘는 큰 수는 여기서 못 막는다 — 몇 장인지는 서버가 답해야 안다. 그 경우 서버가
+ * 빈 배열을 주고 화면은 0건 + 페이저로 돌아갈 길을 보여준다.
+ */
+export function resolvePage(
+  params: Record<string, string | string[] | undefined>,
+): number {
+  const value = Number(one(params, "page"));
+  return Number.isInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
+}
+
+/**
+ * 칩·정렬·페이지 링크의 주소. **기본값인 축은 주소에서 뺀다** — 아무것도 안 고른 화면의
  * 주소가 그냥 `/backorders`여서 공유했을 때 짧고, 무엇이 걸려 있는지가 주소에서 읽힌다.
+ *
+ * 칩과 정렬 링크는 page를 안 넘긴다(첫 장으로 돌아간다). 필터·정렬이 **받은 장 안에서**
+ * 걸리는 것이라 3장에서 도매처를 고르면 그 장의 그 도매처만 남는데, 그게 첫 장에서
+ * 시작한 사장이 기대하는 결과와 다르다.
  */
 export function backorderHref(
   wholesalerId: string,
   sort: BackorderSort,
+  page: number = FIRST_PAGE,
 ): string {
   const params = new URLSearchParams();
   if (wholesalerId !== FILTER_ALL) params.set("wholesaler", wholesalerId);
   if (sort !== DEFAULT_BACKORDER_SORT) params.set("sort", sort);
+  if (page !== FIRST_PAGE) params.set("page", String(page));
 
   const query = params.toString();
   return query ? `${BACKORDER_PATH}?${query}` : BACKORDER_PATH;
@@ -123,8 +214,8 @@ export function toggledSort(sort: BackorderSort): BackorderSort {
    ──────────────────────────────────────────────────────────────────────── */
 
 /**
- * 필터 칩에 세울 도매처. **미송이 실제로 있는 곳만** 세운다 —
- * 고정 목록으로 두면 눌러도 0건인 칩이 생기고, 상호를 더미에 두 번 적게 된다.
+ * 필터 칩에 세울 도매처. **받은 장에 실제로 있는 곳만** 세운다 —
+ * 소매 스펙에 거래처 목록 path가 없기도 하고, 고정 목록으로 두면 눌러도 0건인 칩이 생긴다.
  */
 export function wholesalerChips(
   lines: readonly BackorderLine[],
@@ -145,21 +236,36 @@ export function filterByWholesaler(
 }
 
 /**
- * 주문일 오름/내림. 원본 배열을 건드리지 않는다 — `fixtures`의 모듈 하나를
- * 모든 요청이 같이 읽는다.
+ * 주문 시각 오름/내림. 원본 배열을 건드리지 않는다.
+ *
+ * 문자열 비교가 아니라 `Date.parse`다 — `orderedAt`이 오프셋 붙은 date-time이라
+ * `+09:00`과 `Z`가 섞이면 글자 순서와 시각 순서가 다르다.
  */
 export function sortByOrderedAt(
   lines: readonly BackorderLine[],
   sort: BackorderSort,
 ): BackorderLine[] {
   const list = [...lines];
+  const sign = sort === "latest" ? -1 : 1;
 
-  /* ISO 날짜라 문자열 비교가 곧 날짜 비교다. Date 객체를 만들면 타임존이 끼어든다 */
-  return list.sort((a, b) =>
-    sort === "latest"
-      ? b.orderedAt.localeCompare(a.orderedAt)
-      : a.orderedAt.localeCompare(b.orderedAt),
+  return list.sort(
+    (a, b) => sign * (Date.parse(a.orderedAt) - Date.parse(b.orderedAt)),
   );
+}
+
+/**
+ * 서버가 준 장이 비었는가 — 화면이 표·카드 대신 빈 상태를 그리는 단 하나의 분기.
+ *
+ * `visible`이 아니라 **`lines`(받은 장)**를 본다. 도매처 칩은 받은 장에서 만들어지고
+ * 주소의 `?wholesaler=`는 칩에 있는 값만 통과하므로(`resolveWholesalerId`), 필터로
+ * 걸러져 0건이 되는 일은 없다 — 걸러진 도매처는 `전체`로 떨어지고 `Notice`가 그 사실을
+ * 말한다. 그래서 이 화면의 0행은 "조건에 안 맞음"이 아니라 "미송 자체가 없음"이다.
+ *
+ * 범위 밖 `?page=N`도 빈 배열로 돌아와 여기에 걸린다. 그 경우 사장에게는 미송이 있는데
+ * 없다고 말하는 셈이라, 첫 장으로 돌려보내는 처리는 #168 몫이다.
+ */
+export function hasNoBackorders(lines: readonly BackorderLine[]): boolean {
+  return lines.length === 0;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -221,8 +327,8 @@ export function summarize(
    ──────────────────────────────────────────────────────────────────────── */
 
 /** `2026-08-16` → `2026.08.16`. 날짜 표기가 화면마다 갈리지 않게 여기 한 곳을 쓴다 */
-export function formatDate(iso: string): string {
-  return iso.replaceAll("-", ".");
+export function formatDate(isoDate: string): string {
+  return isoDate.replaceAll("-", ".");
 }
 
 /** `16장`. 단위는 `shared/qty.ts` 하나를 읽는다 — 도매의 `개`와 섞이지 않게 */
@@ -245,7 +351,13 @@ export function orderLinkLabel(line: BackorderLine): string {
   return `${line.productName} ${optionLabel(line)} 주문 보기`;
 }
 
-/** 미송 행이 나온 통합 주문. 소매 주문 상세는 통합 주문 1건 단위다(§3-0 B) */
+/**
+ * 미송 행이 나온 통합 주문. 스펙이 "주문 상세로 넘어갈 때 쓴다"고 못박은 `orderId`다 —
+ * `orderNo`는 화면에 보여주는 번호이지 주소가 아니다.
+ *
+ * ⚠️ `/orders/[orderId]`는 아직 fixtures라 이 id로는 `OrderNotFound`가 뜬다. 주문 연동 회차가
+ * 같은 `orderId`로 받으면 그때 맞물린다(`04-wire.md` §5).
+ */
 export function orderHref(line: BackorderLine): string {
-  return `/orders/${line.orderNo}`;
+  return `/orders/${line.orderId}`;
 }
