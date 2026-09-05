@@ -11,8 +11,11 @@ springdoc이 코드에서 만들어 **런타임에만** 존재한다 — `GET :8
 
 | 명령 | 서버 | 하는 일 |
 |---|---|---|
-| `pnpm --filter @ondo/api sync-spec` | **필요** | 스펙을 받아 키를 정렬해 `openapi/wholesale.json`에 굳히고, 이어서 `codegen` |
-| `pnpm codegen` | 불필요 | 커밋된 스냅샷 → `src/generated/`. 결정적이라 CI가 drift를 잡을 수 있다 |
+| `pnpm --filter @ondo/api sync-spec <wholesale\|retail> [파일\|URL]` | **필요** | 스펙을 받아 키를 정렬해 `openapi/<app>.json`에 굳히고, 이어서 `codegen` |
+| `pnpm codegen` | 불필요 | 커밋된 스냅샷 두 개 → `src/generated/`. 결정적이라 CI가 drift를 잡을 수 있다 |
+
+첫 인자가 앱이다 — 서버가 둘(도매 `:8081` · 소매 `:8080`)이라 스냅샷도 둘이고, 어느 쪽인지
+짐작하면 도매 파일에 소매 스펙을 덮어쓴다.
 
 **BE가 스펙을 바꿨다고 알려오면 `sync-spec`을 돌린다.** 스냅샷과 생성물을 한 커밋에 올린다.
 CI가 잡아주는 건 "스냅샷 ↔ 생성물"까지다 — **서버와 스냅샷이 어긋나는 건 사람만 막을 수 있다.**
@@ -53,9 +56,12 @@ record 필드에 `@Schema(nullable = true)`(또는 `requiredMode`)를 달아 주
 
 ### 스냅샷 출처
 
-`openapi/wholesale.json`은 dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`가 ALB에 막혀
-있어서 BE에게 받은 파일로 만들었다(2026-09-04, `On도 도매 API 0.1.0`). 다음부터는
-`sync-spec <파일>`로 갱신한다.
+dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경로를 끊어서 못 받는다.
+그래서 둘 다 서버 밖에서 만들었다.
 
-**소매 API 스펙은 아직 없다.** `apps/retail/src/shared/api/types.ts`의 손으로 적은 타입은
-소매 스냅샷(`openapi/retail.json`)이 들어오면 같은 방식으로 바꾼다.
+- `openapi/wholesale.json` — BE에게 받은 파일 (2026-09-04, `On도 도매 API 0.1.0`)
+- `openapi/retail.json` — `ondo-api` `dev` 브랜치의 `retail-api`를 로컬(JDK 21 + Postgres 16)에서
+  띄워 `:8080/v3/api-docs`를 받은 것 (2026-09-05, `On도마켓 소매 API v1`, 17 path · 69 schema).
+  도매 서버 없이도 뜬다 — 상품·미송 호출은 요청 시점에만 도매로 나간다
+
+다음부터는 `sync-spec <app> <파일>`로 갱신한다. 소매 앱은 `RetailSchema<"…">`로 쓴다.

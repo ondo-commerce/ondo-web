@@ -11,3 +11,4 @@ export type { ProxyOptions } from "./runtime/proxy";
 export type { FieldError } from "./runtime/error";
 export type { PageMeta } from "./runtime/envelope";
 export type { WholesalePaths, WholesaleSchema } from "./wholesale";
+export type { RetailPaths, RetailSchema } from "./retail";
