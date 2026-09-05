@@ -1,9 +1,6 @@
-"use client";
-
 import { Button } from "@ondo/ui";
 import { ShoppingBag } from "lucide-react";
 import Link from "next/link";
-import { useCartCount } from "../store";
 
 /**
  * 장바구니 아이콘 + 담긴 조합 수 카운터.
@@ -19,13 +16,17 @@ import { useCartCount } from "../store";
  * 것은 장바구니 도메인이고, 셸은 그것을 모른 채 자리만 비워 둔다 —
  * `app/(shop)/layout.tsx`가 이 컴포넌트를 헤더에 끼워 넣는다.
  *
- * 숫자를 고정 더미(`CART_ITEM_COUNT`)에서 읽던 자리다. 장바구니 화면에서 조합을
- * 지워도 뱃지가 4에 멈춰 있으면, 원본의 §6-4 결함(같은 화면에서 헤더·뱃지·본문이
- * 서로 다른 숫자)이 그대로 살아난다. **본문과 같은 스토어 하나**를 읽는다.
+ * 숫자는 **서버**(`GET /cart-items/count`)가 준다. 레이아웃이 요청마다 받아 prop으로
+ * 넘기고, 장바구니 화면의 쓰기가 끝나면 `router.refresh()`가 레이아웃까지 다시
+ * 그려서 본문과 같은 값을 본다 — 원본의 §6-4 결함(같은 화면에서 헤더·뱃지·본문이
+ * 서로 다른 숫자)이 살아나지 않는다. 클라이언트 훅이 없어 서버 컴포넌트다.
  */
-export function CartButton() {
-  const count = useCartCount();
-
+export function CartButton({
+  count,
+}: {
+  /** 담긴 종류 수. null이면 아직 승인 전 계정이라 서버가 안 준 것 — 숫자를 지어내지 않는다 */
+  count: number | null;
+}) {
   return (
     /* ≤40rem에서 44×44 — 손가락 최소 타깃(`_base.css:340` `.iconbtn`) */
     <Button
@@ -34,14 +35,19 @@ export function CartButton() {
       className="relative size-8 px-0 phone:size-11"
     >
       {/* 뱃지 숫자와 접근성 이름이 같은 값을 읽는다 — 원본의 3중 불일치(§6-4) 수정 */}
-      <Link href="/cart" aria-label={`장바구니, ${count}개 담김`}>
+      <Link
+        href="/cart"
+        aria-label={count === null ? "장바구니" : `장바구니, ${count}개 담김`}
+      >
         <ShoppingBag aria-hidden className="size-4.5" />
-        <span
-          aria-hidden
-          className="bg-foreground text-card absolute top-px right-px grid h-4 min-w-4 place-items-center rounded-full px-1 text-xs leading-none tracking-normal"
-        >
-          {count}
-        </span>
+        {count === null ? null : (
+          <span
+            aria-hidden
+            className="bg-foreground text-card absolute top-px right-px grid h-4 min-w-4 place-items-center rounded-full px-1 text-xs leading-none tracking-normal"
+          >
+            {count}
+          </span>
+        )}
       </Link>
     </Button>
   );

@@ -2,72 +2,157 @@
 
 import { Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
-import { flushSync } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import { CartSummaryBar } from "./CartSummaryBar";
 import { CartToolbar } from "./CartToolbar";
 import { EmptyCart } from "./EmptyCart";
 import { RemovedNotice } from "./RemovedNotice";
 import { WholesalerGroup } from "./WholesalerGroup";
+import { SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
+import {
+  describeCartError,
+  useCartBusy,
+  useQtySaver,
+  useRemoveCartItemsMutation,
+  useRestoreCartItemsMutation,
+} from "../api/mutations";
 import { BACKORDER_NOTICE, CART_ACTION_ID, CART_SUB_TAIL } from "../constants";
 import {
   allSelected,
+  applyDrafts,
   groupByWholesaler,
   orderBlockedReason,
+  selectedIds,
   selectedLines,
   selectionCounter,
+  toRemovedLines,
   totalsOf,
+  visibleLines,
 } from "../derive";
 import {
-  removeLine,
-  removeSelected,
-  restoreRemoved,
+  clearRemoved,
+  hideLines,
+  prune,
+  rememberRemoved,
+  revertDraft,
+  setDraft,
   setLinesSelected,
-  setQty,
   toggleLine,
-  useCartIssues,
-  useCartLines,
-  useCartSelected,
-  useLastRemovedCount,
+  useCartUi,
 } from "../store";
+import type { CartLine } from "../types";
 
 /**
  * 장바구니 한 장.
  *
- * 담긴 목록도 선택도 화면이 `useState`로 들고 있지 않고 `../store`에서 읽는다.
- * 이유가 둘이다.
- * ① 헤더 뱃지가 같은 값을 봐야 한다 — 원본은 같은 화면에서 헤더 접근성 이름
- *    `6개 담김` · 뱃지 `4` · 본문 `담긴 조합 4개`가 서로 달랐다(§6-4).
- * ② 수량을 고치고 선택을 풀고 다른 화면에 갔다 오면 그게 통째로 버려진다
- *    (누적 `state-loss`).
+ * 담긴 목록은 **서버가 준다** — 부모 `app/(shop)/cart/page.tsx`가 `GET /cart-items`를
+ * 받아 `lines`로 넘긴다. 이 컴포넌트가 스토어(`../store`)에서 읽는 것은 서버가
+ * 모르는 UI 상태뿐이다: 무엇을 골랐는지 · 칸에 무엇을 치는 중인지 · 방금 무엇을
+ * 뺐는지. 쓰기(수량 · 빼기 · 되돌리기)는 `../api/mutations`가 보내고, 성공하면
+ * `router.refresh()`가 이 페이지와 헤더 뱃지를 같이 다시 그린다 — 뱃지와 본문이
+ * 같은 서버 값을 본다(원본 §6-4 결함의 반대).
  *
  * **세 층의 숫자가 각자 놀지 않는다.** 행 금액 · 그룹 요약 · 하단 요약이 전부
  * `derive.ts`의 `totalsOf` 하나를 부르고, 무엇을 넣어 부르는지만 다르다 —
- * 그룹은 그 도매처에 담긴 전부, 하단은 고른 것만(RT-32).
+ * 그룹은 그 도매처에 담긴 전부, 하단은 고른 것만(RT-32). 서버의 `subtotal`·
+ * `totalAmount`는 안 쓴다 — 칸에 치는 중인 수량을 못 따라온다.
  *
- * **담긴 것이 0줄이어도 되돌리기는 남는다.** 빈 상태를 따로 return 하던 동안에는
- * 담긴 것을 전부 고르고 지웠을 때 툴바가 통째로 빠지면서 되돌리기도 같이
- * 사라졌다 — 되돌릴 4줄이 스토어에 그대로 남아 있는데 부를 컨트롤이 없었다.
- * 지금은 한 자리에서 내용만 갈아 끼운다: `RemovedNotice`는 두 상태에서 같은
- * 위치에 있어서 노드가 새로 생기지 않고, `role="status"`도 끊기지 않는다.
+ * **담긴 것이 0줄이어도 되돌리기는 남는다.** `RemovedNotice`는 두 상태에서 같은
+ * 위치에 있어서 노드가 새로 생기지 않고, `role="status"`도 끊기지 않는다(F1).
  */
-export function CartView() {
-  const lines = useCartLines();
-  const issues = useCartIssues();
-  const selected = useCartSelected();
-  const removedCount = useLastRemovedCount();
+export function CartView({
+  lines: serverLines,
+}: {
+  /** `GET /cart-items`를 뷰로 바꾼 것. 순서는 서버 순서다 */
+  lines: readonly CartLine[];
+}) {
+  const ui = useCartUi();
+  const busy = useCartBusy();
+  const remove = useRemoveCartItemsMutation();
+  const restore = useRestoreCartItemsMutation();
+  /* 저장 실패는 칸을 서버 값으로 되돌리고 그 줄에 이유를 남긴다 — 저장 안 된
+     숫자를 칸에 두면 합계가 서버와 다른 값을 말한다 */
+  const saveQty = useQtySaver({ onFailed: revertDraft });
+  /* 빼기·되돌리기가 서버에서 거절됐을 때. 수량 저장 실패는 줄마다 따로 뜬다 */
+  const [failure, setFailure] = useState<string | null>(null);
 
+  /* 서버 목록에서 사라진 줄의 흔적(숨김 · 선택 해제 · draft)을 지운다.
+     refresh가 닿았다는 신호가 곧 이 prop이 바뀌는 것이다 */
+  useEffect(() => {
+    prune(new Set(serverLines.map((line) => line.lineId)));
+  }, [serverLines]);
+
+  const lines = applyDrafts(visibleLines(serverLines, ui.hidden), ui.drafts);
+  const selected = selectedIds(lines, ui.deselected);
   const empty = lines.length === 0;
   const picked = selectedLines(lines, selected);
   const totals = totalsOf(picked);
+  const removedCount = ui.lastRemoved?.length ?? 0;
+
+  const changeQty = (line: CartLine, next: string) => {
+    const { qty, issue } = parseQty(next);
+    /* 상한 초과만 값을 되돌린다 — "얼마까지 되는지"가 정해져 있어서 화면이 대신
+       정할 수 있는 유일한 경우다. 되돌렸다는 사실은 문구가 말한다 */
+    const value = issue === "OVER_LIMIT" ? String(SKU_ORDER_LIMIT) : next;
+    setDraft(line.lineId, value, issue);
+    setFailure(null);
+    /* 서버는 1장 이상만 받는다(`ChangeQtyRequest.qty minimum 1`). 0 · 빈 칸 ·
+       못 읽는 글자는 보내지 않는다 — 칸에만 남고 `주문하기`가 막힌다 */
+    if (issue === "NOT_A_NUMBER" || qty < 1) return;
+    saveQty(line.lineId, { cartItemId: line.cartItemId, qty });
+  };
+
+  const removeOne = (line: CartLine) => {
+    setFailure(null);
+    remove.mutate([line.cartItemId], {
+      onSuccess: () => hideLines([line.lineId]),
+      onError: (error) => setFailure(describeCartError(error)),
+    });
+  };
+
+  /**
+   * 고른 조합을 전부 뺀다. **고르지 않은 조합은 남는다.** 지우는 대상을 화면(DOM)이
+   * 아니라 선택 집합에서 뽑는다 — 접힘·필터가 나중에 생겨도 대상이 달라지지 않는다.
+   */
+  const removePicked = () => {
+    if (picked.length === 0) return;
+    setFailure(null);
+    remove.mutate(
+      picked.map((line) => line.cartItemId),
+      {
+        onSuccess: () => {
+          hideLines(picked.map((line) => line.lineId));
+          rememberRemoved(toRemovedLines(picked));
+        },
+        onError: (error) => setFailure(describeCartError(error)),
+      },
+    );
+  };
 
   /* 되돌린 뒤에도 포커스가 <body>로 떨어지지 않게 한다 — `되돌리기`는 눌리면
-     사라지는 버튼이라 그 자리에 남는 것이 없다. 되돌아온 줄은 선택까지 복원되므로
-     `선택 삭제`가 다시 눌릴 수 있는 상태고, 사장이 직전에 눌렀던 자리도 그쪽이다.
-     `flushSync`로 목록을 먼저 그린 뒤에 부른다 — 아직 없는 버튼은 못 찾는다 */
+     사라지는 버튼이라 그 자리에 남는 것이 없다. 되돌아온 줄은 refresh로 오므로
+     목록이 바뀐 뒤(`serverLines` 효과)에 옮긴다 — 아직 없는 버튼은 못 찾는다 */
+  const focusAfterRestore = useRef(false);
   const handleRestore = () => {
-    flushSync(() => restoreRemoved());
-    document.getElementById(CART_ACTION_ID.removeSelected)?.focus();
+    const removed = ui.lastRemoved;
+    if (!removed) return;
+    setFailure(null);
+    restore.mutate(
+      removed.map(({ variantId, qty }) => ({ variantId, qty })),
+      {
+        onSuccess: () => {
+          clearRemoved();
+          focusAfterRestore.current = true;
+        },
+        onError: (error) => setFailure(describeCartError(error)),
+      },
+    );
   };
+  useEffect(() => {
+    if (!focusAfterRestore.current || serverLines.length === 0) return;
+    focusAfterRestore.current = false;
+    document.getElementById(CART_ACTION_ID.removeSelected)?.focus();
+  }, [serverLines]);
 
   return (
     <div className="mx-auto max-w-wrap">
@@ -85,18 +170,29 @@ export function CartView() {
             allOn={allSelected(lines, selected)}
             counter={selectionCounter(lines, selected)}
             selectedCount={picked.length}
+            busy={busy}
             onToggleAll={(on) =>
               setLinesSelected(
                 lines.map((line) => line.lineId),
                 on,
               )
             }
-            onRemoveSelected={removeSelected}
+            onRemoveSelected={removePicked}
           />
         )}
 
         {/* 담긴 상태와 빈 상태가 이 한 줄을 같이 쓴다 */}
-        <RemovedNotice count={removedCount} onRestore={handleRestore} />
+        <RemovedNotice
+          count={removedCount}
+          pending={restore.isPending}
+          onRestore={handleRestore}
+        />
+
+        {failure ? (
+          <p role="alert" className="text-destructive pb-3 text-xs">
+            {failure}
+          </p>
+        ) : null}
 
         {empty ? (
           <EmptyCart />
@@ -106,12 +202,12 @@ export function CartView() {
               <WholesalerGroup
                 key={group.wholesalerId}
                 group={group}
-                issues={issues}
+                issues={ui.issues}
                 selected={selected}
                 onToggleLines={setLinesSelected}
                 onToggleLine={toggleLine}
-                onChangeQty={setQty}
-                onRemove={removeLine}
+                onChangeQty={changeQty}
+                onRemove={removeOne}
               />
             ))}
 

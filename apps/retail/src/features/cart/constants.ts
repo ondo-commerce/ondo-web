@@ -54,3 +54,42 @@ export const CART_ACTION_ID = {
   removeSelected: "cart-remove-selected",
   restore: "cart-restore-removed",
 } as const;
+
+/**
+ * 담아둔 사이에 시즌이 끝났거나 옵션이 지워진 조합의 배지(`isOrderable: false`).
+ * 스펙 설명이 "행은 남으니 회색으로 그리고 주문에서 뺀다"라, 행은 두되 체크와
+ * 수량 칸을 잠근다. `재고 소진 · 미송 가능`과는 다른 상태다 — 저건 살 수 있고
+ * 이건 못 산다.
+ */
+export const UNORDERABLE_BADGE = "주문 불가";
+
+/**
+ * 서버가 `title`을 null로 준 행의 이름 자리. dev의 장바구니에는 도매에 없는
+ * variant 행이 실제로 있다 — 빈 칸으로 두면 무엇을 빼야 하는지 알 수 없다.
+ */
+export const MISSING_PRODUCT_NAME = "상품 정보 없음";
+
+/**
+ * 수량 저장이 서버에서 실패했을 때 그 줄에 뜨는 말. 칸은 **서버에 남아 있는 값**으로
+ * 되돌린다 — 저장 안 된 숫자를 칸에 두면 합계가 서버와 다른 값을 말한다.
+ */
+export const SAVE_FAILED_TEXT =
+  "수량을 저장하지 못했어요. 저장된 값으로 되돌렸어요. 다시 넣어 주세요.";
+
+/** 빼기·되돌리기가 실패했을 때 툴바 아래 한 줄. 서버가 준 말이 없을 때만 쓴다 */
+export const CART_ACTION_FAILED =
+  "장바구니를 바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+
+/**
+ * 수량 칸의 글자가 멈춘 뒤 저장까지 기다리는 시간. `1` → `10`을 치는 사이에
+ * 앞 값이 먼저 저장되지 않게 한다. 상품 목록 검색의 300ms보다 조금 길다 —
+ * 두 자리 수를 치는 손이 그보다 느리다.
+ */
+export const QTY_SAVE_DELAY_MS = 400;
+
+/**
+ * 서버가 도매처 묶음의 `wholesaler`를 null로 준 상자의 이름 자리. dev의 도매에 없는
+ * variant 행은 상품뿐 아니라 도매처까지 null이다 — 상자 머리가 비면 어느 묶음인지
+ * 말할 수 없다.
+ */
+export const MISSING_WHOLESALER_NAME = "도매처 정보 없음";
