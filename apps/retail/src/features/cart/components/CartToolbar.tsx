@@ -18,12 +18,14 @@ import { CART_ACTION_ID } from "../constants";
  *
  * 0개일 때는 진짜 `disabled`다. `aria-disabled="true"`만 걸어 두면 보조기술은
  * 못 누른다고 읽는데 실제로는 눌려서, 되돌릴 수 없는 실행이 그냥 일어난다
- * (직전 회차 F11).
+ * (직전 회차 F11). 서버로 요청이 나가 있는 동안(`busy`)도 같다 — DELETE가 돌아오기
+ * 전에 한 번 더 눌리면 같은 줄을 두 번 지우려 든다.
  */
 export function CartToolbar({
   allOn,
   counter,
   selectedCount,
+  busy,
   onToggleAll,
   onRemoveSelected,
 }: {
@@ -31,6 +33,8 @@ export function CartToolbar({
   /** `(3/4)` */
   counter: string;
   selectedCount: number;
+  /** 장바구니를 바꾸는 요청이 나가 있다 */
+  busy: boolean;
   onToggleAll: (on: boolean) => void;
   onRemoveSelected: () => void;
 }) {
@@ -49,7 +53,7 @@ export function CartToolbar({
         id={CART_ACTION_ID.removeSelected}
         variant="ghost"
         size="sm"
-        disabled={selectedCount === 0}
+        disabled={selectedCount === 0 || busy}
         onClick={onRemoveSelected}
       >
         <X aria-hidden className="size-4" />

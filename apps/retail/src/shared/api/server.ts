@@ -8,7 +8,20 @@ import type { RetailerResponse } from "./types";
 
 /** `features/account/constants`의 `ACCOUNT_PATH.login`과 같은 값. shared는 feature를 못 읽는다 */
 const LOGIN_PATH = "/login";
+/** 같은 이유로 `ACCOUNT_PATH.approval`의 사본. 승인 전 계정이 403을 받으면 여기로 */
+export const APPROVAL_PATH = "/approval";
 const ME_PATH = "/api/retail/auth/me";
+
+/**
+ * 로그인은 됐지만 아직 승인 전인 계정의 요청인가(403 `ACCOUNT_NOT_APPROVED`).
+ * `/me`는 미승인 계정에도 200이라 `requireSession`은 통과하고, 그 다음 장바구니 같은
+ * 승인 필요 API에서 처음 걸린다 — 각 화면이 이걸로 갈라 승인 대기 화면으로 보낸다.
+ */
+export function isNotApproved(error: unknown): boolean {
+  return (
+    isApiError(error) && error.code === RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED
+  );
+}
 
 /**
  * 서버 컴포넌트가 API를 부르는 유일한 창구.

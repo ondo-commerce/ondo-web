@@ -25,10 +25,13 @@ import { CART_ACTION_ID, removedNotice } from "../constants";
  */
 export function RemovedNotice({
   count,
+  pending,
   onRestore,
 }: {
   /** 방금 뺀 조합 수. 0이면 되돌릴 것이 없다 */
   count: number;
+  /** 되돌리기(다시 담기) 요청이 나가 있다. 두 번 눌리면 두 번 담긴다 */
+  pending: boolean;
   onRestore: () => void;
 }) {
   /* 지운 직후 포커스를 되돌리기로 옮긴다 — 버튼이 그 자리에서 disabled가 돼
@@ -56,6 +59,7 @@ export function RemovedNotice({
             variant="link"
             /* 12px 본문 안의 링크라 크기는 그대로 두고 밑줄·굵기·색으로 가른다 */
             className="text-foreground text-xs font-semibold underline underline-offset-2"
+            disabled={pending}
             onClick={onRestore}
           >
             되돌리기

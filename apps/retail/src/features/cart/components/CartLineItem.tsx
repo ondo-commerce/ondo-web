@@ -1,12 +1,17 @@
 "use client";
 
-import { Badge, Checkbox, IconButton } from "@ondo/ui";
+import { Badge, Checkbox, IconButton, cn } from "@ondo/ui";
 import { X } from "lucide-react";
 import { QtyStepper } from "@/shared/components/QtyStepper";
-import { QTY_ISSUE_TEXT, type QtyIssue } from "@/shared/qty";
-import { SOLD_OUT_BADGE } from "../constants";
-import { formatWon, lineQty, lineSubtotal, optionLabel } from "../derive";
-import type { CartLine } from "../types";
+import { SOLD_OUT_BADGE, UNORDERABLE_BADGE } from "../constants";
+import {
+  formatWon,
+  lineIssueText,
+  lineQty,
+  lineSubtotal,
+  optionLabel,
+} from "../derive";
+import type { CartLine, CartLineIssue } from "../types";
 
 /**
  * 담긴 조합 한 줄.
@@ -20,8 +25,13 @@ import type { CartLine } from "../types";
  * 주문을 확정할 때 미송으로 넘어간다 — 여기서 막으면 살 수 있는 것을 못 사게
  * 된다. 배지만 붙고 칸은 잠기지 않는다.
  *
- * 썸네일이 빈 회색 상자인 것은 사진 자산이 아직 없어서다 — 없는 이미지를
- * 지어내지 않는다. 값이 아니라 자리라서 `aria-hidden`이다.
+ * **주문 불가 행(`orderable: false`)은 다르다.** 담아둔 사이에 시즌이 끝났거나
+ * 옵션이 지워진 것이라 체크도 수량도 잠기고 합계에서 빠진다 — 빼기(X)만 된다.
+ * 행을 지우지 않고 남기는 것은 스펙이 그렇게 적어서다("행은 남으니 회색으로").
+ *
+ * 썸네일이 빈 회색 상자인 것은 서버가 주는 `thumbnailUrl`의 호스트가 아직 이미지
+ * 설정에 없어서다 — 상품 화면 연동(#163)이 호스트를 열면 그때 같이 붙인다.
+ * 값이 아니라 자리라서 `aria-hidden`이다.
  */
 export function CartLineItem({
   line,
@@ -36,7 +46,7 @@ export function CartLineItem({
   checked: boolean;
   onToggle: (on: boolean) => void;
   /** 수량이 걸린 이유. 값과 따로 온다 — 500으로 되돌린 뒤에도 남아야 한다 */
-  issue: QtyIssue | null;
+  issue: CartLineIssue | null;
   onChangeQty: (next: string) => void;
   onRemove: () => void;
 }) {
@@ -49,6 +59,7 @@ export function CartLineItem({
           이름이라 보조기술에서 구분되지 않는다 */}
       <Checkbox
         checked={checked}
+        disabled={!line.orderable}
         onCheckedChange={(next) => onToggle(next === true)}
         aria-label={`${line.productName} ${line.colorLabel} ${line.size} 선택`}
         className="size-4.5"
@@ -60,9 +71,17 @@ export function CartLineItem({
           여기까지만 줄고 그 아래에서는 값 칸이 줄을 바꾼다 */}
       <div className="min-w-0 flex-1 basis-40">
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <span className="font-medium">{line.productName}</span>
+          <span
+            className={cn(
+              "font-medium",
+              !line.orderable && "text-muted-foreground",
+            )}
+          >
+            {line.productName}
+          </span>
           {/* 재고 수치는 어디에도 없다 — 배지만이다(게이트 Q1) */}
           {line.soldOut ? <Badge>{SOLD_OUT_BADGE}</Badge> : null}
+          {line.orderable ? null : <Badge>{UNORDERABLE_BADGE}</Badge>}
         </div>
         <p className="text-muted-foreground text-body mt-0.5">
           {optionLabel(line)}
@@ -74,6 +93,7 @@ export function CartLineItem({
           <QtyStepper
             label={label}
             value={line.qtyText}
+            disabled={!line.orderable}
             onChange={onChangeQty}
           />
         </span>
@@ -102,7 +122,7 @@ export function CartLineItem({
           390px에서 값 칸 아래에 끼면 두 글자씩 접히기 때문이다 */}
       {issue ? (
         <p className="text-destructive w-full text-xs">
-          {QTY_ISSUE_TEXT[issue]}
+          {lineIssueText(issue)}
         </p>
       ) : null}
     </li>
