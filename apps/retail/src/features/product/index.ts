@@ -12,4 +12,9 @@
 export { ProductDetailView } from "./components/ProductDetailView";
 export { PRODUCT_PATH } from "./api/paths";
 export { toProductDetail } from "./derive";
-export type { CartItemDraft, ListingDetailWire, ProductDetail } from "./types";
+export type {
+  AddToCartResult,
+  CartItemDraft,
+  ListingDetailWire,
+  ProductDetail,
+} from "./types";

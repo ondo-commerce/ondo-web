@@ -86,3 +86,15 @@ export interface ProductDetail {
 
 /** `장바구니 담기`가 보낼 것 하나. 수량이 0인 조합은 여기 없다 */
 export type CartItemDraft = AddCartItemRequest;
+
+/**
+ * 조합 여럿을 하나씩 보낸 결과. **부분 성공은 실패가 아니라 결과다** — 하나가
+ * 죽었다고 전체를 reject하면 이미 담긴 조합을 화면이 모르고, 다시 누르면 같은
+ * SKU가 또 들어간다(서버는 합산). 장바구니 회차의 `BatchResult`와 같은 계약이다.
+ */
+export interface AddToCartResult {
+  /** 서버가 받아 준 것. 보낸 순서다 */
+  done: readonly CartItemDraft[];
+  /** 거절됐거나 못 닿은 것과 그 이유. 보낸 순서다 */
+  failed: readonly { input: CartItemDraft; error: unknown }[];
+}

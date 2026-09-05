@@ -292,6 +292,8 @@ export function productsOfWholesaler(
 /**
  * 도매처 홈 머리. 상호는 그 도매처 게시글의 `wholesaler.name`에서 온다 —
  * 게시글이 하나도 없으면 상호를 알 길이 없어 null이고 화면은 `notFound()`로 간다.
+ * **필터를 안 건 목록으로 부른다** — 필터로 0건이 된 목록에서 찾으면 그 도매처가
+ * 안 파는 축을 고른 것만으로 없는 도매처가 된다(F1).
  */
 export function wholesalerOf(
   products: readonly CatalogProduct[],

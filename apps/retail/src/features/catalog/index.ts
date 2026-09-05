@@ -15,6 +15,7 @@ export { WishlistView } from "./components/WishlistView";
 export { LISTING_PATH } from "./api/paths";
 export { MAX_PAGE_SIZE, WISHLIST_SORTS } from "./constants";
 export {
+  isFilterEmpty,
   productsOfWholesaler,
   resolveFilter,
   resolveSeller,

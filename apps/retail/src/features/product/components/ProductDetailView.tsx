@@ -10,14 +10,21 @@ import { SummaryBar } from "./SummaryBar";
 import { PRICE_HINT, QTY_UNIT, TRADE_TERMS } from "../constants";
 import {
   describeAddToCartError,
+  describePartialAdd,
   draftKey,
   orderTotals,
   parseQty,
   priceRangeLabel,
   toCartItems,
+  withoutAdded,
   type QtyIssue,
 } from "../derive";
-import type { CartItemDraft, ColorGroup, ProductDetail } from "../types";
+import type {
+  AddToCartResult,
+  CartItemDraft,
+  ColorGroup,
+  ProductDetail,
+} from "../types";
 import { useProductFavorite } from "@/features/catalog";
 
 /**
@@ -41,8 +48,11 @@ export function ProductDetailView({
   onAddToCart,
 }: {
   product: ProductDetail;
-  /** 조합마다 하나씩 `POST /cart-items`. 하나라도 실패하면 reject */
-  onAddToCart: (items: readonly CartItemDraft[]) => Promise<unknown>;
+  /**
+   * 조합마다 하나씩 `POST /cart-items`. **reject하지 않고** 담긴 것과 못 담은 것을
+   * 갈라 돌려준다 — 부분 성공을 화면이 알아야 성공분을 두 번 담지 않는다(F2)
+   */
+  onAddToCart: (items: readonly CartItemDraft[]) => Promise<AddToCartResult>;
 }) {
   /* 칸에 있는 **글자 그대로**를 들고 있다. 숫자로 바꿔 두면 `45.5`를 친 사장에게
      무엇이 잘못됐는지 되돌려 줄 방법이 없다 (`parseQty` 주석 참조) */
@@ -116,14 +126,29 @@ export function ProductDetailView({
     setAddFailed(null);
     setAdding(true);
     try {
-      await onAddToCart(toCartItems(product, drafts));
-      setAddedKey(currentKey);
-      setAddedNotice(
-        `장바구니에 ${totals.comboCount}개 조합 · ${totals.sheets}${QTY_UNIT}을 담았어요. 수량을 바꾸면 다시 담을 수 있어요.`,
-      );
+      const result = await onAddToCart(toCartItems(product, drafts));
+
+      if (result.failed.length === 0) {
+        setAddedKey(currentKey);
+        setAddedNotice(
+          `장바구니에 ${totals.comboCount}개 조합 · ${totals.sheets}${QTY_UNIT}을 담았어요. 수량을 바꾸면 다시 담을 수 있어요.`,
+        );
+        return;
+      }
+
+      /* 하나도 안 들어갔다 — 칸은 그대로, 지문도 안 굳힌다. 다시 누르면 전부 보낸다 */
+      if (result.done.length === 0) {
+        setAddFailed(describeAddToCartError(result.failed[0]?.error));
+        return;
+      }
+
+      /* 일부만 들어갔다 — 담긴 조합의 칸을 비워 다음 담기는 못 담은 것만 보낸다.
+         지문을 굳히지 않으면 성공분이 또 POST 돼 서버가 합산한다(F2) */
+      setDrafts((prev) => withoutAdded(product, prev, result.done));
+      setAddFailed(describePartialAdd(product, result));
     } catch (error) {
-      /* 조합이 여럿이면 일부는 이미 담겼을 수 있다 — 지문을 굳히지 않아 다시
-         누를 수 있게 두고, 무엇이 실패했는지는 서버 문구로 말한다 */
+      /* 조립부가 reject하지 않는 계약이지만, 예상 밖의 throw(코드 오류·네트워크
+         계층)는 여기서 받아 화면이 `담는 중…`에 갇히지 않게 한다 */
       setAddFailed(describeAddToCartError(error));
     } finally {
       setAdding(false);

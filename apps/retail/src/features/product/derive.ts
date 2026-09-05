@@ -1,7 +1,8 @@
 import { isApiError } from "@ondo/api";
 import { parseQty } from "@/shared/qty";
-import { ADD_TO_CART_FAILED } from "./constants";
+import { ADD_TO_CART_FAILED, QTY_UNIT } from "./constants";
 import type {
+  AddToCartResult,
   CartItemDraft,
   ColorGroup,
   ColorOptionWire,
@@ -209,4 +210,57 @@ export function toCartItems(
 export function describeAddToCartError(error: unknown): string {
   if (isApiError(error) && error.message !== "") return error.message;
   return ADD_TO_CART_FAILED;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   부분 성공 — 조합 여럿 중 일부만 담겼을 때
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** `블랙 S 11장` — 보낸 `variantId`를 표의 색·사이즈로 되돌린다. 표에 없으면 id로 */
+function comboLabel(product: ProductDetail, item: CartItemDraft): string {
+  for (const group of product.colorGroups) {
+    const row = group.rows.find((r) => r.variantId === item.variantId);
+    if (row) return `${group.displayName} ${row.size} ${item.qty}${QTY_UNIT}`;
+  }
+  return `옵션 ${item.variantId} ${item.qty}${QTY_UNIT}`;
+}
+
+/**
+ * 담긴 조합의 칸을 비운다. 그러면 다음 `장바구니 담기`는 **못 담은 조합만**
+ * 보낸다(`toCartItems`는 0장을 안 보낸다) — 성공분을 지문에 따로 기억하는 것보다
+ * 칸 자체가 "이건 이미 들어갔다"를 말하는 편이 사장에게도 코드에도 곧다.
+ */
+export function withoutAdded(
+  product: ProductDetail,
+  drafts: Readonly<Record<string, string>>,
+  done: readonly CartItemDraft[],
+): Record<string, string> {
+  const addedVariantIds = new Set(done.map((item) => item.variantId));
+  const next = { ...drafts };
+  for (const row of allRows(product)) {
+    if (addedVariantIds.has(row.variantId)) next[row.skuId] = "";
+  }
+  return next;
+}
+
+/**
+ * 일부만 담겼을 때의 한 줄. 무엇이 들어갔고 무엇이 남았는지를 **둘 다** 말한다 —
+ * 실패 문구만 보이면 사장이 다시 눌러 성공분이 두 번 들어간다(F2). 서버가 이유를
+ * 줬으면 붙인다(기본 문구 `ADD_TO_CART_FAILED`는 "다시 시도"라 여기선 군더더기).
+ */
+export function describePartialAdd(
+  product: ProductDetail,
+  result: AddToCartResult,
+): string {
+  const done = result.done.map((item) => comboLabel(product, item)).join(" · ");
+  const failed = result.failed
+    .map(({ input }) => comboLabel(product, input))
+    .join(" · ");
+  const firstError = result.failed[0]?.error;
+  const reason =
+    isApiError(firstError) && firstError.message !== ""
+      ? ` (${firstError.message})`
+      : "";
+
+  return `${done}은 담겼어요. ${failed}은 못 담았어요${reason} — 다시 누르면 못 담은 조합만 보내요.`;
 }
