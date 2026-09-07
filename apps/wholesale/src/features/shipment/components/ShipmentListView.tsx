@@ -9,6 +9,7 @@ import { PackingWorkPanel } from "./PackingWorkPanel";
 import { ShipmentRetailerTable } from "./ShipmentRetailerTable";
 import { ShipmentStageChipsWithCounts } from "./ShipmentStageChips";
 import { TradeStatementCard } from "./TradeStatementCard";
+import { shipmentKeys } from "../api/keys";
 import { useShipmentRefresh } from "../api/mutations";
 import {
   toQ,
@@ -31,6 +32,7 @@ import type {
   ShipmentStage,
 } from "../types";
 import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
@@ -53,6 +55,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 칩 건수는 경계 밖(`useQueries`)이라 못 받아도 칩은 눌린다.
  */
 export function ShipmentListView() {
+  /* 다른 탭(주문·재고)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
+  useInvalidateOnMount(shipmentKeys.all);
   const [draft, setDraft] = useState("");
   /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
   const [q, setQ] = useState("");

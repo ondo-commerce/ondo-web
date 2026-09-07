@@ -6,10 +6,12 @@ import { BackorderRowDetail } from "./BackorderRowDetail";
 import { BackorderSummaryCard } from "./BackorderSummaryCard";
 import { BackorderTable } from "./BackorderTable";
 import { EtaFormCard } from "./EtaFormCard";
+import { backorderKeys } from "../api/keys";
 import { useBackorderSkusQuery } from "../api/queries";
 import { toListQuery, type BackorderListParams } from "../derive";
 import type { AllocationDraft, AllocationDrafts } from "../types";
 import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
@@ -28,6 +30,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 펼친 행의 경계는 행 안(`BackorderRowDetail`)에 있다.
  */
 export function BackorderListView() {
+  /* 다른 탭(주문·재고)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
+  useInvalidateOnMount(backorderKeys.all);
   const [draft, setDraft] = useState("");
   /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
   const [q, setQ] = useState("");
