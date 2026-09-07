@@ -3,13 +3,16 @@
 import { Select } from "@ondo/ui";
 import {
   FILTER_ALL,
-  PICKUP_METHODS,
-  PICKUP_METHOD_LABEL,
-  type PickupFilterValue,
+  RECEIVE_BY_LABEL,
+  RECEIVE_BY_ORDER,
+  type ReceiveByFilterValue,
 } from "../constants";
 
 /** 트리거·목록에 세울 값 순서. `전체`가 맨 위다 */
-const OPTIONS: readonly PickupFilterValue[] = [FILTER_ALL, ...PICKUP_METHODS];
+const OPTIONS: readonly ReceiveByFilterValue[] = [
+  FILTER_ALL,
+  ...RECEIVE_BY_ORDER,
+];
 
 /**
  * 포장 대기 표 위 우측의 수령방식 필터. **단일 선택**이고 `전체`로 되돌릴 수 있다.
@@ -24,8 +27,8 @@ export function PickupMethodFilter({
   value,
   onChange,
 }: {
-  value: PickupFilterValue;
-  onChange: (value: PickupFilterValue) => void;
+  value: ReceiveByFilterValue;
+  onChange: (value: ReceiveByFilterValue) => void;
 }) {
   return (
     <div className="mb-2 flex justify-end">
@@ -38,13 +41,13 @@ export function PickupMethodFilter({
         }}
       >
         <Select.Trigger aria-label="수령방식 필터">
-          {value === FILTER_ALL ? "수령방식" : PICKUP_METHOD_LABEL[value]}
+          {value === FILTER_ALL ? "수령방식" : RECEIVE_BY_LABEL[value]}
         </Select.Trigger>
         <Select.Content>
           <Select.Item value={FILTER_ALL}>{FILTER_ALL}</Select.Item>
-          {PICKUP_METHODS.map((method) => (
-            <Select.Item key={method} value={method}>
-              {PICKUP_METHOD_LABEL[method]}
+          {RECEIVE_BY_ORDER.map((receiveBy) => (
+            <Select.Item key={receiveBy} value={receiveBy}>
+              {RECEIVE_BY_LABEL[receiveBy]}
             </Select.Item>
           ))}
         </Select.Content>

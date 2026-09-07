@@ -57,6 +57,14 @@ export const WHOLESALE_ERROR_CODE = {
   STOCK_BELOW_ZERO: "STOCK_BELOW_ZERO",
   STOCK_BELOW_ALLOCATED: "STOCK_BELOW_ALLOCATED",
 
+  // 출고 — 포장(POST /outbounds)은 400(중복 줄·소매처 섞임·수령 방식 섞임)·409(이미 포장된 줄),
+  // 확정(POST …/ship)은 409(이미 출고·빈 봉투·재고 부족)
+  DUPLICATE_PACKING_ITEM: "DUPLICATE_PACKING_ITEM",
+  RETAILER_MIXED: "RETAILER_MIXED",
+  RECEIVE_BY_MIXED: "RECEIVE_BY_MIXED",
+  PACKING_NOT_READY: "PACKING_NOT_READY",
+  OUTBOUND_EMPTY: "OUTBOUND_EMPTY",
+
   // 로그인 실패는 하나뿐이다 — 이메일 없음과 비밀번호 틀림을 서버가 구분해 주지 않는다(계정 열거 방지)
   LOGIN_FAILED: "LOGIN_FAILED",
 } as const;

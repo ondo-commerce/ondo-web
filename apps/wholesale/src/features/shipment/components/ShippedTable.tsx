@@ -1,13 +1,8 @@
 "use client";
 
 import { Badge, Table } from "@ondo/ui";
-import {
-  formatDateTime,
-  lineSummaryLabel,
-  packageQty,
-  sortPackagesByDesc,
-} from "../derive";
-import type { Package } from "../types";
+import { sortOutboundRows } from "../derive";
+import type { OutboundRowView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -16,18 +11,19 @@ import { formatNumber } from "@/shared/lib/format";
  *
  * 배지는 **회색**이다(판정 D4). Badge는 파랑·회색 2색뿐이고(§8.0), 이 목록은
  * 이미 `출고 완료` 칩 아래에 있어서 색으로 더 말할 것이 없다.
+ * 출고 완료 판정은 `shippedAt != null`이다(응답에 status 필드가 없다 — 스펙 설명).
  */
 export function ShippedTable({
-  packages,
-  selectedPackageNo,
+  rows,
+  selectedId,
   onSelect,
 }: {
-  packages: readonly Package[];
-  selectedPackageNo: string | null;
-  onSelect: (packageNo: string) => void;
+  rows: readonly OutboundRowView[];
+  selectedId: number | null;
+  onSelect: (outboundId: number) => void;
 }) {
   /* 출고 일시 최신순(판정 D8) */
-  const rows = sortPackagesByDesc(packages, (pkg) => pkg.shippedAt ?? "");
+  const sorted = sortOutboundRows(rows, (row) => row.shippedAtIso ?? "");
 
   return (
     <Table>
@@ -41,30 +37,32 @@ export function ShippedTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {rows.map((pkg) => (
+        {sorted.map((row) => (
           <Table.Row
-            key={pkg.packageNo}
-            selected={selectedPackageNo === pkg.packageNo}
+            key={row.id}
+            selected={selectedId === row.id}
             tabIndex={0}
-            aria-label={`${pkg.packageNo} 장끼`}
+            aria-label={`${row.label} 장끼`}
             className="cursor-pointer"
-            onClick={() => onSelect(pkg.packageNo)}
+            onClick={() => onSelect(row.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onSelect(pkg.packageNo);
+                onSelect(row.id);
               }
             }}
           >
             <Table.Td align="left">
-              <Badge tone="done">출고 완료</Badge>
+              <Badge tone="done">
+                {row.shippedAt === null ? "출고 전" : "출고 완료"}
+              </Badge>
             </Table.Td>
-            <Table.Td align="left">{pkg.packageNo}</Table.Td>
-            <Table.Td align="left">{lineSummaryLabel(pkg.lines)}</Table.Td>
+            <Table.Td align="left">{row.label}</Table.Td>
+            <Table.Td align="left">{row.summary}</Table.Td>
             <Table.Td align="left" tone="muted">
-              {pkg.shippedAt ? formatDateTime(pkg.shippedAt) : "-"}
+              {row.shippedAt ?? "-"}
             </Table.Td>
-            <Table.Td>{formatNumber(packageQty(pkg))}</Table.Td>
+            <Table.Td>{formatNumber(row.totalQty)}</Table.Td>
           </Table.Row>
         ))}
       </Table.Body>
