@@ -7,6 +7,7 @@ import type {
   OrderStatus,
   PayerType,
   PaymentMethod,
+  SettlementBadgeStatus,
   SettlementStatus,
 } from "./types";
 
@@ -28,8 +29,12 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
   CANCELLED: "done",
 };
 
-/** 정산 축 라벨 3종 고정(glossary §5.1). 폐기어 `정산 대기`·`미정산`은 여기 없다 */
-export const SETTLEMENT_LABEL: Record<SettlementStatus, string> = {
+/**
+ * 정산 축 라벨 3종 고정(glossary §5.1) + 화면 파생 `미출고`(출고 전이라 미수가 아직 없는 확정 주문).
+ * 폐기어 `정산 대기`·`미정산`은 여기 없다
+ */
+export const SETTLEMENT_LABEL: Record<SettlementBadgeStatus, string> = {
+  UNSHIPPED: "미출고",
   UNPAID: "미결제",
   PARTIALLY_SETTLED: "부분 정산",
   SETTLED: "정산 완료",
@@ -38,9 +43,10 @@ export const SETTLEMENT_LABEL: Record<SettlementStatus, string> = {
 /**
  * 진행 중인 `부분 정산`만 파랑이다.
  * `미결제`와 `정산 완료`가 같은 회색이 되는 것은 **의도된 결과**다(게이트 Q2) —
- * 둘의 구분은 배지 글자와 같은 행의 `미수 잔액` 숫자가 맡는다.
+ * 둘의 구분은 배지 글자와 같은 행의 `미수 잔액` 숫자가 맡는다. `미출고`도 받을 돈이 없는 줄이라 회색이다.
  */
-export const SETTLEMENT_TONE: Record<SettlementStatus, BadgeTone> = {
+export const SETTLEMENT_TONE: Record<SettlementBadgeStatus, BadgeTone> = {
+  UNSHIPPED: "done",
   UNPAID: "done",
   PARTIALLY_SETTLED: "active",
   SETTLED: "done",

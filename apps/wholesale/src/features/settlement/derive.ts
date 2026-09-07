@@ -15,6 +15,7 @@ import type {
   LedgerRowView,
   LedgerView,
   OrderRowView,
+  OrderStatus,
   PaymentAllocationRequest,
   PaymentCreateRequest,
   ReceivableLedgerPage,
@@ -164,7 +165,22 @@ export function retailerLabel(name: string, code: string): string {
   return code === "" ? name : `${name} · ${code}`;
 }
 
+/** 출고분이 있는 주문인가. 응답에 출고 금액이 없어 이행 상태로 근사한다 — 부분이라도 나갔으면 미수가 있다 */
+export function hasShipped(status: OrderStatus): boolean {
+  return status === "PARTIALLY_SHIPPED" || status === "SHIPPED";
+}
+
+/**
+ * 주문 한 줄. **미수는 출고분 기준 한 정의**다 — 거래처 행(원장 잔액, 출고 확정이 남기는 SALE 줄)과 같은 기준이라
+ * 표의 미수 합이 행의 미수와 같아야 한다(선수금이 없을 때).
+ *
+ * 출고 전 주문은 미수 0 · `UNSHIPPED`(미출고)로 눕히고 배분 표(`allocationTargets`)에도 안 올린다.
+ * 서버가 그 주문에 `outstandingAmount`(주문 금액 기준)를 내려도 쓰지 않는다 — 원장에 없는 돈이라 배분하면
+ * 행 `0원`·표 `부분 정산`·원장 `+선수금`이 동시에 서는 화면이 된다(F1).
+ * 이미 배정이 붙은 출고 전 주문(서버가 허용했을 때)은 상태만 서버값을 남기고 미수는 역시 0이다.
+ */
 export function toOrderView(order: SettlementOrder): OrderRowView {
+  const shipped = hasShipped(order.status.key);
   return {
     id: order.id,
     orderNumber: String(order.orderNumber),
@@ -173,9 +189,17 @@ export function toOrderView(order: SettlementOrder): OrderRowView {
     orderAmount: order.orderAmount,
     status: order.status.key,
     statusLabel: order.status.label,
-    settlementStatus: order.settlementStatus,
-    outstanding: order.outstandingAmount,
+    settlementStatus:
+      shipped || order.settlementStatus !== "UNPAID"
+        ? order.settlementStatus
+        : "UNSHIPPED",
+    outstanding: shipped ? order.outstandingAmount : 0,
   };
+}
+
+/** 표에 보이는 주문들의 미수 합. 거래처 행(원장)과 같은 수여야 한다 — 다르면 정의가 갈린 것 */
+export function outstandingTotal(orders: readonly OrderRowView[]): number {
+  return orders.reduce((sum, o) => sum + o.outstanding, 0);
 }
 
 /**
@@ -281,9 +305,10 @@ export function parseNumberInput(raw: string): number | null {
 }
 
 /**
- * 배분 표에 올릴 주문 = **미수가 남은 주문만**, 주문 일시 오래된 순.
+ * 배분 표에 올릴 주문 = **출고분의 미수가 남은 주문만**, 주문 일시 오래된 순.
  *
- * 정산 완료된 주문을 빼는 이유: 붙일 돈이 없는 줄이라 입력칸이 있어 봐야 쓸 수 없다.
+ * 정산 완료된 주문과 **출고 전 주문**(미수 0)을 빼는 이유: 붙일 돈이 없는 줄이라 입력칸이 있어 봐야 쓸 수 없고,
+ * 출고 전 주문에 붙이면 원장에 없는 미수를 갚는 꼴이라 서버도 `ALLOCATION_EXCEEDS_OUTSTANDING`으로 거절한다.
  * 정렬이 FIFO인 이유: `settlement_data_model.md` §2.6의 `FIFO_AUTO`(오래된 미수부터)다.
  */
 export function allocationTargets(

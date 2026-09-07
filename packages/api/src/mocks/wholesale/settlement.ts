@@ -2,10 +2,10 @@ import { http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
 import {
   allocateMockPayment,
-  mockOrderAmount,
   mockOrders,
   mockOrderSettlement,
   mockRetailer,
+  mockShippedAmount,
   SEED_SHIPPED_AT,
   type MockOrder,
 } from "./order";
@@ -21,6 +21,8 @@ import {
  *     금액은 그 봉투에서 나간 수량 × 단가, 주문 단위로 한 줄. 미수는 여기서 는다
  *   - 입금(`PAYMENT`) 원장 줄 = `POST /payments`. `allocations`가 있으면 주문 목의 배정액을 올려
  *     정산 상태·미수 잔액(`GET /orders?retailerId`)이 함께 움직인다. 비면 선수금(스펙)
+ *   - 주문별 미수 = **출고된 금액 − 배정액**(`mockOrderSettlement`). 판매 줄과 같은 식이라 주문별 미수의 합 =
+ *     원장 잔액(선수금이 없을 때). 출고 안 된 확정 주문은 미수 0이고 배분하면 `ALLOCATION_EXCEEDS_OUTSTANDING`
  *   - `잔액` = 그 소매처 원장을 시각순으로 누적한 값. `meta.ledgerBalance`는 필터·페이지와 무관한 전체 잔액
  *   - 계좌 4종은 서로만 맞물린다(주계좌 승격·강등 규칙은 스펙 설명대로)
  *
@@ -95,7 +97,7 @@ function seedLedger(): MockLedgerEntry[] {
       id: 10201,
       retailerId: shipped.retailerId,
       entryType: "SALE",
-      balanceChange: -shippedAmount(shipped),
+      balanceChange: -mockShippedAmount(shipped),
       occurredAt: SEED_SHIPPED_AT,
       orderId: shipped.id,
       orderNumber: shipped.orderNumber,
@@ -146,11 +148,6 @@ let nextAllocationId = 7701;
 let nextBankAccountId = 94;
 
 /* --- 출고 목이 쓰는 문 ----------------------------------------------------- */
-
-/** 지금까지 출고된 수량 × 단가. 시드 판매 줄의 금액 */
-function shippedAmount(order: MockOrder): number {
-  return order.items.reduce((acc, l) => acc + l.shippedQty * l.unitPrice, 0);
-}
 
 /**
  * 출고 확정이 남기는 판매 줄. 출고 목의 `POST …/ship`이 주문마다 한 번 부른다 —
@@ -522,12 +519,13 @@ export const settlementHandlers = [
         "ALLOCATION_EXCEEDS_PAYMENT",
         "배분 합계가 입금액을 넘었습니다.",
       );
+    // 미수 = 출고된 금액 − 배정액. 출고 안 된 주문은 미수 0이라 1원만 붙여도 여기서 막힌다
     for (const { order, amount } of targets)
       if (amount > mockOrderSettlement(order).outstandingAmount)
         return fail(
           409,
           "ALLOCATION_EXCEEDS_OUTSTANDING",
-          `주문 ${order.orderNumber}의 미수(${mockOrderAmount(order) - order.allocatedAmount})를 넘었습니다.`,
+          `주문 ${order.orderNumber}의 미수(${mockOrderSettlement(order).outstandingAmount})를 넘었습니다.`,
         );
 
     const createdAt = new Date().toISOString();

@@ -39,6 +39,12 @@ export type OrderStatus = SettlementOrder["status"]["key"];
 /** 정산 축 3종 — 스펙 enum 그대로. 화면 문구는 `미결제 · 부분 정산 · 정산 완료`(glossary §5.1) */
 export type SettlementStatus = SettlementOrder["settlementStatus"];
 /**
+ * 정산 상태 배지가 그리는 값 = 서버 3종 + 화면이 파생하는 `UNSHIPPED`(미출고).
+ * 미수는 **출고 확정이 만드는 유일한 것**(glossary §4 · 스펙)이라 확정만 되고 안 나간 주문은 받을 돈이 아직 없다 —
+ * 서버는 그것도 `UNPAID`로 내리지만 `미결제`라고 쓰면 원장 잔액과 표 합계가 갈린다(F1). `derive.toOrderView`
+ */
+export type SettlementBadgeStatus = SettlementStatus | "UNSHIPPED";
+/**
  * 결제 주체. 대납은 **입금 방식이 아니라 주체**다(`settlement_data_model.md` §2.5 결정 S1).
  * `AGENT` = 사입삼촌 대납. 스펙: "`paidBy`(누구 손)와 `method`(무슨 수단)는 다른 축이다"
  */
@@ -80,8 +86,13 @@ export interface OrderRowView {
   status: OrderStatus;
   /** 서버가 내려준 라벨(`신규 주문` …). 화면 표에 라벨을 두지 않는다 */
   statusLabel: string;
-  settlementStatus: SettlementStatus;
-  /** 미수 잔액. 서버값(`outstandingAmount`) — 주문 금액 − 배정액으로 파생하지 않는다 */
+  /** 출고분이 있는 주문은 서버값, 없으면 `UNSHIPPED` */
+  settlementStatus: SettlementBadgeStatus;
+  /**
+   * 미수 잔액 = **출고된 금액 − 배정액**(한 정의, 거래처 행의 원장 잔액과 같은 기준).
+   * 출고분이 있는 주문(`PARTIALLY_SHIPPED`·`SHIPPED`)은 서버 `outstandingAmount` 그대로, 출고 전 주문은 0 —
+   * 응답에 출고 금액 필드가 없어 `status.key`로 근사한다(04-wire §3-6)
+   */
   outstanding: number;
 }
 

@@ -6,7 +6,11 @@ import {
   SETTLEMENT_LABEL,
   SETTLEMENT_TONE,
 } from "../constants";
-import type { LedgerEntryType, OrderStatus, SettlementStatus } from "../types";
+import type {
+  LedgerEntryType,
+  OrderStatus,
+  SettlementBadgeStatus,
+} from "../types";
 
 /*
  * 정산 탭의 상태 배지 세 종.
@@ -27,8 +31,8 @@ export function OrderStatusBadge({
   return <Badge tone={ORDER_STATUS_TONE[status]}>{label}</Badge>;
 }
 
-/** 정산 축 배지. 라벨 3종 고정 */
-export function SettlementBadge({ status }: { status: SettlementStatus }) {
+/** 정산 축 배지. 서버 3종 + 화면 파생 `미출고` */
+export function SettlementBadge({ status }: { status: SettlementBadgeStatus }) {
   return (
     <Badge tone={SETTLEMENT_TONE[status]}>{SETTLEMENT_LABEL[status]}</Badge>
   );

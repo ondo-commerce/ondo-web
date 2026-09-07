@@ -6,8 +6,9 @@ import { formatNumber } from "@/shared/lib/format";
 /**
  * 세그먼트 A — 거래처 하나의 주문별 정산 상태 표(`GET /orders?retailerId`).
  *
- * `정산 상태`와 `미수 잔액`은 **서버값**이다(`settlementStatus`·`outstandingAmount`).
- * 입금을 배분하면 재조회로 두 열이 함께 움직인다 — 화면에서 다시 계산하지 않는다.
+ * `정산 상태`와 `미수 잔액`은 출고분이 있는 주문이면 **서버값**(`settlementStatus`·`outstandingAmount`)이고,
+ * 출고 전 주문은 `미출고`·0이다(`derive.toOrderView` — 거래처 행의 원장 잔액과 같은 정의).
+ * 입금을 배분하면 재조회로 두 열이 함께 움직인다 — 화면에서 배정액을 빼지 않는다.
  *
  * 행 순서는 서버 순서다. 배분 표만 FIFO(주문 일시 오래된 순)로 다시 정렬한다.
  */

@@ -77,7 +77,7 @@ export interface MockOrder {
   items: MockLine[];
   /**
    * 입금 배정액 합(`payment_allocation`). 정산 목(`./settlement`)의 `POST /payments`가 올린다.
-   * 정산 상태·미수 잔액은 여기서 파생한다 — 시드(V900)엔 입금이 없어 전부 0
+   * 정산 상태·미수 잔액은 출고된 금액(`shippedQty`)과 이것에서 파생한다 — 시드(V900)엔 입금이 없어 전부 0
    */
   allocatedAmount: number;
 }
@@ -317,26 +317,37 @@ export function shipMockPacking(packing: MockPacking): void {
   }
 }
 
-/** 주문 금액 = Σ 수량 × 단가. 정산 목이 배분 상한(미수)을 잴 때도 쓴다 */
+/** 주문 금액 = Σ 수량 × 단가 */
 export function mockOrderAmount(order: MockOrder): number {
   return sum(order.items, (l) => l.qty * l.unitPrice);
 }
 
 /**
- * 주문 하나의 정산 파생값 — 스펙 설명이 없어 가정한 규칙(04-wire §3): 미수 = 주문 금액 − 배정액,
- * 상태는 배정액이 0이면 `UNPAID`, 주문 금액 미만이면 `PARTIALLY_SETTLED`, 채우면 `SETTLED`.
+ * 출고된 금액 = Σ 출고 수량 × 단가. 정산 목의 판매(`SALE`) 원장 줄이 쌓는 금액과 같은 식이라
+ * 주문별 미수의 합이 소매처 원장 잔액과 맞는다. 정산 목이 배분 상한(미수)을 잴 때도 이것이다
+ */
+export function mockShippedAmount(order: MockOrder): number {
+  return sum(order.items, (l) => l.shippedQty * l.unitPrice);
+}
+
+/**
+ * 주문 하나의 정산 파생값 — 스펙 설명이 없어 가정한 규칙(04-wire §3-6). **출고분 기준 한 정의**:
+ * 미수 = 출고된 금액 − 배정액. 출고 확정이 "재고가 줄고 미수가 생기는 유일한 지점"(스펙)이라
+ * 확정만 되고 안 나간 주문은 미수 0이고, 배분도 받을 수 없다(정산 목이 `ALLOCATION_EXCEEDS_OUTSTANDING`).
+ * 상태는 배정액이 0이면 `UNPAID`, 출고 금액 미만이면 `PARTIALLY_SETTLED`, 채우면 `SETTLED` —
+ * 부분 출고 뒤 그만큼 다 받았다가 나머지가 더 나가면 다시 `PARTIALLY_SETTLED`로 돌아온다.
  */
 export function mockOrderSettlement(order: MockOrder): {
   settlementStatus: WholesaleSchema<"OrderSummaryResponse">["settlementStatus"];
   outstandingAmount: number;
 } {
-  const amount = mockOrderAmount(order);
-  const outstanding = Math.max(amount - order.allocatedAmount, 0);
+  const shipped = mockShippedAmount(order);
+  const outstanding = Math.max(shipped - order.allocatedAmount, 0);
   return {
     settlementStatus:
       order.allocatedAmount <= 0
         ? "UNPAID"
-        : order.allocatedAmount < amount
+        : order.allocatedAmount < shipped
           ? "PARTIALLY_SETTLED"
           : "SETTLED",
     outstandingAmount: outstanding,
