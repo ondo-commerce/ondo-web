@@ -75,6 +75,11 @@ export interface MockOrder {
   receiveBy: WholesaleSchema<"OrderDetailResponse">["receiveBy"];
   status: StoredStatus;
   items: MockLine[];
+  /**
+   * 입금 배정액 합(`payment_allocation`). 정산 목(`./settlement`)의 `POST /payments`가 올린다.
+   * 정산 상태·미수 잔액은 여기서 파생한다 — 시드(V900)엔 입금이 없어 전부 0
+   */
+  allocatedAmount: number;
 }
 
 /**
@@ -178,6 +183,7 @@ function seedOrders(): MockOrder[] {
       status: "CONFIRMED",
       // 재고 0이라 통째로 미송
       items: [line(8001, 3003, 4, 13500, 0, 0, true)],
+      allocatedAmount: 0,
     },
     {
       id: 7002,
@@ -189,6 +195,7 @@ function seedOrders(): MockOrder[] {
       receiveBy: "RETAILER",
       status: "CONFIRMED",
       items: [line(8002, 3011, 1, 31000, 0, 0, true)],
+      allocatedAmount: 0,
     },
     {
       id: 7003,
@@ -201,6 +208,7 @@ function seedOrders(): MockOrder[] {
       status: "NEW",
       // 시드는 신규 주문에도 OPEN 미송을 심어 뒀다(9003). 그대로 옮긴다
       items: [line(8003, 3019, 2, 45000, 0, 0, true)],
+      allocatedAmount: 0,
     },
     {
       id: 7004,
@@ -213,6 +221,7 @@ function seedOrders(): MockOrder[] {
       status: "CONFIRMED",
       // 다 받았다. 미송이 해소된 줄(RESOLVED)
       items: [line(8004, 3002, 3, 12500, 3, 3, false)],
+      allocatedAmount: 0,
     },
     {
       id: 7005,
@@ -224,6 +233,7 @@ function seedOrders(): MockOrder[] {
       receiveBy: "RETAILER",
       status: "CONFIRMED",
       items: [line(8005, 3003, 9, 13500, 0, 0, true)],
+      allocatedAmount: 0,
     },
   ];
 }
@@ -237,6 +247,8 @@ function seedOrders(): MockOrder[] {
  */
 export const SEED_SHIPPED_OUTBOUND_ID = 8801;
 export const SEED_SHIPPED_PACKING_CREATED_AT = "2026-09-03T10:00:00+09:00";
+/** 시드 봉투 8801의 출고 시각(포장 다음 날, 가정값). 출고 목의 봉투와 정산 목의 판매 원장 줄이 같은 값을 본다 */
+export const SEED_SHIPPED_AT = "2026-09-04T10:00:00+09:00";
 
 function seedPackings(): MockPacking[] {
   return [
@@ -303,6 +315,37 @@ export function shipMockPacking(packing: MockPacking): void {
       for (const other of o.items)
         if (other.variantId === l.variantId) other.stockQty -= item.qty;
   }
+}
+
+/** 주문 금액 = Σ 수량 × 단가. 정산 목이 배분 상한(미수)을 잴 때도 쓴다 */
+export function mockOrderAmount(order: MockOrder): number {
+  return sum(order.items, (l) => l.qty * l.unitPrice);
+}
+
+/**
+ * 주문 하나의 정산 파생값 — 스펙 설명이 없어 가정한 규칙(04-wire §3): 미수 = 주문 금액 − 배정액,
+ * 상태는 배정액이 0이면 `UNPAID`, 주문 금액 미만이면 `PARTIALLY_SETTLED`, 채우면 `SETTLED`.
+ */
+export function mockOrderSettlement(order: MockOrder): {
+  settlementStatus: WholesaleSchema<"OrderSummaryResponse">["settlementStatus"];
+  outstandingAmount: number;
+} {
+  const amount = mockOrderAmount(order);
+  const outstanding = Math.max(amount - order.allocatedAmount, 0);
+  return {
+    settlementStatus:
+      order.allocatedAmount <= 0
+        ? "UNPAID"
+        : order.allocatedAmount < amount
+          ? "PARTIALLY_SETTLED"
+          : "SETTLED",
+    outstandingAmount: outstanding,
+  };
+}
+
+/** 입금 배정 — 정산 목의 `POST /payments`가 검증을 끝낸 뒤 부른다. 상한 검증은 부르는 쪽 */
+export function allocateMockPayment(order: MockOrder, amount: number): void {
+  order.allocatedAmount += amount;
 }
 
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
@@ -376,12 +419,12 @@ function detailResponse(
     expectedPaymentMethod: order.paymentMethod,
     receiveBy: order.receiveBy,
     status: { key: f.key, label: STATUS_LABEL[f.key] },
-    // 원장이 비어 있어 전부 UNPAID(서버 `OrderSummaryReader` 설명)
-    settlementStatus: "UNPAID",
+    // 정산 목의 입금 배정에서 파생한다(시드는 입금이 없어 전부 UNPAID)
+    settlementStatus: mockOrderSettlement(order).settlementStatus,
     isConfirmable: f.isConfirmable,
     isCancellable: f.isCancellable,
     isPackable: f.isPackable,
-    orderAmount: sum(order.items, (l) => l.qty * l.unitPrice),
+    orderAmount: mockOrderAmount(order),
     totalQty: sum(order.items, (l) => l.qty),
     items: order.items.map(itemResponse),
   };
@@ -400,10 +443,9 @@ function summaryResponse(
     retailerName: order.retailerName,
     summaryProductName: first ? `${first.productName} (${first.color})` : "",
     additionalItemCount: Math.max(order.items.length - 1, 0),
-    orderAmount: sum(order.items, (l) => l.qty * l.unitPrice),
+    orderAmount: mockOrderAmount(order),
     status: { key: f.key, label: STATUS_LABEL[f.key] },
-    settlementStatus: "UNPAID",
-    outstandingAmount: 0,
+    ...mockOrderSettlement(order),
     isConfirmable: f.isConfirmable,
     isCancellable: f.isCancellable,
     isPackable: f.isPackable,
@@ -560,6 +602,7 @@ export const orderHandlers = [
     const url = new URL(request.url);
     const filter = url.searchParams.get("filter");
     const q = url.searchParams.get("q");
+    const retailerId = url.searchParams.get("retailerId");
     const settlement = url.searchParams.get("settlementStatus");
     const page = Number(url.searchParams.get("page") ?? 0);
     const size = Number(url.searchParams.get("size") ?? 20);
@@ -573,8 +616,16 @@ export const orderHandlers = [
 
     const rows = orders
       .filter((o) => !filter || filter === "ALL" || statusKey(o) === filter)
-      // 원장이 비어 있어 전부 UNPAID다 — 다른 정산 상태를 걸면 0건
-      .filter(() => !settlement || settlement === "UNPAID")
+      // 정산 탭 전용(스펙): `retailerId`를 넣으면 그 소매처의 **확정 주문만**(신규·취소 제외)
+      .filter(
+        (o) =>
+          retailerId === null ||
+          (o.retailerId === Number(retailerId) && o.status === "CONFIRMED"),
+      )
+      .filter(
+        (o) =>
+          !settlement || mockOrderSettlement(o).settlementStatus === settlement,
+      )
       .filter((o) => matchesQuery(o, q))
       .sort((a, b) => b.orderedAt.localeCompare(a.orderedAt));
 
