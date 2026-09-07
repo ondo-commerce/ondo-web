@@ -5,7 +5,7 @@
 export { SettlementListView } from "./components/SettlementListView";
 export type {
   LedgerEntry,
+  ReceivableRetailer,
   SettlementOrder,
   SettlementStatus,
-  TradeRelation,
 } from "./types";
