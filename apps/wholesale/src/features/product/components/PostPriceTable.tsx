@@ -3,7 +3,7 @@
 import { ColorDot, Input, Table } from "@ondo/ui";
 import { useState } from "react";
 import { INVALID_INPUT_CLASS } from "../constants";
-import { EMPTY_PRICE_VALUE, isIntegerText } from "../derive";
+import { EMPTY_PRICE_VALUE, isIntegerInput, isPriceMissing } from "../derive";
 import type { PriceRow, PriceValue } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
@@ -20,9 +20,9 @@ import { formatNumber } from "@/shared/lib/format";
  *
  * 입력 칸은 `type="text"` + `inputMode="numeric"`이고 값은 **친 글자 그대로** 든다.
  * `type="number"`나 `Number(e.target.value)`는 `45.5`를 `455`로, `-3`을 `3`으로 바꿔
- * 사장이 친 값과 다른 값을 저장한다(wire-product F2). 정수가 아니면 칸이 빨개지고
- * 저장이 막힌다(`validateProductForm`). 칸마다 문구를 달지 않는다 — 표 아래 한 줄이
- * 이유를 말하고 어느 칸인지는 테두리가 가리킨다.
+ * 사장이 친 값과 다른 값을 저장한다(wire-product F2). 정수가 아니거나 자릿수를 넘으면
+ * 칸이 빨개지고 저장이 막힌다(`validateProductForm`). 칸마다 문구를 달지 않는다 —
+ * 표 아래 한 줄이 이유를 말하고 어느 칸인지는 테두리가 가리킨다.
  */
 export function PostPriceTable({
   rows,
@@ -32,6 +32,7 @@ export function PostPriceTable({
   disabled = false,
   showAvgCost = true,
   describedBy,
+  flagMissingPrice = false,
 }: {
   rows: PriceRow[];
   values: Record<string, PriceValue>;
@@ -50,8 +51,14 @@ export function PostPriceTable({
    * 0원으로 채워 보여주면 "원가가 0인 상품"으로 읽히므로 열째로 뺀다.
    */
   showAvgCost?: boolean;
-  /** 서버가 가격을 지적했을 때(`PRICE_REQUIRED`) 그 문구의 id. 표 전체가 그 설명을 받는다 */
+  /** 가격표 오류 문구(`listing.variantPrices`)의 id. 표 전체가 그 설명을 받는다 */
   describedBy?: string;
+  /**
+   * 빈 판매가 칸(=0원)도 빨갛게 칠할지. **저장을 누른 뒤에만** 켠다 — 처음부터 켜면
+   * 아직 안 친 칸이 전부 빨개서 표를 열자마자 틀린 화면이 된다. 판매가 0은 서버가
+   * 안 막으므로(dev-verify F6) 저장이 막힌 이유를 칸이 가리켜야 한다.
+   */
+  flagMissingPrice?: boolean;
 }) {
   /*
    * 일괄 입력 칸의 값. 폼 값이 아니라 이 표만의 상태다 — 저장에 실리는 건 행마다
@@ -70,7 +77,7 @@ export function PostPriceTable({
       className={INVALID_INPUT_CLASS}
       disabled={disabled}
       value={applyAll[field]}
-      aria-invalid={!isIntegerText(applyAll[field])}
+      aria-invalid={!isIntegerInput(applyAll[field])}
       onChange={(e) => {
         setApplyAll((prev) => ({ ...prev, [field]: e.target.value }));
         onApplyAll(field, e.target.value);
@@ -144,7 +151,7 @@ export function PostPriceTable({
                   className={INVALID_INPUT_CLASS}
                   disabled={disabled}
                   value={value.orderLimit}
-                  aria-invalid={!isIntegerText(value.orderLimit)}
+                  aria-invalid={!isIntegerInput(value.orderLimit)}
                   onChange={(e) =>
                     onChange(row.id, { ...value, orderLimit: e.target.value })
                   }
@@ -164,7 +171,10 @@ export function PostPriceTable({
                   className={INVALID_INPUT_CLASS}
                   disabled={disabled}
                   value={value.price}
-                  aria-invalid={!isIntegerText(value.price)}
+                  aria-invalid={
+                    !isIntegerInput(value.price) ||
+                    (flagMissingPrice && isPriceMissing(value.price))
+                  }
                   onChange={(e) =>
                     onChange(row.id, { ...value, price: e.target.value })
                   }

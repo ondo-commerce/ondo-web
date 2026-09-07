@@ -6,6 +6,8 @@ import {
   PAGE_SIZE,
   POST_FILTER_ALL,
   POST_FILTER_VALUES,
+  PRICE_INPUT_MAX,
+  PRICE_INPUT_MAX_DIGITS,
   PRODUCT_FIELD_ORDER,
   type PostFilterValue,
 } from "./constants";
@@ -29,6 +31,7 @@ import type {
   SkuSize,
   SkuView,
 } from "./types";
+import { formatNumber } from "@/shared/lib/format";
 
 /* ------------------------------------------------------------------------
  * wire → 뷰
@@ -265,30 +268,81 @@ export function isIntegerText(text: string): boolean {
   return /^\d*$/.test(text);
 }
 
-/** `isIntegerText`를 통과한 문자열만 받는다. 빈 칸은 0 — 주문 제한 0 = 무제한, 가격 0은 서버가 `PRICE_REQUIRED`로 잡는다 */
+/**
+ * 정수 글자가 상한 안인가. **자릿수로 본다** — `PRICE_INPUT_MAX_DIGITS`자리면 전부
+ * `PRICE_INPUT_MAX` 이하다. 한 글자씩 쳐도, 붙여넣어도 같은 판정이라 10자리가 되는
+ * 순간 칸이 빨개진다.
+ */
+export function isWithinIntegerMax(text: string): boolean {
+  return text.length <= PRICE_INPUT_MAX_DIGITS;
+}
+
+/** 칸이 지금 빨개야 하는가 — 정수가 아니거나 상한을 넘었다. 가격표의 `aria-invalid`가 이것이다 */
+export function isIntegerInput(text: string): boolean {
+  return isIntegerText(text) && isWithinIntegerMax(text);
+}
+
+/**
+ * `isIntegerText`를 통과한 문자열만 받는다. 빈 칸은 0 — 주문 제한 0 = 무제한.
+ * 판매가 0은 **서버가 안 막는다**(dev-verify F6: 그대로 0원 ON_SALE이 된다). 그래서
+ * 판매가는 보내기 전에 `missingPriceRowIds`로 잡는다.
+ */
 export function parseIntegerText(text: string): number {
   return text === "" ? 0 : Number(text);
 }
 
+/** 판매가가 비었나. 빈 칸과 `0`은 같은 뜻이다 — 둘 다 0원으로 나간다 */
+export function isPriceMissing(text: string): boolean {
+  return isIntegerText(text) && parseIntegerText(text) === 0;
+}
+
 /**
- * 요청에 실릴 행(옵션 매트릭스의 색×사이즈) 가운데 정수가 아닌 값이 든 행의 id.
+ * 요청에 실릴 행(옵션 매트릭스의 색×사이즈) 가운데 `failed`에 걸리는 행의 id.
  * `prices`에 남은 옛 키(지운 색)는 보지 않는다 — 안 보낼 칸이 저장을 막으면 안 된다.
+ * 아직 안 친 칸은 빈 값으로 본다(요청에도 그렇게 실린다).
  */
-export function invalidPriceRowIds(
+function priceRowIdsWhere(
   product: ProductFormValue,
   post: PostFormValue,
+  failed: (value: PriceValue) => boolean,
 ): string[] {
   return product.options.flatMap((option) =>
     option.sizes
       .map((size) => priceRowId(option.color.id, size))
-      .filter((id) => {
-        const value = post.prices[id];
-        return (
-          value !== undefined &&
-          !(isIntegerText(value.price) && isIntegerText(value.orderLimit))
-        );
-      }),
+      .filter((id) => failed(post.prices[id] ?? EMPTY_PRICE_VALUE)),
   );
+}
+
+/** 정수가 아닌 글자(소수점·부호·쉼표)가 든 행 */
+export function invalidPriceRowIds(
+  product: ProductFormValue,
+  post: PostFormValue,
+): string[] {
+  return priceRowIdsWhere(
+    product,
+    post,
+    (v) => !(isIntegerText(v.price) && isIntegerText(v.orderLimit)),
+  );
+}
+
+/** 정수지만 자릿수 상한을 넘은 행. 그대로 보내면 서버가 int32 역직렬화에서 500이다 */
+export function oversizedPriceRowIds(
+  product: ProductFormValue,
+  post: PostFormValue,
+): string[] {
+  return priceRowIdsWhere(
+    product,
+    post,
+    (v) => !(isWithinIntegerMax(v.price) && isWithinIntegerMax(v.orderLimit)),
+  );
+}
+
+/** 판매가가 빈 칸·0인 행. 사이즈를 켠 SKU 전부가 대상이다 */
+export function missingPriceRowIds(
+  product: ProductFormValue,
+  post: PostFormValue,
+): string[] {
+  return priceRowIdsWhere(product, post, (v) => isPriceMissing(v.price));
 }
 
 /** 상품에 담긴 값을 폼 초기값으로 편다 */
@@ -329,11 +383,13 @@ export function toPostForm(product: ProductView): PostFormValue {
 
 /**
  * 게시글 요청 본문. `variantPrices`는 옵션 매트릭스의 **모든** 색×사이즈를 채운다 —
- * 스펙: "전 variant를 빠짐없이". 가격표에 아직 안 친 칸은 0으로 간다(서버가
- * `PRICE_REQUIRED`로 돌려주고, 그 오류는 가격표 위에 붙는다).
+ * 스펙: "전 variant를 빠짐없이". 판매가가 빈 행은 `validateProductForm`이 먼저 막는다
+ * (서버는 0원을 그대로 받아 게시한다 — dev-verify F6).
  *
- * `existing`을 주면(수정) 색상 id + 사이즈가 같은 기존 SKU의 `variantId`를 붙인다 —
- * 그래야 서버가 새 variant를 만들지 않고 기존 것을 고친다.
+ * 행이 SKU를 가리키는 방법은 **한쪽뿐**이다(서버 `targetSpecified`: "variantId 또는
+ * (colorId, size) 중 한쪽만"). `existing`에 색상 id + 사이즈가 같은 SKU가 있으면(수정)
+ * `variantId`만 실어 서버가 기존 것을 고치게 하고, 없으면(등록·새로 켠 사이즈)
+ * `colorId`+`size`만 실어 새 variant를 만들게 한다. 둘을 같이 실으면 400이다(dev-verify F2).
  */
 export function toListingRequest(
   product: ProductFormValue,
@@ -352,13 +408,11 @@ export function toListingRequest(
           (s) => s.colorId === option.color.id && s.size === size,
         );
         // 정수 문자열이라는 건 `validateProductForm`이 먼저 보장한다
-        return {
-          ...(known ? { variantId: known.id } : {}),
-          colorId: option.color.id,
-          size,
-          salePrice: parseIntegerText(value?.price ?? ""),
-          orderLimit: parseIntegerText(value?.orderLimit ?? ""),
-        };
+        const salePrice = parseIntegerText(value?.price ?? "");
+        const orderLimit = parseIntegerText(value?.orderLimit ?? "");
+        return known
+          ? { variantId: known.id, salePrice, orderLimit }
+          : { colorId: option.color.id, size, salePrice, orderLimit };
       }),
     ),
   };
@@ -463,9 +517,14 @@ export function toUpdateRequest(
 export type ProductFormErrors = FormErrors<ProductField>;
 
 /**
- * 보내기 전에 잡는 것 — **서버에 못 보낼 값**만. 리프 카테고리가 없으면 `categoryId`가
- * NaN이 되고, 옵션이 없으면 SKU가 0개다. 나머지 규칙(길이·가격)은 서버 검증에 맡기고
- * 그 답을 칸에 붙인다 — 규칙을 두 벌 들면 한쪽만 바뀐다.
+ * 보내기 전에 잡는 것 — **서버에 못 보낼 값**과 **서버가 안 잡아 주는 값.** 리프
+ * 카테고리가 없으면 `categoryId`가 NaN이 되고, 옵션이 없으면 SKU가 0개다. 가격표는
+ * 정수가 아니면 못 보내고, 자릿수를 넘기면 서버가 500을 내고, 판매가 0은 서버가 그대로
+ * 게시한다(dev-verify F3·F6) — 셋 다 여기서 막는다. 나머지 규칙(길이)은 서버 검증에
+ * 맡기고 그 답을 칸에 붙인다 — 규칙을 두 벌 들면 한쪽만 바뀐다.
+ *
+ * 가격표 오류는 한 번에 하나만 말한다. 정수 아님 → 자릿수 → 판매가 없음 순서다 —
+ * 앞의 것을 못 고치면 뒤의 판정이 의미가 없다.
  */
 export function validateProductForm(
   product: ProductFormValue,
@@ -478,11 +537,25 @@ export function validateProductForm(
     errors.colorOptions = "색상을 고르고 사이즈를 하나 이상 켜 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
-  // 정수가 아닌 글자는 서버에 못 보낸다(int32). 어느 칸인지는 칸의 aria-invalid가 가리킨다
-  if (post && invalidPriceRowIds(product, post).length > 0)
-    errors["listing.variantPrices"] =
-      "판매가와 주문 제한은 숫자만 입력해 주세요. 소수점·쉼표·부호는 뺍니다.";
+  if (post) {
+    const priceError = priceTableError(product, post);
+    if (priceError) errors["listing.variantPrices"] = priceError;
+  }
   return errors;
+}
+
+/** 가격표 아래 한 줄. 어느 칸인지는 칸의 aria-invalid가 가리킨다(`PostPriceTable`) */
+function priceTableError(
+  product: ProductFormValue,
+  post: PostFormValue,
+): string | null {
+  if (invalidPriceRowIds(product, post).length > 0)
+    return "판매가와 주문 제한은 숫자만 입력해 주세요. 소수점·쉼표·부호는 뺍니다.";
+  if (oversizedPriceRowIds(product, post).length > 0)
+    return `판매가와 주문 제한은 ${formatNumber(PRICE_INPUT_MAX)}까지 입력할 수 있어요.`;
+  if (missingPriceRowIds(product, post).length > 0)
+    return "판매가를 입력해 주세요. 0원으로는 마켓에 올릴 수 없어요.";
+  return null;
 }
 
 /**

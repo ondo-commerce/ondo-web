@@ -251,6 +251,8 @@ export function PostFormPanel({
                     ? errorId("listing.variantPrices")
                     : undefined
                 }
+                /* 오류가 붙어 있는 동안만. 칸을 고치면 `clearPostErrors`가 오류를 지워 같이 꺼진다 */
+                flagMissingPrice={errors["listing.variantPrices"] !== undefined}
                 onChange={(id, next) =>
                   onChange({
                     ...value,

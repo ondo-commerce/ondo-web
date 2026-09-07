@@ -105,6 +105,18 @@ export const POST_FILTER_LABEL: Record<PostFilterValue, string> = {
 };
 
 /**
+ * 가격표 칸(판매가·주문 제한)의 **자릿수 상한.** 9자리 = 최대 999,999,999.
+ *
+ * 스펙은 둘 다 `int32`(2,147,483,647)인데 그 숫자를 사장에게 보여 줄 수는 없다. 자릿수로
+ * 자르면 "9자리까지"라는 한 마디로 설명되고, 9자리는 전부 int32 안이다. 10자리를
+ * 그대로 보내면 서버가 역직렬화에서 500을 낸다(dev-verify F3) — 칸 오류로 먼저 막는다.
+ * `maxLength`로 자르지 않는 이유: 붙여넣은 `3000000000`이 `300000000`으로 조용히
+ * 바뀌어 친 값과 다른 값이 저장된다(가격표가 문자열을 드는 이유와 같다).
+ */
+export const PRICE_INPUT_MAX_DIGITS = 9;
+export const PRICE_INPUT_MAX = 10 ** PRICE_INPUT_MAX_DIGITS - 1;
+
+/**
  * 서버 검증 실패(`errors[].field`)를 폼 칸에 붙일 때 아는 이름들. 순서는 화면 순서 —
  * 첫 오류 칸으로 포커스를 옮길 때 이 순서로 찾는다.
  *
