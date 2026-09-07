@@ -4,6 +4,7 @@ import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import {
   ACTIVE_ORDER_STATUSES,
   ACTIVE_SETTLEMENT_STATUSES,
+  LINE_FILTER_ALL,
   ORDER_ERROR_TEXT,
   PAGE_SIZE,
   STATUS_FILTER_ALL,
@@ -11,6 +12,7 @@ import {
   type SettlementFilterValue,
 } from "./constants";
 import type {
+  LineFilter,
   OrderConfirmRequest,
   OrderDetail,
   OrderFilter,
@@ -288,9 +290,68 @@ export function shipQty(inputs: ShipInputs, line: OrderLineView): number {
   return parseNumberInput(inputs[line.id] ?? "") ?? 0;
 }
 
-/** 입력 맵 전체 합계. 0이면 포장 준비를 눌러도 담을 것이 없다 */
-export function totalShipQty(order: OrderView, inputs: ShipInputs): number {
-  return order.lines.reduce((sum, line) => sum + shipQty(inputs, line), 0);
+/* ------------------------------------------------------------------------
+ * 라인 필터. 표가 무엇을 보여 주는지와 요청이 무엇을 읽는지가 **같은 함수**를 거친다 —
+ * 표만 거르고 요청은 입력 맵 전체를 읽으면 필터로 가린 라인의 수량이 사장 모르게
+ * 확정된다(F10). 그래서 필터는 표 안 useState가 아니라 액션까지 닿는 곳에 있다.
+ * ---------------------------------------------------------------------- */
+
+/** 이 라인이 지금 필터로 보이는가 */
+export function isLineVisible(
+  line: OrderLineView,
+  filter: LineFilter,
+): boolean {
+  return (
+    (filter.color === LINE_FILTER_ALL || line.color === filter.color) &&
+    (filter.size === LINE_FILTER_ALL || line.size === filter.size)
+  );
+}
+
+/** 표에 그릴 라인 */
+export function visibleLines(
+  order: OrderView,
+  filter: LineFilter,
+): OrderLineView[] {
+  return order.lines.filter((line) => isLineVisible(line, filter));
+}
+
+/**
+ * 요청·미리보기·합계가 읽는 수량. **가려진 라인은 안 적은 것으로 본다**(0).
+ * 화면에 없는 값은 요청에도 없어야 사장이 본 것과 서버가 받는 것이 같다.
+ */
+export function sentShipQty(
+  inputs: ShipInputs,
+  line: OrderLineView,
+  filter: LineFilter,
+): number {
+  return isLineVisible(line, filter) ? shipQty(inputs, line) : 0;
+}
+
+/**
+ * 필터로 가려졌는데 입력이 남아 있는 라인 수.
+ * 0이 아니면 액션 줄이 확정·포장을 잠그고 이 수를 보인다 — 조용히 버리지 않는다.
+ * 사장이 색상별로 번갈아 적어 둔 값을 필터를 풀면 전부 되살릴 수 있어야 하기 때문이다.
+ */
+export function hiddenInputCount(
+  order: OrderView,
+  inputs: ShipInputs,
+  filter: LineFilter,
+): number {
+  return order.lines.filter(
+    (line) => !isLineVisible(line, filter) && shipQty(inputs, line) > 0,
+  ).length;
+}
+
+/** 보이는 라인의 입력 합계. 0이면 포장 준비를 눌러도 담을 것이 없다 */
+export function totalShipQty(
+  order: OrderView,
+  inputs: ShipInputs,
+  filter: LineFilter,
+): number {
+  return order.lines.reduce(
+    (sum, line) => sum + sentShipQty(inputs, line, filter),
+    0,
+  );
 }
 
 /**
@@ -328,14 +389,16 @@ export interface BackorderPreview {
  * 지금 입력 상태로 확정하면 미송이 얼마나 잡히는가.
  * **입력하지 않은 잔량은 전부 미송이 된다** — 스펙("배분되지 않은 잔량은 전부 미송")과
  * Figma 프레임 1913:6060의 제목이 같은 규칙이다.
+ * 가려진 라인은 안 적은 것으로 세므로(`sentShipQty`) 요청 본문과 같은 숫자가 나온다.
  */
 export function backorderPreview(
   order: OrderView,
   inputs: ShipInputs,
+  filter: LineFilter,
 ): BackorderPreview {
   return order.lines.reduce<BackorderPreview>(
     (acc, line) => {
-      const rest = unallocatedAfter(line, shipQty(inputs, line));
+      const rest = unallocatedAfter(line, sentShipQty(inputs, line, filter));
       return rest > 0
         ? { skuCount: acc.skuCount + 1, totalQty: acc.totalQty + rest }
         : acc;
@@ -352,16 +415,17 @@ export function backorderPreview(
 /**
  * 주문 확정 요청. **전 라인을 담는다** — 안 적은 라인은 `allocateQty: 0`(전량 미송).
  * 스펙: "`items`는 주문의 전 라인 필수, `allocateQty: 0`은 정상값". 빠뜨리면
- * `ORDER_ITEM_MISSING`이다.
+ * `ORDER_ITEM_MISSING`이다. 필터로 가려진 라인도 담기는 하되 수량은 0이다.
  */
 export function toConfirmRequest(
   order: OrderView,
   inputs: ShipInputs,
+  filter: LineFilter,
 ): OrderConfirmRequest {
   return {
     items: order.lines.map((line) => ({
       orderItemId: line.id,
-      allocateQty: shipQty(inputs, line),
+      allocateQty: sentShipQty(inputs, line, filter),
     })),
   };
 }
@@ -373,12 +437,13 @@ export function toConfirmRequest(
 export function toPackingRequest(
   order: OrderView,
   inputs: ShipInputs,
+  filter: LineFilter,
 ): PackingCreateRequest {
   return {
     items: order.lines
       .map((line) => ({
         orderItemId: line.id,
-        allocateQty: shipQty(inputs, line),
+        allocateQty: sentShipQty(inputs, line, filter),
       }))
       .filter((item) => item.allocateQty >= 1),
   };

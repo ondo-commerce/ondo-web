@@ -1,4 +1,5 @@
 import type {
+  LineFilter,
   OrderFilterKey,
   OrderStatus,
   PaymentMethod,
@@ -112,6 +113,12 @@ export const ORDER_FILTER_LABEL: Record<OrderFilterValue, string> = {
  * (Radix Select는 빈 문자열을 값으로 못 받는다). 재고 탭 `FILTER_ALL`과 같은 규칙이다.
  */
 export const LINE_FILTER_ALL = "전체";
+
+/** 아무것도 안 건 라인 필터. 행을 펼칠 때의 초기값이다 */
+export const LINE_FILTER_NONE: LineFilter = {
+  color: LINE_FILTER_ALL,
+  size: LINE_FILTER_ALL,
+};
 
 /**
  * 파랑 배지(`tone="active"`)를 다는 상태.

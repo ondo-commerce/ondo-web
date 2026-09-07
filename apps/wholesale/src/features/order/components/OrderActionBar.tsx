@@ -11,11 +11,12 @@ import {
 import {
   actionErrorText,
   backorderPreview,
+  hiddenInputCount,
   toConfirmRequest,
   toPackingRequest,
   totalShipQty,
 } from "../derive";
-import type { OrderView, ShipInputs } from "../types";
+import type { LineFilter, OrderView, ShipInputs } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -33,15 +34,23 @@ import { formatNumber } from "@/shared/lib/format";
  *
  * 거절되면(`TRANSITION_NOT_ALLOWED`·`ALLOCATION_EXCEEDS_ORDER` …) 버튼 왼쪽에 사유 한 줄.
  * 확정이 라인 표 아래에 있는 덕에 **라인을 안 보고 확정할 수 없다.**
+ *
+ * 색상·사이즈 필터로 **가려진 라인의 입력은 요청에 안 실린다**(derive.sentShipQty).
+ * 그런 입력이 남아 있으면 확정·포장을 잠그고 몇 줄인지 보인다 — 필터를 풀면 그대로
+ * 살아 있으니 사장이 본 뒤에 보내면 된다. 조용히 버리면 색상별로 번갈아 적은 값이
+ * 사라진다(F10).
  */
 export function OrderActionBar({
   order,
   inputs,
+  filter,
   onDone,
 }: {
   order: OrderView;
   /** 라인 id → 입력 문자열. 확정 다이얼로그의 미송 예고와 요청 본문을 만든다 */
   inputs: ShipInputs;
+  /** 라인 표와 같은 필터. 요청·미리보기·합계가 보이는 라인만 읽게 한다 */
+  filter: LineFilter;
   /** 서버가 받아 준 뒤. 입력값을 비우는 자리 */
   onDone: () => void;
 }) {
@@ -58,11 +67,19 @@ export function OrderActionBar({
   /* 마지막으로 실패한 것 하나만 보인다. 다음 시도에서 지워진다 */
   const failure = confirm.error ?? cancel.error ?? pack.error;
 
-  const preview = backorderPreview(order, inputs);
+  const preview = backorderPreview(order, inputs, filter);
+  const hidden = hiddenInputCount(order, inputs, filter);
+  /* 가려진 입력이 있는 동안은 입력을 먹는 버튼을 잠근다. 취소는 입력과 무관해 그대로 */
+  const locked = busy || hidden > 0;
 
   return (
     <div className="flex items-center gap-3">
-      {failure ? (
+      {hidden > 0 ? (
+        <p role="status" className="text-destructive-strong text-sm">
+          필터로 가려진 라인 {hidden}줄에 입력이 있습니다. 필터를 풀고 확인해
+          주세요.
+        </p>
+      ) : failure ? (
         <p role="alert" className="text-destructive-strong text-sm">
           {actionErrorText(failure)}
         </p>
@@ -79,15 +96,15 @@ export function OrderActionBar({
           </Button>
         ) : null}
         {order.isConfirmable ? (
-          <Button disabled={busy} onClick={() => setConfirmOpen(true)}>
+          <Button disabled={locked} onClick={() => setConfirmOpen(true)}>
             주문 확정
           </Button>
         ) : null}
         {/* 확정된 주문의 잔량을 나눠 담는 자리. 아무것도 안 적었으면 담을 것이 없다 */}
         {order.isPackable ? (
           <Button
-            disabled={busy || totalShipQty(order, inputs) === 0}
-            onClick={() => pack.mutate(toPackingRequest(order, inputs))}
+            disabled={locked || totalShipQty(order, inputs, filter) === 0}
+            onClick={() => pack.mutate(toPackingRequest(order, inputs, filter))}
           >
             포장 준비
           </Button>
@@ -118,7 +135,7 @@ export function OrderActionBar({
         }
         onConfirm={() => {
           setConfirmOpen(false);
-          confirm.mutate(toConfirmRequest(order, inputs));
+          confirm.mutate(toConfirmRequest(order, inputs, filter));
         }}
       />
 

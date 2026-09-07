@@ -1,11 +1,10 @@
 "use client";
 
 import { Chip, Input, Table } from "@ondo/ui";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { AllocatedCheck } from "./AllocatedCheck";
 import { OrderLineFilterBar } from "./OrderLineFilterBar";
 import { QtyDelta } from "./QtyDelta";
-import { LINE_FILTER_ALL } from "../constants";
 import {
   allocatedAfter,
   assignableAfter,
@@ -17,8 +16,14 @@ import {
   shipQty,
   unallocatedAfter,
   unallocatedQty,
+  visibleLines,
 } from "../derive";
-import type { OrderLineView, OrderView, ShipInputs } from "../types";
+import type {
+  LineFilter,
+  OrderLineView,
+  OrderView,
+  ShipInputs,
+} from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -38,32 +43,32 @@ import { formatNumber } from "@/shared/lib/format";
  *   가용재고 0  → 비활성 회색 입력칸
  *   그 외       → 흰 입력칸
  * 취소·출고 완료 국면은 애초에 입력을 받지 않는다(derive.canAllocate — 서버 boolean).
+ *
+ * 색상·사이즈 필터는 **이 표의 상태가 아니다** — 부르는 쪽이 들고 액션 줄에도 같이 준다.
+ * 표만 알고 있으면 가려진 라인의 입력이 확정·포장 요청에 그대로 실린다(F10).
  */
 export function OrderLineTable({
   order,
   inputs,
+  filter,
+  onFilterChange,
   onInputChange,
   footer,
 }: {
   order: OrderView;
   /** 라인 id → 입력 문자열. 빈칸과 0을 구분하려고 문자열 그대로 들고 있는다 */
   inputs: ShipInputs;
+  filter: LineFilter;
+  onFilterChange: (next: LineFilter) => void;
   /** 친 글자 그대로 올린다. 상한 자르기·숫자 검사는 부르는 쪽(derive.clampShipInput) */
   onInputChange: (lineId: number, raw: string) => void;
   /** 표 하단 우측에 붙는 액션(확정·취소·포장 준비). 없는 국면에서는 넘기지 않는다 */
   footer?: ReactNode;
 }) {
-  const [color, setColor] = useState(LINE_FILTER_ALL);
-  const [size, setSize] = useState(LINE_FILTER_ALL);
-
   const colorNames = [...new Set(order.lines.map((l) => l.color))];
   const sizeNames = [...new Set(order.lines.map((l) => l.size))];
 
-  const lines = order.lines.filter(
-    (l) =>
-      (color === LINE_FILTER_ALL || l.color === color) &&
-      (size === LINE_FILTER_ALL || l.size === size),
-  );
+  const lines = visibleLines(order, filter);
 
   const editable = canAllocate(order);
 
@@ -94,10 +99,10 @@ export function OrderLineTable({
       <OrderLineFilterBar
         colors={colorNames}
         sizes={sizeNames}
-        color={color}
-        size={size}
-        onColorChange={setColor}
-        onSizeChange={setSize}
+        color={filter.color}
+        size={filter.size}
+        onColorChange={(color) => onFilterChange({ ...filter, color })}
+        onSizeChange={(size) => onFilterChange({ ...filter, size })}
       />
 
       {lines.length === 0 ? (
