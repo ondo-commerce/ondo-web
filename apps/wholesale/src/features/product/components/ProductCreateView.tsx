@@ -7,7 +7,7 @@ import { useState } from "react";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
-import { fieldId, LIST_PARAM } from "../constants";
+import { LIST_PARAM } from "../constants";
 import {
   clearPostErrors,
   clearProductErrors,
@@ -17,10 +17,10 @@ import {
   toCreateRequest,
   toProductFormErrors,
   validateProductForm,
-  type ProductFormErrors,
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostFormValue, ProductFormValue } from "../types";
+import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
 
@@ -30,13 +30,8 @@ export function ProductCreateView() {
   const [post, setPost] = useState<PostFormValue>(EMPTY_POST_FORM);
   // 체크하면 우측 자리가 안내에서 게시글 폼으로 바뀌고 제출 버튼 문구도 바뀐다
   const [publishToMarket, setPublishToMarket] = useState(false);
-  const [errors, setErrors] = useState<ProductFormErrors>({});
+  const { errors, setErrors, showErrors } = useProductFormErrors();
   const create = useCreateProductMutation();
-
-  const focusField = (found: ProductFormErrors) => {
-    const first = firstInvalidField(found);
-    if (first) document.getElementById(fieldId(first))?.focus();
-  };
 
   /**
    * `POST /products`. 체크를 안 했으면 `listing: null`로 상품만 만든다(스펙).
@@ -45,11 +40,8 @@ export function ProductCreateView() {
   const submit = () => {
     const postToSend = publishToMarket ? post : null;
     const found = validateProductForm(product, postToSend);
-    setErrors(found);
-    if (firstInvalidField(found)) {
-      focusField(found);
-      return;
-    }
+    showErrors(found);
+    if (firstInvalidField(found)) return;
 
     create.mutate(toCreateRequest(product, postToSend), {
       onSuccess: (created) =>
@@ -57,8 +49,7 @@ export function ProductCreateView() {
       onError: (error) => {
         const mapped = toProductFormErrors(error);
         if (mapped) {
-          setErrors(mapped);
-          focusField(mapped);
+          showErrors(mapped);
           return;
         }
         // 칸에 못 붙이는 실패(서버 장애·네트워크). 폼 위 한 줄로

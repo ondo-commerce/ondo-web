@@ -36,8 +36,10 @@ export function PostPriceTable({
   flagMissingPrice = false,
 }: {
   /**
-   * 오류 포커스 대상의 DOM id(`fieldId("listing.variantPrices")`). 표는 원래 포커스를
-   * 못 받으므로 `tabIndex={-1}`을 같이 건다 — 탭 순서엔 안 들어가고 `focus()`로만 온다
+   * 오류 포커스 대상의 DOM id(`fieldId("listing.variantPrices")`). 저장이 막히면
+   * `useProductFormErrors`가 이 안의 **첫 빨간 칸**으로 스크롤·포커스하고, 빨간 칸이
+   * 없을 때만 표 자체로 온다. 표는 원래 포커스를 못 받으므로 `tabIndex={-1}`을 같이
+   * 건다 — 탭 순서엔 안 들어가고 `focus()`로만 온다
    */
   id?: string;
   rows: PriceRow[];

@@ -12,7 +12,7 @@ import {
   useUpdateProductMutation,
 } from "../api/mutations";
 import { useProductDetailQuery } from "../api/queries";
-import { fieldId, LIST_PARAM } from "../constants";
+import { LIST_PARAM } from "../constants";
 import {
   clearPostErrors,
   clearProductErrors,
@@ -23,10 +23,10 @@ import {
   toProductFormErrors,
   toUpdateRequest,
   validateProductForm,
-  type ProductFormErrors,
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView } from "../types";
+import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import { QueryBoundary, QuerySkeleton } from "@/shared/api/QueryBoundary";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
@@ -80,7 +80,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const [status, setStatus] = useState<PostStatus>(
     product.post?.status ?? "ON_SALE",
   );
-  const [errors, setErrors] = useState<ProductFormErrors>({});
+  const { errors, setErrors, showErrors } = useProductFormErrors();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -88,11 +88,6 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const listingStatus = useListingStatusMutation();
   const remove = useDeleteProductMutation();
   const saving = update.isPending || listingStatus.isPending;
-
-  const focusField = (found: ProductFormErrors) => {
-    const first = firstInvalidField(found);
-    if (first) document.getElementById(fieldId(first))?.focus();
-  };
 
   /**
    * 저장 = `PATCH /products/{id}` + (상태가 바뀌었으면) 시즌 종료/재개 호출.
@@ -106,11 +101,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
       productForm,
       sendListing ? postForm : null,
     );
-    setErrors(found);
-    if (firstInvalidField(found)) {
-      focusField(found);
-      return;
-    }
+    showErrors(found);
+    if (firstInvalidField(found)) return;
 
     try {
       await update.mutateAsync(toUpdateRequest(productForm, postForm, product));
@@ -125,8 +117,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
     } catch (error) {
       const mapped = toProductFormErrors(error);
       if (mapped) {
-        setErrors(mapped);
-        focusField(mapped);
+        showErrors(mapped);
         return;
       }
       const described = describeError(error);
