@@ -1,142 +1,78 @@
 "use client";
 
 import { Button, Panel, SearchInput } from "@ondo/ui";
-import { useState } from "react";
-import { AllocationCounterBar } from "./AllocationCounterBar";
-import { BackorderAllocationTable } from "./BackorderAllocationTable";
-import { BackorderTable } from "./BackorderTable";
+import { useEffect, useState, type ReactNode } from "react";
+import { BackorderRowDetail } from "./BackorderRowDetail";
 import { BackorderSummaryCard } from "./BackorderSummaryCard";
+import { BackorderTable } from "./BackorderTable";
 import { EtaFormCard } from "./EtaFormCard";
-import {
-  allocatedQty,
-  applyAllocation,
-  assignableQty,
-  firstComeAllocation,
-  sortByOrderedAt,
-  summarize,
-  totalBackorderQty,
-  unallocatedQty,
-  withAllocation,
-} from "../derive";
-import type { AllocationDraft, BackorderSku } from "../types";
+import { useBackorderSkusQuery } from "../api/queries";
+import { toListQuery, type BackorderListParams } from "../derive";
+import type { AllocationDraft, AllocationDrafts } from "../types";
+import { QueryBoundary } from "@/shared/api/QueryBoundary";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
+
+/** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * 미송 관리 — 좌 목록(미송이 걸린 SKU) + 우 작업 패널.
  *
- * 데이터는 전부 더미라 로딩·에러 상태가 없다. 서버가 붙으면 목록을 받는 자리(skus prop)에서
- * 세 상태를 갈라야 한다.
+ * 검색은 서버가 건다(`GET /backorders/variants?q=`). 목록 정렬도 서버 기본(많이 밀린 SKU 먼저)이다.
+ * 펼친 SKU의 미송 건·요약은 펼치는 순간 따로 부른다(`GET /variants/{id}/backorders`) —
+ * 펼친 행·우측 요약·예상 입고일 폼이 같은 queryKey라 한 번만 받는다.
  *
  * 선택(펼침) 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
+ *
+ * 경계는 셋 — 표·우측 요약·예상 입고일 폼. 실패한 자리만 그 자리에서 실패한다.
+ * 펼친 행의 경계는 행 안(`BackorderRowDetail`)에 있다.
  */
-export function BackorderListView({
-  skus: initialSkus,
-}: {
-  skus: BackorderSku[];
-}) {
-  /*
-   * 배분 확정은 서버가 없어서 로컬 상태로 반영한다. 그래서 목록을 prop 그대로 그리지 않고
-   * state로 들고 있는다 — 확정하면 총 미송 수량과 가용재고가 같이 움직여야 한다.
-   * (재고 탭 InventoryListView의 receive()와 같은 방식)
-   */
-  const [skus, setSkus] = useState(initialSkus);
-  const [query, setQuery] = useState("");
+export function BackorderListView() {
+  const [draft, setDraft] = useState("");
+  /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
+  const [q, setQ] = useState("");
+  /** 1-base. 서버는 0-base라 보낼 때 1 뺀다(derive.toListQuery) */
+  const [page, setPage] = useState(1);
   /**
    * **한 번에 하나만 펼친다.** 우측 요약이 "펼친 SKU 1개"에 종속돼 있어서
    * 둘이 열리면 어느 쪽 요약인지 알 수 없다.
    */
-  const [openSkuId, setOpenSkuId] = useState<string | null>(null);
+  const [openVariantId, setOpenVariantId] = useState<number | null>(null);
   /**
-   * 배분 수량 입력. 펼친 SKU 하나의 것만 들고 있는다 — 아코디언이 하나만 열리므로
-   * 여러 SKU의 입력이 동시에 살아 있을 일이 없고, 남겨 두면 다른 SKU를 펼쳤을 때
-   * 남의 입력이 카운터에 섞인다.
+   * 배분 수량 입력. **SKU별로 든다** — 다른 SKU를 갔다 오거나 접었다 펴도 손으로 고친 값이
+   * 선착순으로 되돌아가면 안 된다(F2: 전화로 한 약속이 화면에서 지워진다).
+   * 행 안(`BackorderRowDetail`)에 두지 않는 이유도 같다 — 접으면 그 컴포넌트가 내려간다.
    */
-  const [draft, setDraft] = useState<AllocationDraft>({});
+  const [drafts, setDrafts] = useState<AllocationDrafts>({});
 
-  /** 펼칠 때 배분 수량을 선착순으로 자동으로 채운다. 접으면 입력을 버린다 */
-  const toggleSku = (sku: BackorderSku) => {
-    const next = openSkuId === sku.id ? null : sku;
-    setOpenSkuId(next?.id ?? null);
-    setDraft(next ? firstComeAllocation(next.lines, assignableQty(next)) : {});
-  };
+  useEffect(() => {
+    const trimmed = draft.trim();
+    if (trimmed === q) return;
+    const timer = setTimeout(() => {
+      setQ(trimmed);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draft, q]);
 
-  /**
-   * 배분 확정. 계산은 `applyAllocation`이 다 하고 여기서는 state만 갈아끼운다.
-   *
-   * 미송이 0이 된 SKU는 목록에서 지운다 — 미송이 없으면 미송 탭에 남아 있을 이유가 없고,
-   * 0행을 남기면 목록이 계속 길어지기만 한다. 그 SKU를 지울 때 아코디언도 같이 닫는다.
-   * 남는 경우에는 줄어든 가용재고 기준으로 배분 수량을 선착순으로 다시 채운다.
-   */
-  const confirmAllocation = (sku: BackorderSku) => {
-    const next = applyAllocation(sku, draft);
-    const cleared = next.lines.length === 0;
+  const params: BackorderListParams = { q, page };
 
-    setSkus((prev) =>
-      cleared
-        ? prev.filter((s) => s.id !== sku.id)
-        : prev.map((s) => (s.id === sku.id ? next : s)),
-    );
+  /* 접어도 입력은 남는다(F2). 버리는 건 배분 확정이 받아들여졌을 때뿐이다 */
+  const toggleSku = (variantId: number) =>
+    setOpenVariantId((prev) => (prev === variantId ? null : variantId));
 
-    if (cleared) setOpenSkuId(null);
-    setDraft(
-      cleared ? {} : firstComeAllocation(next.lines, assignableQty(next)),
-    );
-  };
-
-  /** 예상 입고일 등록. 저장하면 좌측 목록과 요약이 같은 값을 보게 된다 */
-  const saveEta = (skuId: string, eta: string) =>
-    setSkus((prev) => prev.map((s) => (s.id === skuId ? { ...s, eta } : s)));
-
-  const keyword = query.trim().toLowerCase();
-  const visibleSkus = keyword
-    ? skus.filter(
-        (sku) =>
-          sku.productName.toLowerCase().includes(keyword) ||
-          sku.id.toLowerCase().includes(keyword),
-      )
-    : skus;
-
-  /* 우측 두 카드는 **펼친 SKU 1개**에 종속된다. 검색으로 가려진 SKU라도 펼쳐져 있으면
-     그 값이 보여야 하므로 visibleSkus가 아니라 skus에서 찾는다 */
-  const openSku = skus.find((sku) => sku.id === openSkuId) ?? null;
+  const changeDraft = (variantId: number, next: AllocationDraft) =>
+    setDrafts((prev) => ({ ...prev, [variantId]: next }));
 
   /**
-   * 펼친 SKU의 본문. 카운터 3개는 **여기서 한 번만 계산해** 카운터 바와 표에 나눠 준다 —
-   * 두 컴포넌트가 각자 세면 합이 어긋날 수 있고, 어긋나는 순간 사장이 화면을 안 믿는다.
+   * 배분 확정이 받아들여진 뒤. 입력은 **전부 0**으로 둔다 — 선착순으로 다시 채우면 한 번 더
+   * 눌렀을 때 사장이 정하지 않은 배분이 나간다(F1).
+   * 그 SKU의 미송이 다 해소됐으면(`resolvedBackorderIds`) 아코디언도 닫는다 — 목록에서
+   * 사라질 행이라 우측 요약이 남아 있을 이유가 없다. 입력도 지운다(다시 나타나면 선착순부터).
    */
-  const allocationBody = (sku: BackorderSku) => {
-    const lines = sortByOrderedAt(sku.lines);
-    const assignable = assignableQty(sku);
-    const allocated = allocatedQty(draft);
-
-    return (
-      <>
-        <AllocationCounterBar
-          unallocated={unallocatedQty(totalBackorderQty(lines), allocated)}
-          assignable={assignable}
-          allocated={allocated}
-        />
-        <BackorderAllocationTable
-          lines={lines}
-          draft={draft}
-          onChange={(lineId, next) =>
-            setDraft((prev) =>
-              withAllocation(prev, lines, assignable, lineId, next),
-            )
-          }
-        />
-
-        {/* 확인 다이얼로그는 없다 — Figma에 그려져 있지 않다. 대신 배분이 0이면 눌리지 않는다 */}
-        <div className="mt-4 mb-2 flex justify-end">
-          <Button
-            disabled={allocated === 0}
-            onClick={() => confirmAllocation(sku)}
-          >
-            배분 확정
-          </Button>
-        </div>
-      </>
-    );
+  const finishAllocation = (variantId: number, cleared: boolean) => {
+    setDrafts((prev) => ({ ...prev, [variantId]: cleared ? undefined : {} }));
+    if (cleared) setOpenVariantId((prev) => (prev === variantId ? null : prev));
   };
 
   return (
@@ -153,47 +89,125 @@ export function BackorderListView({
               className="mr-auto"
               placeholder="품번·품명 검색"
               aria-label="품번·품명 검색"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
             />
           </div>
 
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
-
-              이 표는 `Panel.Body`를 쓰지 않는다. 머리글을 sticky로 고정하려면 표 자신이
-              세로 스크롤을 받아야 하는데(Table의 stickyHead 주석 참고), Panel.Body가 밖에서
-              또 스크롤을 받으면 막대가 두 개 생긴다. 빈 목록일 때는 흐를 것이 없어서
-              그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
-          {visibleSkus.length === 0 ? (
-            <Panel.Body>
-              <p className="text-muted-foreground py-12 text-center text-sm">
-                검색 결과가 없습니다
-              </p>
-            </Panel.Body>
-          ) : (
-            <BackorderTable
-              skus={visibleSkus}
-              openSkuId={openSkuId}
+          {/* 경계는 표 자리에만. 검색줄은 서버와 무관하게 늘 있어야 한다 */}
+          <QueryBoundary>
+            <BackorderListBody
+              params={params}
+              openVariantId={openVariantId}
               onToggle={toggleSku}
-              renderDetail={allocationBody}
+              onPage={setPage}
+              renderDetail={(variantId) => (
+                <BackorderRowDetail
+                  variantId={variantId}
+                  draft={drafts[variantId]}
+                  onDraftChange={(next) => changeDraft(variantId, next)}
+                  onAllocated={(cleared) =>
+                    finishAllocation(variantId, cleared)
+                  }
+                />
+              )}
             />
-          )}
+          </QueryBoundary>
         </Panel>
       }
       detail={
-        openSku ? (
+        openVariantId !== null ? (
           <>
-            <BackorderSummaryCard summary={summarize(openSku)} />
-            {/* key: 다른 SKU로 바뀌면 입력 중이던 날짜·사유가 남지 않게 상태째 새로 만든다 */}
-            <EtaFormCard
-              key={openSku.id}
-              initialEta={openSku.eta}
-              onSave={(eta) => saveEta(openSku.id, eta)}
-            />
+            {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다 */}
+            <Panel className="shrink-0">
+              <QueryBoundary>
+                <BackorderSummaryCard variantId={openVariantId} />
+              </QueryBoundary>
+            </Panel>
+            <Panel className="shrink-0">
+              <Panel.Title>예상 입고일 등록</Panel.Title>
+              <QueryBoundary>
+                {/* key: 다른 SKU로 바뀌면 입력 중이던 날짜·사유가 남지 않게 상태째 새로 만든다 */}
+                <EtaFormCard key={openVariantId} variantId={openVariantId} />
+              </QueryBoundary>
+            </Panel>
           </>
         ) : undefined
       }
       emptyDetail="좌측에서 미송 SKU를 펼치세요"
     />
+  );
+}
+
+/**
+ * 표 + 페이지 이동. 안에서만 `useSuspenseQuery`를 부른다.
+ */
+function BackorderListBody({
+  params,
+  openVariantId,
+  onToggle,
+  onPage,
+  renderDetail,
+}: {
+  params: BackorderListParams;
+  openVariantId: number | null;
+  onToggle: (variantId: number) => void;
+  onPage: (page: number) => void;
+  renderDetail: (variantId: number) => ReactNode;
+}) {
+  const { data } = useBackorderSkusQuery(toListQuery(params));
+  const totalPages = Math.max(data.meta.totalPages, 1);
+
+  return (
+    <>
+      {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+          stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+          빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+      {data.rows.length === 0 ? (
+        <Panel.Body>
+          <p className="text-muted-foreground py-12 text-center text-sm">
+            {/* 검색어 없이 0건이면 "검색 결과"가 아니라 밀린 게 없는 것이다 */}
+            {params.q === ""
+              ? "미송이 남은 SKU가 없습니다"
+              : "검색 결과가 없습니다"}
+          </p>
+        </Panel.Body>
+      ) : (
+        <BackorderTable
+          rows={data.rows}
+          openVariantId={openVariantId}
+          onToggle={onToggle}
+          renderDetail={renderDetail}
+        />
+      )}
+
+      {/* 서버가 100행씩 자른다. 한 페이지에 다 들어오면(대부분) 이 줄은 없다 */}
+      {totalPages > 1 ? (
+        <nav
+          aria-label="페이지 이동"
+          className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
+        >
+          <span className="text-muted-foreground mr-2">
+            {params.page} / {totalPages}
+          </span>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page <= 1}
+            onClick={() => onPage(params.page - 1)}
+          >
+            이전
+          </Button>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page >= totalPages}
+            onClick={() => onPage(params.page + 1)}
+          >
+            다음
+          </Button>
+        </nav>
+      ) : null}
+    </>
   );
 }

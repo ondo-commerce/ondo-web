@@ -1,16 +1,28 @@
+import { isApiError } from "@ondo/api";
+import { BACKORDER_ERROR_TEXT, PAGE_SIZE } from "./constants";
 import type {
   AllocationDraft,
-  BackorderLine,
+  AllocationRequest,
+  Backorder,
+  BackorderDetailView,
+  BackorderLineView,
+  BackorderList,
   BackorderSku,
+  BackorderSkuView,
+  BackorderStats,
   BackorderSummary,
+  ExpectedInboundRequest,
 } from "./types";
+import { describeError } from "@/shared/api/describeError";
+import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /*
  * 미송 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
  * 같은 숫자가 좌측 목록 · 카운터 바 · 배분 표 · 우측 요약 **네 곳**에서 읽히는데,
  * 흩어 놓으면 한 곳만 고쳐도 화면끼리 숫자가 갈린다. 사장이 화면을 안 믿게 되는 지점이다.
  *
- * 기호: T = 총 미송 수량 · A = 가용재고 · b_i = 주문 i의 미송 수량 · x_i = 배분 수량 입력
+ * 기호: T = 총 미송 수량(stats.backorderQty) · A = 가용재고(stats.availableQty) ·
+ *       b_i = 미송 i의 잔여(remainingQty) · x_i = 배분 수량 입력
  *
  *   배분 완료   = Σ x_i                       ← 입력 따라 실시간
  *   미배분      = T − Σ x_i  (= Σ 잔여 미송)   ← 입력 따라 실시간
@@ -18,29 +30,156 @@ import type {
  *   잔여 미송_i = b_i − x_i
  *   항등식       미배분 + 배분 완료 = T
  *   제약         Σ x_i ≤ A     그리고     0 ≤ x_i ≤ b_i
+ *
+ * T와 A는 서버 값이다. 가용재고의 정의(게이트 G-1)는 서버 계약이 닫았다 — 화면이 빼기 하지 않는다.
  */
 
-/** 총 미송 수량 `T` = Σ 미송 수량. SKU에 필드로 들고 있지 않고 항상 행에서 다시 센다 */
-export function totalBackorderQty(lines: readonly BackorderLine[]): number {
-  return lines.reduce((sum, line) => sum + line.qty, 0);
+/* ------------------------------------------------------------------------
+ * 날짜 표기. 전부 KST 고정 — 사장의 브라우저 시간대가 어디든 동대문 날짜로 읽혀야 한다.
+ * ------------------------------------------------------------------------ */
+
+const KST_DATE = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const KST_MONTH_DAY_TIME = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function partsOf(formatter: Intl.DateTimeFormat, date: Date) {
+  const parts = formatter.formatToParts(date);
+  return (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
 }
 
 /**
- * 가용재고 `A` = 현재고 − 주문처리중. 미송에 **나눠줄 수 있는 실물**의 상한이다.
- *
- * ⚠️ **서버 계약 미확인 — glossary 미등재.** 이 수량의 정의는 아직 확정되지 않았다
- *    (2026-08-24 게이트 결정 G-1). 서버가 이 값을 내려줄지 FE가 두 필드로 계산할지도 미정이라
- *    glossary에 올리지 않고 이 탭 안에서만 `assignableQty`라는 이름으로 쓴다.
- *    화면 라벨은 Figma 실측대로 `가용재고`다.
- *
- * ⚠️ 재고 탭의 `판매가능`(= 현재고 − 주문처리중 − **미송대기**)이 아니다.
- *    저건 미송을 이미 뺀 값이라 배분 상한이 될 수 없고(미송이 재고보다 많으면 음수가 된다),
- *    재고 탭 `availableQty`는 그 음수를 감추지 않는다. 이름을 일부러 다르게 둔 이유다 —
- *    feature 경계상 import도 막혀 있지만, 같은 값으로 오해하는 쪽이 더 위험하다.
+ * `YYYY-MM-DD`(스펙 `format: date`) → `YYYY.MM.DD`. 문자열 치환만 한다 —
+ * `Date`를 만들면 시간대에 따라 하루가 밀린다. 값이 없으면(null) null.
  */
-export function assignableQty(sku: BackorderSku): number {
-  return sku.stock - sku.reservedQty;
+export function formatDate(wire: string | null | undefined): string | null {
+  if (!wire) return null;
+  return wire.replaceAll("-", ".");
 }
+
+/** 화면 입력 `YYYY.MM.DD` → 스펙 `YYYY-MM-DD` */
+export function toWireDate(display: string): string {
+  return display.trim().replaceAll(".", "-");
+}
+
+/** date-time → `YYYY.MM.DD`(KST). 요약의 최초·최근 주문일 */
+export function formatDateOf(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const part = partsOf(KST_DATE, date);
+  return `${part("year")}.${part("month")}.${part("day")}`;
+}
+
+/** date-time → `9월 4일 10:00`(KST). 배분 표의 주문 일시 */
+export function formatOrderedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const part = partsOf(KST_MONTH_DAY_TIME, date);
+  return `${part("month")}월 ${part("day")}일 ${part("hour")}:${part("minute")}`;
+}
+
+/* ------------------------------------------------------------------------
+ * wire → 뷰
+ * ------------------------------------------------------------------------ */
+
+/**
+ * SKU 표기 `상품번호-SKU번호`. 스펙이 숫자 둘(`productNumber`·`variantNumber`)뿐이라
+ * `variantNumber`만 쓰면 상품이 다른 SKU끼리 `1`·`1`로 겹친다. 표기 규칙은 미확정(04-wire.md §3).
+ */
+export function skuCode(productNumber: number, variantNumber: number): string {
+  return `${productNumber}-${variantNumber}`;
+}
+
+export function toSkuView(sku: BackorderSku): BackorderSkuView {
+  return {
+    variantId: sku.variantId,
+    sku: skuCode(sku.productNumber, sku.variantNumber),
+    productName: sku.productName,
+    color: sku.color,
+    size: sku.size,
+    backorderQty: sku.backorderQty,
+    availableQty: sku.availableQty,
+    eta: formatDate(sku.expectedInboundDate),
+  };
+}
+
+export function toLineView(row: Backorder): BackorderLineView {
+  return {
+    id: row.id,
+    orderNo: String(row.orderNumber),
+    orderedAt: row.orderedAt,
+    orderedAtLabel: formatOrderedAt(row.orderedAt),
+    elapsedDays: row.elapsedDays,
+    customer: row.retailerName,
+    // 화면의 미송 수량은 남은 것이다. `qty`는 원래 미송량이라 배분 뒤에도 안 줄어든다
+    qty: row.remainingQty,
+  };
+}
+
+export function toSummary(stats: BackorderStats): BackorderSummary {
+  return {
+    sku: skuCode(stats.productNumber, stats.variantNumber),
+    totalQty: stats.backorderQty,
+    orderCount: stats.orderCount,
+    customerCount: stats.retailerCount,
+    assignable: stats.availableQty,
+    eta: formatDate(stats.expectedInboundDate),
+    etaReason: stats.expectedInboundReason ?? null,
+    firstOrderedDate: formatDateOf(stats.firstOrderedAt),
+    lastOrderedDate: formatDateOf(stats.lastOrderedAt),
+    totalAmount: stats.backorderAmount,
+  };
+}
+
+/** 펼침 응답 통째로 → 정렬된 행 + 요약. 표·카운터·요약·요청이 전부 이것 하나를 본다 */
+export function toDetailView(list: BackorderList): BackorderDetailView {
+  return {
+    lines: sortByOrderedAt(list.data.map(toLineView)),
+    summary: toSummary(list.stats),
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 목록 요청
+ * ------------------------------------------------------------------------ */
+
+export interface BackorderListParams {
+  q: string;
+  /** 1-base. 서버는 0-base라 보낼 때 1 뺀다 */
+  page: number;
+}
+
+/** 서버에 보내는 모양이자 queryKey의 일부. `q`는 빈 문자열이면 아예 안 보낸다 */
+export interface BackorderListQuery {
+  q: string | undefined;
+  page: number;
+  size: number;
+}
+
+export function toListQuery(params: BackorderListParams): BackorderListQuery {
+  return {
+    q: params.q === "" ? undefined : params.q,
+    page: Math.max(params.page - 1, 0),
+    size: PAGE_SIZE,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 배분 공식
+ * ------------------------------------------------------------------------ */
 
 /** 배분 완료 = Σ 배분 수량 입력 */
 export function allocatedQty(draft: AllocationDraft): number {
@@ -57,34 +196,37 @@ export function unallocatedQty(total: number, allocated: number): number {
 }
 
 /** 잔여 미송_i = 미송 수량 − 배분 수량. 이 값들의 합이 곧 미배분이다 */
-export function remainingQty(line: BackorderLine, allocated: number): number {
+export function remainingQty(
+  line: BackorderLineView,
+  allocated: number,
+): number {
   return line.qty - allocated;
 }
 
 /**
- * 주문 일시 오래된 순 = 미송 경과일 큰 순. glossary §4.8의 "선착순이 기본형"이 이 정렬이다.
- * 화면에 정렬 컨트롤이 없으므로 이 순서가 유일한 순서다.
+ * 주문 일시 오래된 순 = 선착순. glossary §4.8의 "선착순이 기본형"이 이 정렬이다.
+ * 서버 기본은 `createdAt,asc`(미송 발생 순)라 화면 규칙과 다를 수 있어 여기서 다시 정렬한다
+ * (스펙: "제안일 뿐 강제가 아니다"). 화면에 정렬 컨트롤이 없으므로 이 순서가 유일한 순서다.
  *
- * `YYYY.MM.DD HH:mm`은 자릿수가 고정이라 문자열 비교만으로 시간순이 나온다 —
- * `new Date()`를 만들지 않는 편이 렌더 중 시각을 읽을 여지를 아예 없앤다.
+ * ISO 8601은 자릿수가 고정이라 문자열 비교만으로 시간순이 나온다 — 같은 오프셋(KST)일 때.
+ * 동률이면 미송 id로 가른다(F13) — 서버가 같은 행을 다른 순서로 줘도 우선순위가 안 뒤집힌다.
  */
 export function sortByOrderedAt(
-  lines: readonly BackorderLine[],
-): BackorderLine[] {
-  return [...lines].sort((a, b) =>
-    `${a.orderedDate} ${a.orderedTime}`.localeCompare(
-      `${b.orderedDate} ${b.orderedTime}`,
-    ),
+  lines: readonly BackorderLineView[],
+): BackorderLineView[] {
+  return [...lines].sort(
+    (a, b) => a.orderedAt.localeCompare(b.orderedAt) || a.id - b.id,
   );
 }
 
 /**
  * 선착순 그리디 배분 — 오래된 주문부터 가용재고를 다 쓸 때까지 채운다.
- * `배분 수량` 입력칸의 **초기값**이자, 배분 확정 뒤 남은 행을 다시 채우는 값이다.
+ * 펼칠 때 `배분 수량` 입력칸의 **초기값**이다. 배분 확정 뒤에는 쓰지 않는다 — 다시 채우면
+ * 한 번 더 눌렀을 때 사장이 정하지 않은 배분이 나간다(F1).
  * (화면에 `자동 배분` 버튼은 없다. 선착순은 정렬 + 이 초기값으로만 나타난다)
  */
 export function firstComeAllocation(
-  lines: readonly BackorderLine[],
+  lines: readonly BackorderLineView[],
   capacity: number,
 ): AllocationDraft {
   let rest = Math.max(0, capacity);
@@ -98,6 +240,40 @@ export function firstComeAllocation(
 }
 
 /**
+ * 화면이 그리는 입력 = 요청에 실리는 입력. 저장된 입력을 **지금 행·가용재고 기준으로** 다시
+ * 자른다 — 다른 데서 배분이 먼저 나가 잔여가 줄었어도 화면에 상한 넘는 숫자가 남지 않고,
+ * 없어진 행의 입력은 버린다. 순서는 표 순서(선착순)라 넘치는 몫은 뒷줄부터 깎인다.
+ */
+export function normalizeDraft(
+  lines: readonly BackorderLineView[],
+  capacity: number,
+  draft: AllocationDraft,
+): AllocationDraft {
+  let rest = Math.max(0, capacity);
+  const next: AllocationDraft = {};
+  for (const line of lines) {
+    const take = Math.min(Math.max(draft[line.id] ?? 0, 0), line.qty, rest);
+    next[line.id] = take;
+    rest -= take;
+  }
+  return next;
+}
+
+/**
+ * 펼친 SKU의 실제 입력. 아직 손대지 않았으면(`undefined`) 선착순, 손댔으면 그 값을 상한으로 자른 것.
+ * 배분 확정 직후는 `{}`라 전부 0이다.
+ */
+export function effectiveDraft(
+  lines: readonly BackorderLineView[],
+  capacity: number,
+  stored: AllocationDraft | undefined,
+): AllocationDraft {
+  return stored === undefined
+    ? firstComeAllocation(lines, capacity)
+    : normalizeDraft(lines, capacity, stored);
+}
+
+/**
  * 배분 수량 한 칸을 고친 결과. **제약을 여기서 한 번만 건다** —
  * `0 ≤ x_i ≤ b_i` 이고 `Σ x_i ≤ A`. 화면은 막지 못한 값을 그리지 않는다.
  *
@@ -106,9 +282,9 @@ export function firstComeAllocation(
  */
 export function withAllocation(
   draft: AllocationDraft,
-  lines: readonly BackorderLine[],
+  lines: readonly BackorderLineView[],
   capacity: number,
-  lineId: string,
+  lineId: number,
   next: number,
 ): AllocationDraft {
   const line = lines.find((l) => l.id === lineId);
@@ -124,95 +300,91 @@ export function withAllocation(
 
 /**
  * 배분 수량 입력칸의 문자열 → 수량. **빈칸은 0이다.**
- * 재고 탭 `parseNumberInput`은 빈칸을 null로 돌려주지만(안 적은 것과 0원을 구분해야 해서),
- * 배분 수량에는 그 구분이 없다 — 안 적은 칸은 "이 주문엔 안 준다"는 뜻이라 0과 같다.
- * feature 경계를 넘지 않으려고 import 대신 규칙만 이 탭에 맞춰 새로 적었다.
+ * 안 적은 칸은 "이 주문엔 안 준다"는 뜻이라 0과 같다(재고 탭과 다른 규칙).
+ * **숫자 아닌 글자가 섞이면 `null`** — 걸러서 이어 붙이면(`1.5` → `15`) 10배가 되므로(F11)
+ * 그 키 입력은 통째로 버린다. 부르는 쪽은 `null`이면 직전 값을 그대로 둔다.
  */
-export function parseAllocationInput(raw: string): number {
-  const digits = raw.replace(/[^0-9]/g, "");
-  return digits === "" ? 0 : Number(digits);
+export function parseAllocationInput(raw: string): number | null {
+  if (raw === "") return 0;
+  if (!/^\d+$/.test(raw)) return null;
+  return Number(raw);
 }
 
 /**
- * 주문 일시 표시(`7월 15일 09:30`).
- * fixtures의 `YYYY.MM.DD` + `HH:mm`을 문자열로만 조립한다 — `Date`를 만들면
- * 시간대에 따라 하루가 밀린다(재고 탭 fixtures의 UTC 주석과 같은 이유).
+ * 배분 요청. **1 이상인 행만** 담는다 — 0은 400 `INVARIANT_VIOLATED`다.
+ * 화면이 그리는 값(`effectiveDraft`)을 그대로 받으므로 보이는 숫자 = 보내는 숫자다.
  */
-export function formatOrderedAt(line: BackorderLine): string {
-  const [, month = "", day = ""] = line.orderedDate.split(".");
-  return `${Number(month)}월 ${Number(day)}일 ${line.orderedTime}`;
-}
-
-/**
- * 배분 확정 결과의 SKU. **순수 함수로 뺀다** — 확정 뒤 숫자를 표·카운터 바·좌측 목록·
- * 우측 요약 네 곳이 다시 읽는데, 컴포넌트가 각자 고치면 화면끼리 값이 갈린다.
- * 호출부는 여기서 나온 SKU로 state를 갈아끼우기만 한다.
- *
- * 확정은 **포장 대기가 생기는 두 경로 중 하나다**(glossary §4.4. 다른 하나는 주문 탭의
- * 포장 준비). 이번 범위에서 실제 포장 대기열을 만들지는 않는다 — 출고 탭 소관이고 서버가 없다.
- *
- * 줄어드는 건 `현재고`가 아니라 `주문처리중`이다. 배분한 실물은 아직 창고에 있고
- * 포장 대기로 **묶였을 뿐**이다. 현재고는 실제 출고 시점에 빠진다.
- * 그 결과 가용재고(= 현재고 − 주문처리중)가 배분한 만큼 줄어든다.
- *
- * 다 받은 주문(잔여 미송 0)은 행에서 지운다. 더 기다릴 게 없는 줄이라 남겨 두면
- * 표가 0으로 채워지고 다음 배분에서 눈이 가야 할 행을 가린다.
- */
-export function applyAllocation(
-  sku: BackorderSku,
-  draft: AllocationDraft,
-): BackorderSku {
-  const allocated = sku.lines.reduce(
-    (sum, line) => sum + (draft[line.id] ?? 0),
-    0,
-  );
-
+export function toAllocationRequest(draft: AllocationDraft): AllocationRequest {
   return {
-    ...sku,
-    reservedQty: sku.reservedQty + allocated,
-    lines: sku.lines
-      .map((line) => ({
-        ...line,
-        qty: remainingQty(line, draft[line.id] ?? 0),
-      }))
-      .filter((line) => line.qty > 0),
+    items: Object.entries(draft)
+      .map(([id, qty]) => ({ backorderId: Number(id), allocateQty: qty }))
+      .filter((item) => item.allocateQty >= 1),
   };
 }
 
-/**
- * 미송 요약 8지표. **펼친 SKU 하나** 기준이다.
- *
- * 8개를 컴포넌트에서 따로 세지 않고 한 번에 만든다 — `총 미송 수량`은 좌측 목록과,
- * `가용재고`는 카운터 바와 **같은 값이어야** 하는데 계산이 흩어지면 그 보증이 깨진다.
- */
-export function summarize(sku: BackorderSku): BackorderSummary {
-  const lines = sortByOrderedAt(sku.lines);
-  const first = lines[0] ?? null;
-  const last = lines[lines.length - 1] ?? null;
-
-  return {
-    totalQty: totalBackorderQty(lines),
-    orderCount: lines.length,
-    customerCount: new Set(lines.map((line) => line.customer)).size,
-    assignable: assignableQty(sku),
-    eta: sku.eta,
-    firstOrderedDate: first?.orderedDate ?? null,
-    lastOrderedDate: last?.orderedDate ?? null,
-    // 주문마다 단가가 다르다. 총 수량 × 대표 단가로 만들면 실제 미수금과 어긋난다
-    totalAmount: lines.reduce(
-      (sum, line) => sum + line.qty * line.unitPrice,
-      0,
-    ),
-  };
+/** 펼친 SKU의 행이 응답의 `resolvedBackorderIds`로 전부 해소됐는가 → 아코디언을 닫을지 */
+export function allResolved(
+  lines: readonly BackorderLineView[],
+  resolvedIds: readonly number[],
+): boolean {
+  const resolved = new Set(resolvedIds);
+  return lines.length > 0 && lines.every((line) => resolved.has(line.id));
 }
+
+/* ------------------------------------------------------------------------
+ * 예상 입고일
+ * ------------------------------------------------------------------------ */
 
 /**
  * 예상 입고일 입력 형식 검사(`YYYY.MM.DD`).
  * 달력 팝오버(DatePicker)가 `packages/ui`에 없고 Figma에도 없어서 텍스트 입력으로 받는다 —
- * 그래서 형식을 여기서 막지 않으면 좌측 목록에 아무 문자열이나 날짜인 척 들어간다.
- * 월·일의 범위까지 본다. 존재하지 않는 날(2월 30일)은 걸러내지 않는다 — 서버가 붙을 때
- * 진짜 검증이 오고, 화면 단계에서 `Date`를 만들면 시간대만큼 날짜가 밀린다.
+ * 그래서 형식을 여기서 막지 않으면 서버까지 아무 문자열이나 간다.
+ * 월·일의 범위까지 본다. 존재하지 않는 날(2월 30일)은 서버 `VALIDATION_FAILED`가 걸러 칸 아래 붙는다.
  */
 export function isEtaFormat(raw: string): boolean {
   return /^\d{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])$/.test(raw.trim());
+}
+
+/**
+ * 예상 입고일 요청. 빈 날짜는 **해제**다 — 스펙: "`expectedInboundDate: null` = 해제(사유도 함께 null)".
+ * 생성 타입은 `string`(스펙에 nullable 없음)이라 `null`을 캐스팅해 보낸다(04-wire.md §3).
+ */
+export function toExpectedInboundRequest(
+  eta: string,
+  reason: string,
+): ExpectedInboundRequest {
+  const date = eta.trim() === "" ? null : toWireDate(eta);
+  const trimmedReason = reason.trim();
+  return {
+    expectedInboundDate: date as unknown as string,
+    expectedInboundReason: (date === null || trimmedReason === ""
+      ? null
+      : trimmedReason) as unknown as string,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 오류 문구
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 배분 확정이 거절됐을 때 버튼 옆에 붙일 한 줄.
+ *
+ * 순서: `VALIDATION_FAILED`면 칸별 사유를 이어 붙인다(배분 표엔 폼 칸이 없다) → 아는 코드면
+ * `BACKORDER_ERROR_TEXT` → 나머지는 `describeError`의 종류별 제목에 서버 문구를 덧붙인다.
+ * **`message`로 가르지 않는다** — 코드로만 가른다.
+ */
+export function allocationErrorText(error: unknown): string {
+  if (isApiError(error)) {
+    if (error.code === WHOLESALE_ERROR_CODE.VALIDATION_FAILED) {
+      const reasons = error.fieldErrors.map((f) => f.reason);
+      return reasons.length > 0 ? reasons.join(" ") : error.message;
+    }
+    const known = BACKORDER_ERROR_TEXT[error.code];
+    if (known !== undefined) return known;
+  }
+  const described = describeError(error);
+  return described.detail
+    ? `${described.title} (${described.detail})`
+    : described.title;
 }
