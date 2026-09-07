@@ -66,6 +66,99 @@ export const PRODUCT_DETAIL: WholesaleSchema<"ProductDetailResponse"> = {
   listing: listing("ON_SALE"),
 };
 
+/**
+ * 게시글 **없이** 등록한 상품 — dev의 1013 "목 테스트 셔츠"(무드온 계정)를 2026-09-08
+ * `GET /products/1013` 응답 그대로 옮겼다. 값을 지어내지 않는다.
+ *
+ * 왜 따로 두나: 게시글이 없으면 서버가 `variants[].salePrice`·`orderLimit`을 **null**로
+ * 준다. 스펙 `VariantResponse`엔 `nullable`이 없어 생성 타입은 `number`라 캐스팅으로
+ * 눕힌다(`seasonEndedAt`과 같은 사정, README 참고). 이 목이 없으면 "null" 글자가
+ * 가격표 칸에 들어가는 결함(dev에서 사용자가 발견)이 mock에서 재현되지 않는다.
+ */
+const NO_LISTING_CATEGORY_PATH: WholesaleSchema<"CategoryPathItem">[] = [
+  { id: 1, name: "여성" },
+  { id: 12, name: "상의" },
+  { id: 122, name: "맨투맨" },
+];
+
+/** 재고·가격이 전부 비어 있는 variant. 사이즈 순서(XS·S·FREE)와 번호도 서버 응답 그대로다 */
+function emptyVariant(
+  id: number,
+  variantNumber: number,
+  size: WholesaleSchema<"VariantResponse">["size"],
+): WholesaleSchema<"VariantResponse"> {
+  return {
+    id,
+    variantNumber,
+    size,
+    stockQty: 0,
+    allocatedQty: 0,
+    backorderQty: 0,
+    availableQty: 0,
+    avgCost: 0,
+    salePrice: null as unknown as number,
+    orderLimit: null as unknown as number,
+  };
+}
+
+/** 색상 하나의 variant 3개. dev는 XS·S·FREE 순으로 주고 번호는 FREE가 먼저 매겨져 있다 */
+function emptyColorOption(
+  color: WholesaleSchema<"ColorResponse">,
+  firstVariantId: number,
+  firstVariantNumber: number,
+): WholesaleSchema<"ColorOptionResponse"> {
+  return {
+    color,
+    variants: [
+      emptyVariant(firstVariantId + 1, firstVariantNumber + 1, "XS"),
+      emptyVariant(firstVariantId + 2, firstVariantNumber + 2, "S"),
+      emptyVariant(firstVariantId, firstVariantNumber, "FREE"),
+    ],
+  };
+}
+
+export const PRODUCT_DETAIL_NO_LISTING: WholesaleSchema<"ProductDetailResponse"> =
+  {
+    id: 1013,
+    productNumber: 8,
+    name: "목 테스트 셔츠",
+    categoryPath: NO_LISTING_CATEGORY_PATH,
+    colorOptions: [
+      emptyColorOption(
+        { id: 1, name: "블랙", hex: "#191F28", groupName: "무채색" },
+        3055,
+        1,
+      ),
+      emptyColorOption(
+        { id: 7, name: "베이지", hex: "#E3D5BF", groupName: "베이지·브라운" },
+        3058,
+        4,
+      ),
+      emptyColorOption(
+        { id: 11, name: "네이비", hex: "#1F3A68", groupName: "블루" },
+        3061,
+        7,
+      ),
+      emptyColorOption(
+        { id: 14, name: "연청", hex: "#A9C7E0", groupName: "데님 워싱" },
+        3064,
+        10,
+      ),
+      emptyColorOption(
+        { id: 17, name: "레드", hex: "#D0393F", groupName: "컬러" },
+        3067,
+        13,
+      ),
+      emptyColorOption(
+        { id: 25, name: "골드", hex: "#C9A227", groupName: "특수" },
+        3070,
+        16,
+      ),
+    ],
+    // 게시글 없음. 스펙에 nullable이 없어 타입은 객체지만 서버는 null을 준다
+    listing: null as unknown as WholesaleSchema<"ListingResponse">,
+  };
+
 export const PRODUCT_SUMMARIES: WholesaleSchema<"ProductSummaryResponse">[] = [
   {
     id: 5012,
@@ -75,6 +168,17 @@ export const PRODUCT_SUMMARIES: WholesaleSchema<"ProductSummaryResponse">[] = [
     listingStatus: "ON_SALE",
     colorCount: 3,
     variantCount: 8,
+  },
+  {
+    id: 1013,
+    productNumber: 8,
+    name: "목 테스트 셔츠",
+    categoryPath: NO_LISTING_CATEGORY_PATH,
+    // 게시글 없음 = null. `seasonEndedAt`·`listing`과 같은 사정
+    listingStatus:
+      null as unknown as WholesaleSchema<"ProductSummaryResponse">["listingStatus"],
+    colorCount: 6,
+    variantCount: 18,
   },
 ];
 
@@ -287,8 +391,16 @@ export const productHandlers = [
       return HttpResponse.json({ data: PRODUCT_DETAIL }, { status: 201 });
     },
   ),
-  http.get("*/api/wholesale/products/:productId", () =>
-    HttpResponse.json({ data: PRODUCT_DETAIL }),
+  // 1013만 게시글 없는 상품. 나머지 id는 전부 스텁 상품 — 등록 직후 재조회도 이쪽으로 온다
+  http.get<{ productId: string }>(
+    "*/api/wholesale/products/:productId",
+    ({ params }) =>
+      HttpResponse.json({
+        data:
+          params.productId === String(PRODUCT_DETAIL_NO_LISTING.id)
+            ? PRODUCT_DETAIL_NO_LISTING
+            : PRODUCT_DETAIL,
+      }),
   ),
   http.patch<{ productId: string }, WholesaleSchema<"ProductUpdateRequest">>(
     "*/api/wholesale/products/:productId",
