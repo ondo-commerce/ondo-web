@@ -1,61 +1,167 @@
-import { ACTIVE_ORDER_STATUSES, ACTIVE_SETTLEMENT_STATUSES } from "./constants";
+import { isApiError } from "@ondo/api";
+import { describeError } from "@/shared/api/describeError";
+import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
+import {
+  ACTIVE_ORDER_STATUSES,
+  ACTIVE_SETTLEMENT_STATUSES,
+  ORDER_ERROR_TEXT,
+  PAGE_SIZE,
+  STATUS_FILTER_ALL,
+  type OrderFilterValue,
+  type SettlementFilterValue,
+} from "./constants";
 import type {
-  Order,
-  OrderLine,
+  OrderConfirmRequest,
+  OrderDetail,
+  OrderFilter,
+  OrderFilterKey,
+  OrderItem,
+  OrderLineView,
+  OrderRowView,
   OrderStatus,
-  PackingBatchLine,
+  OrderSummary,
+  OrderView,
+  PackingBatchView,
+  PackingCreateRequest,
+  PackingItem,
+  PackingQueueItem,
   SettlementStatus,
+  ShipInputs,
 } from "./types";
 
 /*
  * 주문 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
  * 같은 공식이 목록 행·우측 카드·라인 표·확인 다이얼로그에서 쓰이는데,
- * 흩어 놓으면 한 곳만 고쳐도 화면끼리 숫자가 갈린다(재고 탭 derive.ts와 같은 이유).
+ * 흩어 놓으면 한 곳만 고쳐도 화면끼리 숫자가 갈린다.
+ *
+ * wire → 뷰 변환도 여기다. 화면은 wire 모양을 모른다.
  */
 
-/** 주문 금액 = 라인 금액 합. 카드의 `주문 금액`은 반드시 이 값이다(Figma 목업은 안 맞는다) */
-export function orderAmount(order: Order): number {
-  return order.lines.reduce((sum, line) => sum + line.lineAmount, 0);
-}
+/* ------------------------------------------------------------------------
+ * wire → 뷰
+ * ------------------------------------------------------------------------ */
 
-/** 주문 수량 = 라인 주문수량 합 */
-export function orderQty(order: Order): number {
-  return order.lines.reduce((sum, line) => sum + line.qty, 0);
+/** KST 고정. 사장의 브라우저 시간대가 어디든 동대문 날짜로 읽혀야 한다 */
+const ORDER_DATE_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** `2024.08.01`. `Intl`이 주는 `2024. 08. 01.`을 화면 표기로 바꾼다 */
+export function formatOrderDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    ORDER_DATE_FORMAT.formatToParts(date).find((p) => p.type === type)?.value ??
+    "";
+  return `${part("year")}.${part("month")}.${part("day")}`;
 }
 
 /**
  * 목록 `상품명` 셀 — `첫 라인 상품명 (색상) 외 N건`.
- * 라인이 1개면 `외 N건`이 붙지 않는다.
+ * 앞부분은 서버가 만들어 준다(`summaryProductName`). 라인이 1개면 `외 N건`이 붙지 않는다.
  */
-export function orderProductSummary(order: Order): string {
-  const first = order.lines[0];
-  if (!first) return "-";
-  const head = `${first.productName} (${first.color})`;
-  const rest = order.lines.length - 1;
-  return rest > 0 ? `${head} 외 ${rest}건` : head;
+export function orderProductSummary(summary: OrderSummary): string {
+  const rest = summary.additionalItemCount;
+  return rest > 0
+    ? `${summary.summaryProductName} 외 ${rest}건`
+    : summary.summaryProductName;
+}
+
+export function toOrderRowView(summary: OrderSummary): OrderRowView {
+  return {
+    id: summary.id,
+    orderNumber: String(summary.orderNumber),
+    orderedAt: formatOrderDate(summary.orderedAt),
+    retailerName: summary.retailerName,
+    productSummary: orderProductSummary(summary),
+    orderAmount: summary.orderAmount,
+    status: summary.status.key,
+    settlementStatus: summary.settlementStatus,
+  };
+}
+
+export function toOrderLineView(item: OrderItem): OrderLineView {
+  return {
+    id: item.id,
+    variantId: item.variantId,
+    sku: String(item.variantNumber),
+    productName: item.productName,
+    color: item.color,
+    size: item.size,
+    qty: item.qty,
+    allocatedQty: item.allocatedQty,
+    shippedQty: item.shippedQty,
+    unallocatedQty: item.unallocatedQty,
+    backorderQty: item.backorderQty,
+    availableQty: item.variantAvailableQty,
+    unitPrice: item.unitPrice,
+  };
+}
+
+export function toOrderView(detail: OrderDetail): OrderView {
+  return {
+    id: detail.id,
+    orderNumber: String(detail.orderNumber),
+    orderedAt: formatOrderDate(detail.orderedAt),
+    retailerName: detail.retailerName,
+    // 스펙엔 nullable이 없어 타입은 string이지만 전화 없는 거래처는 null이 온다
+    retailerPhone: detail.retailerPhone ?? null,
+    paymentMethod: detail.expectedPaymentMethod,
+    receiveBy: detail.receiveBy,
+    status: detail.status.key,
+    settlementStatus: detail.settlementStatus,
+    orderAmount: detail.orderAmount,
+    totalQty: detail.totalQty,
+    lines: (detail.items ?? []).map(toOrderLineView),
+    isConfirmable: detail.isConfirmable,
+    isCancellable: detail.isCancellable,
+    isPackable: detail.isPackable,
+  };
+}
+
+/** 포장 대기열 줄 표기 — `상품명 (색상 - 사이즈)`. SKU 코드가 아니다(Figma 실측) */
+export function packingItemLabel(
+  item: Pick<PackingItem, "productName" | "color" | "size">,
+): string {
+  return `${item.productName} (${item.color} - ${item.size})`;
 }
 
 /**
- * 필터 칩의 건수.
- * **검색어·선택과 무관하게 전체 목록 기준이다** — 칩을 눌러 좁혔는데 다른 칩 숫자까지
- * 같이 줄면 "지금 안 보이는 게 몇 건인지"를 읽을 수 없다.
+ * 포장 대기열 → 회차 카드. **만든 순서(오름차순)로 돌려준다** — 그리는 쪽이 뒤집는다.
+ *
+ * 회차 번호는 서버에 없다. 만든 순서 위치로 매기므로 `#2`를 지우면 옛 `#3`이 `#2`가 된다.
+ * 더미 시절 규칙("번호는 재사용하지 않는다")은 서버가 번호를 주기 전엔 지킬 수 없다(04-wire.md §3).
  */
-export function countByStatus(
-  orders: readonly Order[],
-  status: OrderStatus,
-): number {
-  return orders.filter((o) => o.status === status).length;
+export function toPackingBatchViews(
+  items: readonly PackingQueueItem[],
+): PackingBatchView[] {
+  return [...items]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id)
+    .map((packing, index) => ({
+      id: packing.id,
+      no: index + 1,
+      isCancellable: packing.isCancellable,
+      lines: (packing.items ?? []).map((item) => ({
+        id: item.id,
+        orderItemId: item.orderItemId,
+        label: packingItemLabel(item),
+        qty: item.qty,
+      })),
+    }));
 }
 
-/** 목록 검색 — 주문번호·거래처·상품명이 걸린다(01-pm.md 게이트 결정 Q3) */
-export function matchesQuery(order: Order, keyword: string): boolean {
-  if (keyword === "") return true;
-  const lower = keyword.toLowerCase();
-  return (
-    order.id.toLowerCase().includes(lower) ||
-    order.customerName.toLowerCase().includes(lower) ||
-    order.lines.some((line) => line.productName.toLowerCase().includes(lower))
-  );
+/**
+ * 필터 칩의 건수. `GET /orders/filters` 응답에서 키로 찾는다.
+ * 서버가 그 키를 안 내리면 `null` — 괄호 없이 라벨만 그린다. 0으로 지어내지 않는다.
+ */
+export function chipCount(
+  filters: readonly OrderFilter[],
+  key: OrderFilterKey,
+): number | null {
+  return filters.find((f) => f.key === key)?.count ?? null;
 }
 
 /**
@@ -74,123 +180,140 @@ export function settlementStatusTone(
 }
 
 /* ------------------------------------------------------------------------
+ * 목록 쿼리
+ * ------------------------------------------------------------------------ */
+
+/** 화면의 목록 상태. 세그먼트 둘 + 검색어 + 페이지(1-base) */
+export interface OrderListParams {
+  q: string;
+  status: OrderFilterValue;
+  settlement: SettlementFilterValue;
+  page: number;
+}
+
+/** 서버에 보낼 쿼리. queryKey에 그대로 들어간다 */
+export interface OrderListQuery {
+  filter: OrderFilterValue | undefined;
+  q: string | undefined;
+  settlementStatus: SettlementStatus | undefined;
+  /** 0-base */
+  page: number;
+  size: number;
+}
+
+/** `ALL`·빈 검색은 파라미터를 안 보낸다 — 서버 기본값이 곧 그 뜻이다 */
+export function toListQuery(params: OrderListParams): OrderListQuery {
+  return {
+    filter: params.status === STATUS_FILTER_ALL ? undefined : params.status,
+    q: params.q === "" ? undefined : params.q,
+    settlementStatus:
+      params.settlement === STATUS_FILTER_ALL ? undefined : params.settlement,
+    page: params.page - 1,
+    size: PAGE_SIZE,
+  };
+}
+
+/* ------------------------------------------------------------------------
  * 라인 표의 파생값. Figma 3프레임의 숫자를 역산해 확정한 공식이다(01-pm.md §1.4).
  * `n` = `이번 출고` 입력값이고, 입력이 없으면 n = 0이라 before와 after가 같아진다.
  * ---------------------------------------------------------------------- */
 
 /**
- * 가용재고 = 현재고 − 주문처리중.
- *
- * ⚠️ **서버 계약 미확인 — glossary 미등재.** glossary §4.5의 `판매가능`은
- * `현재고 − 주문처리중 − 미송대기`로 다른 값이고, 그건 "마켓에 노출되는 값"이다.
- * 주문 라인 표의 이 열은 Figma 3프레임의 숫자가 이 정의로만 맞아떨어져서 이렇게 뒀다
- * (확정 프레임 2행: 가용 14 → 10, 이번 출고 4). 미송을 여기서 한 번 빼고 괄호에 또
- * 보여주면 같은 수량을 두 번 차감해 보여주는 화면이 된다.
- *
- * **`판매가능`과 이름을 섞지 않는다.** 서버 계약이 확인되면 그때 glossary에 올린다.
+ * 가용재고. 서버가 SKU 스코프로 내려준다(`variantAvailableQty` = 재고 − 예약).
+ * 더미 시절엔 `현재고 − 주문처리중`을 화면이 계산했고 그 정의가 glossary와 충돌해
+ * 보류(게이트 G-1)됐는데, 서버 계약이 값을 직접 주는 것으로 닫혔다.
  */
-export function assignableQty(line: OrderLine): number {
-  return line.stockOnHand - line.reservedQty;
+export function assignableQty(line: OrderLineView): number {
+  return line.availableQty;
 }
 
-/** 미할당 = 주문수량 − 출고진행. **미송을 포함한 값이다**(01-pm.md §1.4) */
-export function unallocatedQty(line: OrderLine): number {
-  return line.qty - line.allocatedQty;
+/** 미할당 = 주문수량 − 출고진행. **미송을 포함한 값이다**(01-pm.md §1.4). 서버 값 */
+export function unallocatedQty(line: OrderLineView): number {
+  return line.unallocatedQty;
 }
 
 /** 출고진행: `alloc → alloc + n` */
-export function allocatedAfter(line: OrderLine, n: number): number {
+export function allocatedAfter(line: OrderLineView, n: number): number {
   return line.allocatedQty + n;
 }
 
-/** 미할당: `qty − alloc → qty − alloc − n` */
-export function unallocatedAfter(line: OrderLine, n: number): number {
+/** 미할당: `u → u − n` */
+export function unallocatedAfter(line: OrderLineView, n: number): number {
   return unallocatedQty(line) - n;
 }
 
 /** 가용재고: `avail → avail − n` */
-export function assignableAfter(line: OrderLine, n: number): number {
+export function assignableAfter(line: OrderLineView, n: number): number {
   return assignableQty(line) - n;
 }
 
 /** 미송: `bo → bo − min(n, bo)`. 미송이 없는 라인에서는 그대로 0이다 */
-export function backorderAfter(line: OrderLine, n: number): number {
+export function backorderAfter(line: OrderLineView, n: number): number {
   return line.backorderQty - Math.min(n, line.backorderQty);
 }
 
 /** 전량 할당된 라인. 입력칸 대신 완료 ✓가 들어간다 */
-export function isLineAllocated(line: OrderLine): boolean {
+export function isLineAllocated(line: OrderLineView): boolean {
   return unallocatedQty(line) === 0;
 }
 
 /** 가용재고가 0이라 지금은 아무것도 못 빼는 라인. 입력칸이 비활성이 된다 */
-export function isLineOutOfStock(line: OrderLine): boolean {
+export function isLineOutOfStock(line: OrderLineView): boolean {
   return assignableQty(line) <= 0;
 }
 
 /**
- * 수량을 입력할 수 있는 국면인가.
- * 취소된 주문과 이미 다 나간 주문은 읽기 전용이다 — 되돌릴 값이 없다.
+ * 수량을 입력할 수 있는 국면인가. **서버 boolean으로만 판단한다**(스펙) —
+ * 확정할 수 있거나(신규) 포장을 더 만들 수 있으면(확정·부분 출고 잔량) 입력을 받는다.
+ * 취소·출고 완료는 둘 다 false라 읽기 전용이다.
  */
-export function isEditablePhase(status: OrderStatus): boolean {
-  return (
-    status === "PLACED" ||
-    status === "CONFIRMED" ||
-    status === "PARTIALLY_SHIPPED"
-  );
+export function canAllocate(order: OrderView): boolean {
+  return order.isConfirmable || order.isPackable;
 }
 
 /**
  * 숫자 입력칸의 문자열 → 수량.
- * 빈칸과 0을 구분해야 해서 빈칸은 null이다 — "안 적었다"와 "0을 적었다"는 다르다
- * (재고 탭 derive.parseNumberInput과 같은 규칙).
+ * 빈칸과 0을 구분해야 해서 빈칸은 null이다 — "안 적었다"와 "0을 적었다"는 다르다.
+ * **숫자 아닌 글자가 섞이면 `undefined`** — 걸러서 이어 붙이면(`1.5` → `15`) 더 큰 수가
+ * 되므로(F-04) 그 입력은 통째로 버린다.
  */
-export function parseNumberInput(raw: string): number | null {
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (digits === "") return null;
-  return Number(digits);
+export function parseNumberInput(raw: string): number | null | undefined {
+  if (raw === "") return null;
+  if (!/^\d+$/.test(raw)) return undefined;
+  return Number(raw);
 }
 
 /** 입력 맵(라인 id → 입력 문자열)에서 그 라인의 수량을 꺼낸다. 안 적었으면 0 */
-export function shipQty(
-  inputs: Readonly<Record<string, string>>,
-  line: OrderLine,
-): number {
+export function shipQty(inputs: ShipInputs, line: OrderLineView): number {
   return parseNumberInput(inputs[line.id] ?? "") ?? 0;
 }
 
-/** 입력 맵 전체 합계. 0이면 확정해도 포장 회차가 생기지 않는다 */
-export function totalShipQty(
-  order: Order,
-  inputs: Readonly<Record<string, string>>,
-): number {
+/** 입력 맵 전체 합계. 0이면 포장 준비를 눌러도 담을 것이 없다 */
+export function totalShipQty(order: OrderView, inputs: ShipInputs): number {
   return order.lines.reduce((sum, line) => sum + shipQty(inputs, line), 0);
 }
 
-/* ------------------------------------------------------------------------
- * 상태를 바꾸는 계산. 전부 순수 함수다 — 새 주문 객체를 돌려주고 컴포넌트가
- * 수량을 직접 만지지 않는다. 서버가 붙으면 이 함수들이 요청 본문을 만드는 자리가 된다.
- * ---------------------------------------------------------------------- */
-
 /**
  * `이번 출고` 입력 상한 = `min(미할당, 가용재고)`.
- * 둘 중 하나라도 넘기면 `qty = shipped + 포장대기 + backorder` 항등식이 깨진다
- * (`settlement_data_model.md` §2.3).
+ * 둘 중 하나라도 넘기면 서버가 `ALLOCATION_EXCEEDS_ORDER`·`INSUFFICIENT_STOCK`으로 되돌린다.
+ * 화면에서 먼저 자르는 이유는 항등식이 깨진 숫자를 사장이 보고 있게 두지 않기 위해서다.
  */
-export function shipCap(line: OrderLine): number {
+export function shipCap(line: OrderLineView): number {
   return Math.max(0, Math.min(unallocatedQty(line), assignableQty(line)));
 }
 
-/** 입력칸 문자열을 상한으로 자른다. 빈칸은 빈칸으로 둔다(0과 구분) */
-export function clampShipInput(line: OrderLine, raw: string): string {
+/**
+ * 입력칸 문자열을 상한으로 자른다. 빈칸은 빈칸으로 둔다(0과 구분).
+ * 숫자가 아니면 `null` — 부르는 쪽이 그 키 입력을 무시한다(직전 값이 남는다).
+ */
+export function clampShipInput(
+  line: OrderLineView,
+  raw: string,
+): string | null {
   const parsed = parseNumberInput(raw);
+  if (parsed === undefined) return null;
   if (parsed === null) return "";
   return String(Math.min(parsed, shipCap(line)));
-}
-
-/** 포장 대기열 줄 표기 — `상품명 (색상 - 사이즈)`. SKU 코드가 아니다(Figma 실측) */
-export function packingLabel(line: OrderLine): string {
-  return `${line.productName} (${line.color} - ${line.size})`;
 }
 
 /** 확정 다이얼로그에 띄울 미송 예고 */
@@ -203,12 +326,12 @@ export interface BackorderPreview {
 
 /**
  * 지금 입력 상태로 확정하면 미송이 얼마나 잡히는가.
- * **입력하지 않은 잔량은 전부 미송이 된다** — Figma 프레임 1913:6060의 제목이 곧 규칙이다
- * ("가용재고를 다 입력하지 않고 주문 확정한 경우, 무조건 미송처리").
+ * **입력하지 않은 잔량은 전부 미송이 된다** — 스펙("배분되지 않은 잔량은 전부 미송")과
+ * Figma 프레임 1913:6060의 제목이 같은 규칙이다.
  */
 export function backorderPreview(
-  order: Order,
-  inputs: Readonly<Record<string, string>>,
+  order: OrderView,
+  inputs: ShipInputs,
 ): BackorderPreview {
   return order.lines.reduce<BackorderPreview>(
     (acc, line) => {
@@ -221,146 +344,68 @@ export function backorderPreview(
   );
 }
 
-/**
- * 주문 확정(PLACED → CONFIRMED, `settlement_data_model.md` §3.1).
- *
- * 입력분은 `출고진행`으로 올라가며 포장 대기 회차 한 건이 되고,
- * **남은 잔량은 전부 미송으로 확정된다.** 되돌릴 수 없다.
- *
- * `reservedQty`를 같이 올리는 이유: 가용재고 = 현재고 − 주문처리중이라,
- * 잡아 둔 수량만큼 가용재고가 줄어야 다음에 같은 SKU를 또 빼가지 않는다.
- */
-export function confirmOrder(
-  order: Order,
-  inputs: Readonly<Record<string, string>>,
-): Order {
-  const batchLines: PackingBatchLine[] = [];
+/* ------------------------------------------------------------------------
+ * 요청 본문. 더미 시절엔 여기서 새 주문 객체를 만들었다 — 이제 서버가 상태를 바꾸고
+ * 화면은 입력을 요청으로 옮기기만 한다.
+ * ---------------------------------------------------------------------- */
 
-  const lines = order.lines.map((line) => {
-    const n = shipQty(inputs, line);
-    const allocatedQty = line.allocatedQty + n;
-    if (n > 0) {
-      batchLines.push({
-        lineId: line.id,
-        skuId: line.skuId,
-        label: packingLabel(line),
-        qty: n,
-        /* 확정 직후에는 미할당이 곧 미송이다. 이 회차를 지우면 그만큼 미송으로 되돌아간다 */
-        backorderUsed: n,
-      });
+/**
+ * 주문 확정 요청. **전 라인을 담는다** — 안 적은 라인은 `allocateQty: 0`(전량 미송).
+ * 스펙: "`items`는 주문의 전 라인 필수, `allocateQty: 0`은 정상값". 빠뜨리면
+ * `ORDER_ITEM_MISSING`이다.
+ */
+export function toConfirmRequest(
+  order: OrderView,
+  inputs: ShipInputs,
+): OrderConfirmRequest {
+  return {
+    items: order.lines.map((line) => ({
+      orderItemId: line.id,
+      allocateQty: shipQty(inputs, line),
+    })),
+  };
+}
+
+/**
+ * 포장 준비 요청. **적은 라인만 담는다** — 스펙: "배분할 라인만 담고 `allocateQty >= 1`".
+ * 확정과 반대 규칙이라 함수를 따로 둔다.
+ */
+export function toPackingRequest(
+  order: OrderView,
+  inputs: ShipInputs,
+): PackingCreateRequest {
+  return {
+    items: order.lines
+      .map((line) => ({
+        orderItemId: line.id,
+        allocateQty: shipQty(inputs, line),
+      }))
+      .filter((item) => item.allocateQty >= 1),
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 오류 문구
+ * ---------------------------------------------------------------------- */
+
+/**
+ * 확정·취소·포장·삭제가 거절됐을 때 액션 줄에 붙일 한 줄.
+ *
+ * 순서: `VALIDATION_FAILED`면 칸별 사유를 이어 붙인다(이 화면엔 폼 칸이 없어 `_form`
+ * 하나로 본다) → 아는 코드면 `ORDER_ERROR_TEXT` → 나머지는 `describeError`의 종류별
+ * 제목에 서버 문구를 덧붙인다. **`message`로 가르지 않는다** — 코드로만 가른다.
+ */
+export function actionErrorText(error: unknown): string {
+  if (isApiError(error)) {
+    if (error.code === WHOLESALE_ERROR_CODE.VALIDATION_FAILED) {
+      const reasons = error.fieldErrors.map((f) => f.reason);
+      return reasons.length > 0 ? reasons.join(" ") : error.message;
     }
-    return {
-      ...line,
-      allocatedQty,
-      reservedQty: line.reservedQty + n,
-      backorderQty: line.qty - allocatedQty,
-    };
-  });
-
-  const created = batchLines.length > 0;
-  return {
-    ...order,
-    status: "CONFIRMED",
-    lines,
-    batches: created
-      ? [
-          ...order.batches,
-          {
-            id: `${order.id}-B${order.nextBatchNo}`,
-            no: order.nextBatchNo,
-            lines: batchLines,
-          },
-        ]
-      : order.batches,
-    nextBatchNo: order.nextBatchNo + (created ? 1 : 0),
-  };
-}
-
-/**
- * 주문 취소(PLACED → CANCELED). 수량은 건드리지 않는다 —
- * 확정 전이라 잡아 둔 것도, 미송으로 넘긴 것도 없기 때문이다.
- */
-export function cancelOrder(order: Order): Order {
-  return { ...order, status: "CANCELED" };
-}
-
-/**
- * 포장 준비 — 지금 입력된 수량으로 포장 대기 회차를 하나 만든다.
- *
- * Figma 프레임 1913:8149의 제목이 곧 규칙이다:
- * "미송 건에 대해 미송 탭이 아닌 주문 탭에서 부분 포장 가능".
- * 확정한 주문의 잔량을 몇 번이고 나눠 담을 수 있어야 해서 회차가 쌓인다.
- *
- * **미송이 먼저 줄어든다.** 미송은 "팔았는데 못 보낸 것"이라 재고가 생기면
- * 새 할당보다 이쪽을 먼저 갚는 게 업무 순서다.
- */
-export function addPackingBatch(
-  order: Order,
-  inputs: Readonly<Record<string, string>>,
-): Order {
-  const batchLines: PackingBatchLine[] = [];
-
-  const lines = order.lines.map((line) => {
-    const n = shipQty(inputs, line);
-    if (n === 0) return line;
-
-    const backorderUsed = Math.min(n, line.backorderQty);
-    batchLines.push({
-      lineId: line.id,
-      skuId: line.skuId,
-      label: packingLabel(line),
-      qty: n,
-      backorderUsed,
-    });
-    return {
-      ...line,
-      allocatedQty: line.allocatedQty + n,
-      reservedQty: line.reservedQty + n,
-      backorderQty: line.backorderQty - backorderUsed,
-    };
-  });
-
-  if (batchLines.length === 0) return order;
-
-  return {
-    ...order,
-    lines,
-    batches: [
-      ...order.batches,
-      {
-        id: `${order.id}-B${order.nextBatchNo}`,
-        no: order.nextBatchNo,
-        lines: batchLines,
-      },
-    ],
-    // 번호는 재사용하지 않는다 — #2를 지우고 새로 만들면 #4다
-    nextBatchNo: order.nextBatchNo + 1,
-  };
-}
-
-/**
- * 회차 삭제 — 그 회차의 `포장 준비`를 **정확히 되돌린다.**
- * 미송을 얼마나 갚았는지는 회차 줄의 `backorderUsed`에 적혀 있다.
- * 다시 계산하려 들면(`min` 은 역함수가 없다) 되돌린 값이 원래와 달라진다.
- */
-export function removePackingBatch(order: Order, batchId: string): Order {
-  const target = order.batches.find((b) => b.id === batchId);
-  if (!target) return order;
-
-  const lines = order.lines.map((line) => {
-    const undo = target.lines.find((l) => l.lineId === line.id);
-    if (!undo) return line;
-    return {
-      ...line,
-      allocatedQty: line.allocatedQty - undo.qty,
-      reservedQty: line.reservedQty - undo.qty,
-      backorderQty: line.backorderQty + undo.backorderUsed,
-    };
-  });
-
-  return {
-    ...order,
-    lines,
-    batches: order.batches.filter((b) => b.id !== batchId),
-  };
+    const known = ORDER_ERROR_TEXT[error.code];
+    if (known !== undefined) return known;
+  }
+  const described = describeError(error);
+  return described.detail
+    ? `${described.title} (${described.detail})`
+    : described.title;
 }

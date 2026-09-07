@@ -1,104 +1,135 @@
-import type { SizeName } from "@/features/product";
+import type { WholesaleSchema } from "@ondo/api";
+
+/* ------------------------------------------------------------------------
+ * wire — 스펙에서 생성한 타입의 별칭(ADR-0002). 손으로 쓴 Response/Request 타입은 없다.
+ * 서버가 필드를 바꾸면 여기가 아니라 `codegen`이 알려준다.
+ * ------------------------------------------------------------------------ */
+
+/** 목록 한 행. 라인이 없다 — 펼치면 상세를 따로 부른다 */
+export type OrderSummary = WholesaleSchema<"OrderSummaryResponse">;
+/** 상세. 확정·취소 응답도 이 스키마다(스펙: "재조회 없이 화면을 갱신한다") */
+export type OrderDetail = WholesaleSchema<"OrderDetailResponse">;
+export type OrderItem = WholesaleSchema<"OrderItemResponse">;
+/** 상태 칩 하나. `key`가 목록 `filter` 파라미터의 값이다 */
+export type OrderFilter = WholesaleSchema<"OrderFilterResponse">;
+export type OrderConfirmRequest = WholesaleSchema<"OrderConfirmRequest">;
+export type PackingCreateRequest = WholesaleSchema<"PackingCreateRequest">;
+export type AllocationItemRequest = WholesaleSchema<"AllocationItemRequest">;
+export type PackingQueueItem = WholesaleSchema<"PackingQueueItemResponse">;
+export type PackingItem = WholesaleSchema<"PackingItemResponse">;
+export type PackingCreated = WholesaleSchema<"PackingCreatedResponse">;
 
 /**
- * 주문 이행 상태 5종 (glossary §4.3).
- * 코드값은 `settlement_data_model.md` §2.2의 `order.status` 그대로다 —
- * 화면 라벨(`신규 주문` …)은 constants.ts의 표에만 둔다.
+ * 주문 이행 상태 5종 — 스펙 enum 그대로다. glossary §4.3의 `PLACED`·`CANCELED`는
+ * 서버에 없다(`NEW`·`CANCELLED`). 화면 라벨(`신규 주문` …)은 constants.ts의 표에만 둔다.
  *
- * `PARTIALLY_SHIPPED` · `SHIPPED`로 가는 전이는 **주문 탭에서 만들 수 없다.**
- * 포장 묶음을 실제로 내보내는 건 출고 탭 몫이라(§3.1) 여기서는 더미로 온 상태를 그리기만 한다.
+ * `PARTIALLY_SHIPPED`·`SHIPPED`로 가는 전이는 주문 탭에서 만들 수 없다 — 출고 탭 몫이다.
+ * 서버가 출고 진행도로 파생해 내려준다(스펙 설명).
  */
-export type OrderStatus =
-  "PLACED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "CANCELED";
+export type OrderStatus = WholesaleSchema<"OrderStatusResponse">["key"];
+/** 상태 칩 키. 상태 5종 + `ALL` */
+export type OrderFilterKey = OrderFilter["key"];
+/** 정산 상태 3종. 화면 문구는 `미결제 · 부분 정산 · 정산 완료`(glossary §5.1) */
+export type SettlementStatus = OrderSummary["settlementStatus"];
+export type PaymentMethod = OrderDetail["expectedPaymentMethod"];
+/** 수령 방식. `AGENT` = 사입삼촌, `RETAILER` = 직접 수령 */
+export type ReceiveBy = OrderDetail["receiveBy"];
+export type OrderLineSize = OrderItem["size"];
 
-/** 정산 상태 3종 (glossary §5.1). `정산 대기`·`미정산`은 이 화면 어디에도 없다 */
-export type SettlementStatus = "UNPAID" | "PARTIAL" | "SETTLED";
+/* ------------------------------------------------------------------------
+ * 뷰 — 화면이 받는 모양. wire → 뷰 변환은 derive.ts의 순수 함수가 한다.
+ * ------------------------------------------------------------------------ */
 
-/** 결제 방식. Figma의 `현장 결제`는 어느 SSOT에도 없어서 쓰지 않는다(01-pm.md §5 Q4) */
-export type PaymentMethod = "CASH" | "BANK_TRANSFER";
-
-/** 수령 방식. 표준어는 `사입삼촌`(붙여쓰기)이다 — glossary §4.3이 SSOT 1순위다 */
-export type ReceiveMethod = "AGENT_VISIT" | "SELF_PICKUP";
+/** 목록 행. 표 7열에 필요한 것만 */
+export interface OrderRowView {
+  id: number;
+  /** `orderNumber`를 문자열로. 스펙이 숫자라 `ORD-001` 같은 표기는 없다 */
+  orderNumber: string;
+  /** `2024.08.01` 표시 문자열(KST) */
+  orderedAt: string;
+  retailerName: string;
+  /** `첫 라인 상품명 (색상) 외 N건` */
+  productSummary: string;
+  orderAmount: number;
+  status: OrderStatus;
+  settlementStatus: SettlementStatus;
+}
 
 /**
- * 주문 라인 한 줄. 컬럼 이름은 `settlement_data_model.md` §2.3을 그대로 따른다.
+ * 주문 라인 한 줄.
  *
- * **항등식: `qty = allocatedQty + 미할당`, 그리고 확정된 주문에서는 `미할당 = backorderQty`다.**
+ * **수량 항등식: `qty = allocatedQty + unallocatedQty`, 확정된 주문에서는 `unallocatedQty = backorderQty`.**
  * 화면의 `미할당` 열은 미송을 포함한 값이라 둘이 같은 숫자로 두 자리에 그려진다(01-pm.md §1.4).
+ * 미할당·미송은 서버가 내려주는 값이다 — 화면에서 빼기 하지 않는다.
  */
-export interface OrderLine {
-  id: string;
-  skuId: string;
-  /** 품명. 라인 표 첫 열의 윗줄 */
+export interface OrderLineView {
+  /** 곧 `orderItemId`. 확정·포장 요청의 키 */
+  id: number;
+  variantId: number;
+  /** `variantNumber`를 문자열로. SKU 칩에 그린다 */
+  sku: string;
   productName: string;
   color: string;
-  size: SizeName;
+  size: OrderLineSize;
   /** 주문수량 */
   qty: number;
   /** 출고진행 — 포장 대기로 잡혔거나 이미 나간 수량 */
   allocatedQty: number;
-  /** 이미 출고 완료된 수량. 주문 탭에서는 바뀌지 않는다(출고 탭 몫) */
+  /** 이미 출고 완료된 수량. 주문 탭에서는 바뀌지 않는다 */
   shippedQty: number;
+  /** 미할당 = 주문수량 − 출고진행. 서버 값 */
+  unallocatedQty: number;
   /** 미송대기 — 팔았지만 못 내보내기로 확정한 수량 */
   backorderQty: number;
-  /** 단가. 라인 표 첫 열의 아랫줄(`₩30,000`) */
-  unitPrice: number;
-  /** 라인 금액 = qty × unitPrice. 서버가 내려주는 값이라 화면에서 곱하지 않는다 */
-  lineAmount: number;
   /**
-   * SKU 재고 스냅샷 — 현재고.
-   * 서버가 붙으면 라인이 아니라 SKU 조회로 오는 값이다. 더미 단계에서는
-   * 주문 하나만 펼쳐도 `가용재고`를 그릴 수 있게 라인에 얹어 둔다.
+   * 가용재고 — SKU 스코프(재고 − 예약). 라인이 아니라 SKU의 값이라 같은 SKU가 두 줄이면
+   * 두 줄에 같은 숫자가 온다. 게이트 G-1이 보류했던 정의를 서버 계약이 정했다.
    */
-  stockOnHand: number;
-  /** SKU 재고 스냅샷 — 주문처리중. `가용재고`의 두 번째 항이다(derive.assignableQty) */
-  reservedQty: number;
+  availableQty: number;
+  unitPrice: number;
 }
 
-/**
- * 포장 대기 회차 한 줄.
- *
- * `backorderUsed`는 화면에 그리지 않는다 — **삭제로 정확히 되돌리기 위한 값이다.**
- * 회차를 만들 때 미송에서 몇 장을 뺐는지 적어 두지 않으면, 삭제할 때 미송을
- * 얼마나 복구해야 하는지 알 수 없다(`min(n, bo)`는 되돌릴 수 없는 계산이다).
- */
-export interface PackingBatchLine {
-  /** 어느 주문 라인에서 뺀 수량인지. **삭제로 되돌릴 때 이 값으로 라인을 찾는다** —
-   *  한 주문에 같은 SKU가 두 줄로 들어올 수 있어 skuId로 찾으면 엉뚱한 줄이 걸린다 */
-  lineId: string;
-  skuId: string;
-  /** `상품명 (색상 - 사이즈)`. 회차 카드는 SKU 코드가 아니라 이 표기를 쓴다(Figma 실측) */
-  label: string;
-  qty: number;
-  backorderUsed: number;
-}
-
-/**
- * 포장 대기 회차. 서버가 붙으면 `package_id = null`인 `packing_item` 묶음이 된다(§2.7).
- * 번호는 재사용하지 않는다 — `#2`를 지우고 새로 만들면 `#4`다.
- */
-export interface PackingBatch {
-  id: string;
-  no: number;
-  lines: PackingBatchLine[];
-}
-
-/** 주문 한 건. `settlement_data_model.md` §2.2 컬럼 + 카드에 필요한 거래처 정보 */
-export interface Order {
-  /** `ORD-001` 표시 그대로가 곧 id다 */
-  id: string;
-  /** `2024.08.01` 표시 문자열. 정렬은 파싱이 아니라 배열 순서(최신순)로 한다 */
-  placedAt: string;
-  /** 거래처(소매처) 상호 */
-  customerName: string;
-  contact: string;
+/** 주문 한 건(상세). 우측 카드·펼침 라인 표·액션 줄이 전부 이걸 본다 */
+export interface OrderView {
+  id: number;
+  orderNumber: string;
+  orderedAt: string;
+  retailerName: string;
+  /** 시드 거래처는 전화가 없어 null이 온다(생성 타입은 string). 화면은 `-` */
+  retailerPhone: string | null;
   paymentMethod: PaymentMethod;
-  receiveMethod: ReceiveMethod;
+  receiveBy: ReceiveBy;
   status: OrderStatus;
   settlementStatus: SettlementStatus;
-  lines: OrderLine[];
-  /** 포장 대기 회차. 최신이 맨 위로 그려지지만 배열은 만든 순서(오름차순)로 둔다 */
-  batches: PackingBatch[];
-  /** 다음 회차에 붙일 번호. 삭제해도 줄지 않는다 */
-  nextBatchNo: number;
+  /** 서버 합계. 라인을 더하지 않는다 */
+  orderAmount: number;
+  totalQty: number;
+  lines: OrderLineView[];
+  /** 버튼 노출은 이 셋으로만 판단한다(스펙). 상태 코드로 가르지 않는다 */
+  isConfirmable: boolean;
+  isCancellable: boolean;
+  isPackable: boolean;
 }
+
+/** 포장 대기 회차 카드의 한 줄 — `상품명 (색상 - 사이즈)` / 수량 */
+export interface PackingBatchLineView {
+  id: number;
+  orderItemId: number;
+  label: string;
+  qty: number;
+}
+
+/**
+ * 포장 대기 회차(= 포장 하나). 서버에 회차 번호가 없어 `no`는 만든 순서로 매긴다 —
+ * 지우면 뒤 번호가 당겨진다(04-wire.md §3).
+ */
+export interface PackingBatchView {
+  id: number;
+  no: number;
+  /** 삭제 버튼 활성 조건. 출고에 잡힌 포장은 여기서 못 지운다 */
+  isCancellable: boolean;
+  lines: PackingBatchLineView[];
+}
+
+/** `이번 출고` 입력값. 라인 id → 문자열. 빈칸과 0을 구분하려고 문자열로 든다 */
+export type ShipInputs = Readonly<Record<number, string>>;

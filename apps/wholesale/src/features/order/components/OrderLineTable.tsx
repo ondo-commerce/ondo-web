@@ -11,21 +11,21 @@ import {
   assignableAfter,
   assignableQty,
   backorderAfter,
-  isEditablePhase,
+  canAllocate,
   isLineAllocated,
   isLineOutOfStock,
   shipQty,
   unallocatedAfter,
   unallocatedQty,
 } from "../derive";
-import type { Order, OrderLine } from "../types";
+import type { OrderLineView, OrderView, ShipInputs } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
  * 펼침 영역의 주문 라인 표.
  *
  * 숫자는 전부 `derive.ts`의 순수 함수가 만든다 — 이 파일에 계산식이 없다.
- * 같은 공식이 확인 다이얼로그·포장 회차 생성에서도 쓰이는데 JSX 안에 흩어 놓으면
+ * 같은 공식이 확인 다이얼로그·포장 요청에서도 쓰이는데 JSX 안에 흩어 놓으면
  * 화면끼리 숫자가 갈린다.
  *
  * **펼침 영역은 자기 스크롤을 갖는다**(`max-h-[50vh]` + 표만 흐름).
@@ -33,15 +33,11 @@ import { formatNumber } from "@/shared/lib/format";
  * 위에는 상관없는 `주문번호·거래처` 머리글이 붙어 있게 된다. 안쪽에 자기 컨테이너를 주면
  * 두 머리글이 만날 일이 없다 — 목록을 훑을 땐 바깥 것, 라인을 훑을 땐 안쪽 것이 붙는다.
  *
- * 덤으로 필터바와 하단 액션 줄이 제자리에 남는다. 라인이 30개여도 `주문 확정`이 항상 보인다.
- * (flex 아이템의 기본 `min-height: auto`가 둘을 내용보다 작게 줄지 않게 막아준다.
- *  줄어들어야 하는 건 표 하나뿐이고, 그건 `stickyHead`가 주는 `min-h-0`이 담당한다.)
- *
  * `이번 출고` 칸은 3상태다(Figma 실측):
  *   미할당 0    → 완료 ✓ (잠김)
  *   가용재고 0  → 비활성 회색 입력칸
  *   그 외       → 흰 입력칸
- * 취소·출고 완료 국면은 애초에 입력을 받지 않는다(derive.isEditablePhase).
+ * 취소·출고 완료 국면은 애초에 입력을 받지 않는다(derive.canAllocate — 서버 boolean).
  */
 export function OrderLineTable({
   order,
@@ -49,11 +45,12 @@ export function OrderLineTable({
   onInputChange,
   footer,
 }: {
-  order: Order;
+  order: OrderView;
   /** 라인 id → 입력 문자열. 빈칸과 0을 구분하려고 문자열 그대로 들고 있는다 */
-  inputs: Readonly<Record<string, string>>;
-  onInputChange: (lineId: string, raw: string) => void;
-  /** 표 하단 우측에 붙는 액션(포장 준비). 없는 국면에서는 넘기지 않는다 */
+  inputs: ShipInputs;
+  /** 친 글자 그대로 올린다. 상한 자르기·숫자 검사는 부르는 쪽(derive.clampShipInput) */
+  onInputChange: (lineId: number, raw: string) => void;
+  /** 표 하단 우측에 붙는 액션(확정·취소·포장 준비). 없는 국면에서는 넘기지 않는다 */
   footer?: ReactNode;
 }) {
   const [color, setColor] = useState(LINE_FILTER_ALL);
@@ -68,10 +65,10 @@ export function OrderLineTable({
       (size === LINE_FILTER_ALL || l.size === size),
   );
 
-  const editable = isEditablePhase(order.status);
+  const editable = canAllocate(order);
 
   /** `이번 출고` 칸 — 3상태 중 하나 */
-  const shipCell = (line: OrderLine) => {
+  const shipCell = (line: OrderLineView) => {
     if (isLineAllocated(line)) return <AllocatedCheck />;
     if (!editable) return <span className="text-muted-foreground">-</span>;
 
@@ -82,7 +79,7 @@ export function OrderLineTable({
         numeric
         inputMode="numeric"
         className="w-20"
-        aria-label={`${line.productName} ${line.color} ${line.size} 이번 출고`}
+        aria-label={`${line.productName} ${line.color} ${line.size} SKU ${line.sku} 이번 출고`}
         disabled={blocked}
         value={inputs[line.id] ?? ""}
         onChange={(e) => onInputChange(line.id, e.target.value)}
@@ -111,7 +108,7 @@ export function OrderLineTable({
         <Table stickyHead>
           <Table.Head>
             <Table.Row>
-              {/* 첫 열은 상품명+단가라 붙일 이름이 없다 */}
+              {/* 첫 열은 상품명이라 붙일 이름이 없다 */}
               <Table.Th align="left" />
               <Table.Th align="center">SKU</Table.Th>
               <Table.Th align="left">색상</Table.Th>
@@ -139,9 +136,6 @@ export function OrderLineTable({
                     >
                       {line.productName}
                     </span>
-                    {/* <span className="text-gray-400 block text-[13px]">
-                      ₩{formatNumber(line.unitPrice)}
-                    </span> */}
                   </Table.Td>
                   <Table.Td align="left">
                     {/* Chip이 inline-flex라 안쪽 span에 min-w-0이 있어야 truncate가 먹는다
@@ -150,9 +144,9 @@ export function OrderLineTable({
                       tone="sub"
                       shape="square"
                       className="w-28 text-body"
-                      title={line.skuId}
+                      title={line.sku}
                     >
-                      <span className="min-w-0 truncate">{line.skuId}</span>
+                      <span className="min-w-0 truncate">{line.sku}</span>
                     </Chip>
                   </Table.Td>
                   <Table.Td align="left">{line.color}</Table.Td>
