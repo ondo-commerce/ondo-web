@@ -2,8 +2,8 @@
 
 import { Table } from "@ondo/ui";
 import { InventoryStockTable } from "./InventoryStockTable";
-import { availableQty, sumQuantities } from "../derive";
-import type { Product } from "@/features/product";
+import { sumQuantities } from "../derive";
+import type { InventoryProductView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -13,7 +13,7 @@ import { formatNumber } from "@/shared/lib/format";
  * 주문 탭과 같은 한 벌이다. 여기 남은 것은 이 탭의 열이 무엇인가뿐이다.
  *
  * 수량 두 칸은 SKU 합계다. 색상 그룹 접힘 행이 쓰는 것과 **같은 파생 함수**를 쓴다 —
- * 상품 합계를 여기서 따로 세면 펼친 표의 합과 갈린다.
+ * 상품 합계를 여기서 따로 세면 펼친 표의 합과 갈린다. 판매가능은 서버 값의 합이다.
  */
 export function InventoryProductRow({
   product,
@@ -22,11 +22,11 @@ export function InventoryProductRow({
   selectedSkuId,
   onSelectSku,
 }: {
-  product: Product;
+  product: InventoryProductView;
   open: boolean;
   onToggle: () => void;
-  selectedSkuId: string | null;
-  onSelectSku: (skuId: string) => void;
+  selectedSkuId: number | null;
+  onSelectSku: (variantId: number) => void;
 }) {
   const totals = sumQuantities(product.skus);
 
@@ -53,8 +53,8 @@ export function InventoryProductRow({
       <Table.Td>{product.skus.length}</Table.Td>
       <Table.Td>{formatNumber(totals.stock)}</Table.Td>
       {/* 판매가능이 음수면 빨강이다. 0으로 감추지 않는다(§7 Q4) — 판 것보다 재고가 적다는 뜻이다 */}
-      <Table.Td tone={availableQty(totals) < 0 ? "danger" : "default"}>
-        {formatNumber(availableQty(totals))}
+      <Table.Td tone={totals.availableQty < 0 ? "danger" : "default"}>
+        {formatNumber(totals.availableQty)}
       </Table.Td>
     </Table.ExpandableRow>
   );

@@ -1,4 +1,25 @@
-import type { StockMovement, StockQuantities } from "./types";
+import { isApiError } from "@ondo/api";
+import {
+  INBOUND_ERROR_TEXT,
+  MOVEMENT_PAGE_SIZE,
+  PAGE_SIZE,
+  FILTER_ALL,
+} from "./constants";
+import type {
+  InboundCreateRequest,
+  InboundDrafts,
+  InboundEntry,
+  InboundInput,
+  InboundItemRequest,
+  InventoryProductView,
+  InventorySkuView,
+  ProductDetail,
+  StockMovement,
+  StockMovementView,
+  StockQuantities,
+} from "./types";
+import { describeError } from "@/shared/api/describeError";
+import type { ProductListQuery } from "@/shared/api/product";
 
 /*
  * 재고 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -9,12 +30,139 @@ import type { StockMovement, StockQuantities } from "./types";
  * 0원은 "공짜로 받았다"로 읽히기 때문에 화면에서 빈칸으로 그려야 한다(§7 Q5).
  */
 
-/** 판매가능 = 현재고 − 주문처리중 − 미송대기. 음수를 0으로 감추지 않는다(§7 Q4) */
-export function availableQty(q: StockQuantities): number {
-  return q.stock - q.reservedQty - q.backorderQty;
+/* ------------------------------------------------------------------------
+ * 날짜
+ * ------------------------------------------------------------------------ */
+
+const KST_DATE = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * date-time → `YYYY.MM.DD`(KST). 이력의 날짜 열.
+ * 서버 시각을 KST로 고정해 그린다 — 브라우저 시간대에 따라 하루가 밀리면 안 된다.
+ */
+export function formatMovementDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const parts = KST_DATE.formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}.${part("month")}.${part("day")}`;
 }
 
-/** 색상 그룹 접힘 행의 수량 3열. 판매가능은 이 합계끼리 다시 뺀 값이다 */
+/* ------------------------------------------------------------------------
+ * wire → 뷰
+ * ------------------------------------------------------------------------ */
+
+/**
+ * SKU 표기 `상품번호-SKU번호`. 스펙이 숫자 둘(`productNumber`·`variantNumber`)뿐이라
+ * fixtures의 `SU-18-블랙-M` 같은 코드는 없다. 미송 탭과 같은 임시 규칙이다(04-wire §3).
+ */
+export function skuCode(productNumber: number, variantNumber: number): string {
+  return `${productNumber}-${variantNumber}`;
+}
+
+/**
+ * 상세 응답 → 재고 목록의 상품. 색상은 SKU마다 붙인다(`color`·`colorHex`) — 표는 색상
+ * 그룹으로 묶어 그리는데, 그룹의 첫 행만 색 점을 보이면 되니 색상 목록을 따로 들 이유가 없다.
+ * 서버 정렬(색상은 그룹→색상, variant는 사이즈)을 그대로 믿는다. 여기서 다시 정렬하지 않는다.
+ */
+export function toProductView(detail: ProductDetail): InventoryProductView {
+  return {
+    id: detail.id,
+    code: String(detail.productNumber),
+    name: detail.name,
+    skus: (detail.colorOptions ?? []).flatMap((option) =>
+      (option.variants ?? []).map((v): InventorySkuView => ({
+        id: v.id,
+        code: skuCode(detail.productNumber, v.variantNumber),
+        colorId: option.color.id,
+        color: option.color.name,
+        colorHex: option.color.hex,
+        size: v.size,
+        stock: v.stockQty,
+        reservedQty: v.allocatedQty,
+        backorderQty: v.backorderQty,
+        availableQty: v.availableQty,
+        avgCost: v.avgCost,
+      })),
+    ),
+  };
+}
+
+export function toMovementView(m: StockMovement): StockMovementView {
+  return {
+    id: m.id,
+    date: formatMovementDate(m.createdAt),
+    type: m.type,
+    beforeQty: m.qtyBefore,
+    deltaQty: m.qtyChange,
+    afterQty: m.qtyAfter,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 목록 · 필터
+ * ------------------------------------------------------------------------ */
+
+export interface InventoryListParams {
+  /** 서버에 보낸 검색어(트림됨). 빈 문자열 = 검색 없음 */
+  q: string;
+  /** 1-base. 화면이 보는 값 */
+  page: number;
+}
+
+export function toListQuery(params: InventoryListParams): ProductListQuery {
+  return {
+    q: params.q === "" ? undefined : params.q,
+    page: Math.max(params.page - 1, 0),
+    size: PAGE_SIZE,
+  };
+}
+
+/** 변동 이력 요청. 페이저가 없어 첫 페이지 하나다 */
+export function toMovementQuery() {
+  return { page: 0, size: MOVEMENT_PAGE_SIZE };
+}
+
+/** 색상 단위로 묶는다. SKU = 색상 × 사이즈라서 색상이 그룹 축이 된다 */
+export function groupByColor(
+  skus: readonly InventorySkuView[],
+): [string, InventorySkuView[]][] {
+  const map = new Map<string, InventorySkuView[]>();
+  for (const s of skus) {
+    const list = map.get(s.color);
+    if (list) list.push(s);
+    else map.set(s.color, [s]);
+  }
+  return [...map];
+}
+
+/** 색상·사이즈 단일 필터. `전체`는 거르지 않는다 */
+export function filterSkus(
+  skus: readonly InventorySkuView[],
+  color: string,
+  size: string,
+): InventorySkuView[] {
+  return skus.filter(
+    (s) =>
+      (color === FILTER_ALL || s.color === color) &&
+      (size === FILTER_ALL || s.size === size),
+  );
+}
+
+/* ------------------------------------------------------------------------
+ * 수량
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 색상 그룹 접힘 행·상품 행의 수량 4열. 판매가능도 **서버 값끼리 더한다** —
+ * `Σ현재고 − Σ주문처리중 − Σ미송대기`와 같은 값이지만 공식을 화면이 다시 들지 않는다.
+ */
 export function sumQuantities(
   list: readonly StockQuantities[],
 ): StockQuantities {
@@ -23,8 +171,9 @@ export function sumQuantities(
       stock: acc.stock + q.stock,
       reservedQty: acc.reservedQty + q.reservedQty,
       backorderQty: acc.backorderQty + q.backorderQty,
+      availableQty: acc.availableQty + q.availableQty,
     }),
-    { stock: 0, reservedQty: 0, backorderQty: 0 },
+    { stock: 0, reservedQty: 0, backorderQty: 0, availableQty: 0 },
   );
 }
 
@@ -50,40 +199,111 @@ export function stockAfterInbound(stock: number, added: number | null): number {
   return stock + (added ?? 0);
 }
 
+/* ------------------------------------------------------------------------
+ * 입력 → 요청
+ * ------------------------------------------------------------------------ */
+
+/** 칸에 들어갈 수 있는 글자 — 0 이상 정수의 숫자뿐. 소수점·부호·쉼표는 키 단위로 막는다(Q-03) */
+export function isDigits(text: string): boolean {
+  return /^\d*$/.test(text);
+}
+
 /**
  * 숫자 입력칸의 문자열 → 수량/금액.
  * 빈칸과 0을 구분해야 해서 빈칸은 null이다 — "안 적었다"와 "0을 적었다"는 다르다.
+ * 숫자가 아닌 글자가 섞여 있으면(붙여넣기) null — 일부만 살려 `45.5`가 `455`가 되지 않게.
  */
 export function parseNumberInput(raw: string): number | null {
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (digits === "") return null;
-  return Number(digits);
+  if (raw === "" || !isDigits(raw)) return null;
+  return Number(raw);
 }
 
-/** 이력 카드에 새로 끼울 입고 한 줄. 화면에서 만든 값도 이력 모양을 그대로 지킨다 */
-export function inboundMovement(
-  skuId: string,
-  date: string,
-  beforeQty: number,
-  qty: number,
-): StockMovement {
-  return {
-    id: `${skuId}-in-${date}-${beforeQty}-${qty}`,
-    date,
-    type: "stockIn",
-    beforeQty,
-    deltaQty: qty,
-    afterQty: beforeQty + qty,
-  };
+export const EMPTY_INPUT: InboundInput = { qty: "", unitPrice: "" };
+
+export function inputOf(
+  drafts: InboundDrafts,
+  variantId: number,
+): InboundInput {
+  return drafts[variantId] ?? EMPTY_INPUT;
 }
 
 /**
- * 이력 날짜 표시(`2023.10.24`).
- * **입고 처리 버튼을 누른 순간에만 부른다** — 렌더 중에 오늘 날짜를 만들면
- * 서버와 브라우저의 시각이 달라 하이드레이션이 깨진다.
+ * 입고 대상 줄. **수량을 적은 줄만**이다 — 단가만 적힌 줄은 입고가 아니다.
+ * `skus`가 범위를 정한다: 모드 A는 그 상품의 SKU 전부, 모드 B는 고른 SKU 하나.
+ * 다른 상품에 남아 있는 입력은 여기 못 들어온다.
  */
-export function formatMovementDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}.${month}.${day}`;
+export function inboundEntries(
+  skus: readonly InventorySkuView[],
+  drafts: InboundDrafts,
+): InboundEntry[] {
+  return skus.flatMap((s) => {
+    const input = inputOf(drafts, s.id);
+    const qty = parseNumberInput(input.qty);
+    if (qty === null || qty === 0) return [];
+    return [
+      { variantId: s.id, qty, unitPrice: parseNumberInput(input.unitPrice) },
+    ];
+  });
+}
+
+export function totalInboundQty(entries: readonly InboundEntry[]): number {
+  return entries.reduce((sum, e) => sum + e.qty, 0);
+}
+
+/**
+ * 입고 요청 본문. `receivedAt`은 **입고 처리 버튼을 누른 순간**의 시각을 받는다 —
+ * 렌더 중에 만들면 서버 렌더와 브라우저 렌더가 달라 하이드레이션이 깨진다.
+ *
+ * 매입단가를 안 적은 줄은 `unitCost`를 싣지 않는다(undefined는 JSON에서 빠진다). 생성 타입은
+ * 필수로 보지만 스펙 설명에 필수 여부가 없고 화면은 빈 단가를 허용한다(§7 Q3). 서버가 거절하면
+ * `VALIDATION_FAILED`가 `items` 줄로 온다.
+ */
+export function toInboundRequest(
+  entries: readonly InboundEntry[],
+  receivedAt: string,
+): InboundCreateRequest {
+  return {
+    receivedAt,
+    items: entries.map((e): InboundItemRequest => ({
+      variantId: e.variantId,
+      qty: e.qty,
+      unitCost: (e.unitPrice === null
+        ? undefined
+        : e.unitPrice) as unknown as number,
+    })),
+  };
+}
+
+/** 처리된 줄의 입력만 지운다. 안 보낸 줄(단가만 적은 줄 등)은 남는다(Q-02) */
+export function clearDrafts(
+  drafts: InboundDrafts,
+  entries: readonly InboundEntry[],
+): InboundDrafts {
+  const next = { ...drafts };
+  for (const e of entries) delete next[e.variantId];
+  return next;
+}
+
+/* ------------------------------------------------------------------------
+ * 오류
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 입고가 거절됐을 때의 문구. 도메인 코드는 `INBOUND_ERROR_TEXT`, 그 밖(네트워크·5xx)은
+ * `describeError`의 제목. `VALIDATION_FAILED`는 여기 오기 전에 `toFieldErrors`가 가져간다.
+ */
+export function inboundErrorText(error: unknown): string {
+  if (isApiError(error)) {
+    const known = INBOUND_ERROR_TEXT[error.code];
+    if (known) return known;
+  }
+  return describeError(error).title;
+}
+
+/**
+ * 서버 상태와 어긋나서 거절된 것인가(409·404). 이때는 화면이 든 값이 낡은 것이라
+ * 다시 불러와야 한다 — 문구만 보이고 길이 없으면 같은 버튼을 다시 눌러 같은 답을 본다(wire-order F3).
+ */
+export function isStaleRejection(error: unknown): boolean {
+  return isApiError(error) && (error.status === 409 || error.status === 404);
 }

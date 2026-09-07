@@ -12,10 +12,3 @@ export type {
   SkuSize,
   PostStatus,
 } from "./types";
-
-/*
- * ⚠️ 아래는 연동 전 화면용이다. 재고·주문 탭이 아직 fixtures로 돌아서 남겨 둔다 —
- * 그 feature가 연동되는 회차에 지운다. 상품 탭 자신은 쓰지 않는다.
- */
-export { PRODUCTS, findProduct } from "./fixtures";
-export type { Product, Post, Sku, SizeName } from "./types";
