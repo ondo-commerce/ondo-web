@@ -114,8 +114,10 @@ function Palette({
                 {group.name}
               </p>
               {/* justify-start: 열 안에서 칩이 열 폭만큼 늘어나므로, 가운데
-                  정렬이면 이름 길이에 따라 색 점이 좌우로 흩어진다 */}
-              {group.colors.map((color) => (
+                  정렬이면 이름 길이에 따라 색 점이 좌우로 흩어진다.
+                  `?? []`는 `flattenColors`와 같은 이유 — 스펙에 nullable이 없어
+                  타입은 배열이지만 서버가 null을 줄 수 있다(04-wire §3-7) */}
+              {(group.colors ?? []).map((color) => (
                 <ToggleChip
                   key={color.id}
                   selected={draft.includes(color.id)}

@@ -119,6 +119,8 @@ function ProductFormFields({
             options={tree}
             disabled={disabled}
             invalid={categoryInvalid}
+            // 포커스는 대분류로 온다(`focusField`) — 오류 문구도 여기서 읽혀야 한다
+            describedBy={categoryInvalid ? errorId("categoryId") : undefined}
             onChange={(v) => setCategory(0, v)}
           />
 

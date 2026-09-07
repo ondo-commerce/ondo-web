@@ -243,6 +243,7 @@ export function PostFormPanel({
               className="mb-0"
             >
               <PostPriceTable
+                id={fieldId("listing.variantPrices")}
                 rows={priceRows}
                 values={value.prices}
                 showAvgCost={showAvgCost}

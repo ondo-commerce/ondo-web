@@ -25,6 +25,7 @@ import { formatNumber } from "@/shared/lib/format";
  * 표 아래 한 줄이 이유를 말하고 어느 칸인지는 테두리가 가리킨다.
  */
 export function PostPriceTable({
+  id,
   rows,
   values,
   onChange,
@@ -34,6 +35,11 @@ export function PostPriceTable({
   describedBy,
   flagMissingPrice = false,
 }: {
+  /**
+   * 오류 포커스 대상의 DOM id(`fieldId("listing.variantPrices")`). 표는 원래 포커스를
+   * 못 받으므로 `tabIndex={-1}`을 같이 건다 — 탭 순서엔 안 들어가고 `focus()`로만 온다
+   */
+  id?: string;
   rows: PriceRow[];
   values: Record<string, PriceValue>;
   onChange: (id: string, next: PriceValue) => void;
@@ -87,7 +93,11 @@ export function PostPriceTable({
   );
 
   return (
-    <Table aria-describedby={describedBy}>
+    <Table
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      aria-describedby={describedBy}
+    >
       <Table.Head>
         <Table.Row>
           <Table.Th align="left">색상</Table.Th>

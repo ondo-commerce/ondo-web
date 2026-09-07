@@ -467,7 +467,11 @@ function isSameListingRequest(
 /**
  * PATCH 본문에 `listing`을 실을지. 생략 = 무변경이라 보낼 이유가 있을 때만 싣는다.
  *
- * - 게시글이 없는 상품: 제목을 채웠을 때(→ 서버가 생성 분기)
+ * - 게시글이 없는 상품: **게시글 폼에 손댄 흔적이 있을 때**(→ 서버가 생성 분기).
+ *   제목만 보면 판매가·설명을 채우고 제목을 비운 저장이 오류 없이 성공하면서 채운 값이
+ *   조용히 버려진다(PR #160 리뷰). 폼 초기값(`toPostForm`)과 다르면 보낼 대상으로 보고,
+ *   빈 제목은 `validateProductForm`이 `listing.title`로 잡는다. 양쪽에 같은 `product`를
+ *   두는 이유: 사이즈만 켠 것으로 게시글 작성을 강요하면 안 된다.
  * - 게시글이 있는 상품: **폼으로 만든 요청이 서버 값으로 만든 요청과 다를 때.**
  *   게시 상태는 보지 않는다 — 제목·판매가를 고친 뒤 `시즌 종료`로 바꿔 저장하면
  *   잠긴 폼에 고친 값이 그대로 보이는데 요청에서 빠져 조용히 버려졌다(wire-product F1).
@@ -481,7 +485,12 @@ export function shouldSendListing(
   product: ProductFormValue,
   post: PostFormValue,
 ): boolean {
-  if (current.post === null) return post.name.trim() !== "";
+  if (current.post === null) {
+    return !isSameListingRequest(
+      toListingRequest(product, post, current.skus),
+      toListingRequest(product, toPostForm(current), current.skus),
+    );
+  }
   return !isSameListingRequest(
     toListingRequest(product, post, current.skus),
     toListingRequest(toProductForm(current), toPostForm(current), current.skus),
