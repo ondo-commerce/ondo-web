@@ -3,6 +3,7 @@ import spec from "../../../openapi/wholesale.json";
 import { handlersFromSpec } from "../handlers";
 import type { OpenApiDocument } from "../openapi";
 import { backorderHandlers } from "./backorder";
+import { inventoryHandlers } from "./inventory";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
 
@@ -18,5 +19,6 @@ export const wholesaleHandlers: RequestHandler[] = [
   ...productHandlers,
   ...orderHandlers,
   ...backorderHandlers,
+  ...inventoryHandlers,
   ...handlersFromSpec(spec as unknown as OpenApiDocument),
 ];
