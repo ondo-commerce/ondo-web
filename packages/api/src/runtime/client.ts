@@ -147,6 +147,20 @@ async function fetchPage<T>(
   return { items: payload.data, meta: payload.meta };
 }
 
+/**
+ * 봉투가 `{ data }` 하나가 아닌 응답. 도매 미송 펼침(`BackorderListResponse`)처럼
+ * `data` 옆에 `stats`가 붙는 모양은 {@link apiFetch}로 받으면 `stats`가 버려지고,
+ * {@link apiFetchPage}로 받으면 `meta`가 없다. 본문을 통째로 준다 — 호출부가
+ * 스펙 스키마 타입(`WholesaleSchema<"…">`)을 그대로 `T`로 넘긴다.
+ */
+export async function apiFetchBody<T>(
+  path: string,
+  init: ApiFetchInit = {},
+): Promise<T> {
+  const response = await request(browserTransport(), path, init);
+  return readJson<T>(response);
+}
+
 async function request(
   transport: Transport,
   path: string,
