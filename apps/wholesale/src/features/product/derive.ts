@@ -1,6 +1,7 @@
 import { isApiError } from "@ondo/api";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import { toFieldErrors, type FormErrors } from "@/shared/api/fieldErrors";
+import type { ProductListQuery } from "@/shared/api/product";
 import {
   LIST_PARAM,
   PAGE_SIZE,
@@ -200,14 +201,6 @@ export function withListParams(
     else next.set(name, value);
   }
   return next.toString();
-}
-
-/** 서버에 보낼 쿼리. 게시 상태는 서버 파라미터가 없어 여기 없다(§3-1) */
-export interface ProductListQuery {
-  q: string | undefined;
-  /** 0-base */
-  page: number;
-  size: number;
 }
 
 export function toListQuery(params: ProductListParams): ProductListQuery {

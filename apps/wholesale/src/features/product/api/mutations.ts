@@ -2,7 +2,6 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
-import { productKeys } from "./keys";
 import { PRODUCT_PATH } from "./queries";
 import type {
   Listing,
@@ -11,6 +10,10 @@ import type {
   ProductDetail,
   ProductUpdateRequest,
 } from "../types";
+import {
+  PRODUCT_PATH as PRODUCT_READ_PATH,
+  productKeys,
+} from "@/shared/api/product";
 
 /**
  * 쓰기는 전부 여기. 성공하면 `keys.ts`의 팩토리로 무효화한다 — 목록과 상세가 같은
@@ -23,7 +26,7 @@ import type {
  * `select`가 뷰를 한 번 더 변환해 값이 깨진다.
  */
 function createProduct(body: ProductCreateRequest): Promise<ProductDetail> {
-  return apiFetch<ProductDetail>(PRODUCT_PATH.products, {
+  return apiFetch<ProductDetail>(PRODUCT_READ_PATH.products, {
     method: "POST",
     body,
   });
@@ -45,7 +48,7 @@ export function useUpdateProductMutation(productId: number) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: ProductUpdateRequest) =>
-      apiFetch<ProductDetail>(PRODUCT_PATH.product(productId), {
+      apiFetch<ProductDetail>(PRODUCT_READ_PATH.product(productId), {
         method: "PATCH",
         body,
       }),
@@ -63,7 +66,9 @@ export function useDeleteProductMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (productId: number) =>
-      apiFetch<void>(PRODUCT_PATH.product(productId), { method: "DELETE" }),
+      apiFetch<void>(PRODUCT_READ_PATH.product(productId), {
+        method: "DELETE",
+      }),
     onSuccess: (_, productId) => {
       // 지운 상품의 상세는 다시 부르면 404다. 무효화가 아니라 제거
       queryClient.removeQueries({ queryKey: productKeys.detail(productId) });

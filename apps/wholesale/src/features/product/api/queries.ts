@@ -1,29 +1,26 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { apiFetch, apiFetchPage, type PageMeta } from "@ondo/api";
-import { productKeys } from "./keys";
-import {
-  toProductRowView,
-  toProductView,
-  type ProductListQuery,
-} from "../derive";
+import { apiFetch, type PageMeta } from "@ondo/api";
+import { toProductRowView, toProductView } from "../derive";
 import type {
   CategoryNode,
   ColorGroup,
-  ProductDetail,
   ProductRowView,
-  ProductSummary,
   ProductView,
 } from "../types";
+import {
+  productDetailQueryOptions,
+  productKeys,
+  productListQueryOptions,
+  type ProductListQuery,
+} from "@/shared/api/product";
 
 /**
- * 상품·게시 경로. 훅 1개 = 엔드포인트 1개(docs/05). 여기 없는 경로는 이 feature가
- * 부르지 않는다.
+ * 게시·마스터 경로. 훅 1개 = 엔드포인트 1개(docs/05). 여기 없는 경로는 이 feature가
+ * 부르지 않는다. 상품 목록·상세 경로는 재고 탭과 같이 써서 `shared/api/product`에 있다.
  */
 export const PRODUCT_PATH = {
-  products: "/api/wholesale/products",
-  product: (productId: number) => `/api/wholesale/products/${productId}`,
   seasonEnd: (listingId: number) =>
     `/api/wholesale/listings/${listingId}/season-end`,
   reopen: (listingId: number) => `/api/wholesale/listings/${listingId}/reopen`,
@@ -38,11 +35,7 @@ export const PRODUCT_PATH = {
 
 export function useProductListQuery(query: ProductListQuery) {
   return useSuspenseQuery({
-    queryKey: productKeys.list(query),
-    queryFn: () =>
-      apiFetchPage<ProductSummary>(PRODUCT_PATH.products, {
-        searchParams: { q: query.q, page: query.page, size: query.size },
-      }),
+    ...productListQueryOptions(query),
     select: (page): { rows: ProductRowView[]; meta: PageMeta } => ({
       rows: page.items.map(toProductRowView),
       meta: page.meta,
@@ -52,8 +45,7 @@ export function useProductListQuery(query: ProductListQuery) {
 
 export function useProductDetailQuery(productId: number) {
   return useSuspenseQuery({
-    queryKey: productKeys.detail(productId),
-    queryFn: () => apiFetch<ProductDetail>(PRODUCT_PATH.product(productId)),
+    ...productDetailQueryOptions(productId),
     select: (detail): ProductView => toProductView(detail),
   });
 }
