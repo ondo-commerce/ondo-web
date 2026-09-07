@@ -17,6 +17,14 @@ function groupByColor(skus: readonly SkuView[]): Map<number, SkuView[]> {
   return map;
 }
 
+/**
+ * 게시글 값(판매가·주문 제한)은 게시글이 없는 SKU엔 없다(null). 숫자 자리에 `-`.
+ * `formatNumber`에 null을 넣으면 `toLocaleString`에서 던져 행 전체가 경계로 떨어진다.
+ */
+function formatOptional(value: number | null): string {
+  return value === null ? "-" : formatNumber(value);
+}
+
 /** 게시글이 등록된 상품의 펼침 내용. 가격이 붙어 있어 열이 많다 */
 export function ProductSkuTable({ product }: { product: ProductView }) {
   const groups = [...groupByColor(product.skus)];
@@ -81,9 +89,9 @@ export function ProductSkuTable({ product }: { product: ProductView }) {
                 <Table.Td tone={s.stock === 0 ? "danger" : "default"}>
                   {formatNumber(s.stock)}
                 </Table.Td>
-                <Table.Td tone="muted">{formatNumber(s.orderLimit)}</Table.Td>
+                <Table.Td tone="muted">{formatOptional(s.orderLimit)}</Table.Td>
                 <Table.Td tone="muted">{formatNumber(s.avgCost)}</Table.Td>
-                <Table.Td>{formatNumber(s.price)}</Table.Td>
+                <Table.Td>{formatOptional(s.price)}</Table.Td>
               </Table.Row>
             );
           });

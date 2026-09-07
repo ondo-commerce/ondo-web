@@ -98,9 +98,10 @@ export function toProductView(detail: ProductDetail): ProductView {
         reservedQty: v.allocatedQty,
         backorderQty: v.backorderQty,
         availableQty: v.availableQty,
-        orderLimit: v.orderLimit,
+        // 게시글이 없으면 서버가 null을 준다(스펙엔 nullable이 없다). `listing`과 같은 사정
+        orderLimit: v.orderLimit ?? null,
         avgCost: v.avgCost,
-        price: v.salePrice,
+        price: v.salePrice ?? null,
       })),
     ),
     post: listing
@@ -291,6 +292,11 @@ export function parseIntegerText(text: string): number {
   return text === "" ? 0 : Number(text);
 }
 
+/** `parseIntegerText`의 반대. 서버 숫자를 칸 글자로 — 없는 값(null)은 빈 칸이다 */
+export function integerText(value: number | null): string {
+  return value === null ? "" : String(value);
+}
+
 /** 판매가가 비었나. 빈 칸과 `0`은 같은 뜻이다 — 둘 다 0원으로 나간다 */
 export function isPriceMissing(text: string): boolean {
   return isIntegerText(text) && parseIntegerText(text) === 0;
@@ -374,8 +380,10 @@ export function toPostForm(product: ProductView): PostFormValue {
     prices: Object.fromEntries(
       product.skus.map((s) => [
         priceRowId(s.colorId, s.size),
-        // 칸은 문자열을 든다(`PriceValue`). 서버 숫자를 그대로 글자로
-        { orderLimit: String(s.orderLimit), price: String(s.price) },
+        // 칸은 문자열을 든다(`PriceValue`). 서버 숫자를 그대로 글자로.
+        // null(게시글 없음)은 빈 칸 — "null" 글자가 들어가면 정수 검증에 걸려 빨개진다.
+        // 빈 판매가는 저장 때 `missingPriceRowIds`가 잡으니 여기서 0으로 메우지 않는다
+        { orderLimit: integerText(s.orderLimit), price: integerText(s.price) },
       ]),
     ),
   };

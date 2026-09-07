@@ -84,12 +84,18 @@ export interface SkuView {
   backorderQty: number;
   /** 판매가능 = 현재고 − 주문처리중 − 미송대기. 서버가 계산한 값을 그대로 */
   availableQty: number;
-  /** 주문 제한 (게시글에 붙는 값). 0 = 무제한 */
-  orderLimit: number;
+  /**
+   * 주문 제한 (게시글에 붙는 값). 0 = 무제한.
+   *
+   * 게시글이 없는 상품은 서버가 `null`을 준다 — 스펙 `VariantResponse`엔 `nullable`이
+   * 없어 생성 타입은 `number`지만 실제 dev 응답이 그렇다(§3-9). 여기서만 `null`을 허용하고
+   * `toProductView`가 `?? null`로 받는다.
+   */
+  orderLimit: number | null;
   /** 입고 이력으로 갱신되는 값. 화면에서 수정하지 않는다 */
   avgCost: number;
-  /** 판매가 (게시글에 붙는 값) */
-  price: number;
+  /** 판매가 (게시글에 붙는 값). 게시글이 없으면 `null` — `orderLimit`과 같은 사정 */
+  price: number | null;
 }
 
 /**
