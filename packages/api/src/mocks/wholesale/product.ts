@@ -231,19 +231,76 @@ const PAGE_META: WholesaleSchema<"PageMeta"> = {
   totalPages: 1,
 };
 
+/**
+ * 실서버가 요청 본문에서 거절하는 것 가운데 **목에서도 같이 거절해야 하는 것.**
+ *
+ * `listing.variantPrices[i]`는 SKU를 `variantId` **또는** `(colorId, size)` 한쪽으로만
+ * 가리킨다. 둘 다 실으면 dev가 400 `VALIDATION_FAILED`인데 목은 아무 본문이나 받아서,
+ * 화면이 둘 다 싣는 버그가 mock 검증을 통과해 dev에서야 드러났다(dev-verify F2).
+ * 응답의 `field`·`reason`·`message`는 2026-09-08 dev 응답 그대로다 — 지어내지 않는다.
+ * 나머지 검증(빈 제목·리프 아님 …)은 목에 두지 않는다 — 스펙 example 응답만 돌려준다.
+ */
+function variantPriceTargetErrors(
+  listing: WholesaleSchema<"ListingUpsertRequest"> | null | undefined,
+): { field: string; reason: string }[] {
+  return (listing?.variantPrices ?? []).flatMap((price, i) => {
+    const byId = price.variantId !== undefined;
+    const byColorSize = price.colorId !== undefined || price.size !== undefined;
+    const bothOrNeither = byId === byColorSize;
+    return bothOrNeither
+      ? [
+          {
+            field: `listing.variantPrices[${i}].targetSpecified`,
+            reason: "variantId 또는 (colorId, size) 중 한쪽만 지정한다.",
+          },
+        ]
+      : [];
+  });
+}
+
+function validationFailed(errors: { field: string; reason: string }[]) {
+  return HttpResponse.json(
+    {
+      code: "VALIDATION_FAILED",
+      message: "입력값이 올바르지 않습니다.",
+      errors,
+      traceId: "mock",
+    },
+    { status: 400 },
+  );
+}
+
 /** 스펙 자동 핸들러 **앞에** 놓는다. 같은 경로면 이쪽이 이긴다 */
 export const productHandlers = [
   http.get("*/api/wholesale/products", () =>
     HttpResponse.json({ data: PRODUCT_SUMMARIES, meta: PAGE_META }),
   ),
-  http.post("*/api/wholesale/products", () =>
-    HttpResponse.json({ data: PRODUCT_DETAIL }, { status: 201 }),
+  http.post<never, WholesaleSchema<"ProductCreateRequest">>(
+    "*/api/wholesale/products",
+    async ({ request }) => {
+      const body = await request.json();
+      // 스펙 타입은 non-optional이지만 "null이면 상품만"이 계약이라 런타임엔 null이 온다
+      const errors = variantPriceTargetErrors(
+        body.listing as WholesaleSchema<"ListingUpsertRequest"> | null,
+      );
+      if (errors.length > 0) return validationFailed(errors);
+      return HttpResponse.json({ data: PRODUCT_DETAIL }, { status: 201 });
+    },
   ),
   http.get("*/api/wholesale/products/:productId", () =>
     HttpResponse.json({ data: PRODUCT_DETAIL }),
   ),
-  http.patch("*/api/wholesale/products/:productId", () =>
-    HttpResponse.json({ data: PRODUCT_DETAIL }),
+  http.patch<{ productId: string }, WholesaleSchema<"ProductUpdateRequest">>(
+    "*/api/wholesale/products/:productId",
+    async ({ request }) => {
+      const body = await request.json();
+      // 생략 = 무변경(스펙)이라 키가 없을 수 있다
+      const errors = variantPriceTargetErrors(
+        body.listing as WholesaleSchema<"ListingUpsertRequest"> | undefined,
+      );
+      if (errors.length > 0) return validationFailed(errors);
+      return HttpResponse.json({ data: PRODUCT_DETAIL });
+    },
   ),
   http.post("*/api/wholesale/listings/:listingId/season-end", () =>
     HttpResponse.json({ data: listing("SEASON_ENDED") }),
