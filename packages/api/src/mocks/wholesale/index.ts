@@ -6,6 +6,7 @@ import { backorderHandlers } from "./backorder";
 import { inventoryHandlers } from "./inventory";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
+import { shipmentHandlers } from "./shipment";
 
 /**
  * 도매 목 전체. **순서가 규칙이다** — 앞이 이긴다.
@@ -20,5 +21,6 @@ export const wholesaleHandlers: RequestHandler[] = [
   ...orderHandlers,
   ...backorderHandlers,
   ...inventoryHandlers,
+  ...shipmentHandlers,
   ...handlersFromSpec(spec as unknown as OpenApiDocument),
 ];
