@@ -1,6 +1,6 @@
 "use client";
 
-import { Panel, Table } from "@ondo/ui";
+import { Button, Panel, Table } from "@ondo/ui";
 import { useStockMovementsQuery } from "../api/queries";
 import { MOVEMENT_LABEL } from "../constants";
 import { formatNumber } from "@/shared/lib/format";
@@ -18,18 +18,42 @@ function signed(delta: number): string {
  * `Panel`·제목은 부르는 쪽이 그린다 — 경계가 패널 안에 있어야 기다리는 동안 폭이 유지된다.
  */
 export function SkuHistoryCard({ variantId }: { variantId: number }) {
-  const { data } = useStockMovementsQuery(variantId);
+  /* 입고 뒤 이력 재조회만 실패하면 캐시의 옛 줄이 남는다 — 경계는 안 떨어지니 여기서 한 줄 알린다 */
+  const { data, isRefetchError, refetch } = useStockMovementsQuery(variantId);
+
+  const staleLine = isRefetchError ? (
+    <div
+      role="alert"
+      className="mb-2 flex shrink-0 items-center justify-between gap-3"
+    >
+      <p className="text-destructive-strong text-sm">
+        이력을 새로 못 불러왔어요
+      </p>
+      <Button
+        type="button"
+        variant="line"
+        size="sm"
+        onClick={() => void refetch()}
+      >
+        다시 불러오기
+      </Button>
+    </div>
+  ) : null;
 
   if (data.rows.length === 0) {
     return (
-      <p className="text-muted-foreground py-8 text-center text-sm">
-        아직 재고가 움직인 적이 없습니다
-      </p>
+      <>
+        {staleLine}
+        <p className="text-muted-foreground py-8 text-center text-sm">
+          아직 재고가 움직인 적이 없습니다
+        </p>
+      </>
     );
   }
 
   return (
     <Panel.Body>
+      {staleLine}
       <Table>
         <Table.Head>
           <Table.Row>

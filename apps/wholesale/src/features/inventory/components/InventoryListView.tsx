@@ -33,6 +33,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
  *
  * 경계는 셋 — 목록 패널·우측 입고 카드·변동 이력 카드. 실패한 자리만 그 자리에서 실패한다.
+ * 목록 패널 안에서도 행마다 받는 상세는 **행 단위**로 실패한다(합계 칸만 `-`·`다시 시도`).
  * 우측 입고 카드는 목록과 같은 키(상품 상세)를 봐서, 목록이 받아 둔 캐시를 그대로 쓴다.
  */
 export function InventoryListView() {
@@ -160,7 +161,7 @@ export function InventoryListView() {
 }
 
 /**
- * 표 + 페이지 이동. 안에서만 `useSuspenseQuery`를 부른다.
+ * 표 + 페이지 이동. 안에서만 목록 쿼리를 부른다.
  */
 function InventoryListBody({
   params,
@@ -177,7 +178,9 @@ function InventoryListBody({
   onSelectSku: (variantId: number) => void;
   onPage: (page: number) => void;
 }) {
-  const { products, meta } = useInventoryListQuery(toListQuery(params));
+  const { rows, meta, retryDetail } = useInventoryListQuery(
+    toListQuery(params),
+  );
   const totalPages = Math.max(meta.totalPages, 1);
 
   return (
@@ -185,7 +188,7 @@ function InventoryListBody({
       {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
           stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
           빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
-      {products.length === 0 ? (
+      {rows.length === 0 ? (
         <Panel.Body>
           <p className="text-muted-foreground py-12 text-center text-sm">
             {/* 검색어 없이 0건이면 "검색 결과"가 아니라 상품이 없는 것이다 */}
@@ -196,9 +199,10 @@ function InventoryListBody({
         </Panel.Body>
       ) : (
         <InventoryTable
-          products={products}
+          rows={rows}
           openProductId={openProductId}
           onToggle={onToggle}
+          onRetryDetail={retryDetail}
           selectedSkuId={selectedSkuId}
           onSelectSku={onSelectSku}
         />

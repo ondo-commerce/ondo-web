@@ -50,6 +50,10 @@ export function useInboundMutation(
         body,
         idempotencyKey: crypto.randomUUID(),
       }),
+    // 반환한 promise를 TanStack이 기다린다 — `isSuccess`는 재조회가 **끝난 뒤**에 켜진다.
+    // 재조회가 실패해도 여기서 던지지 않는다(invalidateQueries는 throwOnError가 꺼져 있다):
+    // 던지면 입고가 거절된 것처럼 보여 사장이 한 번 더 누른다. 실패 신호는 상세 쿼리의
+    // `isRefetchError`로 카드가 낸다(`derive.inboundNotice`).
     onSuccess: (created, body) => {
       onDone?.(created);
       return invalidateStock(queryClient, productId, variantIdsOf(body));
@@ -83,6 +87,16 @@ export function useStockAdjustmentMutation(
         ? invalidateStock(queryClient, productId, [variantId])
         : undefined,
   });
+}
+
+/**
+ * 입고 뒤 재조회가 실패했을 때 `다시 불러오기`가 부른다 — 뮤테이션과 **같은 무효화**다.
+ * 상세만 다시 부르면 이력은 옛 줄로 남으니 둘을 같이 비운다.
+ */
+export function useStockRefresh(productId: number) {
+  const queryClient = useQueryClient();
+  return (variantIds: readonly number[]) =>
+    invalidateStock(queryClient, productId, variantIds);
 }
 
 function variantIdsOf(body: InboundCreateRequest): number[] {

@@ -11,9 +11,12 @@ import type {
   InboundEntry,
   InboundInput,
   InboundItemRequest,
+  InboundNotice,
   InventoryProductView,
+  InventoryRowView,
   InventorySkuView,
   ProductDetail,
+  ProductSummary,
   StockMovement,
   StockMovementView,
   StockQuantities,
@@ -92,6 +95,46 @@ export function toProductView(detail: ProductDetail): InventoryProductView {
       })),
     ),
   };
+}
+
+/** 행 상세 쿼리에서 행이 읽는 것. TanStack 결과 통째가 아니라 이 셋만 받는다 — 순수 함수로 남기려고 */
+export interface DetailQueryState {
+  data: InventoryProductView | undefined;
+  error: unknown;
+}
+
+/**
+ * 목록 응답 한 줄 + 그 상품 상세 쿼리의 상태 → 표의 한 행.
+ *
+ * 순서가 중요하다: **데이터가 있으면 에러가 있어도 `ready`다.** 한 번 받아 둔 상세가
+ * 배경 재조회에서 실패한 경우인데, 그때 합계를 `-`로 지우면 방금까지 보이던 숫자가 사라진다.
+ * 옛 숫자라도 보이는 편이 낫고, 재조회 실패 신호는 우측 카드가 따로 낸다(`inboundNotice`).
+ */
+export function toInventoryRow(
+  summary: ProductSummary,
+  detail: DetailQueryState,
+): InventoryRowView {
+  const base = {
+    id: summary.id,
+    code: String(summary.productNumber),
+    name: summary.name,
+    skuCount: summary.variantCount,
+  };
+  if (detail.data) {
+    return { ...base, detail: { state: "ready", product: detail.data } };
+  }
+  if (detail.error !== null && detail.error !== undefined) {
+    const described = describeError(detail.error);
+    return {
+      ...base,
+      detail: {
+        state: "failed",
+        title: described.title,
+        retryable: described.retryable,
+      },
+    };
+  }
+  return { ...base, detail: { state: "loading" } };
 }
 
 export function toMovementView(m: StockMovement): StockMovementView {
@@ -298,6 +341,31 @@ export function inboundErrorText(error: unknown): string {
     if (known) return known;
   }
   return describeError(error).title;
+}
+
+/**
+ * 입고 버튼 왼쪽 한 줄. 뮤테이션 결과(`isSuccess`)와 상품 상세의 재조회 실패(`isRefetchError`)를
+ * 같이 본다 — 입고 201 뒤 상세 재조회가 실패하면 캐시엔 옛 숫자가 남고 경계는 안 떨어진다
+ * (데이터가 있어 `useSuspenseQuery`가 던지지 않는다). 그때 `입고 처리했어요`만 보이면 사장은
+ * 숫자가 안 바뀐 걸 보고 한 번 더 눌러 중복 입고를 낸다(wire-inventory F2).
+ *
+ * 재조회 실패는 입고와 무관하게도 온다(진입 30초 뒤 배경 재조회). 그때도 숫자가 낡은 건 같아서
+ * 문구만 다르다.
+ */
+export function inboundNotice(
+  received: boolean,
+  refreshFailed: boolean,
+): InboundNotice | null {
+  if (refreshFailed) {
+    return {
+      tone: "stale",
+      text: received
+        ? "입고는 됐지만 화면을 새로 못 불러왔어요"
+        : "최신 재고를 못 불러왔어요",
+    };
+  }
+  if (received) return { tone: "done", text: "입고 처리했어요" };
+  return null;
 }
 
 /**

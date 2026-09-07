@@ -3,12 +3,13 @@
 import { Button, Chip, Input, Panel, cn } from "@ondo/ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { InboundConfirmDialog } from "./InboundConfirmDialog";
-import { useInboundMutation } from "../api/mutations";
+import { useInboundMutation, useStockRefresh } from "../api/mutations";
 import { useInventoryProductQuery } from "../api/queries";
 import { INBOUND_FIELDS } from "../constants";
 import {
   inboundEntries,
   inboundErrorText,
+  inboundNotice,
   inputOf,
   isDigits,
   parseNumberInput,
@@ -80,13 +81,16 @@ export function SkuInboundCard({
   onDraftChange: (variantId: number, next: InboundInput) => void;
   onReceived: (entries: InboundEntry[]) => void;
 }) {
-  const { data: product } = useInventoryProductQuery(productId);
+  /* `isRefetchError`: 캐시엔 데이터가 있는데 재조회만 실패한 상태. 경계가 못 잡는 유일한 실패라
+     여기서 읽는다 — 입고 뒤 이 상태면 카드 숫자가 옛 값이다(wire-inventory F2) */
+  const { data: product, isRefetchError } = useInventoryProductQuery(productId);
   const sku = product.skus.find((s) => s.id === variantId);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sent, setSent] = useState<InboundEntry[]>([]);
   const inbound = useInboundMutation(productId, {
     onDone: () => onReceived(sent),
   });
+  const refresh = useStockRefresh(productId);
 
   /* 다른 데서 지워진 SKU(입고 뒤 재조회로 사라짐). 카드는 남기되 안내만 — 목록이 곧 따라온다 */
   if (!sku) {
@@ -132,6 +136,7 @@ export function SkuInboundCard({
         return inboundErrorText(inbound.error);
       })()
     : null;
+  const notice = inboundNotice(inbound.isSuccess, isRefetchError);
 
   return (
     <>
@@ -192,13 +197,30 @@ export function SkuInboundCard({
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
           </p>
-        ) : inbound.isSuccess ? (
-          <p role="status" className="text-muted-foreground text-sm">
-            입고 처리했어요
+        ) : notice ? (
+          <p
+            role={notice.tone === "stale" ? "alert" : "status"}
+            className={
+              notice.tone === "stale"
+                ? "text-destructive-strong text-sm"
+                : "text-muted-foreground text-sm"
+            }
+          >
+            {notice.text}
           </p>
         ) : null}
+        {/* 숫자가 낡았으면 새 입고 대신 다시 불러오기 — 옛 숫자를 보고 한 번 더 누르는 길을 막는다 */}
+        {isRefetchError ? (
+          <Button
+            type="button"
+            variant="line"
+            onClick={() => void refresh([sku.id])}
+          >
+            다시 불러오기
+          </Button>
+        ) : null}
         <Button
-          disabled={entries.length === 0 || inbound.isPending}
+          disabled={entries.length === 0 || inbound.isPending || isRefetchError}
           onClick={() => setConfirmOpen(true)}
         >
           입고 처리

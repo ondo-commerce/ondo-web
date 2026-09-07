@@ -3,13 +3,14 @@
 import { Button, Chip, ColorDot, Input, Panel, Table } from "@ondo/ui";
 import { useState, type FormEvent } from "react";
 import { InboundConfirmDialog } from "./InboundConfirmDialog";
-import { useInboundMutation } from "../api/mutations";
+import { useInboundMutation, useStockRefresh } from "../api/mutations";
 import { useInventoryProductQuery } from "../api/queries";
 import { INBOUND_FIELDS } from "../constants";
 import {
   estimatedAmount,
   inboundEntries,
   inboundErrorText,
+  inboundNotice,
   inputOf,
   isDigits,
   parseNumberInput,
@@ -48,7 +49,9 @@ export function InventoryInboundPanel({
   /** 서버가 받아 준 뒤. 보낸 줄이 무엇인지 알려 준다 — 그 줄의 입력만 비운다 */
   onReceived: (entries: InboundEntry[]) => void;
 }) {
-  const { data: product } = useInventoryProductQuery(productId);
+  /* `isRefetchError`: 캐시엔 데이터가 있는데 재조회만 실패한 상태. 경계가 못 잡는 유일한 실패라
+     여기서 읽는다 — 입고 뒤 이 상태면 표의 숫자가 옛 값이다(wire-inventory F2) */
+  const { data: product, isRefetchError } = useInventoryProductQuery(productId);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   /* 수량을 적은 줄만 입고 대상이다. 단가만 적힌 줄은 입고가 아니다 */
@@ -60,6 +63,7 @@ export function InventoryInboundPanel({
   const inbound = useInboundMutation(productId, {
     onDone: () => onReceived(sent),
   });
+  const refresh = useStockRefresh(productId);
 
   const setField = (
     variantId: number,
@@ -96,6 +100,7 @@ export function InventoryInboundPanel({
         return inboundErrorText(inbound.error);
       })()
     : null;
+  const notice = inboundNotice(inbound.isSuccess, isRefetchError);
 
   /* 색상은 그룹의 첫 행에만 그린다. 좌측 표와 같은 규칙이다 */
   const firstOfColor = new Map<string, number>();
@@ -182,13 +187,31 @@ export function InventoryInboundPanel({
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
           </p>
-        ) : inbound.isSuccess ? (
-          <p role="status" className="text-muted-foreground text-sm">
-            입고 처리했어요
+        ) : notice ? (
+          <p
+            role={notice.tone === "stale" ? "alert" : "status"}
+            className={
+              notice.tone === "stale"
+                ? "text-destructive-strong text-sm"
+                : "text-muted-foreground text-sm"
+            }
+          >
+            {notice.text}
           </p>
         ) : null}
+        {/* 숫자가 낡았으면 새 입고 대신 다시 불러오기 — 옛 숫자를 보고 한 번 더 누르는 길을 막는다.
+            보낸 줄의 이력도 같이 비운다(모드 B로 가면 그 이력을 본다) */}
+        {isRefetchError ? (
+          <Button
+            type="button"
+            variant="line"
+            onClick={() => void refresh(sent.map((e) => e.variantId))}
+          >
+            다시 불러오기
+          </Button>
+        ) : null}
         <Button
-          disabled={entries.length === 0 || inbound.isPending}
+          disabled={entries.length === 0 || inbound.isPending || isRefetchError}
           onClick={() => setConfirmOpen(true)}
         >
           입고 처리

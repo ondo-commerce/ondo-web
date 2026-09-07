@@ -73,6 +73,39 @@ export interface InventoryProductView {
   skus: InventorySkuView[];
 }
 
+/**
+ * 재고 목록 한 행. **품번·품명·SKU 수는 목록 응답**(`ProductSummaryResponse`)에서, 수량 합계는
+ * 행마다 따로 받는 상세에서 온다 — 그래서 상세의 상태를 행이 든다. 상세 하나가 실패해도
+ * 표는 살고, 그 행의 합계 칸만 실패한다(wire-inventory F1).
+ */
+export interface InventoryRowView {
+  id: number;
+  /** 품번. 스펙은 숫자(`productNumber`)라 화면엔 숫자만 보인다 */
+  code: string;
+  name: string;
+  /** 목록 응답 `variantCount`. 상세와 같은 값이라 상세 없이도 보인다 */
+  skuCount: number;
+  detail: InventoryRowDetail;
+}
+
+/**
+ * 행의 상세(SKU 합계) 상태. `ready`가 아니면 합계 칸은 `-`다.
+ * `failed`의 `retryable`은 `describeError`가 정한다 — 404(지워진 상품)는 다시 불러도 같다.
+ */
+export type InventoryRowDetail =
+  | { state: "loading" }
+  | { state: "ready"; product: InventoryProductView }
+  | { state: "failed"; title: string; retryable: boolean };
+
+/**
+ * 입고 버튼 왼쪽 한 줄. 성공·재조회 실패를 한 자리에서 가른다 — 입고는 됐는데 숫자가 옛 값이면
+ * 사장은 한 번 더 누른다(wire-inventory F2). `stale`이면 `다시 불러오기`를 같이 보인다.
+ */
+export interface InboundNotice {
+  tone: "done" | "stale";
+  text: string;
+}
+
 /** 변동 이력 한 줄 */
 export interface StockMovementView {
   id: number;
