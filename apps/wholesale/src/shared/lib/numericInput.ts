@@ -13,9 +13,18 @@ export const NUMERIC_INPUT_MAX = 999_999_999;
 /** 상한을 넘겼을 때 칸 옆에 붙는 한 줄. 상품 탭 가격표와 같은 말투다 */
 export const NUMERIC_INPUT_MAX_TEXT = "999,999,999까지 입력할 수 있어요";
 
-/** 칸에 들어갈 수 있는 글자 — 0 이상 정수의 숫자뿐. 소수점·부호·쉼표·전각은 키 단위로 막는다 */
+/** 칸에 들어갈 수 있는 글자 — 0 이상 정수의 숫자뿐. 소수점·부호·전각은 키 단위로 막는다 */
 export function isDigits(text: string): boolean {
   return /^\d*$/.test(text);
+}
+
+/**
+ * 천 단위 쉼표·공백을 벗긴다. 붙여넣은 `37,500`·`37 500`이 숫자칸에 들어가게 — 이 화면이
+ * 보여 주는 금액이 곧 복사 원천이라 쉼표를 막으면 자기 표의 값을 못 옮긴다(fix-197-198-199 F2).
+ * 소수점·부호는 벗기지 않는다 — 그건 값을 바꾸는 글자라 `isDigits`가 거부한다.
+ */
+export function stripSeparators(text: string): string {
+  return text.replace(/[,\s]/g, "");
 }
 
 /**
