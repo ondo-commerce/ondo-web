@@ -18,6 +18,7 @@ import {
 } from "../derive";
 import type { LineFilter, OrderView, ShipInputs } from "../types";
 import { formatNumber } from "@/shared/lib/format";
+import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 
 /**
  * 라인 표 바로 아래 액션 줄.
@@ -63,6 +64,9 @@ export function OrderActionBar({
   const cancel = useCancelOrderMutation(order.id, { onDone });
   const pack = useCreatePackingMutation(order.id, { onDone });
 
+  /* `포장 준비`만 다이얼로그 없이 바로 나간다 — 더블클릭이 두 건 되지 않게 동기 잠금 */
+  const fire = useSingleFlight();
+
   const busy = confirm.isPending || cancel.isPending || pack.isPending;
   /* 마지막으로 실패한 것 하나만 보인다. 다음 시도에서 지워진다 */
   const failure = confirm.error ?? cancel.error ?? pack.error;
@@ -104,7 +108,13 @@ export function OrderActionBar({
         {order.isPackable ? (
           <Button
             disabled={locked || totalShipQty(order, inputs, filter) === 0}
-            onClick={() => pack.mutate(toPackingRequest(order, inputs, filter))}
+            onClick={() =>
+              fire((release) =>
+                pack.mutate(toPackingRequest(order, inputs, filter), {
+                  onSettled: release,
+                }),
+              )
+            }
           >
             포장 준비
           </Button>
