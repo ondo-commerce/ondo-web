@@ -77,12 +77,12 @@ export const OUTBOUND_ERROR_TEXT: Readonly<Record<string, string>> = {
   RECEIVE_BY_MIXED:
     "직접 수령과 사입삼촌은 한 포장으로 묶을 수 없어요. 한 가지만 남겨 주세요.",
   PACKING_NOT_READY:
-    "이미 포장된 줄이 섞여 있어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "이미 포장된 줄이 섞여 있어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   RESOURCE_NOT_FOUND:
-    "이미 없어진 항목이에요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "이미 없어진 항목이에요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   // 출고 확정(POST /outbounds/{id}/ship)
   TRANSITION_NOT_ALLOWED:
-    "이미 출고된 봉투예요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "이미 출고된 봉투예요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   OUTBOUND_EMPTY: "담긴 품목이 없어 출고할 수 없어요.",
   INSUFFICIENT_STOCK:
     "재고가 부족해 출고할 수 없어요. 재고를 먼저 확인해 주세요.",

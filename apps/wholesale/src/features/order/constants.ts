@@ -150,10 +150,14 @@ export const PAGE_SIZE = 100;
  *
  * 스펙 설명(`@Operation`)에 적힌 코드만 있다. 여기 없는 코드는 `describeError`의 종류별
  * 제목으로 떨어진다 — 사장이 아무 말도 못 보는 일은 없다.
+ *
+ * 409·404 문구는 "새로 불러왔다"고 말한다 — 뮤테이션 `onError`가 그 자리에서 상세·목록·칩을
+ * 무효화하므로(#198) 문구가 뜰 때는 이미 재조회가 나간 뒤다. "다시 불러온 뒤 확인하라"는
+ * 말은 다시 불러올 길이 화면에 없어 사장을 같은 버튼으로 되돌려 보냈다(F3).
  */
 export const ORDER_ERROR_TEXT: Readonly<Record<string, string>> = {
   TRANSITION_NOT_ALLOWED:
-    "지금 상태에서는 할 수 없는 작업이에요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "지금 상태에서는 할 수 없는 작업이에요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ALLOCATION_EXCEEDS_ORDER: "이번 출고가 주문 수량을 넘겼어요.",
   ALLOCATION_EXCEEDS_REMAINING: "이번 출고가 남은 미송 수량을 넘겼어요.",
   INSUFFICIENT_STOCK: "재고가 모자라요. 가용재고를 다시 확인해 주세요.",
@@ -162,5 +166,5 @@ export const ORDER_ERROR_TEXT: Readonly<Record<string, string>> = {
   DUPLICATE_ORDER_ITEM: "같은 라인이 두 번 들어갔어요.",
   INVARIANT_VIOLATED: "수량이 맞지 않아요. 다시 입력해 주세요.",
   DOCUMENT_FROZEN: "이미 출고에 묶인 포장이라 여기서는 지울 수 없어요.",
-  RESOURCE_NOT_FOUND: "이미 없어진 항목이에요. 목록을 다시 불러와 주세요.",
+  RESOURCE_NOT_FOUND: "이미 없어진 항목이에요. 목록을 새로 불러왔어요.",
 };

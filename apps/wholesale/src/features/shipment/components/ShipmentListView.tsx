@@ -74,6 +74,9 @@ export function ShipmentListView() {
   const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
     null,
   );
+  /** 지금 소매처 표에 있는 소매처 id. 표가 알려 준다. 못 받았으면 null */
+  const [visibleRetailerIds, setVisibleRetailerIds] =
+    useState<ReadonlySet<number> | null>(null);
   /** 출고 대기·출고 완료 단계에서 고른 봉투. 두 단계 모두 한 행만 고른다 */
   const [selectedOutboundId, setSelectedOutboundId] = useState<number | null>(
     null,
@@ -148,18 +151,21 @@ export function ShipmentListView() {
    * 본문의 effect가 매번 다시 돌아 상태 갱신이 꼬리를 문다. 같은 집합이면 같은 참조를 돌려줘 렌더를 아낀다.
    */
   const handleVisibleChange = useCallback((ids: readonly number[] | null) => {
-    setVisibleIds((prev) => {
-      if (ids === null) return null;
-      if (
-        prev !== null &&
-        prev.size === ids.length &&
-        ids.every((id) => prev.has(id))
-      ) {
-        return prev;
-      }
-      return new Set(ids);
-    });
+    setVisibleIds((prev) => sameOrNext(prev, ids));
   }, []);
+
+  /* 소매처 표가 받은 id. 소매처가 검색으로 통째로 빠지면 펼침 본문이 내려가 `visibleIds`가 null이 되는데,
+     그때도 우측 패널이 "목록 조건 밖"을 말해야 한다(wire-shipment F2, #205) — 그래서 소매처 단위로 하나 더 */
+  const handleVisibleRetailersChange = useCallback(
+    (ids: readonly number[] | null) => {
+      setVisibleRetailerIds((prev) => sameOrNext(prev, ids));
+    },
+    [],
+  );
+  /* 표를 아직 못 받았으면(null) 목록 안으로 본다 — 기다리는 동안 안내가 깜빡이지 않게 */
+  const retailerInList =
+    openRetailerId === null ||
+    (visibleRetailerIds?.has(openRetailerId) ?? true);
 
   const selectOutbound = (outboundId: number) => {
     if (notice?.refreshed) setNotice(null);
@@ -199,6 +205,7 @@ export function ShipmentListView() {
           <PackingWorkPanel
             rows={rows}
             visibleIds={visibleIds}
+            retailerInList={retailerInList}
             stale={stale}
             onRefresh={retryRefresh}
             onDone={(created, refreshed) =>
@@ -285,6 +292,7 @@ export function ShipmentListView() {
                   hasKeyword={q !== ""}
                   openRetailerId={openRetailerId}
                   onToggle={toggleRetailer}
+                  onVisibleChange={handleVisibleRetailersChange}
                   renderDetail={(retailer) => (
                     <QueryBoundary>
                       <PackingRowDetail
@@ -358,21 +366,30 @@ export function ShipmentListView() {
 
 /**
  * 포장 대기 소매처 표(`GET /packing-items/retailers`). 안에서만 `useSuspenseQuery`를 부른다.
+ * 표에 있는 소매처 id를 부모에게 알린다. 0건이어도 이 컴포넌트는 남아 빈 집합을 알린다.
  */
 function PackingRetailerList({
   q,
   hasKeyword,
   openRetailerId,
   onToggle,
+  onVisibleChange,
   renderDetail,
 }: {
   q: string | undefined;
   hasKeyword: boolean;
   openRetailerId: number | null;
   onToggle: (retailerId: number) => void;
+  /** 표에 있는 소매처 id. 내려갈 때는 `null` — 부모가 안정된 참조(useCallback)로 넘긴다 */
+  onVisibleChange: (ids: readonly number[] | null) => void;
   renderDetail: (retailer: RetailerView) => ReactNode;
 }) {
   const { data: rows } = usePackingRetailersQuery(q);
+
+  useEffect(() => {
+    onVisibleChange(rows.map((row) => row.retailer.id));
+    return () => onVisibleChange(null);
+  }, [rows, onVisibleChange]);
 
   if (rows.length === 0) {
     return <EmptyList text={EMPTY_LIST_TEXT.ready} hasKeyword={hasKeyword} />;
@@ -431,6 +448,22 @@ function OutboundRetailerList({
       ) : null}
     </>
   );
+}
+
+/** 같은 id 집합이면 같은 참조를 돌려준다 — 렌더마다 새 Set을 만들면 이걸 보는 effect가 꼬리를 문다 */
+function sameOrNext(
+  prev: ReadonlySet<number> | null,
+  ids: readonly number[] | null,
+): ReadonlySet<number> | null {
+  if (ids === null) return null;
+  if (
+    prev !== null &&
+    prev.size === ids.length &&
+    ids.every((id) => prev.has(id))
+  ) {
+    return prev;
+  }
+  return new Set(ids);
 }
 
 /** 목록이 비었을 때의 문구. 검색 때문인지 원래 없는 건지를 갈라 준다 */

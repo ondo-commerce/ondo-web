@@ -474,3 +474,12 @@ export function actionErrorText(error: unknown): string {
     ? `${described.title} (${described.detail})`
     : described.title;
 }
+
+/**
+ * 서버 상태와 어긋나서 거절된 것인가(409·404). 이때는 화면이 든 값이 낡은 것이라
+ * 다시 불러와야 한다 — 문구만 보이고 길이 없으면 같은 버튼을 다시 눌러 같은 답을 본다(F3, #198).
+ * 재고·출고·정산 `derive.ts`에 같은 함수가 있지만 **복사해 왔다** — feature 경계를 넘어 import 하지 않는다.
+ */
+export function isStaleRejection(error: unknown): boolean {
+  return isApiError(error) && (error.status === 409 || error.status === 404);
+}

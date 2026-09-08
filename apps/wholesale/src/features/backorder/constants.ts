@@ -15,14 +15,17 @@ export const ETA_FIELDS: readonly EtaField[] = [
 /**
  * 배분 확정이 거절됐을 때 사장에게 보일 문구. 코드로만 가른다 — 서버 `message`는 개발자용이라
  * 바뀔 수 있고, 그 아래 보조로만 쓴다(`derive.allocationErrorText`).
+ *
+ * 409·404 문구는 "새로 불러왔다"고 말한다 — 뮤테이션 `onError`가 그 자리에서 목록·펼침을
+ * 무효화하므로(#198) 문구가 뜰 때는 이미 재조회가 나간 뒤다.
  */
 export const BACKORDER_ERROR_TEXT: Readonly<Record<string, string>> = {
   ALLOCATION_EXCEEDS_REMAINING: "배분 수량이 남은 미송 수량을 넘겼어요.",
   ALLOCATION_EXCEEDS_ORDER: "배분 수량이 주문 수량을 넘겼어요.",
   INSUFFICIENT_STOCK: "재고가 모자라요. 가용재고를 다시 확인해 주세요.",
   BACKORDER_NOT_OPEN:
-    "이미 해소된 미송이 섞여 있어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "이미 해소된 미송이 섞여 있어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   DUPLICATE_BACKORDER: "같은 미송이 두 번 들어갔어요.",
   INVARIANT_VIOLATED: "수량이 맞지 않아요. 다시 입력해 주세요.",
-  RESOURCE_NOT_FOUND: "이미 없어진 미송이에요. 목록을 다시 불러와 주세요.",
+  RESOURCE_NOT_FOUND: "이미 없어진 미송이에요. 목록을 새로 불러왔어요.",
 };

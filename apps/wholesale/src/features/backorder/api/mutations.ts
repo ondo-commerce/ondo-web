@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { backorderKeys } from "./keys";
 import { BACKORDER_PATH } from "./queries";
+import { isStaleRejection } from "../derive";
 import type {
   AllocationBatch,
   AllocationRequest,
@@ -17,6 +18,10 @@ import type {
  *
  * 두 응답 다 캐시에 심지 않는다 — 배분 응답은 포장 카드(주문 탭 몫)라 이 화면의 쿼리와 모양이
  * 다르고, 예상 입고일 응답은 펼침의 `stats` 안에 박힌 값이라 통째로 다시 받는 편이 안전하다.
+ *
+ * **409·404로 거절됐을 때도 같은 무효화를 한다.** 화면이 든 값이 서버와 어긋난 것이라(다른 창에서
+ * 먼저 배분) 다시 불러오지 않으면 행·카운터가 옛것으로 남아 같은 버튼을 눌러 같은 거절을 본다(F1, #198).
+ * 입력(`draft`)은 지우지 않는다 — 새 잔여·가용재고 기준으로 `normalizeDraft`가 다시 자른다.
  */
 
 /**
@@ -44,6 +49,10 @@ export function useAllocateMutation(
       onDone?.(batch);
       return invalidateSku(queryClient, variantId);
     },
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateSku(queryClient, variantId)
+        : undefined,
   });
 }
 
@@ -66,6 +75,10 @@ export function useExpectedInboundMutation(
       onDone?.();
       return invalidateSku(queryClient, variantId);
     },
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateSku(queryClient, variantId)
+        : undefined,
   });
 }
 

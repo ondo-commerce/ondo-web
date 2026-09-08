@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Panel, SearchInput } from "@ondo/ui";
-import { useEffect, useState } from "react";
+import { Button, Notice, Panel, SearchInput } from "@ondo/ui";
+import { useCallback, useEffect, useState } from "react";
 import { InventoryInboundPanel } from "./InventoryInboundPanel";
 import { InventoryTable } from "./InventoryTable";
 import { SkuHistoryCard } from "./SkuHistoryCard";
@@ -57,6 +57,10 @@ export function InventoryListView() {
    * 버리는 건 입고가 받아들여졌을 때, 그것도 처리된 줄만이다(Q-02).
    */
   const [drafts, setDrafts] = useState<InboundDrafts>({});
+  /** 지금 표에 있는 상품 id. 표가 알려 준다. 못 받았으면 null */
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
+    null,
+  );
 
   useEffect(() => {
     const trimmed = draft.trim();
@@ -80,6 +84,35 @@ export function InventoryListView() {
   const selectSku = (variantId: number) =>
     setSelectedSkuId((prev) => (prev === variantId ? null : variantId));
 
+  /*
+   * 표가 받은 상품 id를 알려 줄 때. **참조가 안정돼야 한다**(useCallback) — 매 렌더 새 함수면
+   * 표의 effect가 매번 다시 돌아 상태 갱신이 꼬리를 문다. 같은 집합이면 같은 참조를 돌려줘 렌더를 아낀다.
+   */
+  const handleVisibleChange = useCallback((ids: readonly number[] | null) => {
+    setVisibleIds((prev) => {
+      if (ids === null) return null;
+      if (
+        prev !== null &&
+        prev.size === ids.length &&
+        ids.every((id) => prev.has(id))
+      ) {
+        return prev;
+      }
+      return new Set(ids);
+    });
+  }, []);
+
+  /* 검색으로 목록에서 빠진 상품. 우측 표·카드는 남긴다 — 지우면 검색 중엔 입고를 못 한다(F8, #198).
+     표를 아직 못 받았으면(null) 목록 안으로 본다 — 기다리는 동안 안내가 깜빡이지 않게 */
+  const openInList =
+    openProductId === null || (visibleIds?.has(openProductId) ?? true);
+  /** 목록 조건 밖의 상품임을 카드 머리에서 말한다. 경계 밖이라 기다리는 동안·실패해도 보인다 */
+  const outOfListNotice = !openInList ? (
+    <Notice className="mb-4">
+      현재 목록 조건에 없는 상품이에요. 입고는 이 상품에 붙어요.
+    </Notice>
+  ) : null;
+
   const changeDraft = (variantId: number, next: InboundInput) =>
     setDrafts((prev) => ({ ...prev, [variantId]: next }));
 
@@ -95,6 +128,7 @@ export function InventoryListView() {
         <>
           {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다 */}
           <Panel className="shrink-0">
+            {outOfListNotice}
             <QueryBoundary>
               <SkuInboundCard
                 productId={openProductId}
@@ -117,6 +151,7 @@ export function InventoryListView() {
 
     return (
       <Panel className="flex-1">
+        {outOfListNotice}
         <QueryBoundary>
           <InventoryInboundPanel
             productId={openProductId}
@@ -157,6 +192,7 @@ export function InventoryListView() {
               selectedSkuId={selectedSkuId}
               onSelectSku={selectSku}
               onPage={setPage}
+              onVisibleChange={handleVisibleChange}
             />
           </QueryBoundary>
         </Panel>
@@ -169,6 +205,8 @@ export function InventoryListView() {
 
 /**
  * 표 + 페이지 이동. 안에서만 목록 쿼리를 부른다.
+ * 표에 있는 상품 id를 부모에게 알린다(우측 카드의 "목록 조건 밖" 안내). 0건이어도 이 컴포넌트는
+ * 남아 빈 집합을 알린다 — 그래야 검색 0건일 때도 안내가 뜬다.
  */
 function InventoryListBody({
   params,
@@ -177,6 +215,7 @@ function InventoryListBody({
   selectedSkuId,
   onSelectSku,
   onPage,
+  onVisibleChange,
 }: {
   params: InventoryListParams;
   openProductId: number | null;
@@ -184,11 +223,20 @@ function InventoryListBody({
   selectedSkuId: number | null;
   onSelectSku: (variantId: number) => void;
   onPage: (page: number) => void;
+  /** 표에 있는 상품 id. 내려갈 때는 `null` — 부모가 안정된 참조(useCallback)로 넘긴다 */
+  onVisibleChange: (ids: readonly number[] | null) => void;
 }) {
   const { rows, meta, retryDetail } = useInventoryListQuery(
     toListQuery(params),
   );
   const totalPages = Math.max(meta.totalPages, 1);
+
+  /* 상세 N개(useQueries)가 도착할 때마다 rows 배열이 새로 만들어진다 — id 목록이 같으면 부모가
+     같은 참조를 돌려주니(handleVisibleChange) 여기서 따로 막지 않는다 */
+  useEffect(() => {
+    onVisibleChange(rows.map((row) => row.id));
+    return () => onVisibleChange(null);
+  }, [rows, onVisibleChange]);
 
   return (
     <>

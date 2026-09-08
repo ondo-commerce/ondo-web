@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { orderKeys } from "./keys";
 import { ORDER_PATH } from "./queries";
+import { isStaleRejection } from "../derive";
 import type {
   OrderConfirmRequest,
   OrderDetail,
@@ -18,6 +19,10 @@ import type {
  * 확정·취소 응답은 **상세와 같은 스키마**다(스펙: "재조회 없이 화면을 갱신한다").
  * 그래서 상세 캐시에 wire 그대로 심는다 — `useOrderDetailQuery`의 `select`가 읽을 때
  * 뷰로 바꾼다. 여기서 먼저 뷰로 바꿔 넣으면 `select`가 뷰를 한 번 더 변환해 값이 깨진다.
+ *
+ * **409·404로 거절됐을 때는 상세까지 다시 부른다.** 화면이 든 값이 서버와 어긋난 것이라(다른 창에서
+ * 먼저 확정·출고) 다시 불러오지 않으면 배지·버튼·`isCancellable`이 옛것으로 남아 같은 버튼을 눌러
+ * 같은 거절을 본다(F3 · wire-shipment F6, #198). 입력값은 지우지 않는다 — 서버 상태를 보고 사장이 정한다.
  */
 
 /**
@@ -45,6 +50,10 @@ export function useConfirmOrderMutation(
       onDone?.();
       return invalidateAround(queryClient, orderId);
     },
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateWithDetail(queryClient, orderId)
+        : undefined,
   });
 }
 
@@ -61,6 +70,10 @@ export function useCancelOrderMutation(
       onDone?.();
       return invalidateAround(queryClient, orderId);
     },
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateWithDetail(queryClient, orderId)
+        : undefined,
   });
 }
 
@@ -81,11 +94,12 @@ export function useCreatePackingMutation(
       }),
     onSuccess: () => {
       onDone?.();
-      return Promise.all([
-        queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) }),
-        invalidateAround(queryClient, orderId),
-      ]);
+      return invalidateWithDetail(queryClient, orderId);
     },
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateWithDetail(queryClient, orderId)
+        : undefined,
   });
 }
 
@@ -98,12 +112,23 @@ export function useCancelPackingMutation(orderId: number) {
   return useMutation({
     mutationFn: (packingId: number) =>
       apiFetch<void>(ORDER_PATH.packing(packingId), { method: "DELETE" }),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) }),
-        invalidateAround(queryClient, orderId),
-      ]),
+    onSuccess: () => invalidateWithDetail(queryClient, orderId),
+    onError: (error) =>
+      isStaleRejection(error)
+        ? invalidateWithDetail(queryClient, orderId)
+        : undefined,
   });
+}
+
+/** 상세까지 같이 — 응답을 심을 수 없거나(204·포장 응답) 서버 상태를 모를 때(409·404) */
+function invalidateWithDetail(
+  queryClient: ReturnType<typeof useQueryClient>,
+  orderId: number,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) }),
+    invalidateAround(queryClient, orderId),
+  ]);
 }
 
 /**

@@ -31,6 +31,7 @@ import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 export function PackingWorkPanel({
   rows,
   visibleIds,
+  retailerInList,
   stale,
   onRefresh,
   onDone,
@@ -39,6 +40,8 @@ export function PackingWorkPanel({
   rows: readonly PackingRowView[];
   /** 지금 펼침 표에 있는 줄 id. 표를 못 받았으면 null */
   visibleIds: ReadonlySet<number> | null;
+  /** 펼친 소매처가 지금 소매처 목록 조건(검색) 안에 있는가. 없으면 선택 전부가 목록 밖이다 */
+  retailerInList: boolean;
   /** 직전 처리 뒤 목록 재조회가 실패한 상태. 옛 목록으로 한 번 더 포장하지 않게 잠근다 */
   stale: boolean;
   /** `stale`일 때 `다시 불러오기` — 뮤테이션과 같은 무효화 */
@@ -46,7 +49,7 @@ export function PackingWorkPanel({
   onDone: (created: OutboundCreated, refreshed: boolean) => void;
 }) {
   const mixed = hasMixedReceiveBy(rows);
-  const missing = missingCount(rows, visibleIds);
+  const missing = missingCount(rows, visibleIds, retailerInList);
   const create = useCreateOutboundMutation({ onDone });
   /* 다이얼로그 없이 바로 나가는 버튼이라 더블클릭이 두 건 되지 않게 동기 잠금(dev-verify-bis F2) */
   const fire = useSingleFlight();
