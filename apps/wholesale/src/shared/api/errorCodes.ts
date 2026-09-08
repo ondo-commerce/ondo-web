@@ -45,6 +45,10 @@ export const WHOLESALE_ERROR_CODE = {
   INSUFFICIENT_STOCK: "INSUFFICIENT_STOCK",
   DOCUMENT_FROZEN: "DOCUMENT_FROZEN",
 
+  // 미송 배분 — 400은 요청 본문(같은 미송 중복), 409는 이미 해소된 미송에 다시 배분
+  DUPLICATE_BACKORDER: "DUPLICATE_BACKORDER",
+  BACKORDER_NOT_OPEN: "BACKORDER_NOT_OPEN",
+
   // 로그인 실패는 하나뿐이다 — 이메일 없음과 비밀번호 틀림을 서버가 구분해 주지 않는다(계정 열거 방지)
   LOGIN_FAILED: "LOGIN_FAILED",
 } as const;

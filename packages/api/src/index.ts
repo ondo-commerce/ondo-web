@@ -1,4 +1,9 @@
-export { apiFetch, apiFetchPage, createServerApi } from "./runtime/client";
+export {
+  apiFetch,
+  apiFetchBody,
+  apiFetchPage,
+  createServerApi,
+} from "./runtime/client";
 export type {
   ApiFetchInit,
   Page,

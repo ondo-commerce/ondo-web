@@ -1,23 +1,38 @@
+"use client";
+
 import { Panel } from "@ondo/ui";
+import { useSkuBackordersQuery } from "../api/queries";
 import { EMPTY_MARK } from "../constants";
-import type { BackorderSummary } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
  * 우측 상단 — 펼친 SKU 하나의 미송 규모. **탭 전체 합계가 아니다.**
  *
- * 이 카드는 아무것도 계산하지 않는다. 8지표를 전부 `summarize`가 만든 값으로 받는다 —
+ * 이 카드는 아무것도 계산하지 않는다. 8지표를 전부 서버 `stats`(→ `derive.toSummary`)로 받는다 —
  * `총 미송 수량`은 좌측 목록과, `가용재고`는 카운터 바와 같은 값이어야 하는데
  * 여기서 다시 세면 그 보증이 카드 하나 때문에 깨진다.
+ *
+ * 제목 옆에 SKU를 붙인다 — 검색으로 좌측 행이 가려지거나 가로로 굴렸을 때 "어느 SKU의 요약인지"가
+ * 우측 어디에도 없었다(F4).
+ *
+ * `Panel`은 부르는 쪽(`BackorderListView`)이 그린다 — 경계(`QueryBoundary`)가 패널 안에
+ * 들어가야 기다리는 동안에도 우측 폭이 유지되기 때문이다. 펼친 행과 같은 queryKey라 한 번만 받는다.
  */
-export function BackorderSummaryCard({
-  summary,
-}: {
-  summary: BackorderSummary;
-}) {
+export function BackorderSummaryCard({ variantId }: { variantId: number }) {
+  const { data } = useSkuBackordersQuery(variantId);
+  const { summary } = data;
+
   return (
-    <Panel className="shrink-0">
-      <Panel.Title>미송 요약</Panel.Title>
+    <>
+      <Panel.Title
+        action={
+          <span className="text-muted-foreground text-sm tabular-nums">
+            SKU {summary.sku}
+          </span>
+        }
+      >
+        미송 요약
+      </Panel.Title>
 
       {/* 2열 4행. 왼쪽 열은 수량, 오른쪽 열은 날짜·금액이라 눈이 세로로 훑힌다 */}
       <div className="grid grid-cols-2 gap-x-8">
@@ -49,7 +64,7 @@ export function BackorderSummaryCard({
           />
         </div>
       </div>
-    </Panel>
+    </>
   );
 }
 

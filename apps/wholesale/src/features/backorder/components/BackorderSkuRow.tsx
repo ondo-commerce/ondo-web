@@ -3,8 +3,7 @@
 import { Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { EMPTY_MARK } from "../constants";
-import { totalBackorderQty } from "../derive";
-import type { BackorderSku } from "../types";
+import type { BackorderSkuView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -22,7 +21,7 @@ export function BackorderSkuRow({
   onToggle,
   children,
 }: {
-  sku: BackorderSku;
+  sku: BackorderSkuView;
   open: boolean;
   onToggle: () => void;
   /** 펼친 본문(카운터 바 + 배분 표). 무엇을 펼칠지는 호출부가 정한다 */
@@ -34,18 +33,18 @@ export function BackorderSkuRow({
       onToggle={onToggle}
       /* 7 = 펼침 열 + 목록 6열 */
       colSpan={7}
-      label={sku.id}
-      detailId={`backorder-detail-${sku.id}`}
+      label={`SKU ${sku.sku}`}
+      detailId={`backorder-detail-${sku.variantId}`}
       detail={children}
     >
       <Table.Td align="left" tone="muted">
-        {sku.id}
+        {sku.sku}
       </Table.Td>
       <Table.Td align="left">{sku.productName}</Table.Td>
       <Table.Td align="left">{sku.color}</Table.Td>
       <Table.Td align="center">{sku.size}</Table.Td>
-      {/* 합계는 필드가 아니라 `Σ lines[].qty`다 — 따로 들고 있으면 배분 확정 뒤 갈린다 */}
-      <Table.Td>{formatNumber(totalBackorderQty(sku.lines))}</Table.Td>
+      {/* 서버 값. 펼침의 `stats.backorderQty`와 같은 숫자여야 하고, 그건 서버가 보증한다 */}
+      <Table.Td>{formatNumber(sku.backorderQty)}</Table.Td>
       {/* 미등록은 `-`. 날짜가 들어오면 같은 자리에 그대로 그린다 */}
       <Table.Td align="center" tone="muted">
         {sku.eta ?? EMPTY_MARK}

@@ -1,8 +1,8 @@
 "use client";
 
 import { Input, Table } from "@ondo/ui";
-import { formatOrderedAt, parseAllocationInput, remainingQty } from "../derive";
-import type { AllocationDraft, BackorderLine } from "../types";
+import { parseAllocationInput, remainingQty } from "../derive";
+import type { AllocationDraft, BackorderLineView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -10,7 +10,7 @@ import { formatNumber } from "@/shared/lib/format";
  * 정렬 컨트롤은 없다 — 선착순이 기본형이고, 순서를 바꿀 화면이 아직 없다(glossary §4.8).
  *
  * 입력칸은 `배분 수량` 하나뿐이다. 나머지 6열은 주문 스냅샷이라 이 화면에서 고칠 값이 아니다.
- * 주문번호도 평문이다 — 주문 탭이 아직 없다.
+ * 주문번호도 평문이다 — 주문 탭으로 가는 링크는 사양에 없다.
  */
 export function BackorderAllocationTable({
   lines,
@@ -18,9 +18,9 @@ export function BackorderAllocationTable({
   onChange,
 }: {
   /** 이미 정렬된 행. 정렬을 컴포넌트 안에서 다시 하지 않는다 — 카운터·요약이 같은 순서를 봐야 한다 */
-  lines: BackorderLine[];
+  lines: readonly BackorderLineView[];
   draft: AllocationDraft;
-  onChange: (lineId: string, next: number) => void;
+  onChange: (lineId: number, next: number) => void;
 }) {
   return (
     <Table>
@@ -42,7 +42,7 @@ export function BackorderAllocationTable({
           return (
             <Table.Row key={line.id}>
               <Table.Td align="left">{line.orderNo}</Table.Td>
-              <Table.Td align="center">{formatOrderedAt(line)}</Table.Td>
+              <Table.Td align="center">{line.orderedAtLabel}</Table.Td>
               <Table.Td tone="muted">{line.elapsedDays}일</Table.Td>
               <Table.Td align="left">{line.customer}</Table.Td>
               <Table.Td>{formatNumber(line.qty)}</Table.Td>
@@ -52,11 +52,20 @@ export function BackorderAllocationTable({
                   numeric
                   inputMode="numeric"
                   className="w-16"
-                  aria-label={`${line.orderNo} 배분 수량`}
+                  aria-label={`주문 ${line.orderNo} ${line.customer} 배분 수량`}
                   value={String(allocated)}
-                  onChange={(e) =>
-                    onChange(line.id, parseAllocationInput(e.target.value))
-                  }
+                  /* 숫자 아닌 글자(소수점·부호·전각)는 칸에 들어가기 전에 막는다 — onChange에서
+                     거르면 React가 값을 되돌리는 사이 다음 글자가 이어 붙어 `1.5`가 `15`로
+                     10배가 된다(F11). 붙여넣기도 같은 이벤트라 같이 걸린다 */
+                  onBeforeInput={(e) => {
+                    const data = (e.nativeEvent as InputEvent).data;
+                    if (data !== null && !/^\d*$/.test(data))
+                      e.preventDefault();
+                  }}
+                  onChange={(e) => {
+                    const next = parseAllocationInput(e.target.value);
+                    if (next !== null) onChange(line.id, next);
+                  }}
                 />
               </Table.Td>
               {/* 0은 "다 줬다", 1 이상은 "아직 못 준 게 남았다" — 남은 쪽만 빨강이다 */}
