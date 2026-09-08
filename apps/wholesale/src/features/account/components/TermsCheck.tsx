@@ -8,7 +8,7 @@ import {
   INVALID_INPUT_CLASS,
 } from "../constants";
 import { SIGNUP_TERMS } from "../fixtures";
-import { FieldError } from "./FieldError";
+import { FieldError } from "@/shared/components/FieldError";
 import { TermsDialog } from "./TermsDialog";
 
 /**

@@ -34,7 +34,11 @@ import {
 import { applySignup } from "../store";
 import type { AttachedFile, DocumentField, SignupField } from "../types";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
-import { FieldError, FieldHelp, RequiredLabel } from "./FieldError";
+import {
+  FieldError,
+  FieldHelp,
+  RequiredLabel,
+} from "@/shared/components/FieldError";
 import { FileField } from "./FileField";
 import { TermsCheck } from "./TermsCheck";
 import { TwoCol } from "./TwoCol";

@@ -2,16 +2,25 @@
 
 import { Button, Panel, SearchInput } from "@ondo/ui";
 import Link from "next/link";
-import { useState } from "react";
-import { ProductColorSizeList } from "./ProductColorSizeList";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { ProductDetailPanel } from "./ProductDetailPanel";
 import { ProductPostFilter } from "./ProductPostFilter";
-import { ProductSkuTable } from "./ProductSkuTable";
+import { ProductRowDetail } from "./ProductRowDetail";
 import { ProductTable } from "./ProductTable";
-import { POST_FILTER_ALL, type PostFilterValue } from "../constants";
-import { postStatusKey } from "../derive";
-import type { Product } from "../types";
+import { useProductListQuery } from "../api/queries";
+import {
+  filterByPostStatus,
+  parseListParams,
+  toListQuery,
+  withListParams,
+  type ProductListParams,
+} from "../derive";
+import { QueryBoundary } from "@/shared/api/QueryBoundary";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
+
+/** 검색어를 URL에 반영하기까지 기다리는 시간. 글자마다 서버를 부르지 않기 위해서다 */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * 상품 관리 — 좌 목록(확장형 표) + 우 상세.
@@ -22,43 +31,62 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
  * 목록은 주문 탭과 같은 확장형 표다(`ProductTable`). 아코디언(div)이 아니라 표인 이유는
  * 품번·구성이 열로 서서 세로로 훑히기 때문이다.
  *
- * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A). 딥링크가 필요해지면
- * 그때 쿼리스트링으로 올린다.
+ * **검색·필터·페이지·선택은 전부 URL이 원본이다**(ADR-0003). 새로고침·뒤로가기가 그대로
+ * 동작하고, 등록 화면이 끝난 뒤 `?productId=`로 새 상품을 우측에 열어 준다.
+ * 검색창의 글자만 로컬 상태다 — 치는 동안은 URL을 건드리지 않고 잠깐 뒤에 한 번 옮긴다.
  */
-export function ProductListView({ products }: { products: Product[] }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [postFilter, setPostFilter] =
-    useState<PostFilterValue>(POST_FILTER_ALL);
+export function ProductListView() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const params = parseListParams(searchParams);
 
-  /* 검색은 품번·품명 두 축이다 — placeholder가 약속한 그대로다.
-     게시 필터와 검색은 **함께 걸린다**(주문 탭과 같은 규칙) — 판매중만 켜 둔 채로
-     품번을 쳐서 좁힐 수 있어야 한다 */
-  const keyword = query.trim().toLowerCase();
-  const visibleProducts = products.filter(
-    (p) =>
-      (postFilter === POST_FILTER_ALL || postStatusKey(p) === postFilter) &&
-      (!keyword ||
-        p.name.toLowerCase().includes(keyword) ||
-        p.code.toLowerCase().includes(keyword)),
+  const replaceParams = useCallback(
+    (patch: Parameters<typeof withListParams>[1]) => {
+      const query = withListParams(searchParams, patch);
+      router.replace(query === "" ? pathname : `${pathname}?${query}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname, searchParams],
   );
 
-  /* 우측 상세는 **검색으로 가려져도 펼쳐져 있으면 보여야** 하므로 products에서 찾는다 */
-  const selected = products.find((p) => p.id === selectedId) ?? null;
+  /* 검색창 글자. URL의 `q`와 두 방향으로 맞춘다:
+     - 치면 → 잠깐 뒤 URL로(디바운스)
+     - URL이 밖에서 바뀌면(뒤로가기) → 칸 글자로.
+     `pushedQ`는 마지막으로 우리가 URL에 올린 값이다. URL이 그것과 다르면 밖에서 바뀐 것.
+     렌더 중에 state를 맞추는 건 React가 권하는 "props에서 state 파생" 형태다 — 효과로
+     하면 한 프레임 늦고, ref로 하면 렌더 중 ref 접근이 된다 */
+  const [draft, setDraft] = useState(params.q);
+  const [pushedQ, setPushedQ] = useState(params.q);
+  const [seenQ, setSeenQ] = useState(params.q);
+  if (params.q !== seenQ) {
+    setSeenQ(params.q);
+    if (params.q !== pushedQ) {
+      setPushedQ(params.q);
+      setDraft(params.q);
+    }
+  }
 
-  const toggleProduct = (productId: string) =>
-    setSelectedId((prev) => (prev === productId ? null : productId));
+  useEffect(() => {
+    const trimmed = draft.trim();
+    if (trimmed === pushedQ) return;
+    const timer = setTimeout(() => {
+      setPushedQ(trimmed);
+      /* 검색을 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 상품의 상세가 우측에 남는다 */
+      replaceParams({
+        query: trimmed === "" ? null : trimmed,
+        page: null,
+        productId: null,
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draft, pushedQ, replaceParams]);
 
-  /* 검색·필터를 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 상품의 상세가 우측에 남는다 */
-  const changeQuery = (next: string) => {
-    setQuery(next);
-    setSelectedId(null);
-  };
-
-  const changePostFilter = (next: PostFilterValue) => {
-    setPostFilter(next);
-    setSelectedId(null);
-  };
+  const toggleProduct = (productId: number) =>
+    replaceParams({
+      productId: params.productId === productId ? null : String(productId),
+    });
 
   return (
     <ListDetailLayout
@@ -78,8 +106,8 @@ export function ProductListView({ products }: { products: Product[] }) {
               className="mr-auto"
               placeholder="품번·품명 검색"
               aria-label="품번·품명 검색"
-              value={query}
-              onChange={(e) => changeQuery(e.target.value)}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
             />
             <Button asChild variant="line">
               <Link href="/products/new">상품 등록</Link>
@@ -87,37 +115,113 @@ export function ProductListView({ products }: { products: Product[] }) {
           </div>
 
           <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
-            <ProductPostFilter value={postFilter} onChange={changePostFilter} />
-          </div>
-
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
-              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
-              빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
-          {visibleProducts.length === 0 ? (
-            <Panel.Body>
-              <p className="text-muted-foreground py-12 text-center text-sm">
-                검색 결과가 없습니다
-              </p>
-            </Panel.Body>
-          ) : (
-            <ProductTable
-              products={visibleProducts}
-              openProductId={selectedId}
-              onToggle={toggleProduct}
-              /* 게시글 등록 여부에 따라 펼친 내용이 완전히 다르다 */
-              renderDetail={(product) =>
-                product.post ? (
-                  <ProductSkuTable product={product} />
-                ) : (
-                  <ProductColorSizeList product={product} />
-                )
+            <ProductPostFilter
+              value={params.status}
+              onChange={(next) =>
+                replaceParams({
+                  status: next === "ALL" ? null : next,
+                  page: null,
+                  productId: null,
+                })
               }
             />
-          )}
+          </div>
+
+          {/* 경계는 표 자리에만. 검색줄·필터는 서버와 무관하게 늘 있어야 한다 */}
+          <QueryBoundary>
+            <ProductListBody
+              params={params}
+              onToggle={toggleProduct}
+              onPage={(page) =>
+                replaceParams({
+                  page: page === 1 ? null : String(page),
+                  productId: null,
+                })
+              }
+            />
+          </QueryBoundary>
         </Panel>
       }
-      detail={selected ? <ProductDetailPanel product={selected} /> : undefined}
+      detail={
+        params.productId !== null ? (
+          <Panel className="flex-1">
+            <QueryBoundary>
+              <ProductDetailPanel productId={params.productId} />
+            </QueryBoundary>
+          </Panel>
+        ) : undefined
+      }
       emptyDetail="좌측 목록에서 상품을 선택하세요"
     />
+  );
+}
+
+/**
+ * 표 + 페이지 이동. 안에서만 `useSuspenseQuery`를 부른다.
+ *
+ * 게시 상태 필터는 **받은 페이지 안에서** 거른다 — 목록 API에 그 파라미터가 없다
+ * (`derive.filterByPostStatus` 주석). 서버가 받게 되면 `toListQuery`로 옮긴다.
+ */
+function ProductListBody({
+  params,
+  onToggle,
+  onPage,
+}: {
+  params: ProductListParams;
+  onToggle: (productId: number) => void;
+  onPage: (page: number) => void;
+}) {
+  const { data } = useProductListQuery(toListQuery(params));
+  const rows = filterByPostStatus(data.rows, params.status);
+  const totalPages = Math.max(data.meta.totalPages, 1);
+
+  return (
+    <>
+      {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+          stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+          빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+      {rows.length === 0 ? (
+        <Panel.Body>
+          <p className="text-muted-foreground py-12 text-center text-sm">
+            검색 결과가 없습니다
+          </p>
+        </Panel.Body>
+      ) : (
+        <ProductTable
+          rows={rows}
+          openProductId={params.productId}
+          onToggle={onToggle}
+          renderDetail={(row) => <ProductRowDetail productId={row.id} />}
+        />
+      )}
+
+      {/* 서버가 100행씩 자른다. 한 페이지에 다 들어오면(대부분) 이 줄은 없다 */}
+      {totalPages > 1 ? (
+        <nav
+          aria-label="페이지 이동"
+          className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
+        >
+          <span className="text-muted-foreground mr-2">
+            {params.page} / {totalPages}
+          </span>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page <= 1}
+            onClick={() => onPage(params.page - 1)}
+          >
+            이전
+          </Button>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page >= totalPages}
+            onClick={() => onPage(params.page + 1)}
+          >
+            다음
+          </Button>
+        </nav>
+      ) : null}
+    </>
   );
 }
