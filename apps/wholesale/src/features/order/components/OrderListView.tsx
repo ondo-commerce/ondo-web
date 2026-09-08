@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Panel, SearchInput } from "@ondo/ui";
-import { useEffect, useState, type ReactNode } from "react";
+import { Button, Notice, Panel, SearchInput } from "@ondo/ui";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { OrderRowDetail } from "./OrderRowDetail";
 import { OrderSettlementFilter } from "./OrderSettlementFilter";
 import {
@@ -66,6 +66,10 @@ export function OrderListView() {
    * 다시 와도 같은 주문이 열려 있는 한 입력이 남는다.
    */
   const [shipInputs, setShipInputs] = useState<ShipInputs>({});
+  /** 지금 표에 있는 주문 id. 표가 알려 준다. 못 받았으면 null */
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
+    null,
+  );
 
   useEffect(() => {
     const trimmed = draft.trim();
@@ -106,6 +110,29 @@ export function OrderListView() {
     setOpenOrderId(null);
     setShipInputs({});
   };
+
+  /*
+   * 표가 받은 주문 id를 알려 줄 때. **참조가 안정돼야 한다**(useCallback) — 매 렌더 새 함수면
+   * 표의 effect가 매번 다시 돌아 상태 갱신이 꼬리를 문다. 같은 집합이면 같은 참조를 돌려줘 렌더를 아낀다.
+   */
+  const handleVisibleChange = useCallback((ids: readonly number[] | null) => {
+    setVisibleIds((prev) => {
+      if (ids === null) return null;
+      if (
+        prev !== null &&
+        prev.size === ids.length &&
+        ids.every((id) => prev.has(id))
+      ) {
+        return prev;
+      }
+      return new Set(ids);
+    });
+  }, []);
+
+  /* 검색으로 목록에서 빠진 주문. 카드는 남긴다 — 지우면 확정 직후 검색 중엔 포장 대기를
+     못 본다(F-06). 표를 아직 못 받았으면(null) 목록 안으로 본다 — 기다리는 동안 안내가 깜빡이지 않게 */
+  const openInList =
+    openOrderId === null || (visibleIds?.has(openOrderId) ?? true);
 
   const changeShipInput = (lineId: number, value: string) =>
     setShipInputs((prev) => ({ ...prev, [lineId]: value }));
@@ -180,6 +207,7 @@ export function OrderListView() {
                 openOrderId={openOrderId}
                 onToggle={toggleOrder}
                 onPage={setPage}
+                onVisibleChange={handleVisibleChange}
                 renderDetail={(orderId) => (
                   <OrderRowDetail
                     orderId={orderId}
@@ -196,6 +224,13 @@ export function OrderListView() {
           openOrderId !== null ? (
             <>
               <Panel className="shrink-0">
+                {/* 목록 조건 밖의 주문임을 카드 머리에서 말한다(F1, #198). 경계 밖이라 기다리는 동안·실패해도 보인다 */}
+                {!openInList ? (
+                  <Notice className="mb-4">
+                    현재 목록 조건에 없는 주문이에요. 확정·포장은 이 주문에
+                    붙어요.
+                  </Notice>
+                ) : null}
                 <QueryBoundary>
                   <OrderSummaryCard orderId={openOrderId} />
                 </QueryBoundary>
@@ -214,22 +249,32 @@ export function OrderListView() {
 
 /**
  * 표 + 페이지 이동. 안에서만 `useSuspenseQuery`를 부른다.
+ * 표에 있는 주문 id를 부모에게 알린다(우측 카드의 "목록 조건 밖" 안내). 0건이어도 이 컴포넌트는
+ * 남아 빈 집합을 알린다 — 그래야 검색 0건일 때도 안내가 뜬다.
  */
 function OrderListBody({
   params,
   openOrderId,
   onToggle,
   onPage,
+  onVisibleChange,
   renderDetail,
 }: {
   params: OrderListParams;
   openOrderId: number | null;
   onToggle: (orderId: number) => void;
   onPage: (page: number) => void;
+  /** 표에 있는 주문 id. 내려갈 때는 `null` — 부모가 안정된 참조(useCallback)로 넘긴다 */
+  onVisibleChange: (ids: readonly number[] | null) => void;
   renderDetail: (orderId: number) => ReactNode;
 }) {
   const { data } = useOrderListQuery(toListQuery(params));
   const totalPages = Math.max(data.meta.totalPages, 1);
+
+  useEffect(() => {
+    onVisibleChange(data.rows.map((row) => row.id));
+    return () => onVisibleChange(null);
+  }, [data.rows, onVisibleChange]);
 
   return (
     <>

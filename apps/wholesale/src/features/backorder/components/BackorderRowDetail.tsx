@@ -92,11 +92,13 @@ function BackorderRowDetailBody({
       <BackorderAllocationTable
         lines={lines}
         draft={effective}
-        onChange={(lineId, next) =>
+        onChange={(lineId, next) => {
+          /* 고치기 시작하면 직전 거절 문구는 할 일을 다 했다 — 옛 오류가 새 입력 옆에 남지 않게(F1) */
+          if (allocate.error) allocate.reset();
           onDraftChange(
             withAllocation(effective, lines, capacity, lineId, next),
-          )
-        }
+          );
+        }}
       />
 
       {/* 확인 다이얼로그는 없다 — Figma에 그려져 있지 않다. 대신 배분이 0이면 눌리지 않는다.

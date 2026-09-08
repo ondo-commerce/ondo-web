@@ -304,12 +304,18 @@ export function canPack(rows: readonly PackingRowView[]): boolean {
 
 /**
  * 선택 중 지금 표에 없는 줄의 수. 검색어가 바뀌어 목록에서 빠진 줄이다 — 선택은 살리되
- * 우측 패널이 그 사실을 말해야 한다(#198 계열). `visibleIds`가 null이면(표를 아직 못 받음) 0.
+ * 우측 패널이 그 사실을 말해야 한다(#198 계열).
+ *
+ * 소매처 자체가 목록에서 빠졌으면(`retailerInList=false`) 펼침 표가 내려가 `visibleIds`가 null인데,
+ * 그건 "못 받았다"가 아니라 "한 줄도 안 보인다"다 — 선택 전부가 목록 밖이다(wire-shipment F2, #205).
+ * 소매처는 있는데 표를 아직 못 받았으면(null) 0 — 기다리는 동안 안내가 깜빡이지 않게.
  */
 export function missingCount(
   rows: readonly PackingRowView[],
   visibleIds: ReadonlySet<number> | null,
+  retailerInList: boolean,
 ): number {
+  if (!retailerInList) return rows.length;
   if (visibleIds === null) return 0;
   return rows.filter((row) => !visibleIds.has(row.id)).length;
 }

@@ -41,8 +41,8 @@ export const INBOUND_ERROR_TEXT: Readonly<Record<string, string>> = {
     "같은 SKU에 같은 단가가 두 줄 들어갔어요. 한 줄로 합쳐 주세요.",
   INVARIANT_VIOLATED: "수량이나 매입단가가 맞지 않아요. 다시 입력해 주세요.",
   RESOURCE_NOT_FOUND:
-    "이미 없어진 SKU가 섞여 있어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "이미 없어진 SKU가 섞여 있어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   IDEMPOTENCY_KEY_REUSED: "같은 요청이 이미 처리됐어요. 목록을 확인해 주세요.",
   STATE_CONFLICT:
-    "지금 상태에서는 입고할 수 없어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "지금 상태에서는 입고할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
 };

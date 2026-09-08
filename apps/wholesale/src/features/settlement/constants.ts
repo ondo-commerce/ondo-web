@@ -144,6 +144,10 @@ export const DEPOSIT_FIELDS: readonly DepositField[] = [
 /**
  * 입금이 거절됐을 때 사장에게 보일 문구. 코드로만 가른다 — 서버 `message`는 개발자용이라
  * 바뀔 수 있고, 그 아래 보조로만 쓴다(`derive.depositErrorText`).
+ *
+ * 409·404 문구는 "새로 불러왔다"고 말한다 — 뮤테이션 `onError`가 그 자리에서 소매처·주문·원장을
+ * 무효화하므로 문구가 뜰 때는 배분 표가 이미 새 숫자다. "다시 불러온 뒤 확인하라"는 말은
+ * 이미 불러온 화면 앞에서 거짓이었다(wire-settlement F8, #198).
  */
 export const DEPOSIT_ERROR_TEXT: Readonly<Record<string, string>> = {
   PAID_AT_IN_FUTURE: "입금 일시가 미래예요. 지금 이전 시각으로 적어 주세요.",
@@ -151,16 +155,16 @@ export const DEPOSIT_ERROR_TEXT: Readonly<Record<string, string>> = {
     "같은 주문에 두 번 배분했어요. 배분 표를 다시 확인해 주세요.",
   ORDER_RETAILER_MISMATCH: "다른 거래처의 주문이 섞여 있어요.",
   RESOURCE_NOT_FOUND:
-    "거래처나 주문이 이미 없어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "거래처나 주문이 이미 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   IDEMPOTENCY_KEY_REUSED:
-    "같은 요청이 이미 처리됐어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "같은 요청이 이미 처리됐어요. 목록을 새로 불러왔으니 확인해 주세요.",
   STATE_CONFLICT:
-    "지금 상태에서는 등록할 수 없어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "지금 상태에서는 등록할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ORDER_NOT_CONFIRMED:
-    "확정되지 않은 주문에는 배분할 수 없어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "확정되지 않은 주문에는 배분할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ALLOCATION_EXCEEDS_PAYMENT: "배분 합계가 입금액을 넘었어요.",
   ALLOCATION_EXCEEDS_OUTSTANDING:
-    "미수보다 많이 배분한 주문이 있어요. 목록을 다시 불러온 뒤 확인해 주세요.",
+    "미수보다 많이 배분한 주문이 있어요. 목록을 새로 불러왔으니 배분을 확인하고 다시 눌러 주세요.",
 };
 
 /** 계좌 요청의 칸 */

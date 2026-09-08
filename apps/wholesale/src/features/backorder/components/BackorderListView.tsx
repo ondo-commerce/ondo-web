@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Panel, SearchInput } from "@ondo/ui";
-import { useEffect, useState, type ReactNode } from "react";
+import { Button, Notice, Panel, SearchInput } from "@ondo/ui";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BackorderRowDetail } from "./BackorderRowDetail";
 import { BackorderSummaryCard } from "./BackorderSummaryCard";
 import { BackorderTable } from "./BackorderTable";
@@ -54,6 +54,10 @@ export function BackorderListView() {
    * 행 안(`BackorderRowDetail`)에 두지 않는 이유도 같다 — 접으면 그 컴포넌트가 내려간다.
    */
   const [drafts, setDrafts] = useState<AllocationDrafts>({});
+  /** 지금 표에 있는 SKU(variant) id. 표가 알려 준다. 못 받았으면 null */
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
+    null,
+  );
 
   useEffect(() => {
     const trimmed = draft.trim();
@@ -70,6 +74,29 @@ export function BackorderListView() {
   /* 접어도 입력은 남는다(F2). 버리는 건 배분 확정이 받아들여졌을 때뿐이다 */
   const toggleSku = (variantId: number) =>
     setOpenVariantId((prev) => (prev === variantId ? null : variantId));
+
+  /*
+   * 표가 받은 SKU id를 알려 줄 때. **참조가 안정돼야 한다**(useCallback) — 매 렌더 새 함수면
+   * 표의 effect가 매번 다시 돌아 상태 갱신이 꼬리를 문다. 같은 집합이면 같은 참조를 돌려줘 렌더를 아낀다.
+   */
+  const handleVisibleChange = useCallback((ids: readonly number[] | null) => {
+    setVisibleIds((prev) => {
+      if (ids === null) return null;
+      if (
+        prev !== null &&
+        prev.size === ids.length &&
+        ids.every((id) => prev.has(id))
+      ) {
+        return prev;
+      }
+      return new Set(ids);
+    });
+  }, []);
+
+  /* 검색으로 목록에서 빠진 SKU. 요약·폼은 남긴다 — 지우면 검색 중엔 예상 입고일을 못 적는다(F4, #198).
+     표를 아직 못 받았으면(null) 목록 안으로 본다 — 기다리는 동안 안내가 깜빡이지 않게 */
+  const openInList =
+    openVariantId === null || (visibleIds?.has(openVariantId) ?? true);
 
   const changeDraft = (variantId: number, next: AllocationDraft) =>
     setDrafts((prev) => ({ ...prev, [variantId]: next }));
@@ -112,6 +139,7 @@ export function BackorderListView() {
                 openVariantId={openVariantId}
                 onToggle={toggleSku}
                 onPage={setPage}
+                onVisibleChange={handleVisibleChange}
                 renderDetail={(variantId) => (
                   <BackorderRowDetail
                     variantId={variantId}
@@ -132,6 +160,13 @@ export function BackorderListView() {
               {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다.
                 제목은 실패해도 남는다 — 카드 제목까지 사라지면 무엇이 실패했는지 안 읽힌다(F3) */}
               <Panel className="shrink-0">
+                {/* 목록 조건 밖의 SKU임을 카드 머리에서 말한다. 경계 밖이라 기다리는 동안·실패해도 보인다 */}
+                {!openInList ? (
+                  <Notice className="mb-4">
+                    현재 목록 조건에 없는 SKU예요. 배분·예상 입고일은 이 SKU에
+                    붙어요.
+                  </Notice>
+                ) : null}
                 <QueryBoundary
                   errorFallback={({ described, retry }) => (
                     <>
@@ -161,22 +196,32 @@ export function BackorderListView() {
 
 /**
  * 표 + 페이지 이동. 안에서만 `useSuspenseQuery`를 부른다.
+ * 표에 있는 SKU id를 부모에게 알린다(우측 카드의 "목록 조건 밖" 안내). 0건이어도 이 컴포넌트는
+ * 남아 빈 집합을 알린다 — 그래야 검색 0건일 때도 안내가 뜬다.
  */
 function BackorderListBody({
   params,
   openVariantId,
   onToggle,
   onPage,
+  onVisibleChange,
   renderDetail,
 }: {
   params: BackorderListParams;
   openVariantId: number | null;
   onToggle: (variantId: number) => void;
   onPage: (page: number) => void;
+  /** 표에 있는 SKU id. 내려갈 때는 `null` — 부모가 안정된 참조(useCallback)로 넘긴다 */
+  onVisibleChange: (ids: readonly number[] | null) => void;
   renderDetail: (variantId: number) => ReactNode;
 }) {
   const { data } = useBackorderSkusQuery(toListQuery(params));
   const totalPages = Math.max(data.meta.totalPages, 1);
+
+  useEffect(() => {
+    onVisibleChange(data.rows.map((row) => row.variantId));
+    return () => onVisibleChange(null);
+  }, [data.rows, onVisibleChange]);
 
   return (
     <>

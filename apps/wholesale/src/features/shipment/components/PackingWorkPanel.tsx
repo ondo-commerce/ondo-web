@@ -31,6 +31,7 @@ import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 export function PackingWorkPanel({
   rows,
   visibleIds,
+  retailerInList,
   stale,
   onRefresh,
   onDone,
@@ -39,6 +40,8 @@ export function PackingWorkPanel({
   rows: readonly PackingRowView[];
   /** 지금 펼침 표에 있는 줄 id. 표를 못 받았으면 null */
   visibleIds: ReadonlySet<number> | null;
+  /** 펼친 소매처가 지금 소매처 목록 조건(검색) 안에 있는가. 없으면 선택 전부가 목록 밖이다 */
+  retailerInList: boolean;
   /** 직전 처리 뒤 목록 재조회가 실패한 상태. 옛 목록으로 한 번 더 포장하지 않게 잠근다 */
   stale: boolean;
   /** `stale`일 때 `다시 불러오기` — 뮤테이션과 같은 무효화 */
@@ -46,7 +49,7 @@ export function PackingWorkPanel({
   onDone: (created: OutboundCreated, refreshed: boolean) => void;
 }) {
   const mixed = hasMixedReceiveBy(rows);
-  const missing = missingCount(rows, visibleIds);
+  const missing = missingCount(rows, visibleIds, retailerInList);
   const create = useCreateOutboundMutation({ onDone });
   /* 다이얼로그 없이 바로 나가는 버튼이라 더블클릭이 두 건 되지 않게 동기 잠금(dev-verify-bis F2) */
   const fire = useSingleFlight();
@@ -67,10 +70,13 @@ export function PackingWorkPanel({
       </Panel.Title>
 
       <Panel.Body>
-        {/* 검색으로 목록에서 빠진 줄. 지우지 않고 알린다 — 지우면 검색 중엔 포장을 못 한다(#198 판정) */}
+        {/* 목록에서 빠진 줄이 선택에 있으면 **버튼을 잠근다**(반복 패턴 ② 가려진 대상에 실행).
+            선택은 지우지 않는다 — 검색을 풀면 그대로 다시 보인다(#198 판정). 409 뒤 재조회로
+            대기열에서 사라진 줄도 여기로 떨어져, 같은 버튼을 다시 눌러 같은 409를 보는 고리가 끊긴다(fix F3) */}
         {missing > 0 ? (
           <Notice className="mb-3">
-            현재 목록 조건에 없는 품목 {missing}줄이 선택에 남아 있어요.
+            현재 목록에 없는 품목 {missing}줄이 선택에 있어요. 검색을 풀거나
+            선택에서 빼 주세요.
           </Notice>
         ) : null}
 
@@ -125,7 +131,7 @@ export function PackingWorkPanel({
         <Button
           size="lg"
           className="mt-4"
-          disabled={!canPack(rows) || create.isPending || stale}
+          disabled={!canPack(rows) || missing > 0 || create.isPending || stale}
           onClick={() =>
             fire((release) =>
               create.mutate(toOutboundCreateRequest(rows), {
