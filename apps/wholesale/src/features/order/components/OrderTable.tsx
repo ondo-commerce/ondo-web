@@ -3,7 +3,7 @@
 import { Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { OrderRow } from "./OrderRow";
-import type { Order } from "../types";
+import type { OrderRowView } from "../types";
 
 /**
  * 주문 목록 표 7열 + 맨 앞의 펼침 열.
@@ -14,21 +14,21 @@ import type { Order } from "../types";
  *
  * 금액·수량은 우측 정렬 숫자(Table.Td 기본값)이고, 글자 열만 align="left"로 되돌린다.
  *
- * `stickyHead`를 켠다 — 주문이 75건이라 아래로 내리면 머리글이 사라져서 지금 보는 숫자가
- * 주문금액인지 수량인지 놓친다. 대신 **이 표는 세로 스크롤을 직접 받는다**:
+ * `stickyHead`를 켠다 — 한 페이지가 100행이라 아래로 내리면 머리글이 사라져서 지금 보는
+ * 숫자가 주문금액인지 수량인지 놓친다. 대신 **이 표는 세로 스크롤을 직접 받는다**:
  * 부르는 쪽이 `Panel.Body` 안이 아니라 `Panel`의 flex 자식으로 놓아야 한다.
  */
 export function OrderTable({
-  orders,
+  rows,
   openOrderId,
   onToggle,
   renderDetail,
 }: {
-  orders: readonly Order[];
-  openOrderId: string | null;
-  onToggle: (orderId: string) => void;
+  rows: readonly OrderRowView[];
+  openOrderId: number | null;
+  onToggle: (orderId: number) => void;
   /** 펼침 영역 내용. 펼쳐진 행에만 부른다 */
-  renderDetail: (order: Order) => ReactNode;
+  renderDetail: (row: OrderRowView) => ReactNode;
 }) {
   return (
     <Table stickyHead>
@@ -45,16 +45,16 @@ export function OrderTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {orders.map((order) => {
-          const open = openOrderId === order.id;
+        {rows.map((row) => {
+          const open = openOrderId === row.id;
           return (
             <OrderRow
-              key={order.id}
-              order={order}
+              key={row.id}
+              row={row}
               open={open}
-              onToggle={() => onToggle(order.id)}
+              onToggle={() => onToggle(row.id)}
             >
-              {open ? renderDetail(order) : null}
+              {open ? renderDetail(row) : null}
             </OrderRow>
           );
         })}
