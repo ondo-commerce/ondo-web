@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Table } from "@ondo/ui";
+import { Button, Chip, Table } from "@ondo/ui";
 import type { PackingBatchView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
@@ -13,6 +13,7 @@ import { formatNumber } from "@/shared/lib/format";
  * `삭제`는 서버가 배분을 통째로 되돌린다(출고진행이 줄고 미송이 되살아난다).
  * 확인 다이얼로그를 두지 않았다 — 다시 입력해 만들면 그만이다.
  * 활성 조건은 서버 `isCancellable` 그대로 — 출고에 묶인 포장은 여기서 못 지운다.
+ * 그때는 제목 옆에 `봉투에 담김`을 붙인다 — 버튼만 죽어 있으면 왜 못 지우는지 어디에도 없다(fix F4).
  */
 export function PackingBatchCard({
   batch,
@@ -27,7 +28,10 @@ export function PackingBatchCard({
   return (
     <section className="border-border rounded-control border p-3">
       <header className="mb-2 flex items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">포장 대기 #{batch.no}</h4>
+        <h4 className="flex items-center gap-2 text-sm font-medium">
+          포장 대기 #{batch.no}
+          {batch.isCancellable ? null : <Chip tone="sub">봉투에 담김</Chip>}
+        </h4>
         <Button
           variant="line"
           size="sm"

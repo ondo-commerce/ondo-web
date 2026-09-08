@@ -4,7 +4,7 @@ import { Panel } from "@ondo/ui";
 import { PackingBatchCard } from "./PackingBatchCard";
 import { useCancelPackingMutation } from "../api/mutations";
 import { usePackingQueueQuery } from "../api/queries";
-import { actionErrorText } from "../derive";
+import { packingCancelErrorText } from "../derive";
 import {
   QueryBoundary,
   QueryErrorView,
@@ -55,7 +55,10 @@ function PackingQueueCardBody({ orderId }: { orderId: number }) {
       <Panel.Body className="flex flex-col gap-3">
         {cancel.error ? (
           <p role="alert" className="text-destructive-strong text-sm">
-            {actionErrorText(cancel.error)}
+            {packingCancelErrorText(
+              cancel.error,
+              batches.find((b) => b.id === cancel.variables),
+            )}
           </p>
         ) : null}
         {[...batches].reverse().map((batch) => (

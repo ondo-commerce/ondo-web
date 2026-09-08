@@ -483,3 +483,18 @@ export function actionErrorText(error: unknown): string {
 export function isStaleRejection(error: unknown): boolean {
   return isApiError(error) && (error.status === 409 || error.status === 404);
 }
+
+/**
+ * 포장 `삭제`가 거절됐을 때의 문구. 409 뒤 재조회로 그 포장이 `isCancellable=false`가 됐으면
+ * 이미 봉투에 담긴 것이라 "다시 눌러라"가 아니라 이유만 말한다 — 버튼은 이미 잠겨 있다(fix F4).
+ * 목이 `DOCUMENT_FROZEN` 대신 `TRANSITION_NOT_ALLOWED`를 내도 같은 문구다.
+ */
+export function packingCancelErrorText(
+  error: unknown,
+  batch: PackingBatchView | undefined,
+): string {
+  if (batch !== undefined && !batch.isCancellable) {
+    return ORDER_ERROR_TEXT.DOCUMENT_FROZEN ?? actionErrorText(error);
+  }
+  return actionErrorText(error);
+}
