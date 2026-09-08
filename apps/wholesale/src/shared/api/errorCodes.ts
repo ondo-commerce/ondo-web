@@ -49,6 +49,14 @@ export const WHOLESALE_ERROR_CODE = {
   DUPLICATE_BACKORDER: "DUPLICATE_BACKORDER",
   BACKORDER_NOT_OPEN: "BACKORDER_NOT_OPEN",
 
+  // 재고 — 입고는 400(같은 SKU·같은 단가 로트 중복)·409(멱등키 재사용·상태 충돌),
+  // 조정은 409(0 아래·주문처리중 아래로 내려감)
+  DUPLICATE_LOT: "DUPLICATE_LOT",
+  IDEMPOTENCY_KEY_REUSED: "IDEMPOTENCY_KEY_REUSED",
+  STATE_CONFLICT: "STATE_CONFLICT",
+  STOCK_BELOW_ZERO: "STOCK_BELOW_ZERO",
+  STOCK_BELOW_ALLOCATED: "STOCK_BELOW_ALLOCATED",
+
   // 로그인 실패는 하나뿐이다 — 이메일 없음과 비밀번호 틀림을 서버가 구분해 주지 않는다(계정 열거 방지)
   LOGIN_FAILED: "LOGIN_FAILED",
 } as const;

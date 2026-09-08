@@ -1,19 +1,22 @@
 "use client";
 
-import { Panel, SearchInput } from "@ondo/ui";
-import { useState } from "react";
+import { Button, Panel, SearchInput } from "@ondo/ui";
+import { useEffect, useState } from "react";
 import { InventoryInboundPanel } from "./InventoryInboundPanel";
 import { InventoryTable } from "./InventoryTable";
 import { SkuHistoryCard } from "./SkuHistoryCard";
 import { SkuInboundCard } from "./SkuInboundCard";
-import { formatMovementDate, inboundMovement } from "../derive";
-import { stockHistory } from "../fixtures";
-import type { InboundEntry, StockMovement } from "../types";
-import type { Product } from "@/features/product";
+import { useInventoryListQuery } from "../api/queries";
+import { clearDrafts, toListQuery, type InventoryListParams } from "../derive";
+import type { InboundDrafts, InboundEntry, InboundInput } from "../types";
+import { QueryBoundary } from "@/shared/api/QueryBoundary";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
+/** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
+const SEARCH_DEBOUNCE_MS = 300;
+
 /**
- * 재고 관리 — 좌 목록(아코디언 + SKU 표) + 우 작업 패널.
+ * 재고 관리 — 좌 목록(상품 표 + 펼친 SKU 표) + 우 작업 패널.
  *
  * 우측은 한 화면 안에서 두 모드로 바뀐다. 다른 페이지가 아니다.
  *
@@ -24,119 +27,98 @@ import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
  * **다른 상품을 펼치면 SKU 선택이 반드시 풀린다.** 안 풀면 A상품 목록 옆에
  * B상품 SKU 카드가 남는다.
  *
+ * 검색은 서버가 건다(`GET /products?q=`). 목록·SKU 재고는 상품 응답이고, 입고하면
+ * 그 상품의 상세를 다시 받아 좌측 표·우측 카드가 같이 움직인다(뮤테이션이 무효화).
+ *
  * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
  *
- * 데이터는 전부 더미라 로딩·에러 상태가 없다. 서버가 붙으면 이 컴포넌트가
- * 목록을 받는 자리(products prop)에서 세 상태를 갈라야 한다.
+ * 경계는 셋 — 목록 패널·우측 입고 카드·변동 이력 카드. 실패한 자리만 그 자리에서 실패한다.
+ * 목록 패널 안에서도 행마다 받는 상세는 **행 단위**로 실패한다(합계 칸만 `-`·`다시 시도`).
+ * 우측 입고 카드는 목록과 같은 키(상품 상세)를 봐서, 목록이 받아 둔 캐시를 그대로 쓴다.
  */
-export function InventoryListView({
-  products: initialProducts,
-}: {
-  products: Product[];
-}) {
-  /*
-   * 입고 처리는 서버가 없어서 로컬 상태로 반영한다. 그래서 목록을 prop 그대로
-   * 그리지 않고 state로 들고 있는다 — 현재고가 늘면 판매가능도 같이 움직여야 한다.
+export function InventoryListView() {
+  const [draft, setDraft] = useState("");
+  /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
+  const [q, setQ] = useState("");
+  /** 1-base. 서버는 0-base라 보낼 때 1 뺀다(derive.toListQuery) */
+  const [page, setPage] = useState(1);
+  const [openProductId, setOpenProductId] = useState<number | null>(null);
+  const [selectedSkuId, setSelectedSkuId] = useState<number | null>(null);
+  /**
+   * 입고 입력. **SKU별로 여기서 든다** — 우측 카드 안에 두면 SKU 행을 눌러 모드 B로 갔다가
+   * 돌아올 때 카드가 내려가며 적은 값이 사라진다(Q-01). 상품을 접었다 펴도 남는다.
+   * 버리는 건 입고가 받아들여졌을 때, 그것도 처리된 줄만이다(Q-02).
    */
-  const [products, setProducts] = useState(initialProducts);
-  const [query, setQuery] = useState("");
-  const [openProductId, setOpenProductId] = useState<string | null>(null);
-  const [selectedSkuId, setSelectedSkuId] = useState<string | null>(null);
-  /** 화면에서 만든 입고 이력. 더미 이력은 fixtures에 있고 여기엔 새로 생긴 것만 쌓인다 */
-  const [addedHistory, setAddedHistory] = useState<
-    Record<string, StockMovement[]>
-  >({});
+  const [drafts, setDrafts] = useState<InboundDrafts>({});
 
-  const keyword = query.trim().toLowerCase();
-  const visibleProducts = keyword
-    ? products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(keyword) ||
-          p.code.toLowerCase().includes(keyword),
-      )
-    : products;
+  useEffect(() => {
+    const trimmed = draft.trim();
+    if (trimmed === q) return;
+    const timer = setTimeout(() => {
+      setQ(trimmed);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draft, q]);
 
-  const openProduct = products.find((p) => p.id === openProductId) ?? null;
-  const selectedSku =
-    openProduct?.skus.find((s) => s.id === selectedSkuId) ?? null;
+  const params: InventoryListParams = { q, page };
 
   /** 다른 상품을 펼치면 SKU 선택이 반드시 풀린다 — 안 풀면 A상품 옆에 B상품 카드가 남는다 */
-  const toggleProduct = (productId: string) => {
+  const toggleProduct = (productId: number) => {
     setOpenProductId((prev) => (prev === productId ? null : productId));
     setSelectedSkuId(null);
   };
 
   /** 같은 행을 다시 누르면 모드 A로 돌아간다 */
-  const handleSelectSku = (skuId: string) =>
-    setSelectedSkuId((prev) => (prev === skuId ? null : skuId));
+  const selectSku = (variantId: number) =>
+    setSelectedSkuId((prev) => (prev === variantId ? null : variantId));
 
-  const receive = (entries: InboundEntry[]) => {
-    if (!openProduct || entries.length === 0) return;
-    // 오늘 날짜는 렌더가 아니라 버튼을 누른 이 순간에만 읽는다
-    const date = formatMovementDate(new Date());
+  const changeDraft = (variantId: number, next: InboundInput) =>
+    setDrafts((prev) => ({ ...prev, [variantId]: next }));
 
-    const newRows: Record<string, StockMovement[]> = {};
-    for (const entry of entries) {
-      const sku = openProduct.skus.find((s) => s.id === entry.skuId);
-      if (!sku) continue;
-      newRows[entry.skuId] = [
-        inboundMovement(entry.skuId, date, sku.stock, entry.qty),
-      ];
-    }
-
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id !== openProduct.id
-          ? p
-          : {
-              ...p,
-              skus: p.skus.map((s) => {
-                const entry = entries.find((e) => e.skuId === s.id);
-                return entry ? { ...s, stock: s.stock + entry.qty } : s;
-              }),
-            },
-      ),
-    );
-
-    setAddedHistory((prev) => {
-      const next = { ...prev };
-      for (const [skuId, rows] of Object.entries(newRows)) {
-        next[skuId] = [...rows, ...(prev[skuId] ?? [])];
-      }
-      return next;
-    });
-  };
+  /** 서버가 받아 준 뒤. 보낸 줄의 입력만 비운다 — 안 보낸 줄(단가만 적은 줄)은 그대로다 */
+  const finishInbound = (entries: InboundEntry[]) =>
+    setDrafts((prev) => clearDrafts(prev, entries));
 
   const detail = () => {
-    if (!openProduct) return undefined;
+    if (openProductId === null) return undefined;
 
-    if (selectedSku) {
+    if (selectedSkuId !== null) {
       return (
         <>
-          <SkuInboundCard
-            key={selectedSku.id}
-            productName={openProduct.name}
-            productCode={openProduct.code}
-            sku={selectedSku}
-            onReceive={(entry) => receive([entry])}
-          />
-          <SkuHistoryCard
-            movements={[
-              ...(addedHistory[selectedSku.id] ?? []),
-              ...stockHistory(selectedSku.id),
-            ]}
-          />
+          {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다 */}
+          <Panel className="shrink-0">
+            <QueryBoundary>
+              <SkuInboundCard
+                productId={openProductId}
+                variantId={selectedSkuId}
+                drafts={drafts}
+                onDraftChange={changeDraft}
+                onReceived={finishInbound}
+              />
+            </QueryBoundary>
+          </Panel>
+          <Panel className="min-h-0 flex-1">
+            <Panel.Title>재고 변동 이력</Panel.Title>
+            <QueryBoundary>
+              <SkuHistoryCard variantId={selectedSkuId} />
+            </QueryBoundary>
+          </Panel>
         </>
       );
     }
 
-    /* key: 다른 상품으로 바뀌면 입력값이 남지 않게 상태째 새로 만든다 */
     return (
-      <InventoryInboundPanel
-        key={openProduct.id}
-        product={openProduct}
-        onReceive={receive}
-      />
+      <Panel className="flex-1">
+        <QueryBoundary>
+          <InventoryInboundPanel
+            productId={openProductId}
+            drafts={drafts}
+            onDraftChange={changeDraft}
+            onReceived={finishInbound}
+          />
+        </QueryBoundary>
+      </Panel>
     );
   };
 
@@ -154,33 +136,105 @@ export function InventoryListView({
               className="mr-auto"
               placeholder="품번·품명 검색"
               aria-label="품번·품명 검색"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
             />
           </div>
 
-          {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
-              stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
-              빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
-          {visibleProducts.length === 0 ? (
-            <Panel.Body>
-              <p className="text-muted-foreground py-12 text-center text-sm">
-                검색 결과가 없습니다
-              </p>
-            </Panel.Body>
-          ) : (
-            <InventoryTable
-              products={visibleProducts}
+          {/* 경계는 표 자리에만. 검색줄은 서버와 무관하게 늘 있어야 한다 */}
+          <QueryBoundary>
+            <InventoryListBody
+              params={params}
               openProductId={openProductId}
               onToggle={toggleProduct}
               selectedSkuId={selectedSkuId}
-              onSelectSku={handleSelectSku}
+              onSelectSku={selectSku}
+              onPage={setPage}
             />
-          )}
+          </QueryBoundary>
         </Panel>
       }
       detail={detail()}
       emptyDetail="좌측 목록에서 상품을 선택하세요"
     />
+  );
+}
+
+/**
+ * 표 + 페이지 이동. 안에서만 목록 쿼리를 부른다.
+ */
+function InventoryListBody({
+  params,
+  openProductId,
+  onToggle,
+  selectedSkuId,
+  onSelectSku,
+  onPage,
+}: {
+  params: InventoryListParams;
+  openProductId: number | null;
+  onToggle: (productId: number) => void;
+  selectedSkuId: number | null;
+  onSelectSku: (variantId: number) => void;
+  onPage: (page: number) => void;
+}) {
+  const { rows, meta, retryDetail } = useInventoryListQuery(
+    toListQuery(params),
+  );
+  const totalPages = Math.max(meta.totalPages, 1);
+
+  return (
+    <>
+      {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
+          stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
+          빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
+      {rows.length === 0 ? (
+        <Panel.Body>
+          <p className="text-muted-foreground py-12 text-center text-sm">
+            {/* 검색어 없이 0건이면 "검색 결과"가 아니라 상품이 없는 것이다 */}
+            {params.q === ""
+              ? "등록된 상품이 없습니다"
+              : "검색 결과가 없습니다"}
+          </p>
+        </Panel.Body>
+      ) : (
+        <InventoryTable
+          rows={rows}
+          openProductId={openProductId}
+          onToggle={onToggle}
+          onRetryDetail={retryDetail}
+          selectedSkuId={selectedSkuId}
+          onSelectSku={onSelectSku}
+        />
+      )}
+
+      {/* 서버가 20행씩 자른다(행마다 상세를 같이 받아서 페이지를 작게 둔다) */}
+      {totalPages > 1 ? (
+        <nav
+          aria-label="페이지 이동"
+          className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
+        >
+          <span className="text-muted-foreground mr-2">
+            {params.page} / {totalPages}
+          </span>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page <= 1}
+            onClick={() => onPage(params.page - 1)}
+          >
+            이전
+          </Button>
+          <Button
+            variant="line"
+            size="sm"
+            disabled={params.page >= totalPages}
+            onClick={() => onPage(params.page + 1)}
+          >
+            다음
+          </Button>
+        </nav>
+      ) : null}
+    </>
   );
 }
