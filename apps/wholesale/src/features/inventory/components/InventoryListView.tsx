@@ -6,10 +6,13 @@ import { InventoryInboundPanel } from "./InventoryInboundPanel";
 import { InventoryTable } from "./InventoryTable";
 import { SkuHistoryCard } from "./SkuHistoryCard";
 import { SkuInboundCard } from "./SkuInboundCard";
+import { inventoryKeys } from "../api/keys";
 import { useInventoryListQuery } from "../api/queries";
 import { clearDrafts, toListQuery, type InventoryListParams } from "../derive";
 import type { InboundDrafts, InboundEntry, InboundInput } from "../types";
 import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { productKeys } from "@/shared/api/product";
+import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
@@ -37,6 +40,10 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 우측 입고 카드는 목록과 같은 키(상품 상세)를 봐서, 목록이 받아 둔 캐시를 그대로 쓴다.
  */
 export function InventoryListView() {
+  /* 다른 탭(출고·미송)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
+  /* 목록·SKU 재고는 상품 응답이라 상품 키도 같이 — 출고가 재고를 줄인다 */
+  useInvalidateOnMount(productKeys.all);
+  useInvalidateOnMount(inventoryKeys.all);
   const [draft, setDraft] = useState("");
   /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
   const [q, setQ] = useState("");

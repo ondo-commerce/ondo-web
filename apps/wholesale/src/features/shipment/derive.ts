@@ -1,173 +1,295 @@
-import { PICKUP_METHODS } from "./constants";
+import { isApiError } from "@ondo/api";
+import { OUTBOUND_ERROR_TEXT, RECEIVE_BY_ORDER } from "./constants";
 import type {
-  PackingItem,
-  Package,
-  PickupMethod,
-  Retailer,
-  ShipmentStage,
-  TradeStatement,
+  OutboundCreateRequest,
+  OutboundDetail,
+  OutboundItem,
+  OutboundRetailer,
+  OutboundRowView,
+  OutboundSummary,
+  OutboundView,
+  PackingRetailer,
+  PackingRow,
+  PackingRowView,
+  PackingSelection,
+  ReceiveBy,
+  RetailerRowView,
+  ShipmentNotice,
+  Statement,
+  StatementItem,
+  StatementLineView,
+  StatementView,
 } from "./types";
+import { describeError } from "@/shared/api/describeError";
 
 /*
  * 출고 탭의 파생값은 전부 여기 있다. JSX 안에서 계산하지 않는다 —
- * 같은 수량 합이 아코디언 꼬리(`SKU 6건 · 55개`) · 표의 수량 열 · 우측 패널의
- * `선택 상품 합계` · 장끼의 `총 수량` 네 곳에서 쓰이는데, 흩어 놓으면 한 곳만
- * 고쳐도 화면끼리 숫자가 갈린다.
+ * 같은 수량 합이 아코디언 꼬리 · 표의 수량 열 · 우측 패널의 `선택 상품 합계`에서 쓰이는데,
+ * 흩어 놓으면 한 곳만 고쳐도 화면끼리 숫자가 갈린다.
  *
- * ⚠️ 날짜 문자열은 Date로 되살리지 않는다. 목록 정렬은 `YYYY-MM-DDTHH:mm`의
- *    사전순이면 충분하고, Date로 만들면 서버(UTC)와 브라우저(KST)의 렌더 결과가
- *    갈려 하이드레이션이 깨진다. `new Date()`를 읽는 함수는 아래 stamp() 하나뿐이고
- *    그것도 렌더가 아니라 버튼을 누른 순간에만 부른다.
+ * wire → 뷰 변환도 여기다. 화면은 wire 모양을 모른다.
+ *
+ * ⚠️ 날짜는 서버 ISO(date-time)를 **KST 고정** Intl로만 그린다. 사장의 브라우저 시간대가
+ *    어디든 동대문 날짜로 읽혀야 하고, 렌더 중에 `new Date()`(지금)를 읽는 함수는 없다 —
+ *    서버(UTC)와 브라우저의 값이 갈리면 하이드레이션이 깨진다.
  */
 
-/** 수량 합. 대기 줄이든 포장에 담긴 줄이든 같은 함수를 쓴다 */
-export function sumQty(items: readonly PackingItem[]): number {
-  return items.reduce((total, item) => total + item.qty, 0);
+/* ------------------------------------------------------------------------
+ * 날짜
+ * ------------------------------------------------------------------------ */
+
+const KST = "Asia/Seoul";
+
+/** 표의 일시 열 `9/7 08:00` */
+const SHORT_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: KST,
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** 장끼번호 날짜부 `20260907` */
+const DATE_PART_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: KST,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function parts(format: Intl.DateTimeFormat, iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const list = format.formatToParts(date);
+  return (type: Intl.DateTimeFormatPartTypes) =>
+    list.find((p) => p.type === type)?.value ?? "";
 }
 
-/** 포장 하나의 총 수량. 표의 `수량` 열과 상세 패널의 `총 수량`이 같은 값이어야 한다 */
-export function packageQty(pkg: Package): number {
-  return sumQty(pkg.lines);
+/** 표의 일시 열 `9/7 08:00` */
+export function formatDateTime(iso: string): string {
+  const part = parts(SHORT_FORMAT, iso);
+  if (!part) return "-";
+  return `${part("month")}/${part("day")} ${part("hour")}:${part("minute")}`;
 }
 
-/** 소매처 하나에 묶인 포장 대기 줄과 합계. 접힌 아코디언 행이 이 모양을 그린다 */
-export interface ReadyGroup {
-  retailer: Retailer;
-  items: PackingItem[];
-}
-
-/** 소매처 하나에 묶인 포장 묶음들. `출고 대기` · `출고 완료` 단계가 함께 쓴다 */
-export interface PackageGroup {
-  retailer: Retailer;
-  packages: Package[];
+/** 패널·장끼의 일시 `9월 7일 08:00` — 표보다 자리가 넉넉해 말로 적는다 */
+export function formatDateLabel(iso: string): string {
+  const part = parts(SHORT_FORMAT, iso);
+  if (!part) return "-";
+  return `${part("month")}월 ${part("day")}일 ${part("hour")}:${part("minute")}`;
 }
 
 /**
- * 소매처별로 접는다. **줄이 하나도 없는 소매처는 목록에서 빠진다** —
- * 마지막 대기 줄까지 포장하면 그 소매처 행 자체가 사라져야 하기 때문이다.
- * 순서는 소매처 배열 순서를 그대로 따른다(코드 순).
+ * 장끼번호 `JG-YYYYMMDD-NNN`. 서버는 날짜별 순번(`statementNumber`, 1부터)만 주고
+ * "표시 코드 조립용으로 `shippedAt`을 항상 함께 내린다"(스펙). 날짜부는 출고일(KST)이다(판정 D6).
  */
-export function groupReadyItems(
-  retailers: readonly Retailer[],
-  items: readonly PackingItem[],
-): ReadyGroup[] {
-  return retailers
-    .map((retailer) => ({
-      retailer,
-      items: items.filter((item) => item.retailerId === retailer.id),
-    }))
-    .filter((group) => group.items.length > 0);
+export function statementCode(
+  shippedAt: string,
+  statementNumber: number,
+): string {
+  const part = parts(DATE_PART_FORMAT, shippedAt);
+  const datePart = part ? `${part("year")}${part("month")}${part("day")}` : "";
+  return `JG-${datePart}-${String(statementNumber).padStart(3, "0")}`;
 }
 
-/** 포장 묶음판. 단계(PACKED/SHIPPED)로 먼저 거른 배열을 받는다 */
-export function groupPackages(
-  retailers: readonly Retailer[],
-  packages: readonly Package[],
-): PackageGroup[] {
-  return retailers
-    .map((retailer) => ({
-      retailer,
-      packages: packages.filter((pkg) => pkg.retailerId === retailer.id),
-    }))
-    .filter((group) => group.packages.length > 0);
+/* ------------------------------------------------------------------------
+ * wire → 뷰
+ * ------------------------------------------------------------------------ */
+
+/** `품번-SKU번호`. 서버에 SKU 코드 문자열이 없어 두 번호를 붙인다 — 재고·미송 탭과 같은 표기 */
+export function skuCode(productNumber: number, variantNumber: number): string {
+  return `${productNumber}-${variantNumber}`;
+}
+
+/** 봉투 표기 `#N`. `PKG-001` 같은 코드 문자열이 서버에 없다 */
+export function outboundLabel(outboundNumber: number): string {
+  return `#${outboundNumber}`;
+}
+
+export function toPackingRetailerRow(row: PackingRetailer): RetailerRowView {
+  return {
+    retailer: {
+      id: row.retailerId,
+      name: row.retailerName,
+    },
+    count: row.itemCount,
+    qty: row.totalQty,
+  };
+}
+
+export function toOutboundRetailerRow(row: OutboundRetailer): RetailerRowView {
+  return {
+    retailer: {
+      id: row.retailerId,
+      name: row.retailerName,
+    },
+    count: row.outboundCount,
+    qty: row.totalQty,
+  };
+}
+
+export function toPackingRowView(row: PackingRow): PackingRowView {
+  return {
+    id: row.id,
+    sku: skuCode(row.productNumber, row.variantNumber),
+    productName: row.productName,
+    receiveBy: row.receiveBy,
+    orderedAt: formatDateTime(row.orderedAt),
+    orderedAtIso: row.orderedAt,
+    orderId: row.orderId,
+    orderNumber: String(row.orderNumber),
+    qty: row.qty,
+  };
+}
+
+/** 표의 `상품 요약`. 앞부분은 서버가 만든다(`summaryProductName`), 둘 이상이면 `외 N건` */
+export function outboundSummaryLabel(summary: OutboundSummary): string {
+  const rest = summary.additionalItemCount;
+  return rest > 0
+    ? `${summary.summaryProductName} 외 ${rest}건`
+    : summary.summaryProductName;
+}
+
+export function toOutboundRowView(summary: OutboundSummary): OutboundRowView {
+  // 스펙에 nullable이 없어 타입은 string이지만 출고 전엔 null이 온다
+  const shippedAtIso = summary.shippedAt ?? null;
+  return {
+    id: summary.id,
+    label: outboundLabel(summary.outboundNumber),
+    summary: outboundSummaryLabel(summary),
+    receiveBy: summary.receiveBy,
+    createdAt: formatDateTime(summary.createdAt),
+    createdAtIso: summary.createdAt,
+    shippedAt: shippedAtIso === null ? null : formatDateTime(shippedAtIso),
+    shippedAtIso,
+    totalQty: summary.totalQty,
+  };
+}
+
+function toOutboundLineView(item: OutboundItem) {
+  return {
+    variantId: item.variantId,
+    sku: skuCode(item.productNumber, item.variantNumber),
+    productName: item.productName,
+    qty: item.qty,
+  };
+}
+
+export function toOutboundView(detail: OutboundDetail): OutboundView {
+  const shippedAt = detail.shippedAt ?? null;
+  const statementNumber = detail.statementNumber ?? null;
+  return {
+    id: detail.id,
+    label: outboundLabel(detail.outboundNumber),
+    retailerId: detail.retailerId,
+    retailerName: detail.retailerName,
+    createdAt: formatDateLabel(detail.createdAt),
+    lines: (detail.items ?? []).map(toOutboundLineView),
+    totalQty: detail.totalQty,
+    isShippable: detail.isShippable,
+    shippedAt: shippedAt === null ? null : formatDateLabel(shippedAt),
+    // 둘 다 있어야 장끼번호가 된다 — 출고 확정이 두 값을 한 번에 채운다(스펙)
+    statementCode:
+      shippedAt !== null && statementNumber !== null
+        ? statementCode(shippedAt, statementNumber)
+        : null,
+  };
+}
+
+/** 장끼 품목표의 `옵션` 열. SKU = 색상 × 사이즈라 두 축을 합쳐 적는다(glossary §3) */
+export function optionLabel(
+  item: Pick<StatementItem, "color" | "size">,
+): string {
+  return `${item.color} / ${item.size}`;
+}
+
+function toStatementLineView(item: StatementItem): StatementLineView {
+  return {
+    productName: item.productName,
+    option: optionLabel(item),
+    qty: item.qty,
+  };
+}
+
+export function toStatementView(statement: Statement): StatementView {
+  return {
+    statementCode: statementCode(
+      statement.shippedAt,
+      statement.statementNumber,
+    ),
+    outboundLabel: outboundLabel(statement.outboundNumber),
+    shippedAt: formatDateLabel(statement.shippedAt),
+    sellerName: statement.sellerName,
+    retailerName: statement.retailerName,
+    receiveBy: statement.receiveBy,
+    lines: (statement.items ?? []).map(toStatementLineView),
+    totalQty: statement.totalQty,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 집계·정렬·필터 (받은 목록 안에서)
+ * ------------------------------------------------------------------------ */
+
+/** 칩 건수 = 그 단계에 있는 **행의 개수**(판정 D5). 소매처별 건수를 더한다 — 집계 엔드포인트가 없다 */
+export function sumCounts(rows: readonly RetailerRowView[]): number {
+  return rows.reduce((total, row) => total + row.count, 0);
+}
+
+/** 수량 합. 대기 줄이든 선택 스냅샷이든 같은 함수를 쓴다 */
+export function sumQty(rows: readonly { qty: number }[]): number {
+  return rows.reduce((total, row) => total + row.qty, 0);
 }
 
 /**
  * 표의 줄 순서: **수령 방식으로 먼저 묶고**(직접 수령 → 사입삼촌) 묶음 안에서 주문 일시 최신순.
  * 수령 방식이 포장 단위를 가르는 축이라(판정 D7) 같은 방식끼리 붙어 있어야 한 번에 고른다.
+ * 서버에 정렬 파라미터가 없어 받은 목록(페이징 없음) 안에서 한다.
  */
-export function sortReadyItems(items: readonly PackingItem[]): PackingItem[] {
-  return [...items].sort((a, b) => {
+export function sortReadyRows(
+  rows: readonly PackingRowView[],
+): PackingRowView[] {
+  return [...rows].sort((a, b) => {
     const order =
-      PICKUP_METHODS.indexOf(a.pickupMethod) -
-      PICKUP_METHODS.indexOf(b.pickupMethod);
+      RECEIVE_BY_ORDER.indexOf(a.receiveBy) -
+      RECEIVE_BY_ORDER.indexOf(b.receiveBy);
     if (order !== 0) return order;
-    return b.orderedAt.localeCompare(a.orderedAt);
+    return b.orderedAtIso.localeCompare(a.orderedAtIso);
   });
 }
 
 /** 일시 최신순. 출고 대기는 포장 일시, 출고 완료는 출고 일시로 정렬한다(판정 D8) */
-export function sortPackagesByDesc(
-  packages: readonly Package[],
-  key: (pkg: Package) => string,
-): Package[] {
-  return [...packages].sort((a, b) => key(b).localeCompare(key(a)));
+export function sortOutboundRows(
+  rows: readonly OutboundRowView[],
+  key: (row: OutboundRowView) => string,
+): OutboundRowView[] {
+  return [...rows].sort((a, b) => key(b).localeCompare(key(a)));
 }
 
 /** 수령방식 단일 선택 필터. `전체`(FILTER_ALL)는 여기까지 오지 않고 호출부가 거른다 */
-export function filterByPickupMethod(
-  items: readonly PackingItem[],
-  method: PickupMethod,
-): PackingItem[] {
-  return items.filter((item) => item.pickupMethod === method);
+export function filterByReceiveBy(
+  rows: readonly PackingRowView[],
+  receiveBy: ReceiveBy,
+): PackingRowView[] {
+  return rows.filter((row) => row.receiveBy === receiveBy);
 }
 
-/**
- * 검색 대상은 **소매처명 · 소매처코드 · 그 소매처가 가진 상품명** 세 축이다(판정 D9).
- * placeholder가 `거래처·품명 검색`이라 품명까지 걸러야 말과 동작이 맞는다.
- */
-export function matchesKeyword(
-  retailer: Retailer,
-  productNames: readonly string[],
-  keyword: string,
-): boolean {
-  if (keyword === "") return true;
-  const needle = keyword.toLowerCase();
-  return (
-    retailer.name.toLowerCase().includes(needle) ||
-    retailer.code.toLowerCase().includes(needle) ||
-    productNames.some((name) => name.toLowerCase().includes(needle))
-  );
-}
+/* ------------------------------------------------------------------------
+ * 선택 → 포장
+ * ------------------------------------------------------------------------ */
 
-/** 칩에 붙는 건수 = 그 단계에 있는 **행의 개수**다(판정 D5). 소매처 수도 수량 합도 아니다 */
-export function stageCounts(
-  items: readonly PackingItem[],
-  packages: readonly Package[],
-): Record<ShipmentStage, number> {
-  return {
-    ready: items.length,
-    packed: packages.filter((pkg) => pkg.status === "PACKED").length,
-    shipped: packages.filter((pkg) => pkg.status === "SHIPPED").length,
-  };
-}
-
-/** `YYYY-MM-DDTHH:mm` → [월, 일, 시각]. 문자열을 자르기만 한다 — Date를 만들지 않는다 */
-function parseStamp(stamp: string): [string, string, string] {
-  const [date = "", time = ""] = stamp.split("T");
-  const [, month = "", day = ""] = date.split("-");
-  return [String(Number(month)), String(Number(day)), time];
-}
-
-/** 표의 일시 열 `8/12 09:14` */
-export function formatDateTime(stamp: string): string {
-  const [month, day, time] = parseStamp(stamp);
-  return `${month}/${day} ${time}`;
-}
-
-/** 패널·장끼의 일시 `8월 12일 14:20` — 표보다 자리가 넉넉해 말로 적는다 */
-export function formatDateLabel(stamp: string): string {
-  const [month, day, time] = parseStamp(stamp);
-  return `${month}월 ${day}일 ${time}`;
-}
-
-/**
- * 지금 시각 → 목업이 쓰는 `YYYY-MM-DDTHH:mm`.
- *
- * **버튼을 누른 순간에만 부른다.** 렌더 중에 오늘을 읽으면 서버(UTC)와
- * 브라우저(KST)의 값이 달라 하이드레이션이 깨진다(재고 탭 formatMovementDate와 같은 이유).
- */
-export function stamp(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+/** 선택 스냅샷 → 줄 목록(고른 순서). 우측 패널·요청 본문이 이 배열을 읽는다 */
+export function selectedRows(selection: PackingSelection): PackingRowView[] {
+  return Object.values(selection);
 }
 
 /**
  * 선택한 줄의 수령 방식이 섞였는가.
- * `package.pickup_method`가 단일 ENUM이라(§2.7) 섞인 선택은 한 묶음이 될 수 없다(판정 D7).
+ * 봉투의 수령 방식이 단일 값이라 섞인 선택은 한 묶음이 될 수 없다(판정 D7 · 서버 400 `RECEIVE_BY_MIXED`).
  */
-export function hasMixedPickup(items: readonly PackingItem[]): boolean {
-  return new Set(items.map((item) => item.pickupMethod)).size > 1;
+export function hasMixedReceiveBy(rows: readonly PackingRowView[]): boolean {
+  return new Set(rows.map((row) => row.receiveBy)).size > 1;
 }
 
 /**
@@ -176,114 +298,60 @@ export function hasMixedPickup(items: readonly PackingItem[]): boolean {
  * 고르는 것 자체는 막지 않는다(게이트 Q3) — 체크박스를 회색으로 만들면 왜 회색인지
  * 설명할 자리가 없어서, 고르게 두고 버튼 옆에서 이유를 말한다.
  */
-export function canPack(items: readonly PackingItem[]): boolean {
-  return items.length > 0 && !hasMixedPickup(items);
+export function canPack(rows: readonly PackingRowView[]): boolean {
+  return rows.length > 0 && !hasMixedReceiveBy(rows);
 }
 
 /**
- * 다음 포장번호 `PKG-051`. 지금 있는 번호의 최댓값 + 1이다 —
- * 개수 + 1로 만들면 앞 번호가 지워졌을 때 이미 쓴 번호를 다시 발급한다.
+ * 선택 중 지금 표에 없는 줄의 수. 검색어가 바뀌어 목록에서 빠진 줄이다 — 선택은 살리되
+ * 우측 패널이 그 사실을 말해야 한다(#198 계열). `visibleIds`가 null이면(표를 아직 못 받음) 0.
  */
-export function nextPackageNo(packages: readonly Package[]): string {
-  const max = packages.reduce((highest, pkg) => {
-    const n = Number(pkg.packageNo.replace("PKG-", ""));
-    return Number.isNaN(n) ? highest : Math.max(highest, n);
-  }, 0);
-  return `PKG-${String(max + 1).padStart(3, "0")}`;
+export function missingCount(
+  rows: readonly PackingRowView[],
+  visibleIds: ReadonlySet<number> | null,
+): number {
+  if (visibleIds === null) return 0;
+  return rows.filter((row) => !visibleIds.has(row.id)).length;
+}
+
+export function toOutboundCreateRequest(
+  rows: readonly PackingRowView[],
+): OutboundCreateRequest {
+  return { packingItemIds: rows.map((row) => row.id) };
+}
+
+/* ------------------------------------------------------------------------
+ * 결과 문구
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 거절 사유 한 줄. 아는 코드면 코드 표, 모르면 `describeError`의 종류별 제목.
+ * `VALIDATION_FAILED`는 여기 오기 전에 `toFieldErrors`가 칸으로 보낸다.
+ */
+export function outboundErrorText(error: unknown): string {
+  if (isApiError(error)) {
+    const known = OUTBOUND_ERROR_TEXT[error.code];
+    if (known !== undefined) return known;
+  }
+  return describeError(error).title;
 }
 
 /**
- * 고른 줄들을 포장 묶음 하나로 만든다.
- * 수령 방식은 첫 줄에서 가져온다 — 여기 오는 선택은 이미 `canPack`을 통과해
- * 전부 같은 값이다.
+ * 서버 상태와 어긋나서 거절된 것인가(409·404). 이때는 화면이 든 값이 낡은 것이라
+ * 다시 불러와야 한다 — 문구만 보이고 길이 없으면 같은 버튼을 다시 눌러 같은 답을 본다(wire-order F3).
  */
-export function packageFromItems(
-  packageNo: string,
-  retailerId: string,
-  items: readonly PackingItem[],
-  packedAt: string,
-): Package {
-  const [first] = items;
-  return {
-    packageNo,
-    retailerId,
-    pickupMethod: first ? first.pickupMethod : "SELF_PICKUP",
-    status: "PACKED",
-    packedAt,
-    shippedAt: null,
-    statementNo: null,
-    lines: [...items],
-  };
+export function isStaleRejection(error: unknown): boolean {
+  return isApiError(error) && (error.status === 409 || error.status === 404);
 }
 
-/**
- * 표의 `상품 요약`. 품목이 하나면 품명만, 둘 이상이면 `오버핏 코튼 티셔츠 외 2건`.
- * 열 하나에 품명을 다 적으면 표가 가로로 늘어나 수량을 세로로 훑을 수 없다.
- */
-export function lineSummaryLabel(lines: readonly PackingItem[]): string {
-  const [first] = lines;
-  if (!first) return "-";
-  return lines.length === 1
-    ? first.productName
-    : `${first.productName} 외 ${lines.length - 1}건`;
-}
-
-/**
- * 다음 장끼번호 `JG-YYYYMMDD-NNN`. 날짜부는 **출고 처리 시각의 날짜**이고
- * `NNN`은 그날 발행 순번이다(판정 D6 · §2.8).
- *
- * 오늘 날짜는 인자로 받는다 — 이 함수가 직접 `new Date()`를 읽으면 렌더 중에
- * 불릴 여지가 생기고, 그러면 서버와 브라우저의 값이 갈린다.
- */
-export function nextStatementNo(
-  shippedAt: string,
-  packages: readonly Package[],
-): string {
-  const datePart = shippedAt.slice(0, 10).replace(/-/g, "");
-  const prefix = `JG-${datePart}-`;
-  const issuedToday = packages.filter((pkg) =>
-    pkg.statementNo?.startsWith(prefix),
-  ).length;
-  return `${prefix}${String(issuedToday + 1).padStart(3, "0")}`;
-}
-
-/**
- * 출고 완료로 넘어간 묶음. 상태·출고 일시·장끼번호 세 값이 **한 번에** 바뀐다 —
- * 나눠서 넣으면 장끼번호 없는 SHIPPED가 잠깐 존재해서 장끼 카드가 빈칸을 그린다.
- *
- * 미수 발생·재고 차감은 서버 트리거라 여기서 반영하지 않는다(판정 D10).
- */
-export function shipPackage(
-  pkg: Package,
-  shippedAt: string,
-  statementNo: string,
-): Package {
-  return { ...pkg, status: "SHIPPED", shippedAt, statementNo };
-}
-
-/** 장끼 품목표의 `옵션` 열. SKU = 색상 × 사이즈라 두 축을 합쳐 적는다(glossary §3) */
-export function optionLabel(line: PackingItem): string {
-  return `${line.color} / ${line.size}`;
-}
-
-/**
- * 출고된 묶음에서 장끼를 뽑는다. **출고 전에는 만들 수 없다** —
- * 장끼번호가 출고 완료 시점에 발번되기 때문이다(§2.8). 그래서 null을 돌려주고,
- * 부르는 쪽이 안내 문구로 갈라 준다.
- */
-export function statementFromPackage(
-  pkg: Package,
-  retailer: Retailer,
-  wholesalerName: string,
-): TradeStatement | null {
-  if (pkg.statementNo === null || pkg.shippedAt === null) return null;
-  return {
-    statementNo: pkg.statementNo,
-    packageNo: pkg.packageNo,
-    shippedAt: pkg.shippedAt,
-    wholesalerName,
-    retailer,
-    pickupMethod: pkg.pickupMethod,
-    lines: pkg.lines,
-  };
+/** 우측 빈 자리에 남길 처리 결과 문구. 재조회 실패면 옛 목록임을 먼저 말한다 */
+export function noticeText(notice: ShipmentNotice): string {
+  if (notice.kind === "packed") {
+    return notice.refreshed
+      ? `${notice.outboundLabel} 포장 완료했어요 — 출고 대기에서 확인하세요`
+      : `${notice.outboundLabel} 포장은 됐지만 목록을 새로 못 불러왔어요`;
+  }
+  return notice.refreshed
+    ? `출고 완료 — 장끼 ${notice.statementCode} 발행했어요`
+    : `출고는 됐지만 목록을 새로 못 불러왔어요 (장끼 ${notice.statementCode})`;
 }

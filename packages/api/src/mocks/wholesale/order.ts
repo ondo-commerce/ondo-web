@@ -64,10 +64,12 @@ interface MockLine {
   hasOpenBackorder: boolean;
 }
 
-interface MockOrder {
+export interface MockOrder {
   id: number;
   orderNumber: number;
   orderedAt: string;
+  /** `partner.retailer_id`. 봄봄상회 1 · 대기상회 2 (V900) — 출고 목이 소매처별로 자른다 */
+  retailerId: number;
   retailerName: string;
   paymentMethod: WholesaleSchema<"OrderDetailResponse">["expectedPaymentMethod"];
   receiveBy: WholesaleSchema<"OrderDetailResponse">["receiveBy"];
@@ -75,12 +77,21 @@ interface MockOrder {
   items: MockLine[];
 }
 
-interface MockPacking {
+/**
+ * 포장. `READY`는 출고 탭 포장 대기 줄로 보이고, 봉투(`outbound`)에 담기면 `PACKED`가 된다 —
+ * 그때부터 주문 탭에서 취소할 수 없다(BE `PackingStatus` 주석). 봉투는 출고 목(`./shipment`)이 든다.
+ */
+export interface MockPacking {
   id: number;
   orderId: number;
   createdAt: string;
+  status: "READY" | "PACKED";
+  /** 담긴 봉투. `READY`면 null */
+  outboundId: number | null;
   items: { id: number; orderItemId: number; qty: number }[];
 }
+
+export type MockOrderLine = MockLine;
 
 /* --- 시드 --------------------------------------------------------------- */
 
@@ -160,6 +171,7 @@ function seedOrders(): MockOrder[] {
       id: 7001,
       orderNumber: 1,
       orderedAt: "2026-09-04T10:00:00+09:00",
+      retailerId: 1,
       retailerName: "봄봄상회",
       paymentMethod: "CASH",
       receiveBy: "AGENT",
@@ -171,6 +183,7 @@ function seedOrders(): MockOrder[] {
       id: 7002,
       orderNumber: 1,
       orderedAt: "2026-09-06T10:00:00+09:00",
+      retailerId: 1,
       retailerName: "봄봄상회",
       paymentMethod: "BANK_TRANSFER",
       receiveBy: "RETAILER",
@@ -181,6 +194,7 @@ function seedOrders(): MockOrder[] {
       id: 7003,
       orderNumber: 1,
       orderedAt: "2026-09-07T08:00:00+09:00",
+      retailerId: 1,
       retailerName: "봄봄상회",
       paymentMethod: "CASH",
       receiveBy: "AGENT",
@@ -192,6 +206,7 @@ function seedOrders(): MockOrder[] {
       id: 7004,
       orderNumber: 2,
       orderedAt: "2026-09-02T10:00:00+09:00",
+      retailerId: 1,
       retailerName: "봄봄상회",
       paymentMethod: "CASH",
       receiveBy: "AGENT",
@@ -203,6 +218,7 @@ function seedOrders(): MockOrder[] {
       id: 7005,
       orderNumber: 3,
       orderedAt: "2026-09-05T10:00:00+09:00",
+      retailerId: 2,
       retailerName: "대기상회",
       paymentMethod: "CASH",
       receiveBy: "RETAILER",
@@ -214,11 +230,80 @@ function seedOrders(): MockOrder[] {
 
 /* --- 상태 --------------------------------------------------------------- */
 
+/**
+ * 시드에서 유일하게 출고까지 끝난 줄(7004 · allocated 3 = shipped 3)의 포장. V900엔 포장 행이 없지만
+ * `shipped_qty = 3`이 곧 "봉투에 담겨 나갔다"라 여기서 복원한다 — 출고 목이 이 포장을 봉투 `8801`
+ * (BE 스텁의 출고 id)에 담아 출고 완료 탭의 유일한 시드로 쓴다. 포장 시각은 주문 다음 날로 둔다(시드에 없음).
+ */
+export const SEED_SHIPPED_OUTBOUND_ID = 8801;
+export const SEED_SHIPPED_PACKING_CREATED_AT = "2026-09-03T10:00:00+09:00";
+
+function seedPackings(): MockPacking[] {
+  return [
+    {
+      id: 9100,
+      orderId: 7004,
+      createdAt: SEED_SHIPPED_PACKING_CREATED_AT,
+      status: "PACKED",
+      outboundId: SEED_SHIPPED_OUTBOUND_ID,
+      items: [{ id: 9200, orderItemId: 8004, qty: 3 }],
+    },
+  ];
+}
+
 let orders = seedOrders();
-/** 시드에는 포장이 없다. 확정·포장 준비가 만든다 */
-let packings: MockPacking[] = [];
+/** 시드 포장은 위 1건뿐이다. 나머지는 확정·포장 준비가 만든다 */
+let packings: MockPacking[] = seedPackings();
 let nextPackingId = 9101;
 let nextPackingItemId = 9201;
+
+/* --- 출고 목이 쓰는 문 ----------------------------------------------------
+ * 포장·주문 상태는 이 모듈이 든다. 출고 목(`./shipment`)은 이 함수들로만 읽고 바꾼다 —
+ * 배열을 직접 export 하면 `let` 재할당(reset) 뒤 옛 배열을 쥔 쪽이 생긴다.
+ * ----------------------------------------------------------------------- */
+
+export function mockOrders(): readonly MockOrder[] {
+  return orders;
+}
+
+export function mockPackings(): readonly MockPacking[] {
+  return packings;
+}
+
+/** 포장 분할(스펙: "대기열에 남는 쪽 id 유지, 나가는 쪽이 새 포장")로 생긴 새 포장을 등록한다 */
+export function addMockPacking(packing: Omit<MockPacking, "id">): MockPacking {
+  const created = { ...packing, id: nextPackingId++ };
+  packings.push(created);
+  return created;
+}
+
+/**
+ * 소매처. `partner.retailer_name`뿐이라 코드·주소는 없다 — 시드에 없는 값은 빈 문자열로 둔다
+ * (지어내지 않는다). 거래 이력 없는 id는 null(스펙: 404).
+ */
+export function mockRetailer(
+  retailerId: number,
+): { id: number; name: string; code: string } | null {
+  const order = orders.find((o) => o.retailerId === retailerId);
+  return order ? { id: retailerId, name: order.retailerName, code: "" } : null;
+}
+
+/**
+ * 출고 확정 — 재고가 실제로 줄어드는 유일한 지점(스펙). 그 포장의 줄마다 `shippedQty`를 올리고,
+ * 같은 SKU를 가진 모든 라인의 재고 복사본을 함께 내린다(라인이 SKU 재고를 각자 들고 있어서).
+ */
+export function shipMockPacking(packing: MockPacking): void {
+  const order = orders.find((o) => o.id === packing.orderId);
+  if (!order) return;
+  for (const item of packing.items) {
+    const l = order.items.find((x) => x.id === item.orderItemId);
+    if (!l) continue;
+    l.shippedQty += item.qty;
+    for (const o of orders)
+      for (const other of o.items)
+        if (other.variantId === l.variantId) other.stockQty -= item.qty;
+  }
+}
 
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
 
@@ -284,7 +369,7 @@ function detailResponse(
     orderedAt: order.orderedAt,
     // 스펙에 nullable이 없어 타입은 string이지만 확정 전엔 null이다
     confirmedAt: null as unknown as string,
-    retailerId: 1,
+    retailerId: order.retailerId,
     retailerName: order.retailerName,
     // 시드 거래처(partner)에 전화가 없다(V6 컬럼, 시드 미기입)
     retailerPhone: null as unknown as string,
@@ -311,7 +396,7 @@ function summaryResponse(
     id: order.id,
     orderNumber: order.orderNumber,
     orderedAt: order.orderedAt,
-    retailerId: 1,
+    retailerId: order.retailerId,
     retailerName: order.retailerName,
     summaryProductName: first ? `${first.productName} (${first.color})` : "",
     additionalItemCount: Math.max(order.items.length - 1, 0),
@@ -351,9 +436,11 @@ function queueItemResponse(
 ): WholesaleSchema<"PackingQueueItemResponse"> {
   return {
     id: p.id,
-    status: "READY",
-    outboundId: null as unknown as number,
-    isCancellable: true,
+    status: p.status,
+    // 스펙에 nullable이 없어 타입은 number지만 READY면 null이다
+    outboundId: p.outboundId as number,
+    // 봉투에 담긴 포장은 출고 묶음 해제 없이는 취소할 수 없다(BE PackingStatus)
+    isCancellable: p.status === "READY",
     createdAt: p.createdAt,
     items: p.items.map((i) => packingItemResponse(order, i)),
   };
@@ -449,6 +536,8 @@ function applyAllocation(order: MockOrder, qtyByLine: Map<number, number>) {
     id: nextPackingId++,
     orderId: order.id,
     createdAt: new Date().toISOString(),
+    status: "READY",
+    outboundId: null,
     items: created,
   };
   packings.push(packing);
@@ -638,6 +727,12 @@ export const orderHandlers = [
         "RESOURCE_NOT_FOUND",
         "포장이 없거나 이미 취소됐습니다.",
       );
+    if (packing.status !== "READY")
+      return fail(
+        409,
+        "TRANSITION_NOT_ALLOWED",
+        "출고 묶음에 담긴 포장은 취소할 수 없습니다.",
+      );
     const order = orders.find((o) => o.id === packing.orderId);
     if (order) {
       // 배분이 풀린다 — 출고진행이 줄고 해소했던 미송이 되살아난다(스펙 설명)
@@ -656,7 +751,7 @@ export const orderHandlers = [
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다 */
 export function resetOrderMock() {
   orders = seedOrders();
-  packings = [];
+  packings = seedPackings();
   nextPackingId = 9101;
   nextPackingItemId = 9201;
 }

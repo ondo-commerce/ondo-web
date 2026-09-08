@@ -2,13 +2,8 @@
 
 import { Table } from "@ondo/ui";
 import { PickupMethodBadge } from "./PickupMethodBadge";
-import {
-  formatDateTime,
-  lineSummaryLabel,
-  packageQty,
-  sortPackagesByDesc,
-} from "../derive";
-import type { Package } from "../types";
+import { sortOutboundRows } from "../derive";
+import type { OutboundRowView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -18,16 +13,16 @@ import { formatNumber } from "@/shared/lib/format";
  * 수령방식 필터도 없다. 포장이 끝난 뒤에는 수령 방식이 묶음을 가르는 축이 아니다.
  */
 export function PackageTable({
-  packages,
-  selectedPackageNo,
+  rows,
+  selectedId,
   onSelect,
 }: {
-  packages: readonly Package[];
-  selectedPackageNo: string | null;
-  onSelect: (packageNo: string) => void;
+  rows: readonly OutboundRowView[];
+  selectedId: number | null;
+  onSelect: (outboundId: number) => void;
 }) {
   /* 포장 일시 최신순(판정 D8) */
-  const rows = sortPackagesByDesc(packages, (pkg) => pkg.packedAt);
+  const sorted = sortOutboundRows(rows, (row) => row.createdAtIso);
 
   return (
     <Table>
@@ -41,30 +36,30 @@ export function PackageTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {rows.map((pkg) => (
+        {sorted.map((row) => (
           <Table.Row
-            key={pkg.packageNo}
-            selected={selectedPackageNo === pkg.packageNo}
+            key={row.id}
+            selected={selectedId === row.id}
             tabIndex={0}
-            aria-label={`${pkg.packageNo} 포장 상세`}
+            aria-label={`${row.label} 포장 상세`}
             className="cursor-pointer"
-            onClick={() => onSelect(pkg.packageNo)}
+            onClick={() => onSelect(row.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onSelect(pkg.packageNo);
+                onSelect(row.id);
               }
             }}
           >
-            <Table.Td align="left">{pkg.packageNo}</Table.Td>
-            <Table.Td align="left">{lineSummaryLabel(pkg.lines)}</Table.Td>
+            <Table.Td align="left">{row.label}</Table.Td>
+            <Table.Td align="left">{row.summary}</Table.Td>
             <Table.Td align="center">
-              <PickupMethodBadge method={pkg.pickupMethod} />
+              <PickupMethodBadge receiveBy={row.receiveBy} />
             </Table.Td>
             <Table.Td align="left" tone="muted">
-              {formatDateTime(pkg.packedAt)}
+              {row.createdAt}
             </Table.Td>
-            <Table.Td>{formatNumber(packageQty(pkg))}</Table.Td>
+            <Table.Td>{formatNumber(row.totalQty)}</Table.Td>
           </Table.Row>
         ))}
       </Table.Body>

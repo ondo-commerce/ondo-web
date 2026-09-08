@@ -11,6 +11,7 @@ import {
 import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { PackingQueueCard } from "./PackingQueueCard";
+import { orderKeys } from "../api/keys";
 import { useOrderListQuery } from "../api/queries";
 import {
   STATUS_FILTER_ALL,
@@ -20,6 +21,7 @@ import {
 import { toListQuery, type OrderListParams } from "../derive";
 import type { ShipInputs } from "../types";
 import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
@@ -40,6 +42,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 경계는 셋 — 칩 줄·표·우측 카드들. 실패한 자리만 그 자리에서 실패한다.
  */
 export function OrderListView() {
+  /* 다른 탭(출고·미송)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
+  useInvalidateOnMount(orderKeys.all);
   const [draft, setDraft] = useState("");
   /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
   const [q, setQ] = useState("");
