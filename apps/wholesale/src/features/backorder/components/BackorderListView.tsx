@@ -10,7 +10,11 @@ import { backorderKeys } from "../api/keys";
 import { useBackorderSkusQuery } from "../api/queries";
 import { toListQuery, type BackorderListParams } from "../derive";
 import type { AllocationDraft, AllocationDrafts } from "../types";
-import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import {
+  QueryBoundary,
+  QueryBoundaryGroup,
+  QueryErrorView,
+} from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
@@ -28,6 +32,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  *
  * 경계는 셋 — 표·우측 요약·예상 입고일 폼. 실패한 자리만 그 자리에서 실패한다.
  * 펼친 행의 경계는 행 안(`BackorderRowDetail`)에 있다.
+ * 재시도는 뷰 하나가 나눠 쓴다(`QueryBoundaryGroup`) — 펼친 행·요약·폼 셋이 같은 펼침 키를
+ * 봐서, 따로 두면 `다시 시도`가 셋 뜨고 세 번 눌러야 했다(wire-backorder F3, #197).
  */
 export function BackorderListView() {
   /* 다른 탭(주문·재고)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
@@ -80,66 +86,76 @@ export function BackorderListView() {
   };
 
   return (
-    <ListDetailLayout
-      list={
-        <Panel className="flex-1">
-          {/* 툴바 한 줄 — 좌: 검색 / 우: 필터와 주 액션.
+    <QueryBoundaryGroup>
+      <ListDetailLayout
+        list={
+          <Panel className="flex-1">
+            {/* 툴바 한 줄 — 좌: 검색 / 우: 필터와 주 액션.
               검색창의 `mr-auto`가 나머지를 오른쪽으로 민다. 오른쪽 묶음에 ml-auto를 주는 것보다
               이쪽이 낫다 — 오른쪽에 무엇이 오든(필터·버튼·둘 다·없음) 규칙이 같기 때문이다.
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
-          <div className="mb-4 flex shrink-0 items-center gap-3">
-            <SearchInput
-              className="mr-auto"
-              placeholder="품번·품명 검색"
-              aria-label="품번·품명 검색"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-          </div>
+            <div className="mb-4 flex shrink-0 items-center gap-3">
+              <SearchInput
+                className="mr-auto"
+                placeholder="품번·품명 검색"
+                aria-label="품번·품명 검색"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            </div>
 
-          {/* 경계는 표 자리에만. 검색줄은 서버와 무관하게 늘 있어야 한다 */}
-          <QueryBoundary>
-            <BackorderListBody
-              params={params}
-              openVariantId={openVariantId}
-              onToggle={toggleSku}
-              onPage={setPage}
-              renderDetail={(variantId) => (
-                <BackorderRowDetail
-                  variantId={variantId}
-                  draft={drafts[variantId]}
-                  onDraftChange={(next) => changeDraft(variantId, next)}
-                  onAllocated={(cleared) =>
-                    finishAllocation(variantId, cleared)
-                  }
-                />
-              )}
-            />
-          </QueryBoundary>
-        </Panel>
-      }
-      detail={
-        openVariantId !== null ? (
-          <>
-            {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다 */}
-            <Panel className="shrink-0">
-              <QueryBoundary>
-                <BackorderSummaryCard variantId={openVariantId} />
-              </QueryBoundary>
-            </Panel>
-            <Panel className="shrink-0">
-              <Panel.Title>예상 입고일 등록</Panel.Title>
-              <QueryBoundary>
-                {/* key: 다른 SKU로 바뀌면 입력 중이던 날짜·사유가 남지 않게 상태째 새로 만든다 */}
-                <EtaFormCard key={openVariantId} variantId={openVariantId} />
-              </QueryBoundary>
-            </Panel>
-          </>
-        ) : undefined
-      }
-      emptyDetail="좌측에서 미송 SKU를 펼치세요"
-    />
+            {/* 경계는 표 자리에만. 검색줄은 서버와 무관하게 늘 있어야 한다 */}
+            <QueryBoundary>
+              <BackorderListBody
+                params={params}
+                openVariantId={openVariantId}
+                onToggle={toggleSku}
+                onPage={setPage}
+                renderDetail={(variantId) => (
+                  <BackorderRowDetail
+                    variantId={variantId}
+                    draft={drafts[variantId]}
+                    onDraftChange={(next) => changeDraft(variantId, next)}
+                    onAllocated={(cleared) =>
+                      finishAllocation(variantId, cleared)
+                    }
+                  />
+                )}
+              />
+            </QueryBoundary>
+          </Panel>
+        }
+        detail={
+          openVariantId !== null ? (
+            <>
+              {/* 패널은 경계 밖 — 기다리는 동안에도 우측 폭이 유지돼야 한다.
+                제목은 실패해도 남는다 — 카드 제목까지 사라지면 무엇이 실패했는지 안 읽힌다(F3) */}
+              <Panel className="shrink-0">
+                <QueryBoundary
+                  errorFallback={({ described, retry }) => (
+                    <>
+                      <Panel.Title>미송 요약</Panel.Title>
+                      <QueryErrorView described={described} onRetry={retry} />
+                    </>
+                  )}
+                >
+                  <BackorderSummaryCard variantId={openVariantId} />
+                </QueryBoundary>
+              </Panel>
+              <Panel className="shrink-0">
+                <Panel.Title>예상 입고일 등록</Panel.Title>
+                <QueryBoundary>
+                  {/* key: 다른 SKU로 바뀌면 입력 중이던 날짜·사유가 남지 않게 상태째 새로 만든다 */}
+                  <EtaFormCard key={openVariantId} variantId={openVariantId} />
+                </QueryBoundary>
+              </Panel>
+            </>
+          ) : undefined
+        }
+        emptyDetail="좌측에서 미송 SKU를 펼치세요"
+      />
+    </QueryBoundaryGroup>
   );
 }
 

@@ -31,7 +31,7 @@ import type {
   ShipmentNotice,
   ShipmentStage,
 } from "../types";
-import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { QueryBoundary, QueryBoundaryGroup } from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
@@ -53,6 +53,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  *
  * 경계는 셋 — 소매처 표 · 펼침 영역 · 우측 패널. 실패한 자리만 그 자리에서 실패한다.
  * 칩 건수는 경계 밖(`useQueries`)이라 못 받아도 칩은 눌린다.
+ * 재시도는 뷰 하나가 나눠 쓴다(`QueryBoundaryGroup`) — 칩 건수와 소매처 표가 같은 키를 봐서,
+ * 칩의 `건수 다시 시도`가 표 경계까지 살려야 한 번에 둘 다 찬다(wire-shipment F4, #197).
  */
 export function ShipmentListView() {
   /* 다른 탭(주문·재고)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
@@ -245,110 +247,112 @@ export function ShipmentListView() {
   };
 
   return (
-    <ListDetailLayout
-      list={
-        <Panel className="flex-1">
-          {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
+    <QueryBoundaryGroup>
+      <ListDetailLayout
+        list={
+          <Panel className="flex-1">
+            {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
               한 줄로 두면 검색창 340px + 세그먼트들이 좌측 패널 폭을 넘겨서 제멋대로 접힌다.
               검색은 폭이 고정이고 필터는 칸 수·글자 길이에 따라 변하니, 변하는 쪽만 아래 줄에
               모아 두면 검색창 자리가 탭을 옮겨도 흔들리지 않는다.
               첫 줄의 `mr-auto`는 오른쪽에 주 액션이 붙는 탭(상품·정산)과 규칙을 맞추려는 것이다.
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
-          <div className="mb-3 flex shrink-0 items-center gap-3">
-            <SearchInput
-              className="mr-auto"
-              placeholder="거래처·품명 검색"
-              aria-label="거래처·품명 검색"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-          </div>
-
-          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
-            {/* 칩 건수는 경계 밖에서 받는다 — 기다리는 동안·실패했을 때도 칸은 눌려야 한다 */}
-            <ShipmentStageChipsWithCounts
-              q={serverQ}
-              value={stage}
-              onChange={handleStageChange}
-            />
-          </div>
-
-          {/* 경계는 표 자리에만. 검색줄·칩 줄은 서버와 무관하게 늘 있어야 한다 */}
-          <QueryBoundary>
-            {stage === "ready" ? (
-              <PackingRetailerList
-                q={serverQ}
-                hasKeyword={q !== ""}
-                openRetailerId={openRetailerId}
-                onToggle={toggleRetailer}
-                renderDetail={(retailer) => (
-                  <QueryBoundary>
-                    <PackingRowDetail
-                      retailerId={retailer.id}
-                      q={serverQ}
-                      selectedIds={selectedIds}
-                      onToggle={toggleRow}
-                      onToggleVisible={toggleVisible}
-                      onRestrictTo={restrictTo}
-                      onVisibleChange={handleVisibleChange}
-                    />
-                  </QueryBoundary>
-                )}
+            <div className="mb-3 flex shrink-0 items-center gap-3">
+              <SearchInput
+                className="mr-auto"
+                placeholder="거래처·품명 검색"
+                aria-label="거래처·품명 검색"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
               />
-            ) : (
-              <OutboundRetailerList
-                stage={stage}
-                status={STAGE_STATUS[stage]}
+            </div>
+
+            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+              {/* 칩 건수는 경계 밖에서 받는다 — 기다리는 동안·실패했을 때도 칸은 눌려야 한다 */}
+              <ShipmentStageChipsWithCounts
                 q={serverQ}
-                hasKeyword={q !== ""}
-                openRetailerId={openRetailerId}
-                onToggle={toggleRetailer}
-                renderDetail={(retailer) => (
-                  <QueryBoundary>
-                    <OutboundRowDetail
-                      retailerId={retailer.id}
-                      status={STAGE_STATUS[stage]}
-                      q={serverQ}
-                      selectedId={selectedOutboundId}
-                      onSelect={selectOutbound}
-                    />
-                  </QueryBoundary>
-                )}
+                value={stage}
+                onChange={handleStageChange}
               />
-            )}
-          </QueryBoundary>
-        </Panel>
-      }
-      detail={detail()}
-      emptyDetail={
-        <div className="flex flex-col items-center gap-3 px-6 text-center">
-          <span>{EMPTY_DETAIL_TEXT[stage]}</span>
-          {notice ? (
-            <p
-              role={notice.refreshed ? "status" : "alert"}
-              className={
-                notice.refreshed
-                  ? "text-foreground text-sm"
-                  : "text-destructive-strong text-sm"
-              }
-            >
-              {noticeText(notice)}
-            </p>
-          ) : null}
-          {stale ? (
-            <Button
-              type="button"
-              variant="line"
-              size="sm"
-              onClick={retryRefresh}
-            >
-              다시 불러오기
-            </Button>
-          ) : null}
-        </div>
-      }
-    />
+            </div>
+
+            {/* 경계는 표 자리에만. 검색줄·칩 줄은 서버와 무관하게 늘 있어야 한다 */}
+            <QueryBoundary>
+              {stage === "ready" ? (
+                <PackingRetailerList
+                  q={serverQ}
+                  hasKeyword={q !== ""}
+                  openRetailerId={openRetailerId}
+                  onToggle={toggleRetailer}
+                  renderDetail={(retailer) => (
+                    <QueryBoundary>
+                      <PackingRowDetail
+                        retailerId={retailer.id}
+                        q={serverQ}
+                        selectedIds={selectedIds}
+                        onToggle={toggleRow}
+                        onToggleVisible={toggleVisible}
+                        onRestrictTo={restrictTo}
+                        onVisibleChange={handleVisibleChange}
+                      />
+                    </QueryBoundary>
+                  )}
+                />
+              ) : (
+                <OutboundRetailerList
+                  stage={stage}
+                  status={STAGE_STATUS[stage]}
+                  q={serverQ}
+                  hasKeyword={q !== ""}
+                  openRetailerId={openRetailerId}
+                  onToggle={toggleRetailer}
+                  renderDetail={(retailer) => (
+                    <QueryBoundary>
+                      <OutboundRowDetail
+                        retailerId={retailer.id}
+                        status={STAGE_STATUS[stage]}
+                        q={serverQ}
+                        selectedId={selectedOutboundId}
+                        onSelect={selectOutbound}
+                      />
+                    </QueryBoundary>
+                  )}
+                />
+              )}
+            </QueryBoundary>
+          </Panel>
+        }
+        detail={detail()}
+        emptyDetail={
+          <div className="flex flex-col items-center gap-3 px-6 text-center">
+            <span>{EMPTY_DETAIL_TEXT[stage]}</span>
+            {notice ? (
+              <p
+                role={notice.refreshed ? "status" : "alert"}
+                className={
+                  notice.refreshed
+                    ? "text-foreground text-sm"
+                    : "text-destructive-strong text-sm"
+                }
+              >
+                {noticeText(notice)}
+              </p>
+            ) : null}
+            {stale ? (
+              <Button
+                type="button"
+                variant="line"
+                size="sm"
+                onClick={retryRefresh}
+              >
+                다시 불러오기
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    </QueryBoundaryGroup>
   );
 }
 

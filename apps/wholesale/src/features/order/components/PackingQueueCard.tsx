@@ -5,7 +5,11 @@ import { PackingBatchCard } from "./PackingBatchCard";
 import { useCancelPackingMutation } from "../api/mutations";
 import { usePackingQueueQuery } from "../api/queries";
 import { actionErrorText } from "../derive";
-import { QueryBoundary, QuerySkeleton } from "@/shared/api/QueryBoundary";
+import {
+  QueryBoundary,
+  QueryErrorView,
+  QuerySkeleton,
+} from "@/shared/api/QueryBoundary";
 
 /**
  * 우측 두 번째 카드 — 포장 대기열(`GET /orders/{id}/packings`).
@@ -16,7 +20,8 @@ import { QueryBoundary, QuerySkeleton } from "@/shared/api/QueryBoundary";
  *
  * 회차가 하나도 없으면 카드를 그리지 않는다 — 빈 카드는 자리만 먹는다.
  * 그래서 `Panel`이 경계 **안**에 있다(다른 패널과 반대): 받아 보기 전엔 카드가 있을지
- * 모른다. 기다리는 동안은 카드 모양의 스켈레톤을 둔다.
+ * 모른다. 기다리는 동안은 카드 모양의 스켈레톤을, 실패는 카드 모양의 에러 표면을 둔다 —
+ * 패널 없는 맨 alert가 우측 바닥에 그려지면 `Panel이 화면의 유일한 표면` 규칙이 깨진다(F5).
  */
 export function PackingQueueCard({ orderId }: { orderId: number }) {
   return (
@@ -26,6 +31,12 @@ export function PackingQueueCard({ orderId }: { orderId: number }) {
           <QuerySkeleton />
         </Panel>
       }
+      errorFallback={({ described, retry }) => (
+        <Panel className="shrink-0">
+          <Panel.Title>포장 대기열</Panel.Title>
+          <QueryErrorView described={described} onRetry={retry} />
+        </Panel>
+      )}
     >
       <PackingQueueCardBody orderId={orderId} />
     </QueryBoundary>
