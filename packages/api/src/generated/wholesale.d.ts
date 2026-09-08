@@ -4,6 +4,129 @@
  */
 
 export interface paths {
+    "/api/retail-gateway/backorders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 미송 대기 목록 (소매 백엔드 → 도매)
+         * @description 그 소매처가 아직 못 받은 것만. `OPEN` 인 것만 나오고 **오래된 순**이다 —
+         *     미송은 FIFO 로 풀린다.
+         *
+         *     주문번호(`orderNo`)는 안 온다. 그건 소매 통합 주문서의 번호라 도매에 없다.
+         *     대신 `retailOrderId` 를 주니 소매가 자기 DB 에서 채운다.
+         *
+         *     도매가 자기 화면에서 직접 넣은 주문의 미송은 안 나온다 — 소매를 안 거쳐서
+         *     소매 DB 에 주문서가 없다.
+         *
+         *     에러: 400 `VALIDATION_FAILED` (`size > 100`)
+         */
+        get: operations["backorders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 카테고리 트리 (소매 백엔드 → 도매)
+         * @description 소매 좌측 네비의 3단 트리. 고정 마스터라 소매가 캐시해도 된다.
+         *     도매 화면용 `GET /api/wholesale/categories` 와 달리 `depth` 를 안 싣는다.
+         */
+        get: operations["categories_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 필터 항목 (소매 백엔드 → 도매)
+         * @description 색상·사이즈는 마스터 전체다 — 지금 파는 상품에 없는 색도 들어간다. 선택지가
+         *     필터 결과에 따라 흔들리면 화면이 튄다. 가격만 게시 중인 상품의 실제 최저·최고가다.
+         */
+        get: operations["filterOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 상품 목록 (소매 백엔드 → 도매)
+         * @description 게시 중(`ON_SALE`)인 상품만. 도매처를 가리지 않는다 — 소매 쇼핑몰은 여러 도매처를
+         *     한 화면에 섞어 보여준다. 정렬은 시즌 시작 최신순 고정.
+         *
+         *     `colorIds`·`sizes`·`priceFrom`·`priceTo` 는 옵션에 걸리는 조건이다. 하나라도 맞으면
+         *     그 상품이 나온다. 카드의 `minSalePrice`·`colorCount`·`sizeCount` 는 필터와 무관하게
+         *     그 상품의 전체 옵션 기준이다.
+         *
+         *     에러: 400 `VALIDATION_FAILED` (`size > 100` / `priceFrom > priceTo`)
+         */
+        get: operations["listings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/listings/{listingId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 상품 상세 (소매 백엔드 → 도매)
+         * @description 색상 × 사이즈 조합과 사진이 함께 온다. 정렬은 서버 보장 — 색상은 그룹 → 색상,
+         *     사이즈는 XS~FREE, 이미지는 `sortOrder` ASC.
+         *
+         *     게시 중이 아니면 404 다. 없는 것 · 시즌이 끝난 것 · 지워진 것을 구분하지 않는다.
+         *
+         *     에러: 404 `RESOURCE_NOT_FOUND`
+         */
+        get: operations["listing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retail-gateway/orders": {
         parameters: {
             query?: never;
@@ -11,7 +134,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * 주문 조회 (소매 백엔드 → 도매)
+         * @description 소매 주문서 id 로 그 주문서에 딸린 도매처 주문을 전부 내린다. 소매는 주문서
+         *     하나로 받고 도매처별로 잘라 넣으므로, 주문서 하나에 응답이 여럿이다.
+         *
+         *     여러 주문서를 한 번에 받는다 — 내역 화면 한 장에 주문서가 스무 개면
+         *     하나씩 부를 때 왕복이 스무 번이 된다.
+         *
+         *     **상태를 도매가 만들어 내린다.** DB 는 NEW·CONFIRMED·CANCELLED 셋뿐이고
+         *     출고 진행도를 합쳐 다섯이 된다. 그 규칙을 소매가 또 짜면 두 화면이 같은
+         *     주문을 다르게 부른다. `statusLabel` 도 같은 이유로 같이 준다.
+         *
+         *     `retailerId` 로 한 번 더 거른다 — 주문서 id 는 소매가 보낸 값이라
+         *     그것만 믿으면 남의 주문을 읽을 수 있다.
+         *
+         *     에러: 400 `VALIDATION_FAILED` (`retailOrderIds` 가 비었거나 100개 초과)
+         */
+        get: operations["orders"];
         put?: never;
         /**
          * 주문 생성 (소매 백엔드 → 도매)
@@ -19,11 +159,68 @@ export interface paths {
          *     재고 반영은 확정 시점의 수동 배분). `expectedUnitPrice`는 현재 판매가와 대조해
          *     어긋나면 409 로 되돌린다. 중복 주문은 UNIQUE(retailOrderId, wholesalerId)가 막는다.
          *
-         *     에러: 400 `VARIANT_WHOLESALER_MISMATCH` · `VALIDATION_FAILED` · `INVARIANT_VIOLATED` /
+         *     `retailerName`·`retailerPhone`·`agentName`·`agentPhone` 은 도매가 소매 DB 를 못 읽어서
+         *     받는 스냅샷이다. 그중 `retailerName` 은 첫 거래에서 거래처를 만들 때 쓰므로 필수다.
+         *
+         *     에러: 400 `VARIANT_WHOLESALER_MISMATCH` · `VALIDATION_FAILED` · `DUPLICATE_ORDER_ITEM` /
          *     409 `LISTING_NOT_ON_SALE` · `PRICE_NOT_SET` · `ORDER_LIMIT_EXCEEDED` ·
          *     `PRICE_CHANGED` · `ORDER_ALREADY_CREATED`
          */
         post: operations["create_2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 옵션 배치 조회 (소매 백엔드 → 도매)
+         * @description 소매 장바구니가 쓴다. 담긴 개수만큼 한 건씩 부르지 않게 묶어서 받는다.
+         *
+         *     게시가 내려간 옵션도 돌려주되 `orderable: false` 로 온다 — 담아둔 사이 도매가
+         *     시즌을 닫아도 소매 장바구니 행은 남아 있어서, 안 주면 소매가 그 줄을 못 그린다.
+         *     게시 자체가 없는 옵션은 응답에 안 들어간다.
+         *
+         *     에러: 400 `VALIDATION_FAILED` (`ids` 가 비었거나 200개 초과)
+         */
+        get: operations["variants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/wholesalers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 도매처 정보 (소매 백엔드 → 도매)
+         * @description 소매 주문서가 쓴다. 상품 목록이 주는 도매처는 id·상호뿐인데 주문서에는
+         *     **입금 계좌**가 더 필요하다 — 도매처마다 따로 입금한다.
+         *
+         *     계좌가 비어 있으면 아직 등록을 안 한 도매처다. 소매 화면이 계좌이체를
+         *     못 고르게 막는 근거로 쓴다.
+         *
+         *     지워진 도매처도 돌려준다. 지난 주문의 주문서를 다시 열 수 있어야 한다.
+         *
+         *     에러: 400 `VALIDATION_FAILED` (`ids` 가 비었거나 100개 초과)
+         */
+        get: operations["wholesalers"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -135,10 +332,11 @@ export interface paths {
         };
         /**
          * 미송 SKU 목록 (아코디언 헤더)
-         * @description 미송이 남은 SKU 만 나온다 — 전부 해소된 SKU 는 빠진다. 기본 정렬 `backorderQty,desc`
-         *     (많이 밀린 SKU 먼저).
+         * @description 미송이 남은 SKU 만 나온다 — 전부 해소된 SKU 는 빠진다. 기본 정렬
+         *     `latestBackorderedAt,desc`(가장 최근에 미송이 쌓인 SKU 먼저).
+         *     정렬 키는 `latestBackorderedAt`·`backorderQty` 둘이다.
          *
-         *     에러: 400 `VALIDATION_FAILED` (`size > 100`)
+         *     에러: 400 `VALIDATION_FAILED` (`size > 100` / 모르는 정렬 키)
          */
         get: operations["backorderSkus"];
         put?: never;
@@ -462,8 +660,8 @@ export interface paths {
          *     미송 id 는 담지 않는다 — 라인당 OPEN 미송이 최대 1건이라 서버가 찾아 연결한다.
          *     배분은 재고를 줄이지 않는다 — 실물이 나가는 것은 출고다.
          *
-         *     에러: 400 `ORDER_ITEM_NOT_IN_ORDER` · `DUPLICATE_ORDER_ITEM` · `INVARIANT_VIOLATED` /
-         *     404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` · `ALLOCATION_EXCEEDS_ORDER` ·
+         *     에러: 400 `ORDER_ITEM_NOT_IN_ORDER` · `DUPLICATE_ORDER_ITEM` · `INVARIANT_VIOLATED` ·
+         *     `ALLOCATION_EXCEEDS_ORDER` / 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` ·
          *     `INSUFFICIENT_STOCK` · `ALLOCATION_EXCEEDS_REMAINING`
          */
         post: operations["createPacking"];
@@ -660,7 +858,7 @@ export interface paths {
          * @description 배분이 풀린다 — `allocatedQty`가 줄고 가용재고가 돌아오며, 해소했던 미송이 되살아난다.
          *     부분 취소는 없다. PACKED 는 출고 묶음 해제(unpack) 후에만 취소할 수 있다.
          *
-         *     에러: 404 `RESOURCE_NOT_FOUND` (이미 취소 포함) / 409 `DOCUMENT_FROZEN`
+         *     에러: 404 `RESOURCE_NOT_FOUND` (이미 취소 포함) / 409 `DOCUMENT_FINALIZED`
          */
         delete: operations["cancelPacking"];
         options?: never;
@@ -977,6 +1175,14 @@ export interface components {
         };
         ApiResponseListReceivableRetailerResponse: {
             data: components["schemas"]["ReceivableRetailerResponse"][];
+            meta: components["schemas"]["PageMeta"];
+        };
+        ApiResponseListRetailBackorderResponse: {
+            data: components["schemas"]["RetailBackorderResponse"][];
+            meta: components["schemas"]["PageMeta"];
+        };
+        ApiResponseListRetailListingSummaryResponse: {
+            data: components["schemas"]["RetailListingSummaryResponse"][];
             meta: components["schemas"]["PageMeta"];
         };
         ApiResponseListStockMovementResponse: {
@@ -1425,7 +1631,6 @@ export interface components {
             /** Format: int32 */
             outboundNumber: number;
             packings: components["schemas"]["PackingRef"][];
-            retailerCode: string;
             /** Format: int64 */
             retailerId: number;
             retailerName: string;
@@ -1457,7 +1662,6 @@ export interface components {
             lastShippedAt: string;
             /** Format: int32 */
             outboundCount: number;
-            retailerCode: string;
             /** Format: int64 */
             retailerId: number;
             retailerName: string;
@@ -1577,7 +1781,6 @@ export interface components {
         PackingRetailerResponse: {
             /** Format: int32 */
             itemCount: number;
-            retailerCode: string;
             /** Format: int64 */
             retailerId: number;
             retailerName: string;
@@ -1696,7 +1899,141 @@ export interface components {
             retailerId: number;
             retailerName: string;
         };
+        RetailBackorderResponse: {
+            /** Format: int64 */
+            backorderId: number;
+            colorName: string;
+            /** Format: date */
+            expectedInboundDate: string;
+            expectedInboundReason: string;
+            /** Format: int64 */
+            listingId: number;
+            /** Format: date-time */
+            orderedAt: string;
+            /** Format: int32 */
+            qty: number;
+            /** Format: int64 */
+            retailOrderId: number;
+            size: string;
+            title: string;
+            wholesaler: components["schemas"]["RetailGatewayBackorderWholesaler"];
+        };
+        RetailCategoryResponse: {
+            children: components["schemas"]["RetailCategoryResponse"][];
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailFilterOptionsResponse: {
+            colorGroups: components["schemas"]["RetailGatewayColorGroup"][];
+            priceRange: components["schemas"]["RetailGatewayPriceRange"];
+            sizes: string[];
+        };
+        RetailGatewayBackorderWholesaler: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailGatewayCategoryNode: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailGatewayColorGroup: {
+            colors: components["schemas"]["RetailGatewayFilterColor"][];
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailGatewayColorOption: {
+            color: components["schemas"]["RetailGatewayListingColor"];
+            variants: components["schemas"]["RetailGatewayVariant"][];
+        };
+        RetailGatewayFilterColor: {
+            hex: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailGatewayListingColor: {
+            groupName: string;
+            hex: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailGatewayListingImage: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            sortOrder: number;
+            url: string;
+        };
+        RetailGatewayListingWholesaler: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            storeBuilding: string;
+            storeUnit: string;
+        };
+        RetailGatewayPriceRange: {
+            /** Format: int32 */
+            max: number;
+            /** Format: int32 */
+            min: number;
+        };
+        RetailGatewayVariant: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            orderLimit: number;
+            /** Format: int32 */
+            salePrice: number;
+            size: string;
+        };
+        RetailGatewayWholesalerBrief: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        RetailListingDetailResponse: {
+            categoryPath: components["schemas"]["RetailGatewayCategoryNode"][];
+            colorOptions: components["schemas"]["RetailGatewayColorOption"][];
+            description: string;
+            images: components["schemas"]["RetailGatewayListingImage"][];
+            isSinglePieceAllowed: boolean;
+            /** Format: int32 */
+            listedVariantCount: number;
+            /** Format: int64 */
+            listingId: number;
+            /** Format: int32 */
+            maxSalePrice: number;
+            /** Format: int32 */
+            minSalePrice: number;
+            /** Format: int32 */
+            productNumber: number;
+            title: string;
+            /** Format: int32 */
+            totalVariantCount: number;
+            wholesaler: components["schemas"]["RetailGatewayListingWholesaler"];
+        };
+        RetailListingSummaryResponse: {
+            /** Format: int32 */
+            colorCount: number;
+            isSinglePieceAllowed: boolean;
+            /** Format: int64 */
+            listingId: number;
+            /** Format: int32 */
+            minSalePrice: number;
+            /** Format: int32 */
+            sizeCount: number;
+            thumbnailUrl: string;
+            title: string;
+            wholesaler: components["schemas"]["RetailGatewayWholesalerBrief"];
+        };
         RetailOrderCreateRequest: {
+            agentName: string;
+            agentPhone: string;
             /** @enum {string} */
             expectedPaymentMethod: "CASH" | "BANK_TRANSFER";
             items: components["schemas"]["RetailOrderItemRequest"][];
@@ -1706,6 +2043,8 @@ export interface components {
             retailOrderId: number;
             /** Format: int64 */
             retailerId: number;
+            retailerName: string;
+            retailerPhone: string;
             /** Format: int64 */
             wholesalerId: number;
         };
@@ -1724,6 +2063,27 @@ export interface components {
             /** @enum {string} */
             status: "NEW" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "CANCELLED";
         };
+        RetailOrderItem: {
+            /** Format: int32 */
+            backorderQty: number;
+            colorName: string;
+            /** Format: date */
+            expectedInboundDate: string;
+            /** Format: int64 */
+            listingId: number;
+            /** Format: int64 */
+            orderItemId: number;
+            /** Format: int32 */
+            qty: number;
+            /** Format: int32 */
+            receivedQty: number;
+            size: string;
+            title: string;
+            /** Format: int32 */
+            unitPrice: number;
+            /** Format: int64 */
+            variantId: number;
+        };
         RetailOrderItemRequest: {
             /** Format: int32 */
             expectedUnitPrice: number;
@@ -1741,6 +2101,67 @@ export interface components {
             unitPrice: number;
             /** Format: int64 */
             variantId: number;
+        };
+        RetailOrderViewResponse: {
+            agentName: string;
+            agentPhone: string;
+            /** Format: int32 */
+            amount: number;
+            cancellable: boolean;
+            items: components["schemas"]["RetailOrderItem"][];
+            /** Format: int64 */
+            orderId: number;
+            /** Format: int32 */
+            orderNumber: number;
+            /** Format: date-time */
+            orderedAt: string;
+            /** @enum {string} */
+            paymentTerm: "CASH" | "BANK_TRANSFER";
+            /** @enum {string} */
+            receiveMethod: "RETAILER" | "AGENT";
+            /** Format: int64 */
+            retailOrderId: number;
+            statusKey: string;
+            statusLabel: string;
+            wholesaler: components["schemas"]["RetailOrderWholesaler"];
+        };
+        RetailOrderWholesaler: {
+            bankAccountHolder: string;
+            bankAccountNo: string;
+            bankName: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            storeBuilding: string;
+            storeUnit: string;
+        };
+        RetailVariantInfoResponse: {
+            colorName: string;
+            /** Format: int64 */
+            listingId: number;
+            /** Format: int32 */
+            orderLimit: number;
+            orderable: boolean;
+            /** Format: int32 */
+            salePrice: number;
+            size: string;
+            thumbnailUrl: string;
+            title: string;
+            /** Format: int64 */
+            variantId: number;
+            /** Format: int64 */
+            wholesalerId: number;
+            wholesalerName: string;
+        };
+        RetailWholesalerResponse: {
+            bankAccountHolder: string;
+            bankAccountNo: string;
+            bankName: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            storeBuilding: string;
+            storeUnit: string;
         };
         SignupRequest: {
             /** @example 여성의류 */
@@ -1783,13 +2204,11 @@ export interface components {
             bizRegNo: string;
         };
         StatementResponse: {
-            deliveryAddress: string;
             items: components["schemas"]["Item"][];
             /** Format: int32 */
             outboundNumber: number;
             /** @enum {string} */
             receiveBy: "RETAILER" | "AGENT";
-            retailerCode: string;
             retailerName: string;
             sellerName: string;
             /** Format: date-time */
@@ -1881,6 +2300,152 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    backorders: {
+        parameters: {
+            query: {
+                retailerId: number;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseListRetailBackorderResponse"];
+                };
+            };
+        };
+    };
+    categories_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailCategoryResponse"][];
+                    };
+                };
+            };
+        };
+    };
+    filterOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailFilterOptionsResponse"];
+                    };
+                };
+            };
+        };
+    };
+    listings: {
+        parameters: {
+            query?: {
+                q?: string;
+                categoryId?: number;
+                colorIds?: number[];
+                sizes?: string[];
+                priceFrom?: number;
+                priceTo?: number;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseListRetailListingSummaryResponse"];
+                };
+            };
+        };
+    };
+    listing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listingId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailListingDetailResponse"];
+                    };
+                };
+            };
+        };
+    };
+    orders: {
+        parameters: {
+            query: {
+                retailerId: number;
+                retailOrderIds: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailOrderViewResponse"][];
+                    };
+                };
+            };
+        };
+    };
     create_2: {
         parameters: {
             query?: never;
@@ -1902,6 +2467,54 @@ export interface operations {
                 content: {
                     "*/*": {
                         data: components["schemas"]["RetailOrderCreatedResponse"];
+                    };
+                };
+            };
+        };
+    };
+    variants: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailVariantInfoResponse"][];
+                    };
+                };
+            };
+        };
+    };
+    wholesalers: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailWholesalerResponse"][];
                     };
                 };
             };
@@ -2183,7 +2796,18 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created */
+            /** @description 같은 키 재요청(replay) — 첫 응답과 동일 본문 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["InboundCreatedResponse"];
+                    };
+                };
+            };
+            /** @description 첫 등록 */
             201: {
                 headers: {
                     [name: string]: unknown;

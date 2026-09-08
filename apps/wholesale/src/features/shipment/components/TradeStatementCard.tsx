@@ -40,8 +40,8 @@ export function TradeStatementCard({ outboundId }: { outboundId: number }) {
           <Field label="출고일">{statement.shippedAt}</Field>
           {/* `판매처`가 아니다 — glossary §2.1의 폐기어라 아래 `거래처`와 뒤집힌다 */}
           <Field label="도매처">{statement.sellerName}</Field>
-          <Field label="거래처">{statement.retailerLabel}</Field>
-          <Field label="배송지">{statement.deliveryAddress}</Field>
+          {/* 배송지 줄은 없다 — BE가 장끼에서 `deliveryAddress`를 지웠다(2026-09-08 스펙) */}
+          <Field label="거래처">{statement.retailerName}</Field>
           <Field label="수령 방식">
             {RECEIVE_BY_LABEL[statement.receiveBy]}
           </Field>

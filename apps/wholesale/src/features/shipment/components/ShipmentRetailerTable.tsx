@@ -6,7 +6,8 @@ import { ShipmentRetailerRow } from "./ShipmentRetailerRow";
 import type { RetailerRowView, RetailerView } from "../types";
 
 /**
- * 출고 목록 표 4열 + 맨 앞의 펼침 열. 주문 탭(`OrderTable`)과 같은 구조다.
+ * 출고 목록 표 3열 + 맨 앞의 펼침 열. 주문 탭(`OrderTable`)과 같은 구조다.
+ * 소매처 코드 열은 없다 — BE 응답에서 `retailerCode`가 빠졌다(2026-09-08 스펙).
  *
  * **세 단계가 이 표 하나를 공유한다.** 단계가 바꾸는 것은 건수 열의 이름과 펼친 본문뿐이라,
  * 단계별 소매처 응답을 `{retailer, count, qty}`로 좁혀 받는다 — 이 표는 `ShipmentStage`를 모른다.
@@ -34,7 +35,6 @@ export function ShipmentRetailerTable({
         <Table.Row>
           {/* 첫 열은 chevron만 들어가는 자리라 붙일 이름이 없다 */}
           <Table.Th className="w-8" />
-          <Table.Th align="left">거래처 코드</Table.Th>
           <Table.Th align="left">거래처</Table.Th>
           <Table.Th>{countLabel}</Table.Th>
           <Table.Th>총 수량</Table.Th>

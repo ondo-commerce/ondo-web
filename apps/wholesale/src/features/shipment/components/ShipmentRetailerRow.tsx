@@ -37,16 +37,12 @@ export function ShipmentRetailerRow({
     <Table.ExpandableRow
       open={open}
       onToggle={onToggle}
-      /* 5 = 펼침 열 + 목록 4열 */
-      colSpan={5}
+      /* 4 = 펼침 열 + 목록 3열 */
+      colSpan={4}
       label={retailer.name}
       detailId={`shipment-detail-${retailer.id}`}
       detail={children}
     >
-      {/* 시드 소매처엔 코드가 없다 — 빈칸 대신 `-` */}
-      <Table.Td align="left" tone="muted">
-        {retailer.code === "" ? "-" : retailer.code}
-      </Table.Td>
       <Table.Td align="left">{retailer.name}</Table.Td>
       <Table.Td>{count}건</Table.Td>
       <Table.Td>{formatNumber(qty)}개</Table.Td>

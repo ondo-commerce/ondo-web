@@ -107,17 +107,11 @@ export function outboundLabel(outboundNumber: number): string {
   return `#${outboundNumber}`;
 }
 
-/** `봄봄상회 (RT-001)`. 코드가 비면(시드) 괄호를 안 그린다 */
-export function retailerLabel(name: string, code: string): string {
-  return code === "" ? name : `${name} (${code})`;
-}
-
 export function toPackingRetailerRow(row: PackingRetailer): RetailerRowView {
   return {
     retailer: {
       id: row.retailerId,
       name: row.retailerName,
-      code: row.retailerCode ?? "",
     },
     count: row.itemCount,
     qty: row.totalQty,
@@ -129,7 +123,6 @@ export function toOutboundRetailerRow(row: OutboundRetailer): RetailerRowView {
     retailer: {
       id: row.retailerId,
       name: row.retailerName,
-      code: row.retailerCode ?? "",
     },
     count: row.outboundCount,
     qty: row.totalQty,
@@ -228,16 +221,7 @@ export function toStatementView(statement: Statement): StatementView {
     outboundLabel: outboundLabel(statement.outboundNumber),
     shippedAt: formatDateLabel(statement.shippedAt),
     sellerName: statement.sellerName,
-    retailerLabel: retailerLabel(
-      statement.retailerName,
-      statement.retailerCode ?? "",
-    ),
-    deliveryAddress:
-      statement.deliveryAddress === undefined ||
-      statement.deliveryAddress === null ||
-      statement.deliveryAddress === ""
-        ? "-"
-        : statement.deliveryAddress,
+    retailerName: statement.retailerName,
     receiveBy: statement.receiveBy,
     lines: (statement.items ?? []).map(toStatementLineView),
     totalQty: statement.totalQty,

@@ -49,12 +49,13 @@ export type OutboundStatus = NonNullable<
  */
 export type ShipmentStage = "ready" | "packed" | "shipped";
 
-/** 소매처. 관리 화면이 아직 없어서 이 탭에서는 읽기만 한다(screen_spec §9.5) */
+/**
+ * 소매처. 관리 화면이 아직 없어서 이 탭에서는 읽기만 한다(screen_spec §9.5).
+ * 소매처 코드는 없다 — BE가 `retailerCode`를 응답에서 지웠다(2026-09-08 스펙, "도매 API 연동 안내").
+ */
 export interface RetailerView {
   id: number;
   name: string;
-  /** 소매처코드. 시드(V900)에 코드가 없어 목은 빈 문자열이 온다 — 화면은 `-` */
-  code: string;
 }
 
 /** 아코디언 한 행. 단계별 소매처 응답을 이 모양으로 좁혀 표에 넘긴다 — 표는 단계를 모른다 */
@@ -147,10 +148,8 @@ export interface StatementView {
   shippedAt: string;
   /** 물건을 낸 도매처 자신. 라벨은 `도매처` — `판매처`는 폐기어(glossary §2.1) */
   sellerName: string;
-  /** `봄봄상회 (RT-001)`. 코드가 비면 이름만 */
-  retailerLabel: string;
-  /** 비면 `-` */
-  deliveryAddress: string;
+  /** 소매처 코드·배송지는 없다 — BE가 `retailerCode`·`deliveryAddress`를 장끼에서 지웠다(2026-09-08 스펙) */
+  retailerName: string;
   receiveBy: ReceiveBy;
   lines: StatementLineView[];
   totalQty: number;

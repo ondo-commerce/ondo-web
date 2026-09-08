@@ -28,7 +28,6 @@ import { findMockVariant } from "./product";
  *     (주문 탭 상태가 부분 출고·출고 완료로 파생), 상품 목의 SKU 재고도 함께 준다. 장끼번호는 날짜별 1부터
  *
  * 스텁에서 그대로 가져온 값: 시드 봉투 id `8801`, 장끼의 `sellerName` `도도도매`.
- * 시드에 없어 **비워 둔 값**(지어내지 않는다): 소매처 코드 `retailerCode` · 배송지 `deliveryAddress` → `""`.
  * 시드 봉투의 시각(포장 다음 날 출고)은 주문일에서 미뤄 잡은 가정이다 — V900에 출고 시각이 없다.
  *
  * 응답 모양은 스펙(`WholesaleSchema`)이 지킨다. 새로고침하면 시드로 돌아간다.
@@ -237,7 +236,6 @@ function detailResponse(
     id: outbound.id,
     outboundNumber: outbound.outboundNumber,
     retailerId: outbound.retailerId,
-    retailerCode: retailer?.code ?? "",
     retailerName: retailer?.name ?? "",
     createdAt: outbound.createdAt,
     shippedAt: outbound.shippedAt as string,
@@ -273,9 +271,7 @@ function statementResponse(
     outboundNumber: outbound.outboundNumber,
     shippedAt,
     sellerName: SELLER_NAME,
-    retailerCode: retailer?.code ?? "",
     retailerName: retailer?.name ?? "",
-    deliveryAddress: "",
     receiveBy: outbound.receiveBy,
     totalQty: sumQty(lines),
     items: mergedItems(lines).map(({ line, qty }) => ({
@@ -335,7 +331,6 @@ export const shipmentHandlers = [
         const retailer = mockRetailer(retailerId);
         return {
           retailerId,
-          retailerCode: retailer?.code ?? "",
           retailerName: retailer?.name ?? "",
           itemCount: lines.length,
           totalQty: sumQty(lines),
@@ -396,7 +391,6 @@ export const shipmentHandlers = [
           .sort();
         return {
           retailerId,
-          retailerCode: retailer?.code ?? "",
           retailerName: retailer?.name ?? "",
           outboundCount: entries.length,
           totalQty: sumQty(entries.flatMap((e) => e.lines)),
