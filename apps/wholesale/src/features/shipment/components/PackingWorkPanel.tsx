@@ -14,6 +14,7 @@ import {
 import type { OutboundCreated, PackingRowView } from "../types";
 import { toFieldErrors } from "@/shared/api/fieldErrors";
 import { formatNumber } from "@/shared/lib/format";
+import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 
 /**
  * 우측 `포장 작업` 패널. 좌측 표에서 체크한 줄이 그대로 봉투 하나(`POST /outbounds`)가 된다.
@@ -47,6 +48,8 @@ export function PackingWorkPanel({
   const mixed = hasMixedReceiveBy(rows);
   const missing = missingCount(rows, visibleIds);
   const create = useCreateOutboundMutation({ onDone });
+  /* 다이얼로그 없이 바로 나가는 버튼이라 더블클릭이 두 건 되지 않게 동기 잠금(dev-verify-bis F2) */
+  const fire = useSingleFlight();
 
   /* 서버 오류: `VALIDATION_FAILED`는 칸 이름으로(칸이 하나라 폼 위 한 줄), 나머지(400 섞임·409·404·5xx)는 코드별 문구 */
   const errorText = create.error
@@ -123,7 +126,13 @@ export function PackingWorkPanel({
           size="lg"
           className="mt-4"
           disabled={!canPack(rows) || create.isPending || stale}
-          onClick={() => create.mutate(toOutboundCreateRequest(rows))}
+          onClick={() =>
+            fire((release) =>
+              create.mutate(toOutboundCreateRequest(rows), {
+                onSettled: release,
+              }),
+            )
+          }
         >
           {create.isPending ? "포장 중…" : "포장 완료"}
         </Button>
