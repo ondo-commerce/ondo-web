@@ -5,6 +5,7 @@ import {
   mockOrders,
   mockPackings,
   mockRetailer,
+  SEED_SHIPPED_AT,
   SEED_SHIPPED_OUTBOUND_ID,
   SEED_SHIPPED_PACKING_CREATED_AT,
   shipMockPacking,
@@ -13,6 +14,7 @@ import {
   type MockPacking,
 } from "./order";
 import { findMockVariant } from "./product";
+import { recordMockSale } from "./settlement";
 
 /**
  * 출고 목 — 주문 목(`./order`)의 포장 상태와 **맞물린다.**
@@ -67,7 +69,7 @@ function seedOutbounds(): MockOutbound[] {
       retailerId: 1,
       receiveBy: "AGENT",
       createdAt: SEED_SHIPPED_PACKING_CREATED_AT,
-      shippedAt: "2026-09-04T10:00:00+09:00",
+      shippedAt: SEED_SHIPPED_AT,
       statementNumber: 1,
     },
   ];
@@ -600,6 +602,15 @@ export const shipmentHandlers = [
     const shippedAt = new Date().toISOString();
     outbound.statementNumber = nextStatementNumber(shippedAt);
     outbound.shippedAt = shippedAt;
+    // 정산 목의 판매 원장 줄 — 주문 단위로 나간 수량 × 단가. 미수는 여기서 는다
+    const saleByOrder = new Map<MockOrder, number>();
+    for (const { order, line, qty } of lines)
+      saleByOrder.set(
+        order,
+        (saleByOrder.get(order) ?? 0) + qty * line.unitPrice,
+      );
+    for (const [order, amount] of saleByOrder)
+      recordMockSale(order, amount, shippedAt);
     for (const packing of new Set(lines.map((l) => l.packing))) {
       shipMockPacking(packing);
       // 상품·재고 탭이 보는 SKU 재고도 같이 줄인다 — 주문처리중이 풀리고 현재고가 준다

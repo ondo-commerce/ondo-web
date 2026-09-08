@@ -6,6 +6,7 @@ import { backorderHandlers } from "./backorder";
 import { inventoryHandlers } from "./inventory";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
+import { settlementHandlers } from "./settlement";
 import { shipmentHandlers } from "./shipment";
 
 /**
@@ -22,5 +23,6 @@ export const wholesaleHandlers: RequestHandler[] = [
   ...backorderHandlers,
   ...inventoryHandlers,
   ...shipmentHandlers,
+  ...settlementHandlers,
   ...handlersFromSpec(spec as unknown as OpenApiDocument),
 ];

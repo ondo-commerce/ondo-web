@@ -3,7 +3,7 @@
 import { Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { RetailerRow } from "./RetailerRow";
-import type { TradeRelation } from "../types";
+import type { RetailerRowView, RetailerView } from "../types";
 
 /**
  * 정산 목록 표 4열 + 맨 앞의 펼침 열. 주문 탭(`OrderTable`)과 같은 구조다.
@@ -18,22 +18,16 @@ import type { TradeRelation } from "../types";
  * `stickyHead`를 켜므로 부르는 쪽이 `Panel.Body` 안이 아니라 `Panel`의 flex 자식으로 놓아야 한다.
  */
 export function SettlementRelationTable({
-  relations,
-  openRelationId,
+  rows,
+  openRetailerId,
   onToggle,
-  orderCountOf,
-  receivableOf,
   renderDetail,
 }: {
-  relations: readonly TradeRelation[];
-  openRelationId: string | null;
-  onToggle: (relationId: string) => void;
-  /** 주문 건수. **파생값이다** — 상수로 적으면 입금 한 건에 화면의 다른 숫자와 갈린다 */
-  orderCountOf: (relation: TradeRelation) => number;
-  /** 미수 잔액(양수). 계정 잔액을 뒤집은 값이다 — `derive.outstandingReceivable` */
-  receivableOf: (relation: TradeRelation) => number;
+  rows: readonly RetailerRowView[];
+  openRetailerId: number | null;
+  onToggle: (retailer: RetailerView) => void;
   /** 펼침 영역 내용. 펼쳐진 행에만 부른다 */
-  renderDetail: (relation: TradeRelation) => ReactNode;
+  renderDetail: (retailer: RetailerView) => ReactNode;
 }) {
   return (
     <Table stickyHead>
@@ -48,18 +42,16 @@ export function SettlementRelationTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {relations.map((relation) => {
-          const open = openRelationId === relation.id;
+        {rows.map((row) => {
+          const open = openRetailerId === row.retailer.id;
           return (
             <RetailerRow
-              key={relation.id}
-              relation={relation}
-              orderCount={orderCountOf(relation)}
-              receivable={receivableOf(relation)}
+              key={row.retailer.id}
+              row={row}
               open={open}
-              onToggle={() => onToggle(relation.id)}
+              onToggle={() => onToggle(row.retailer)}
             >
-              {open ? renderDetail(relation) : null}
+              {open ? renderDetail(row.retailer) : null}
             </RetailerRow>
           );
         })}

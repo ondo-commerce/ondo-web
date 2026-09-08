@@ -1,26 +1,29 @@
 import { Table } from "@ondo/ui";
-import { FulfillmentBadge, SettlementBadge } from "./StatusBadge";
-import { formatDateTime, orderReceivable, settlementStatus } from "../derive";
-import type { SettlementOrder } from "../types";
+import { OrderStatusBadge, SettlementBadge } from "./StatusBadge";
+import type { OrderRowView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
- * 세그먼트 A — 거래처 하나의 주문별 정산 상태 표.
+ * 세그먼트 A — 거래처 하나의 주문별 정산 상태 표(`GET /orders?retailerId`).
  *
- * `정산 상태`와 `미수 잔액`은 fixtures에 적힌 값이 아니라 **배정액에서 계산한 값**이다.
- * 입금을 배분하면 두 열이 같은 계산으로 함께 움직여야 하기 때문이다.
+ * `정산 상태`와 `미수 잔액`은 출고분이 있는 주문이면 **서버값**(`settlementStatus`·`outstandingAmount`)이고,
+ * 출고 전 주문은 `미출고`·0이다(`derive.toOrderView` — 거래처 행의 원장 잔액과 같은 정의).
+ * 입금을 배분하면 재조회로 두 열이 함께 움직인다 — 화면에서 배정액을 빼지 않는다.
  *
- * 행 순서는 주문 번호 순(=목록 순서)이다. 배분 표만 FIFO(주문 일시 오래된 순)로 다시 정렬한다.
+ * 행 순서는 서버 순서다. 배분 표만 FIFO(주문 일시 오래된 순)로 다시 정렬한다.
  */
 export function SettlementStatusTable({
   orders,
+  hasFilter,
 }: {
-  orders: readonly SettlementOrder[];
+  orders: readonly OrderRowView[];
+  /** 정산 상태 필터가 걸려 있는가. 빈 이유(원래 없음 / 걸러짐)를 가른다 */
+  hasFilter: boolean;
 }) {
   if (orders.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center text-sm">
-        조건에 맞는 주문이 없습니다
+        {hasFilter ? "조건에 맞는 주문이 없습니다" : "확정 주문이 없습니다"}
       </p>
     );
   }
@@ -38,28 +41,28 @@ export function SettlementStatusTable({
         </Table.Row>
       </Table.Head>
       <Table.Body>
-        {orders.map((order) => {
-          const receivable = orderReceivable(order);
-          return (
-            <Table.Row key={order.id}>
-              <Table.Td align="left">{order.orderNo}</Table.Td>
-              <Table.Td align="left" tone="muted">
-                {formatDateTime(order.placedAt)}
-              </Table.Td>
-              <Table.Td>{formatNumber(order.totalAmount)}</Table.Td>
-              <Table.Td align="center">
-                <FulfillmentBadge status={order.fulfillmentStatus} />
-              </Table.Td>
-              <Table.Td align="center">
-                <SettlementBadge status={settlementStatus(order)} />
-              </Table.Td>
-              {/* 0원은 회색으로 눕힌다 — 받을 돈이 남은 행만 눈에 걸려야 한다 */}
-              <Table.Td tone={receivable > 0 ? "default" : "muted"}>
-                {formatNumber(receivable)}
-              </Table.Td>
-            </Table.Row>
-          );
-        })}
+        {orders.map((order) => (
+          <Table.Row key={order.id}>
+            <Table.Td align="left">{order.orderNumber}</Table.Td>
+            <Table.Td align="left" tone="muted">
+              {order.orderedAt}
+            </Table.Td>
+            <Table.Td>{formatNumber(order.orderAmount)}</Table.Td>
+            <Table.Td align="center">
+              <OrderStatusBadge
+                status={order.status}
+                label={order.statusLabel}
+              />
+            </Table.Td>
+            <Table.Td align="center">
+              <SettlementBadge status={order.settlementStatus} />
+            </Table.Td>
+            {/* 0원은 회색으로 눕힌다 — 받을 돈이 남은 행만 눈에 걸려야 한다 */}
+            <Table.Td tone={order.outstanding > 0 ? "default" : "muted"}>
+              {formatNumber(order.outstanding)}
+            </Table.Td>
+          </Table.Row>
+        ))}
       </Table.Body>
     </Table>
   );
