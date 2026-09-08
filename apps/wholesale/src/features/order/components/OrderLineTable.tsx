@@ -1,6 +1,6 @@
 "use client";
 
-import { Chip, Input, Table } from "@ondo/ui";
+import { Chip, Table } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { AllocatedCheck } from "./AllocatedCheck";
 import { OrderLineFilterBar } from "./OrderLineFilterBar";
@@ -24,6 +24,7 @@ import type {
   OrderView,
   ShipInputs,
 } from "../types";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -60,7 +61,7 @@ export function OrderLineTable({
   inputs: ShipInputs;
   filter: LineFilter;
   onFilterChange: (next: LineFilter) => void;
-  /** 친 글자 그대로 올린다. 상한 자르기·숫자 검사는 부르는 쪽(derive.clampShipInput) */
+  /** 친 글자 그대로 올린다. 상한 자르기는 부르는 쪽(derive.clampShipInput). 숫자 아닌 키는 `NumericInput`이 칸 앞에서 막는다 */
   onInputChange: (lineId: number, raw: string) => void;
   /** 표 하단 우측에 붙는 액션(확정·취소·포장 준비). 없는 국면에서는 넘기지 않는다 */
   footer?: ReactNode;
@@ -79,10 +80,8 @@ export function OrderLineTable({
 
     const blocked = isLineOutOfStock(line);
     return (
-      <Input
+      <NumericInput
         size="sm"
-        numeric
-        inputMode="numeric"
         className="w-20"
         aria-label={`${line.productName} ${line.color} ${line.size} SKU ${line.sku} 이번 출고`}
         disabled={blocked}

@@ -21,7 +21,8 @@ import { QueryBoundary } from "@/shared/api/QueryBoundary";
  *
  * 색상·사이즈 필터는 여기(경계 밖)에 둔다. 표와 액션 줄이 **같은 필터**를 봐야
  * 가려진 라인의 입력이 요청에 안 실린다(F10). 행을 접으면 이 컴포넌트가 내려가므로
- * 필터도 같이 풀린다 — 입력값(`toggleOrder`가 비운다)과 같은 수명이다.
+ * 필터는 풀린다 — 입력값은 부모가 주문별로 들고 있어 남는다(F8, #199). 필터가 풀리면
+ * 가려졌던 입력도 다 보이니 접었다 편 사장은 적어 둔 값 전부를 본다.
  */
 export function OrderRowDetail({
   orderId,

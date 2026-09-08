@@ -4,23 +4,20 @@ import { Button, FormField, Input, Notice, Panel, Segmented } from "@ondo/ui";
 import { useId, useState } from "react";
 import { AllocationTable } from "./AllocationTable";
 import { useCreatePaymentMutation } from "../api/mutations";
-import {
-  AMOUNT_BLOCKED_KEYS,
-  DEPOSIT_FIELDS,
-  METHOD_LABEL,
-  PAYER_LABEL,
-} from "../constants";
+import { DEPOSIT_FIELDS, METHOD_LABEL, PAYER_LABEL } from "../constants";
 import {
   allocationTargets,
   allocationTotal,
   clampAllocation,
   depositErrorText,
+  formatAmountInput,
   formatInputDateTime,
   noticeText,
   parseNumberInput,
   parsePaidAt,
   resolveAllocations,
   retailerLabel,
+  toAmountDigits,
   toPaymentRequest,
 } from "../derive";
 import type {
@@ -34,7 +31,12 @@ import type {
   SettlementNotice,
 } from "../types";
 import { toFieldErrors, type FormErrors } from "@/shared/api/fieldErrors";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
+import {
+  exceedsNumericMax,
+  NUMERIC_INPUT_MAX_TEXT,
+} from "@/shared/lib/numericInput";
 
 type DepositField = (typeof DEPOSIT_FIELDS)[number];
 
@@ -89,6 +91,8 @@ export function DepositFormPanel({
   const memoId = useId();
 
   const amount = parseNumberInput(draft.amountRaw);
+  /* 상한을 넘긴 입금액. 칸은 빨갛게, 라벨 아래 한 줄, 두 버튼 다 잠근다(#199) */
+  const amountOverMax = exceedsNumericMax(draft.amountRaw);
   const targets = allocationTargets(orders ?? []);
   const allocations = resolveAllocations(
     targets,
@@ -116,11 +120,7 @@ export function DepositFormPanel({
 
   /** 입금액이 바뀌면 자동 배분을 다시 계산해야 하므로 사람이 고친 값도 함께 지운다 */
   const changeAmount = (raw: string) => {
-    const parsed = parseNumberInput(raw);
-    change({
-      amountRaw: parsed === null ? "" : String(parsed),
-      editedAllocations: {},
-    });
+    change({ amountRaw: toAmountDigits(raw), editedAllocations: {} });
   };
 
   const changeAllocation = (orderId: number, raw: string) => {
@@ -140,7 +140,8 @@ export function DepositFormPanel({
 
   const busy = create.isPending;
   /** 입금액을 안 적었거나 0이면 기록할 사실이 없다 — 두 버튼 모두 잠근다. 옛 숫자(`stale`)로도 안 보낸다 */
-  const canSubmit = amount !== null && amount > 0 && !busy && !stale;
+  const canSubmit =
+    amount !== null && amount > 0 && !amountOverMax && !busy && !stale;
   /** 배분이 입금액과 딱 맞을 때만 정산까지 간다. 미달·초과는 `입금만 진행`으로 남긴다 */
   const canSettle =
     canSubmit && orders !== null && targets.length > 0 && total === amount;
@@ -192,20 +193,20 @@ export function DepositFormPanel({
 
         {/* 2열 그리드. 세로 간격은 FormField가 이미 갖고 있어 가로만 준다 */}
         <div className="grid grid-cols-2 gap-x-4">
-          <FormField label="입금액" htmlFor={amountId} hint={errors.amount}>
-            <Input
+          <FormField
+            label="입금액"
+            htmlFor={amountId}
+            hint={
+              errors.amount ??
+              (amountOverMax ? NUMERIC_INPUT_MAX_TEXT : undefined)
+            }
+          >
+            <NumericInput
               id={amountId}
-              numeric
-              inputMode="numeric"
-              pattern="[0-9,]*"
-              /* 소수점·음수 키는 누른 순간 막는다(⑤) */
-              onKeyDown={(e) => {
-                if (AMOUNT_BLOCKED_KEYS.has(e.key)) e.preventDefault();
-              }}
-              aria-invalid={errors.amount !== undefined}
+              aria-invalid={errors.amount !== undefined || amountOverMax}
               /* placeholder를 두지 않는다 — 흐린 `0`이 적어 둔 0과 헷갈린다 */
               /* 화면에는 콤마가 붙은 값이 보이고 상태에는 숫자만 남는다 */
-              value={amount === null ? "" : formatNumber(amount)}
+              value={formatAmountInput(draft.amountRaw)}
               onChange={(e) => changeAmount(e.target.value)}
               disabled={busy}
             />

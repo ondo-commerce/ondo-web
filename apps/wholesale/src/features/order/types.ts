@@ -134,6 +134,11 @@ export interface PackingBatchView {
 /** `이번 출고` 입력값. 라인 id → 문자열. 빈칸과 0을 구분하려고 문자열로 든다 */
 export type ShipInputs = Readonly<Record<number, string>>;
 
+/** 주문별 `이번 출고` 입력. 주문 id → 그 주문의 입력 맵. 접었다 펴도·다른 주문을 갔다 와도 남는다(#199) */
+export type ShipInputsByOrder = Readonly<
+  Record<number, ShipInputs | undefined>
+>;
+
 /**
  * 라인 표의 색상·사이즈 필터. `LINE_FILTER_ALL`이면 그 축은 안 건 것이다.
  * 표 안에 두지 않고 밖으로 올린 이유: 확정·포장 요청이 **이 필터를 알아야 한다** —

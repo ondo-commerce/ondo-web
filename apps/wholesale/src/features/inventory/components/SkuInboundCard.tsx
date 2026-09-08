@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Chip, Input, Panel, cn } from "@ondo/ui";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { Button, Chip, Panel, cn } from "@ondo/ui";
+import { useState, type ReactNode } from "react";
 import { InboundConfirmDialog } from "./InboundConfirmDialog";
 import { useInboundMutation, useStockRefresh } from "../api/mutations";
 import { useInventoryProductQuery } from "../api/queries";
@@ -12,7 +12,7 @@ import {
   inboundErrorText,
   inboundNotice,
   inputOf,
-  isDigits,
+  overMaxCount,
   parseNumberInput,
   stockAfterInbound,
   toInboundRequest,
@@ -20,7 +20,12 @@ import {
 } from "../derive";
 import type { InboundDrafts, InboundEntry, InboundInput } from "../types";
 import { toFieldErrors } from "@/shared/api/fieldErrors";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
+import {
+  exceedsNumericMax,
+  NUMERIC_INPUT_MAX_TEXT,
+} from "@/shared/lib/numericInput";
 
 /**
  * 라벨-값 한 줄. 좌우 두 열이 같은 높이로 맞아야 `현재고 / +추가 재고 / 변동 후 재고`가
@@ -110,18 +115,12 @@ export function SkuInboundCard({
   const entries = inboundEntries([sku], drafts);
   /* 수량은 적고 단가는 빈 상태 — 서버가 거절하니 여기서 막고 무엇을 채울지 말한다 */
   const missingPrice = missingUnitPriceCount([sku], drafts) > 0;
+  /* 상한 넘긴 칸이 있으면 입고를 막는다 — 칸은 빨갛고 이유는 버튼 옆 한 줄(#199) */
+  const overMax = overMaxCount([sku], drafts) > 0;
 
   const setField = (field: keyof InboundInput, raw: string) => {
     if (inbound.error || inbound.isSuccess) inbound.reset();
     onDraftChange(sku.id, { ...value, [field]: raw });
-  };
-
-  /* 숫자 아닌 키·붙여넣기는 칸에 들어오기 전에 막는다(Q-03) */
-  const blockNonDigits = (event: FormEvent<HTMLInputElement>) => {
-    const data = (event.nativeEvent as InputEvent).data;
-    if (data !== null && data !== undefined && !isDigits(data)) {
-      event.preventDefault();
-    }
   };
 
   const confirm = () => {
@@ -153,14 +152,12 @@ export function SkuInboundCard({
             <Value>{formatNumber(sku.stock)}</Value>
           </Row>
           <Row label="+ 추가 재고" divider>
-            <Input
+            <NumericInput
               size="sm"
-              numeric
-              inputMode="numeric"
               className="w-24"
               aria-label="추가 재고"
+              aria-invalid={exceedsNumericMax(value.qty)}
               value={value.qty}
-              onBeforeInput={blockNonDigits}
               onChange={(e) => setField("qty", e.target.value)}
             />
           </Row>
@@ -175,14 +172,12 @@ export function SkuInboundCard({
             <Value>{formatNumber(added ?? 0)}</Value>
           </Row>
           <Row label="× 매입단가" divider>
-            <Input
+            <NumericInput
               size="sm"
-              numeric
-              inputMode="numeric"
               className="w-24"
               aria-label="매입단가"
+              aria-invalid={exceedsNumericMax(value.unitPrice)}
               value={value.unitPrice}
-              onBeforeInput={blockNonDigits}
               onChange={(e) => setField("unitPrice", e.target.value)}
             />
           </Row>
@@ -196,7 +191,11 @@ export function SkuInboundCard({
       </div>
 
       <div className="mt-4 flex items-center justify-end gap-3">
-        {errorText ? (
+        {overMax ? (
+          <p role="alert" className="text-destructive-strong text-sm">
+            {NUMERIC_INPUT_MAX_TEXT}
+          </p>
+        ) : errorText ? (
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
           </p>
@@ -227,7 +226,12 @@ export function SkuInboundCard({
           </Button>
         ) : null}
         <Button
-          disabled={entries.length === 0 || inbound.isPending || isRefetchError}
+          disabled={
+            entries.length === 0 ||
+            overMax ||
+            inbound.isPending ||
+            isRefetchError
+          }
           onClick={() => setConfirmOpen(true)}
         >
           입고 처리

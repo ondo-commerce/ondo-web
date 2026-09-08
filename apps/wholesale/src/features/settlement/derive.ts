@@ -1,9 +1,6 @@
 import { isApiError } from "@ondo/api";
-import {
-  BANK_ACCOUNT_ERROR_TEXT,
-  DEPOSIT_ERROR_TEXT,
-  MAX_AMOUNT,
-} from "./constants";
+import { BANK_ACCOUNT_ERROR_TEXT, DEPOSIT_ERROR_TEXT } from "./constants";
+import { exceedsNumericMax } from "@/shared/lib/numericInput";
 import type {
   BankAccount,
   BankAccountCreateRequest,
@@ -292,16 +289,35 @@ export function filterOrders(
  * ------------------------------------------------------------------------ */
 
 /**
+ * 금액 칸의 문자열 → 자릿수만. 화면엔 콤마가 붙은 값(`37,500`)이 보이므로 `onChange`가 주는 문자열에서
+ * 숫자만 남기고 앞의 0을 뗀다. 숫자 아닌 키는 `NumericInput`이 칸에 들어오기 전에 막는다.
+ * **상한에서 자르지 않는다** — 14자리를 조용히 `999,999,999`로 바꾸면 사장은 그런 줄 모른다
+ * (wire-settlement F3). 넘긴 값은 그대로 두고 `exceedsNumericMax`가 칸을 빨갛게 만들고 버튼을 잠근다.
+ */
+export function toAmountDigits(raw: string): string {
+  return raw.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+}
+
+/**
  * 금액 입력칸의 문자열 → 금액. **빈칸과 0을 구분해야 해서 빈칸은 null이다** — "아직 안 적었다"와
  * "0원을 적었다"는 다른 상태고, 버튼 활성 조건이 둘을 갈라 본다.
- * 숫자 아닌 글자(소수점·음수 부호·콤마)는 버리고 상한(`MAX_AMOUNT`)에서 자른다(⑤).
  *
  * 재고 탭 `derive.ts`에 같은 취지의 함수가 있지만 **복사해 왔다** — feature 경계를 넘어 import 하지 않는다.
  */
 export function parseNumberInput(raw: string): number | null {
-  const digits = raw.replace(/[^0-9]/g, "");
+  const digits = toAmountDigits(raw);
   if (digits === "") return null;
-  return Math.min(Number(digits), MAX_AMOUNT);
+  return Number(digits);
+}
+
+/**
+ * 입금액 칸에 보일 문자열. 상한 안이면 콤마를 붙이고, 넘겼으면 친 자릿수 그대로 — 25자리를 `Number`로
+ * 바꿔 콤마를 붙이면 `1,234,567,890,123,456,800,000,000` 같은 다른 숫자가 보인다.
+ */
+export function formatAmountInput(amountRaw: string): string {
+  if (amountRaw === "") return "";
+  if (exceedsNumericMax(amountRaw)) return amountRaw;
+  return formatNumber(Number(amountRaw));
 }
 
 /**
