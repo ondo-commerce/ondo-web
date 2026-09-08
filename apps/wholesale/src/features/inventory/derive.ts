@@ -271,7 +271,8 @@ export function inputOf(
 }
 
 /**
- * 입고 대상 줄. **수량을 적은 줄만**이다 — 단가만 적힌 줄은 입고가 아니다.
+ * 입고 대상 줄. **수량과 단가를 둘 다 적은 줄만**이다 — 단가만 적힌 줄은 입고가 아니고,
+ * 수량만 적힌 줄은 `missingUnitPriceCount`가 세어 버튼을 잠근다(서버가 단가 없는 줄을 거절한다).
  * `skus`가 범위를 정한다: 모드 A는 그 상품의 SKU 전부, 모드 B는 고른 SKU 하나.
  * 다른 상품에 남아 있는 입력은 여기 못 들어온다.
  */
@@ -282,11 +283,27 @@ export function inboundEntries(
   return skus.flatMap((s) => {
     const input = inputOf(drafts, s.id);
     const qty = parseNumberInput(input.qty);
-    if (qty === null || qty === 0) return [];
-    return [
-      { variantId: s.id, qty, unitPrice: parseNumberInput(input.unitPrice) },
-    ];
+    const unitPrice = parseNumberInput(input.unitPrice);
+    if (qty === null || qty === 0 || unitPrice === null) return [];
+    return [{ variantId: s.id, qty, unitPrice }];
   });
+}
+
+/**
+ * 수량은 적었는데 단가가 빈 줄 수. 하나라도 있으면 입고를 막는다 — 일부만 보내면
+ * 사장은 다 들어간 줄 안다. 문구에 줄 수를 적어 어디를 채울지 알린다.
+ */
+export function missingUnitPriceCount(
+  skus: readonly InventorySkuView[],
+  drafts: InboundDrafts,
+): number {
+  return skus.filter((s) => {
+    const input = inputOf(drafts, s.id);
+    const qty = parseNumberInput(input.qty);
+    return (
+      qty !== null && qty > 0 && parseNumberInput(input.unitPrice) === null
+    );
+  }).length;
 }
 
 export function totalInboundQty(entries: readonly InboundEntry[]): number {
@@ -297,9 +314,8 @@ export function totalInboundQty(entries: readonly InboundEntry[]): number {
  * 입고 요청 본문. `receivedAt`은 **입고 처리 버튼을 누른 순간**의 시각을 받는다 —
  * 렌더 중에 만들면 서버 렌더와 브라우저 렌더가 달라 하이드레이션이 깨진다.
  *
- * 매입단가를 안 적은 줄은 `unitCost`를 싣지 않는다(undefined는 JSON에서 빠진다). 생성 타입은
- * 필수로 보지만 스펙 설명에 필수 여부가 없고 화면은 빈 단가를 허용한다(§7 Q3). 서버가 거절하면
- * `VALIDATION_FAILED`가 `items` 줄로 온다.
+ * `unitCost`는 항상 싣는다 — 빈 단가를 키 생략으로 보내던 가정(04-wire §3-3, §7 Q3)은
+ * dev에서 400으로 틀렸다(dev-verify-bis F1). 빈 줄은 `inboundEntries`가 이미 걸렀다.
  */
 export function toInboundRequest(
   entries: readonly InboundEntry[],
@@ -310,9 +326,7 @@ export function toInboundRequest(
     items: entries.map((e): InboundItemRequest => ({
       variantId: e.variantId,
       qty: e.qty,
-      unitCost: (e.unitPrice === null
-        ? undefined
-        : e.unitPrice) as unknown as number,
+      unitCost: e.unitPrice,
     })),
   };
 }

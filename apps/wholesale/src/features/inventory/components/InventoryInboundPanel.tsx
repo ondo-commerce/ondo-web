@@ -9,6 +9,7 @@ import { INBOUND_FIELDS } from "../constants";
 import {
   estimatedAmount,
   inboundEntries,
+  missingUnitPriceCount,
   inboundErrorText,
   inboundNotice,
   inputOf,
@@ -54,8 +55,10 @@ export function InventoryInboundPanel({
   const { data: product, isRefetchError } = useInventoryProductQuery(productId);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  /* 수량을 적은 줄만 입고 대상이다. 단가만 적힌 줄은 입고가 아니다 */
+  /* 수량·단가를 다 적은 줄만 입고 대상이다. 단가만 적힌 줄은 입고가 아니고,
+     수량만 적힌 줄이 있으면 전체를 막는다 — 일부만 보내면 다 들어간 줄 안다 */
   const entries = inboundEntries(product.skus, drafts);
+  const missingPrice = missingUnitPriceCount(product.skus, drafts);
   const totalQty = totalInboundQty(entries);
 
   /* 보낸 줄을 기억해 둔다 — 응답이 올 때쯤 입력이 바뀌어 있어도 그때 보낸 줄만 지운다 */
@@ -187,6 +190,10 @@ export function InventoryInboundPanel({
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
           </p>
+        ) : missingPrice > 0 ? (
+          <p role="status" className="text-destructive-strong text-sm">
+            매입단가를 적어 주세요 ({missingPrice}줄)
+          </p>
         ) : notice ? (
           <p
             role={notice.tone === "stale" ? "alert" : "status"}
@@ -211,7 +218,12 @@ export function InventoryInboundPanel({
           </Button>
         ) : null}
         <Button
-          disabled={entries.length === 0 || inbound.isPending || isRefetchError}
+          disabled={
+            entries.length === 0 ||
+            missingPrice > 0 ||
+            inbound.isPending ||
+            isRefetchError
+          }
           onClick={() => setConfirmOpen(true)}
         >
           입고 처리

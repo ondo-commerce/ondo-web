@@ -8,6 +8,7 @@ import { useInventoryProductQuery } from "../api/queries";
 import { INBOUND_FIELDS } from "../constants";
 import {
   inboundEntries,
+  missingUnitPriceCount,
   inboundErrorText,
   inboundNotice,
   inputOf,
@@ -107,6 +108,8 @@ export function SkuInboundCard({
   const after = stockAfterInbound(sku.stock, added);
   const amount = totalAmount(added, price);
   const entries = inboundEntries([sku], drafts);
+  /* 수량은 적고 단가는 빈 상태 — 서버가 거절하니 여기서 막고 무엇을 채울지 말한다 */
+  const missingPrice = missingUnitPriceCount([sku], drafts) > 0;
 
   const setField = (field: keyof InboundInput, raw: string) => {
     if (inbound.error || inbound.isSuccess) inbound.reset();
@@ -196,6 +199,10 @@ export function SkuInboundCard({
         {errorText ? (
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
+          </p>
+        ) : missingPrice ? (
+          <p role="status" className="text-destructive-strong text-sm">
+            매입단가를 적어 주세요
           </p>
         ) : notice ? (
           <p

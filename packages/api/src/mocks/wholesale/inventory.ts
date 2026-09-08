@@ -160,12 +160,12 @@ export const inventoryHandlers = [
           "입고수량은 1 이상이어야 합니다.",
           "items",
         );
-      if (item.unitCost !== undefined && item.unitCost < 0)
+      // dev 서버는 단가 없는 줄도 같은 코드로 거절한다(dev-verify-bis F1) — 목도 같이 막는다
+      if (item.unitCost === undefined || item.unitCost < 0)
         return fail(
           400,
           "INVARIANT_VIOLATED",
-          "매입단가는 0 이상이어야 합니다.",
-          "items",
+          "각 라인은 variantId 와 qty ≥ 1, unitCost ≥ 0 이 필요합니다.",
         );
       // (variantId, unitCost)가 완전히 같은 중복만 거절(BE DTO 주석)
       const lot = `${item.variantId}:${item.unitCost ?? ""}`;

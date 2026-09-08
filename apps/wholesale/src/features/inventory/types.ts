@@ -131,10 +131,11 @@ export interface InboundEntry {
   /** 입고수량. 0이나 빈칸인 줄은 여기까지 오지 않는다 */
   qty: number;
   /**
-   * 매입단가. **비워 둘 수 있다.** 비우면 요청에서 `unitCost`를 뺀다 —
-   * 평균원가 재계산은 서버 몫이다(glossary §3.1). 서버가 빈 단가를 받는지는 미확인(04-wire §3).
+   * 매입단가. **필수다** — dev 서버가 `unitCost` 없는 줄을 400 `INVARIANT_VIOLATED`("unitCost ≥ 0")로
+   * 거절한다(dev-verify-bis F1). 단가를 안 적은 줄은 여기까지 오지 않고 버튼이 잠긴다.
+   * 0은 받는다(≥ 0). 평균원가 재계산은 서버 몫이다(glossary §3.1).
    */
-  unitPrice: number | null;
+  unitPrice: number;
 }
 
 /** 입력칸은 문자열로 들고 있는다 — 빈칸과 0을 구분해야 해서 숫자로 바로 못 바꾼다 */
