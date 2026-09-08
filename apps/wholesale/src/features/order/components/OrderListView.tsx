@@ -20,7 +20,7 @@ import {
 } from "../constants";
 import { toListQuery, type OrderListParams } from "../derive";
 import type { ShipInputs } from "../types";
-import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { QueryBoundary, QueryBoundaryGroup } from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
@@ -40,6 +40,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
  *
  * 경계는 셋 — 칩 줄·표·우측 카드들. 실패한 자리만 그 자리에서 실패한다.
+ * 재시도는 뷰 하나가 나눠 쓴다(`QueryBoundaryGroup`) — 펼친 행과 우측 주문 카드가 같은
+ * 상세 키를 봐서, 따로 두면 `다시 시도`가 두 개 뜨고 두 번 눌러야 했다(F6).
  */
 export function OrderListView() {
   /* 다른 탭(출고·미송)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
@@ -111,83 +113,102 @@ export function OrderListView() {
   const resetShipInputs = () => setShipInputs({});
 
   return (
-    <ListDetailLayout
-      list={
-        <Panel className="flex-1">
-          {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
+    <QueryBoundaryGroup>
+      <ListDetailLayout
+        list={
+          <Panel className="flex-1">
+            {/* 툴바 두 줄 — 첫 줄은 검색(과 주 액션), 둘째 줄은 필터.
               한 줄로 두면 검색창 340px + 세그먼트들이 좌측 패널 폭을 넘겨서 제멋대로 접힌다.
               검색은 폭이 고정이고 필터는 칸 수·글자 길이에 따라 변하니, 변하는 쪽만 아래 줄에
               모아 두면 검색창 자리가 탭을 옮겨도 흔들리지 않는다.
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
-          <div className="mb-3 flex shrink-0 items-center gap-3">
-            <SearchInput
-              className="mr-auto"
-              placeholder="주문번호·거래처·품명 검색"
-              aria-label="주문번호·거래처·품명 검색"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-          </div>
+            <div className="mb-3 flex shrink-0 items-center gap-3">
+              <SearchInput
+                className="mr-auto"
+                placeholder="주문번호·거래처·품명 검색"
+                aria-label="주문번호·거래처·품명 검색"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            </div>
 
-          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
-            {/* 칩 건수만 서버를 기다린다. 기다리는 동안·실패했을 때도 칸은 누를 수 있어야
-                해서 fallback이 스켈레톤이 아니라 건수 없는 같은 세그먼트다 */}
-            <QueryBoundary
-              fallback={
-                <OrderStatusFilter
+            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+              {/* 칩 건수만 서버를 기다린다. 기다리는 동안·실패했을 때도 칸은 누를 수 있어야
+                해서 fallback도 errorFallback도 스켈레톤·에러 블록이 아니라 건수 없는 같은
+                세그먼트다. 실패에는 작은 `건수 다시 시도`만 옆에 붙는다(F4) */}
+              <QueryBoundary
+                fallback={
+                  <OrderStatusFilter
+                    value={statusFilter}
+                    onChange={changeStatusFilter}
+                  />
+                }
+                errorFallback={({ retry }) => (
+                  <>
+                    <OrderStatusFilter
+                      value={statusFilter}
+                      onChange={changeStatusFilter}
+                    />
+                    <Button
+                      type="button"
+                      variant="line"
+                      size="sm"
+                      onClick={retry}
+                    >
+                      건수 다시 시도
+                    </Button>
+                  </>
+                )}
+              >
+                <OrderStatusFilterWithCounts
+                  q={params.q === "" ? undefined : params.q}
                   value={statusFilter}
                   onChange={changeStatusFilter}
                 />
-              }
-            >
-              <OrderStatusFilterWithCounts
-                q={params.q === "" ? undefined : params.q}
-                value={statusFilter}
-                onChange={changeStatusFilter}
+              </QueryBoundary>
+              <OrderSettlementFilter
+                value={settlementFilter}
+                onChange={changeSettlementFilter}
+              />
+            </div>
+
+            {/* 경계는 표 자리에만. 검색줄·필터는 서버와 무관하게 늘 있어야 한다 */}
+            <QueryBoundary>
+              <OrderListBody
+                params={params}
+                openOrderId={openOrderId}
+                onToggle={toggleOrder}
+                onPage={setPage}
+                renderDetail={(orderId) => (
+                  <OrderRowDetail
+                    orderId={orderId}
+                    inputs={shipInputs}
+                    onInputChange={changeShipInput}
+                    onInputsReset={resetShipInputs}
+                  />
+                )}
               />
             </QueryBoundary>
-            <OrderSettlementFilter
-              value={settlementFilter}
-              onChange={changeSettlementFilter}
-            />
-          </div>
-
-          {/* 경계는 표 자리에만. 검색줄·필터는 서버와 무관하게 늘 있어야 한다 */}
-          <QueryBoundary>
-            <OrderListBody
-              params={params}
-              openOrderId={openOrderId}
-              onToggle={toggleOrder}
-              onPage={setPage}
-              renderDetail={(orderId) => (
-                <OrderRowDetail
-                  orderId={orderId}
-                  inputs={shipInputs}
-                  onInputChange={changeShipInput}
-                  onInputsReset={resetShipInputs}
-                />
-              )}
-            />
-          </QueryBoundary>
-        </Panel>
-      }
-      detail={
-        openOrderId !== null ? (
-          <>
-            <Panel className="shrink-0">
-              <QueryBoundary>
-                <OrderSummaryCard orderId={openOrderId} />
-              </QueryBoundary>
-            </Panel>
-            {/* 회차가 하나도 없으면 카드째 사라진다 — 패널이 경계 안에 있다 */}
-            <PackingQueueCard orderId={openOrderId} />
-          </>
-        ) : undefined
-      }
-      /* 아무것도 안 펼쳤을 때 우측은 빈 자리로 둔다 — 흰 패널을 그리지 않는다 */
-      emptyDetail={null}
-    />
+          </Panel>
+        }
+        detail={
+          openOrderId !== null ? (
+            <>
+              <Panel className="shrink-0">
+                <QueryBoundary>
+                  <OrderSummaryCard orderId={openOrderId} />
+                </QueryBoundary>
+              </Panel>
+              {/* 회차가 하나도 없으면 카드째 사라진다 — 패널이 경계 안에 있다 */}
+              <PackingQueueCard orderId={openOrderId} />
+            </>
+          ) : undefined
+        }
+        /* 아무것도 안 펼쳤을 때 우측은 빈 자리로 둔다 — 흰 패널을 그리지 않는다 */
+        emptyDetail={null}
+      />
+    </QueryBoundaryGroup>
   );
 }
 
