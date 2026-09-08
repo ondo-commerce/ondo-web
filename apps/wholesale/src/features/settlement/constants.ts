@@ -112,24 +112,6 @@ export const ORDER_PAGE_SIZE = 100;
 /** 소매처 하나의 원장 한 페이지(최신순). 넘치면 표 아래 한 줄로 알린다 */
 export const LEDGER_PAGE_SIZE = 100;
 
-/**
- * 금액 입력 상한(⑤). 서버 `amount`가 int32라 그 이하여야 하고, 도매 거래에서 10억이 넘는 입금 한 건은 없다.
- * 칸에서 잘라 주지 않으면 서버 400을 보고서야 안다.
- */
-export const MAX_AMOUNT = 999_999_999;
-
-/**
- * 금액 칸에서 **키 자체를 막는** 글자(⑤). `inputMode="numeric"`은 모바일 키패드만 바꾸고 `pattern`은 제출 검증이라,
- * 데스크톱에서 `12.5`를 치면 `.`만 조용히 버려져 `125`가 된다(wire-order F7). 누른 순간 막아야 사장이 안다.
- */
-export const AMOUNT_BLOCKED_KEYS: ReadonlySet<string> = new Set([
-  ".",
-  "-",
-  "+",
-  "e",
-  "E",
-]);
-
 /** 입금 요청의 칸. `toFieldErrors`가 이 이름의 `VALIDATION_FAILED`를 그 칸에 붙인다 */
 export const DEPOSIT_FIELDS: readonly DepositField[] = [
   "retailerId",

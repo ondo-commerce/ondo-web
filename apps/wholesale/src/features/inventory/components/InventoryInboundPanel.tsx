@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Chip, ColorDot, Input, Panel, Table } from "@ondo/ui";
-import { useState, type FormEvent } from "react";
+import { Button, Chip, ColorDot, Panel, Table } from "@ondo/ui";
+import { useState } from "react";
 import { InboundConfirmDialog } from "./InboundConfirmDialog";
 import { useInboundMutation, useStockRefresh } from "../api/mutations";
 import { useInventoryProductQuery } from "../api/queries";
@@ -13,14 +13,19 @@ import {
   inboundErrorText,
   inboundNotice,
   inputOf,
-  isDigits,
+  overMaxCount,
   parseNumberInput,
   toInboundRequest,
   totalInboundQty,
 } from "../derive";
 import type { InboundDrafts, InboundEntry, InboundInput } from "../types";
 import { toFieldErrors } from "@/shared/api/fieldErrors";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
+import {
+  exceedsNumericMax,
+  NUMERIC_INPUT_MAX_TEXT,
+} from "@/shared/lib/numericInput";
 
 /**
  * 우측 모드 A — 상품 단위 일괄 입고 표(`POST /inbounds`, 라인 N줄).
@@ -59,6 +64,8 @@ export function InventoryInboundPanel({
      수량만 적힌 줄이 있으면 전체를 막는다 — 일부만 보내면 다 들어간 줄 안다 */
   const entries = inboundEntries(product.skus, drafts);
   const missingPrice = missingUnitPriceCount(product.skus, drafts);
+  /* 상한 넘긴 칸이 있으면 입고를 막는다 — 칸은 빨갛고 이유는 버튼 옆 한 줄(#199) */
+  const overMax = overMaxCount(product.skus, drafts);
   const totalQty = totalInboundQty(entries);
 
   /* 보낸 줄을 기억해 둔다 — 응답이 올 때쯤 입력이 바뀌어 있어도 그때 보낸 줄만 지운다 */
@@ -76,14 +83,6 @@ export function InventoryInboundPanel({
     // 고치기 시작하면 직전 결과(오류·처리됨)를 지운다 — 옛 오류가 새 입력 밑에 남지 않게
     if (inbound.error || inbound.isSuccess) inbound.reset();
     onDraftChange(variantId, { ...inputOf(drafts, variantId), [field]: raw });
-  };
-
-  /* 숫자 아닌 키·붙여넣기는 칸에 들어오기 전에 막는다(Q-03) */
-  const blockNonDigits = (event: FormEvent<HTMLInputElement>) => {
-    const data = (event.nativeEvent as InputEvent).data;
-    if (data !== null && data !== undefined && !isDigits(data)) {
-      event.preventDefault();
-    }
   };
 
   const confirm = () => {
@@ -148,26 +147,22 @@ export function InventoryInboundPanel({
                   </Table.Td>
                   <Table.Td align="center">{s.size}</Table.Td>
                   <Table.Td>
-                    <Input
+                    <NumericInput
                       size="sm"
-                      numeric
-                      inputMode="numeric"
                       className="w-20"
                       aria-label={`${s.color} ${s.size} 입고수량`}
+                      aria-invalid={exceedsNumericMax(value.qty)}
                       value={value.qty}
-                      onBeforeInput={blockNonDigits}
                       onChange={(e) => setField(s.id, "qty", e.target.value)}
                     />
                   </Table.Td>
                   <Table.Td>
-                    <Input
+                    <NumericInput
                       size="sm"
-                      numeric
-                      inputMode="numeric"
                       className="w-20"
                       aria-label={`${s.color} ${s.size} 매입단가`}
+                      aria-invalid={exceedsNumericMax(value.unitPrice)}
                       value={value.unitPrice}
-                      onBeforeInput={blockNonDigits}
                       onChange={(e) =>
                         setField(s.id, "unitPrice", e.target.value)
                       }
@@ -186,7 +181,11 @@ export function InventoryInboundPanel({
 
       {/* 거절 사유·처리 결과는 버튼 왼쪽 한 줄 — 패널 안, 입력 바로 아래다 */}
       <div className="mt-4 flex shrink-0 items-center justify-end gap-3">
-        {errorText ? (
+        {overMax > 0 ? (
+          <p role="alert" className="text-destructive-strong text-sm">
+            {NUMERIC_INPUT_MAX_TEXT} ({overMax}칸)
+          </p>
+        ) : errorText ? (
           <p role="alert" className="text-destructive-strong text-sm">
             {errorText}
           </p>
@@ -221,6 +220,7 @@ export function InventoryInboundPanel({
           disabled={
             entries.length === 0 ||
             missingPrice > 0 ||
+            overMax > 0 ||
             inbound.isPending ||
             isRefetchError
           }

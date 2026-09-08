@@ -106,10 +106,16 @@ export function ShipmentListView() {
     setNotice(null);
   };
 
-  /** 다른 소매처를 펼치면 선택 초기화 — 한 포장은 한 소매처 것이다 */
+  /**
+   * **다른** 소매처를 펼칠 때만 선택을 비운다 — 한 포장은 한 소매처 것이다.
+   * 같은 소매처를 접었다 펴면 골라 둔 줄이 남는다(wire-shipment F3, #205 · 주문 F8과 같은 규칙).
+   * 접혀 있는 동안 우측 패널은 안 그린다(`detail`) — 선택은 살아 있되 펼쳐야 보인다.
+   */
   const toggleRetailer = (retailerId: number) => {
+    if (openRetailerId !== null && openRetailerId !== retailerId) {
+      setSelection({});
+    }
     setOpenRetailerId((prev) => (prev === retailerId ? null : retailerId));
-    setSelection({});
     setVisibleIds(null);
     setSelectedOutboundId(null);
   };
@@ -199,7 +205,7 @@ export function ShipmentListView() {
   const selectedIds = new Set(rows.map((row) => row.id));
 
   const detail = (): ReactNode => {
-    if (stage === "ready" && rows.length > 0) {
+    if (stage === "ready" && openRetailerId !== null && rows.length > 0) {
       return (
         <Panel className="flex-1">
           <PackingWorkPanel

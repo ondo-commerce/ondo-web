@@ -19,13 +19,16 @@ import {
   type SettlementFilterValue,
 } from "../constants";
 import { toListQuery, type OrderListParams } from "../derive";
-import type { ShipInputs } from "../types";
+import type { ShipInputs, ShipInputsByOrder } from "../types";
 import { QueryBoundary, QueryBoundaryGroup } from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /** 검색어를 서버에 보내기까지 기다리는 시간. 글자마다 부르지 않기 위해서다 */
 const SEARCH_DEBOUNCE_MS = 300;
+
+/** 아직 아무것도 안 적은 주문의 입력. 렌더마다 `{}`를 새로 만들면 펼침이 매번 다시 그려진다 */
+const NO_INPUTS: ShipInputs = {};
 
 /**
  * 주문 관리 — 좌 목록 + 우 주문 카드.
@@ -59,13 +62,14 @@ export function OrderListView() {
   /** 펼친 주문. 한 번에 하나만 펼친다 — 우측 카드가 한 장뿐이기 때문이다 */
   const [openOrderId, setOpenOrderId] = useState<number | null>(null);
   /**
-   * `이번 출고` 입력값(라인 id → 문자열).
+   * `이번 출고` 입력값. **주문별로 든다**(주문 id → 라인 id → 문자열).
    *
    * 펼침 안(`OrderRowDetail`)이 아니라 여기 두는 이유: 검색어가 바뀌면 목록 경계가 다시
-   * 그려지는데 그 아래 있던 입력이 같이 사라지면 안 된다(F-03). 여기 있으면 목록이
-   * 다시 와도 같은 주문이 열려 있는 한 입력이 남는다.
+   * 그려지는데 그 아래 있던 입력이 같이 사라지면 안 된다(F-03). 주문별인 이유: 행을 접었다 펴거나
+   * 다른 주문을 갔다 와도 적어 둔 값이 남아야 한다(F8, #199). 다른 주문의 입력은 요청에 못 섞인다 —
+   * 확정·포장 요청은 펼친 주문의 맵만 읽는다. 버리는 건 서버가 받아 줬을 때뿐이다.
    */
-  const [shipInputs, setShipInputs] = useState<ShipInputs>({});
+  const [shipInputs, setShipInputs] = useState<ShipInputsByOrder>({});
   /** 지금 표에 있는 주문 id. 표가 알려 준다. 못 받았으면 null */
   const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
     null,
@@ -88,27 +92,23 @@ export function OrderListView() {
     page,
   };
 
-  /* 다른 주문을 펼치면 앞 주문의 입력값을 버린다 — 라인 id가 달라 섞이진 않지만,
-     화면에서 사라진 값이 뒤에 남아 있으면 확정 때 무엇이 반영될지 읽히지 않는다 */
-  const toggleOrder = (orderId: number) => {
+  /* 접어도 입력은 남는다(F8). 주문별 맵이라 다른 주문을 펼쳐도 섞이지 않는다 */
+  const toggleOrder = (orderId: number) =>
     setOpenOrderId((prev) => (prev === orderId ? null : orderId));
-    setShipInputs({});
-  };
 
   /* 필터를 바꾸면 펼침을 푼다. 안 그러면 목록에서 사라진 주문의 카드가 우측에 남는다.
-     검색은 풀지 않는다 — 한 글자 칠 때마다 입력이 날아가는 게 더 큰 손해다(F-03) */
+     검색은 풀지 않는다 — 한 글자 칠 때마다 입력이 날아가는 게 더 큰 손해다(F-03).
+     입력은 안 버린다 — 같은 주문을 다시 펼치면 그대로 있어야 한다 */
   const changeStatusFilter = (next: OrderFilterValue) => {
     setStatusFilter(next);
     setPage(1);
     setOpenOrderId(null);
-    setShipInputs({});
   };
 
   const changeSettlementFilter = (next: SettlementFilterValue) => {
     setSettlementFilter(next);
     setPage(1);
     setOpenOrderId(null);
-    setShipInputs({});
   };
 
   /*
@@ -134,10 +134,15 @@ export function OrderListView() {
   const openInList =
     openOrderId === null || (visibleIds?.has(openOrderId) ?? true);
 
-  const changeShipInput = (lineId: number, value: string) =>
-    setShipInputs((prev) => ({ ...prev, [lineId]: value }));
+  const changeShipInput = (orderId: number, lineId: number, value: string) =>
+    setShipInputs((prev) => ({
+      ...prev,
+      [orderId]: { ...(prev[orderId] ?? NO_INPUTS), [lineId]: value },
+    }));
 
-  const resetShipInputs = () => setShipInputs({});
+  /** 서버가 받아 준 뒤. 그 주문의 입력만 비운다 */
+  const resetShipInputs = (orderId: number) =>
+    setShipInputs((prev) => ({ ...prev, [orderId]: undefined }));
 
   return (
     <QueryBoundaryGroup>
@@ -211,9 +216,11 @@ export function OrderListView() {
                 renderDetail={(orderId) => (
                   <OrderRowDetail
                     orderId={orderId}
-                    inputs={shipInputs}
-                    onInputChange={changeShipInput}
-                    onInputsReset={resetShipInputs}
+                    inputs={shipInputs[orderId] ?? NO_INPUTS}
+                    onInputChange={(lineId, value) =>
+                      changeShipInput(orderId, lineId, value)
+                    }
+                    onInputsReset={() => resetShipInputs(orderId)}
                   />
                 )}
               />

@@ -1,8 +1,9 @@
 "use client";
 
-import { Input, Table } from "@ondo/ui";
+import { Table } from "@ondo/ui";
 import { parseAllocationInput, remainingQty } from "../derive";
 import type { AllocationDraft, BackorderLineView } from "../types";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -47,21 +48,12 @@ export function BackorderAllocationTable({
               <Table.Td align="left">{line.customer}</Table.Td>
               <Table.Td>{formatNumber(line.qty)}</Table.Td>
               <Table.Td>
-                <Input
+                {/* 숫자 아닌 글자(소수점·부호·전각)는 `NumericInput`이 칸 앞에서 막고 테두리로 알린다(F11·F6) */}
+                <NumericInput
                   size="sm"
-                  numeric
-                  inputMode="numeric"
                   className="w-16"
                   aria-label={`주문 ${line.orderNo} ${line.customer} 배분 수량`}
                   value={String(allocated)}
-                  /* 숫자 아닌 글자(소수점·부호·전각)는 칸에 들어가기 전에 막는다 — onChange에서
-                     거르면 React가 값을 되돌리는 사이 다음 글자가 이어 붙어 `1.5`가 `15`로
-                     10배가 된다(F11). 붙여넣기도 같은 이벤트라 같이 걸린다 */
-                  onBeforeInput={(e) => {
-                    const data = (e.nativeEvent as InputEvent).data;
-                    if (data !== null && !/^\d*$/.test(data))
-                      e.preventDefault();
-                  }}
                   onChange={(e) => {
                     const next = parseAllocationInput(e.target.value);
                     if (next !== null) onChange(line.id, next);

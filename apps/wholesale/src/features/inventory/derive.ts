@@ -1,4 +1,5 @@
 import { isApiError } from "@ondo/api";
+import { exceedsNumericMax, isDigits } from "@/shared/lib/numericInput";
 import {
   INBOUND_ERROR_TEXT,
   MOVEMENT_PAGE_SIZE,
@@ -246,19 +247,34 @@ export function stockAfterInbound(stock: number, added: number | null): number {
  * 입력 → 요청
  * ------------------------------------------------------------------------ */
 
-/** 칸에 들어갈 수 있는 글자 — 0 이상 정수의 숫자뿐. 소수점·부호·쉼표는 키 단위로 막는다(Q-03) */
-export function isDigits(text: string): boolean {
-  return /^\d*$/.test(text);
-}
-
 /**
  * 숫자 입력칸의 문자열 → 수량/금액.
  * 빈칸과 0을 구분해야 해서 빈칸은 null이다 — "안 적었다"와 "0을 적었다"는 다르다.
  * 숫자가 아닌 글자가 섞여 있으면(붙여넣기) null — 일부만 살려 `45.5`가 `455`가 되지 않게.
+ * **상한(`NUMERIC_INPUT_MAX`)을 넘겨도 null** — 그대로 받으면 예상 금액에 쓰레기값이 뜨고 요청에
+ * 부동소수가 실린다(wire-inventory F3). 왜 비어 보이는지는 `overMaxCount`가 문구로 말한다.
  */
 export function parseNumberInput(raw: string): number | null {
-  if (raw === "" || !isDigits(raw)) return null;
+  if (raw === "" || !isDigits(raw) || exceedsNumericMax(raw)) return null;
   return Number(raw);
+}
+
+/**
+ * 상한을 넘긴 칸의 수(수량·단가 합쳐서). 하나라도 있으면 입고를 막고 칸 옆 한 줄로 이유를 말한다 —
+ * 조용히 자르면(maxLength) 사장은 25자리를 붙여넣고도 9자리가 들어간 줄 모른다.
+ */
+export function overMaxCount(
+  skus: readonly InventorySkuView[],
+  drafts: InboundDrafts,
+): number {
+  return skus.reduce((count, s) => {
+    const input = inputOf(drafts, s.id);
+    return (
+      count +
+      (exceedsNumericMax(input.qty) ? 1 : 0) +
+      (exceedsNumericMax(input.unitPrice) ? 1 : 0)
+    );
+  }, 0);
 }
 
 export const EMPTY_INPUT: InboundInput = { qty: "", unitPrice: "" };

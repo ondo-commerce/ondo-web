@@ -1,9 +1,9 @@
 "use client";
 
-import { Input, Table } from "@ondo/ui";
+import { Table } from "@ondo/ui";
 import { OrderStatusBadge, SettlementBadge } from "./StatusBadge";
-import { AMOUNT_BLOCKED_KEYS } from "../constants";
 import type { OrderRowView } from "../types";
+import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -64,15 +64,9 @@ export function AllocationTable({
               </Table.Td>
               <Table.Td>{formatNumber(order.outstanding)}</Table.Td>
               <Table.Td>
-                <Input
+                {/* 상한은 따로 안 본다 — 부르는 쪽이 미수·입금액 잔여로 자른다(clampAllocation) */}
+                <NumericInput
                   size="sm"
-                  numeric
-                  inputMode="numeric"
-                  /* 소수점·음수 키는 누른 순간 막는다 — 조용히 버려지는 글자가 없게(⑤) */
-                  pattern="[0-9,]*"
-                  onKeyDown={(e) => {
-                    if (AMOUNT_BLOCKED_KEYS.has(e.key)) e.preventDefault();
-                  }}
                   className="w-25"
                   aria-label={`주문 ${order.orderNumber} 배분액`}
                   disabled={disabled}
