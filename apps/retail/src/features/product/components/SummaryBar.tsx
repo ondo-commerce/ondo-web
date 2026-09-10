@@ -91,8 +91,10 @@ export function SummaryBar({
                 : "장바구니 담기"}
           </Button>
           {/* 못 누를 때는 진짜 disabled 버튼이다 — asChild + Link 로 두면
-              `disabled`가 <a>에 아무 효력이 없어 잠긴 상품에서도 이동한다 */}
-          {blocked ? (
+              `disabled`가 <a>에 아무 효력이 없어 잠긴 상품에서도 이동한다.
+              담는 중에도 잠근다 — 응답을 기다리다 누르면 `담았어요` 신호를 못
+              보고 주문서로 넘어가는데, 주문서는 아직 refresh 전 장바구니를 읽는다 */}
+          {blocked || adding ? (
             <Button disabled>바로 주문하기</Button>
           ) : (
             <Button asChild>
