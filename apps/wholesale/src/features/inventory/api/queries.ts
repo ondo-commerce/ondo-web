@@ -1,21 +1,30 @@
 "use client";
 
-import { useQueries, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  useQueries,
+  useQueryClient,
+  useSuspenseQuery,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { apiFetchPage, type PageMeta } from "@ondo/api";
+import { useMemo } from "react";
 import { inventoryKeys } from "./keys";
 import {
   toInventoryRow,
   toMovementQuery,
   toMovementView,
   toProductView,
+  type DetailQueryState,
 } from "../derive";
 import type {
+  InventoryProductView,
   InventoryRowView,
   StockMovement,
   StockMovementView,
 } from "../types";
 import {
   productDetailQueryOptions,
+  productKeys,
   productListQueryOptions,
   type ProductListQuery,
 } from "@/shared/api/product";
@@ -39,6 +48,25 @@ export const INVENTORY_PATH = {
  */
 
 /**
+ * 상세 N개에서 행이 읽는 것(`data`·`error`)만 남긴다.
+ *
+ * **모듈 스코프여야 한다.** TanStack은 `combine`의 참조가 같을 때만 결과를 구조 공유해서,
+ * 데이터가 안 바뀌면 같은 배열을 돌려준다. 인라인 함수면 렌더마다 새 배열이다.
+ * `refetch` 같은 함수를 같이 담지 않는 것도 같은 이유 — 함수는 매번 다른 값이라 공유가 깨진다.
+ */
+function pickDetailStates(
+  results: UseQueryResult<InventoryProductView>[],
+): DetailQueryState[] {
+  return results.map((result) => ({
+    data: result.data,
+    error: result.error,
+  }));
+}
+
+/** 아직 상세 결과가 없는 행. 오는 중이라는 뜻이다 */
+const DETAIL_PENDING: DetailQueryState = { data: undefined, error: null };
+
+/**
  * 재고 목록 한 페이지 = 상품 목록 + **행마다 상세 하나씩**.
  *
  * 목록 응답(`ProductSummaryResponse`)에는 재고 합계가 없다(04-wire §3-1). 상품 행의
@@ -57,22 +85,33 @@ export function useInventoryListQuery(query: ProductListQuery): {
   /** 실패한 행의 상세만 다시 부른다. 표는 그대로다 */
   retryDetail: (productId: number) => void;
 } {
+  const queryClient = useQueryClient();
   const { data: page } = useSuspenseQuery(productListQueryOptions(query));
   const details = useQueries({
     queries: page.items.map((summary) => ({
       ...productDetailQueryOptions(summary.id),
       select: toProductView,
     })),
+    combine: pickDetailStates,
   });
-  const rows = page.items.map((summary, i) =>
-    toInventoryRow(summary, {
-      data: details[i]?.data,
-      error: details[i]?.error,
-    }),
+  /*
+   * **`rows`의 참조가 데이터가 같으면 유지돼야 한다.** 표가 이 배열을 effect 의존성으로 보고
+   * 부모에게 "지금 표에 있는 상품 id"를 알리는데(#198 목록 밖 카드), 렌더마다 새 배열이면
+   * effect → 부모 상태 → 재렌더 → 새 배열이 꼬리를 물어 무한 루프가 된다(#216).
+   * `page`는 useSuspenseQuery가, `details`는 위 combine이 구조 공유하므로 둘이 같으면 같은 행이다.
+   */
+  const rows = useMemo(
+    () =>
+      page.items.map((summary, i) =>
+        toInventoryRow(summary, details[i] ?? DETAIL_PENDING),
+      ),
+    [page.items, details],
   );
+  /* 키로 다시 부른다 — useQueries 결과에서 refetch를 꺼내 들고 있으면 위 구조 공유가 깨진다 */
   const retryDetail = (productId: number) => {
-    const i = page.items.findIndex((summary) => summary.id === productId);
-    void details[i]?.refetch();
+    void queryClient.refetchQueries({
+      queryKey: productKeys.detail(productId),
+    });
   };
   return { rows, meta: page.meta, retryDetail };
 }
