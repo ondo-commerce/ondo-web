@@ -94,6 +94,28 @@ export function applyDrafts(
 }
 
 /**
+ * lineId → 서버에 저장된 수량. 스토어의 `prune`이 이걸 받아 사라진 줄의 흔적을
+ * 지우고, 서버 값이 대신할 수 있는 draft를 놓는다(#176).
+ */
+export function serverQtyOf(
+  lines: readonly CartLine[],
+): ReadonlyMap<string, number> {
+  return new Map(lines.map((line) => [line.lineId, line.qty]));
+}
+
+/**
+ * 칸의 글자를 서버 값이 대신해도 되는가. 글자를 읽은 수량이 서버 수량과 같으면
+ * 그렇다 — `0000012`와 `12`는 같은 수량이라 서버 값이 보기 좋다. 못 읽는
+ * 글자(`45.5`)는 0장이라 서버 수량과 같을 수 없고, 상한을 넘긴 글자도 `parseQty`가
+ * 500으로 접어 서버 500과 같아지는데 그 글자는 `setDraft` 전에 이미 `500`으로
+ * 바뀌어 있다 — 그래서 `issue`가 있으면 놓지 않는다.
+ */
+export function draftSettled(draft: string, serverQty: number): boolean {
+  const { qty, issue } = parseQty(draft);
+  return issue === null && draft.trim() !== "" && qty === serverQty;
+}
+
+/**
  * DELETE는 성공했는데 `router.refresh()`가 아직 안 닿은 줄을 뺀다. 그 사이에도
  * 줄이 남아 있으면 사장이 "안 지워졌나" 하고 한 번 더 누른다.
  */

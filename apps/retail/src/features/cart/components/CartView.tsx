@@ -33,6 +33,7 @@ import {
   selectedIds,
   selectedLines,
   selectionCounter,
+  serverQtyOf,
   toRemovedLines,
   totalsOf,
   visibleLines,
@@ -41,6 +42,7 @@ import {
   clearRemoved,
   forgetRestored,
   hideLines,
+  markSaved,
   prune,
   rememberRemoved,
   revertDraft,
@@ -83,14 +85,15 @@ export function CartView({
   const restore = useRestoreCartItemsMutation();
   /* 저장 실패는 칸을 서버 값으로 되돌리고 그 줄에 이유를 남긴다 — 저장 안 된
      숫자를 칸에 두면 합계가 서버와 다른 값을 말한다 */
-  const saveQty = useQtySaver({ onFailed: revertDraft });
+  const saveQty = useQtySaver({ onFailed: revertDraft, onSaved: markSaved });
   /* 빼기·되돌리기가 서버에서 거절됐을 때. 수량 저장 실패는 줄마다 따로 뜬다 */
   const [failure, setFailure] = useState<string | null>(null);
 
-  /* 서버 목록에서 사라진 줄의 흔적(숨김 · 선택 해제 · draft)을 지운다.
-     refresh가 닿았다는 신호가 곧 이 prop이 바뀌는 것이다 */
+  /* 서버 목록에서 사라진 줄의 흔적(숨김 · 선택 해제 · draft)을 지우고, 서버 값이
+     대신할 수 있는 draft를 놓는다. refresh가 닿았다는 신호가 곧 이 prop이 바뀌는
+     것이다 — 다른 화면에 갔다 돌아온 첫 렌더도 서버가 새로 말한 것이다 */
   useEffect(() => {
-    prune(new Set(serverLines.map((line) => line.lineId)));
+    prune(serverQtyOf(serverLines));
   }, [serverLines]);
 
   const lines = applyDrafts(visibleLines(serverLines, ui.hidden), ui.drafts);

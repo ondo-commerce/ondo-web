@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { draftSettled } from "./derive";
 import type { CartLineIssue, RemovedLine } from "./types";
 
 /**
@@ -31,10 +32,19 @@ interface CartUiState {
    * lineId → 수량 칸의 글자. 서버 값과 다를 때만 의미가 있다.
    *
    * 못 읽는 글자(`45.5`)도 여기 그대로 남는다 — 지우면 사장이 무엇을 쳤는지
-   * 화면이 되돌려 말할 수 없다. 저장이 성공해도 지우지 않는다: 지우는 순간
-   * `router.refresh()`가 닿기 전까지 칸이 서버의 **옛** 값으로 튄다.
+   * 화면이 되돌려 말할 수 없다. 저장이 성공한 **그 자리에서** 지우지도 않는다:
+   * 지우는 순간 `router.refresh()`가 닿기 전까지 칸이 서버의 **옛** 값으로 튄다.
+   * 놓는 때는 서버가 다시 말했을 때다(`prune`) — 서버 수량이 글자와 같아졌거나
+   * 저장이 끝난 줄(`saved`)이면 서버 값을 보여 준다. 안 놓으면 다른 탭에서 바꾸거나
+   * 같은 SKU를 또 담아 서버가 합산한 뒤에도 칸은 새로고침 전까지 옛 글자다(#176).
    */
   drafts: Readonly<Record<string, string>>;
+  /**
+   * 저장이 끝난 줄. 서버가 다음에 말할 때 그 줄의 draft를 놓는다 — 서버가 받은
+   * 값이 곧 보여 줄 값이라, 글자와 달라도(서버가 고쳐 저장한 경우) 서버가 이긴다.
+   * 새 글자를 치면 빠진다: 아직 안 보낸 글자를 서버 값으로 덮으면 안 된다.
+   */
+  saved: ReadonlySet<string>;
   /**
    * lineId → 걸린 이유. 값과 따로 산다 — 상한 초과는 값을 500으로 되돌리는데,
    * 값만 봐서는 왜 500이 됐는지 알 수 없어서 문구가 같이 사라진다.
@@ -58,6 +68,7 @@ interface CartUiState {
 const INITIAL: CartUiState = {
   deselected: new Set(),
   drafts: {},
+  saved: new Set(),
   issues: {},
   hidden: new Set(),
   lastRemoved: null,
@@ -99,14 +110,31 @@ export function setDraft(
   text: string,
   issue: CartLineIssue | null,
 ): void {
+  /* 새 글자는 아직 서버에 없다 — 앞선 저장이 끝났다는 표시가 남아 있으면
+     다음 refresh가 이 글자를 서버의 옛 값으로 덮는다 */
+  const saved = new Set(state.saved);
+  saved.delete(lineId);
+
   commit({
     ...state,
     drafts: { ...state.drafts, [lineId]: text },
+    saved,
     issues: { ...state.issues, [lineId]: issue },
     /* 되돌리기는 **방금 그 일괄 삭제 한 번**에 대한 것이다. 다른 조작을 한 뒤에도
        남아 있으면 무엇이 되돌아오는지 사장이 알 수 없다 */
     lastRemoved: null,
   });
+}
+
+/**
+ * 저장이 끝난 줄. draft는 아직 두고 표시만 남긴다 — 지금 지우면 refresh가 닿기
+ * 전까지 칸이 옛 값으로 튄다. 서버가 다시 말하는 순간 `prune`이 놓는다.
+ * 응답이 오기 전에 사장이 또 쳤으면(`setDraft`가 표시를 지운 뒤) 표시하지 않는다 —
+ * 그 글자는 다음 저장 몫이다.
+ */
+export function markSaved(lineId: string): void {
+  if (state.drafts[lineId] === undefined) return;
+  commit({ ...state, saved: new Set([...state.saved, lineId]) });
 }
 
 /**
@@ -116,10 +144,13 @@ export function setDraft(
 export function revertDraft(lineId: string): void {
   const drafts = { ...state.drafts };
   delete drafts[lineId];
+  const saved = new Set(state.saved);
+  saved.delete(lineId);
 
   commit({
     ...state,
     drafts,
+    saved,
     issues: { ...state.issues, [lineId]: "SAVE_FAILED" },
   });
 }
@@ -159,10 +190,12 @@ export function setLinesSelected(
 export function hideLines(lineIds: readonly string[]): void {
   const gone = new Set(lineIds);
   const drafts = { ...state.drafts };
+  const saved = new Set(state.saved);
   const issues = { ...state.issues };
   const deselected = new Set(state.deselected);
   for (const id of gone) {
     delete drafts[id];
+    saved.delete(id);
     delete issues[id];
     deselected.delete(id);
   }
@@ -171,6 +204,7 @@ export function hideLines(lineIds: readonly string[]): void {
     ...state,
     deselected,
     drafts,
+    saved,
     issues,
     hidden: new Set([...state.hidden, ...gone]),
     lastRemoved: null,
@@ -201,27 +235,37 @@ export function forgetRestored(lineIds: readonly string[]): void {
 }
 
 /**
- * 서버 목록에 더는 없는 줄의 흔적을 지운다. `hidden`은 refresh가 닿았다는 뜻이고,
- * 나머지는 다른 탭에서 뺐거나 주문으로 넘어간 줄이다.
+ * 서버가 다시 말했을 때 맞춘다. 두 가지를 한다.
+ *
+ * ① 서버 목록에 더는 없는 줄의 흔적을 지운다. `hidden`은 refresh가 닿았다는
+ *    뜻이고, 나머지는 다른 탭에서 뺐거나 주문으로 넘어간 줄이다.
+ * ② **놓아도 되는 draft를 놓는다** — 서버 수량이 글자와 같아졌거나(`0000012`는
+ *    `12`로), 저장이 끝난 줄(`saved`)이면 서버 값이 보여 줄 값이다. id만 보고
+ *    수량을 안 보면 서버가 달라진 뒤에도 칸이 새로고침 전까지 옛 글자다(#176).
+ *
  * 바뀔 게 없으면 commit하지 않는다 — 렌더마다 부르는 자리라 무한 재렌더가 된다.
  */
-export function prune(liveIds: ReadonlySet<string>): void {
-  const staleHidden = [...state.hidden].filter((id) => !liveIds.has(id));
-  const staleDeselected = [...state.deselected].filter(
-    (id) => !liveIds.has(id),
-  );
-  const staleDrafts = Object.keys(state.drafts).filter(
-    (id) => !liveIds.has(id),
-  );
-  const staleIssues = Object.keys(state.issues).filter(
-    (id) => !liveIds.has(id),
-  );
+export function prune(
+  /** lineId → 서버에 저장된 수량. 키 집합이 곧 살아 있는 줄이다 */
+  serverQty: ReadonlyMap<string, number>,
+): void {
+  const live = (id: string) => serverQty.has(id);
+  const staleHidden = [...state.hidden].filter((id) => !live(id));
+  const staleDeselected = [...state.deselected].filter((id) => !live(id));
+  const staleIssues = Object.keys(state.issues).filter((id) => !live(id));
+  const staleSaved = [...state.saved].filter((id) => !live(id));
+  const staleDrafts = Object.keys(state.drafts).filter((id) => {
+    const qty = serverQty.get(id);
+    if (qty === undefined) return true;
+    return state.saved.has(id) || draftSettled(state.drafts[id] ?? "", qty);
+  });
 
   if (
     staleHidden.length === 0 &&
     staleDeselected.length === 0 &&
     staleDrafts.length === 0 &&
-    staleIssues.length === 0
+    staleIssues.length === 0 &&
+    staleSaved.length === 0
   ) {
     return;
   }
@@ -229,13 +273,20 @@ export function prune(liveIds: ReadonlySet<string>): void {
   const hidden = new Set(state.hidden);
   const deselected = new Set(state.deselected);
   const drafts = { ...state.drafts };
+  const saved = new Set(state.saved);
   const issues = { ...state.issues };
   for (const id of staleHidden) hidden.delete(id);
   for (const id of staleDeselected) deselected.delete(id);
-  for (const id of staleDrafts) delete drafts[id];
+  /* 놓은 draft의 저장 표시도 같이 지운다 — 남겨 두면 다음 글자를 치기 전에
+     온 refresh가 없는 draft를 또 놓으려 든다(아무 일도 없지만 commit이 돈다) */
+  for (const id of staleDrafts) {
+    delete drafts[id];
+    saved.delete(id);
+  }
+  for (const id of staleSaved) saved.delete(id);
   for (const id of staleIssues) delete issues[id];
 
-  commit({ ...state, hidden, deselected, drafts, issues });
+  commit({ ...state, hidden, deselected, drafts, saved, issues });
 }
 
 /** 화면이 읽는 UI 상태 전부 */

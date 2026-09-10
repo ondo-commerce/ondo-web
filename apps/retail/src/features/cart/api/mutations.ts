@@ -161,6 +161,11 @@ export function useCartBusy(): boolean {
  */
 export function useQtySaver(callbacks: {
   onFailed: (lineId: string, error: unknown) => void;
+  /**
+   * 서버가 받았다. 부르는 쪽이 그 줄의 draft를 "서버가 다시 말하면 놓을 것"으로
+   * 표시한다(#176) — 여기서 지우면 refresh가 닿기 전까지 칸이 옛 값으로 튄다.
+   */
+  onSaved: (lineId: string) => void;
 }) {
   const { mutate } = useChangeQtyMutation();
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -169,9 +174,9 @@ export function useQtySaver(callbacks: {
   );
   /* 콜백이 렌더마다 새 함수여도 저장기는 같은 함수로 남게 ref로 받는다.
      렌더 중에 ref를 쓰지 않고(react-hooks/refs) 커밋 뒤에 최신 것으로 바꾼다 */
-  const onFailed = useRef(callbacks.onFailed);
+  const handlers = useRef(callbacks);
   useEffect(() => {
-    onFailed.current = callbacks.onFailed;
+    handlers.current = callbacks;
   });
 
   const send = useCallback(
@@ -181,7 +186,8 @@ export function useQtySaver(callbacks: {
       timers.current.delete(lineId);
       if (!input) return;
       mutate(input, {
-        onError: (error) => onFailed.current(lineId, error),
+        onSuccess: () => handlers.current.onSaved(lineId),
+        onError: (error) => handlers.current.onFailed(lineId, error),
       });
     },
     [mutate],
