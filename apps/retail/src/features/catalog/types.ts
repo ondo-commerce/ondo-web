@@ -74,6 +74,15 @@ export interface CatalogFilter {
   price: string;
 }
 
+/**
+ * 화면이 드롭다운으로 세우는 축. **`false`인 축은 주소에 값이 실려 와도 `전체`다.**
+ *
+ * 드롭다운만 감추고 주소는 그대로 읽으면 `/wholesalers/3?price=10000`이 서버에
+ * 그대로 걸려 목록은 줄고 `초기화`는 켜지는데, 어느 축이 걸렸는지 보여 줄 칩이
+ * 없다(#181). 그래서 감춘 축은 `resolveFilter`가 읽는 단계에서 같이 끊는다.
+ */
+export type FilterAxes = Record<keyof CatalogFilter, boolean>;
+
 /** 서버가 잘라 준 목록의 크기. `상품 N개 · 전체 M개`와 `더 보기`가 이걸 읽는다 */
 export interface CatalogPaging {
   /** 지금 화면에 실제로 그려진 카드 수 */

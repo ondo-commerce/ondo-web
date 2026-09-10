@@ -1,5 +1,6 @@
 import type { SearchParams } from "@ondo/api";
 import {
+  ALL_AXES,
   FILTER_ALL,
   LIST_PARAM,
   MAX_PAGE_SIZE,
@@ -8,6 +9,7 @@ import {
 } from "./constants";
 import type {
   CatalogFilter,
+  FilterAxes,
   CatalogOptions,
   CatalogPaging,
   CatalogProduct,
@@ -147,23 +149,31 @@ function resolveOne(
 /**
  * 주소 → 필터. 허용 목록이 서버 값(`options`)이라 카테고리·컬러 id가 사라지면
  * 그 축은 저절로 `전체`가 된다.
+ *
+ * `axes`가 `false`인 축은 **주소를 읽지도 않는다.** 도매처 홈처럼 드롭다운을
+ * 감춘 축이 주소로만 걸리면 목록은 줄고 `초기화`는 켜지는데 무엇이 걸렸는지
+ * 화면에 아무 표시가 없다(#181). 드롭다운이 없으면 걸릴 길도 없어야 한다.
  */
 export function resolveFilter(
   params: Record<string, string | string[] | undefined>,
   options: CatalogOptions,
+  axes: FilterAxes = ALL_AXES,
 ): CatalogFilter {
+  const read = (key: keyof CatalogFilter, allowed: readonly string[]) =>
+    axes[key] ? resolveOne(one(params, LIST_PARAM[key]), allowed) : FILTER_ALL;
+
   return {
-    category: resolveOne(
-      one(params, LIST_PARAM.category),
+    category: read(
+      "category",
       options.categories.map((c) => String(c.id)),
     ),
-    color: resolveOne(
-      one(params, LIST_PARAM.color),
+    color: read(
+      "color",
       options.colors.map((c) => String(c.id)),
     ),
-    size: resolveOne(one(params, LIST_PARAM.size), options.sizes),
-    price: resolveOne(
-      one(params, LIST_PARAM.price),
+    size: read("size", options.sizes),
+    price: read(
+      "price",
       PRICE_BANDS.map((b) => b.value),
     ),
   };

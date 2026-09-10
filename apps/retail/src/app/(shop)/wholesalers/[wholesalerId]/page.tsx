@@ -5,6 +5,7 @@ import { getCatalogOptions } from "@/app/(shop)/masters";
 import {
   LISTING_PATH,
   MAX_PAGE_SIZE,
+  WHOLESALER_HOME_AXES,
   WholesalerHomeView,
   isFilterEmpty,
   productsOfWholesaler,
@@ -81,7 +82,12 @@ export async function generateMetadata({
 export default async function Page({ params, searchParams }: PageProps) {
   const { wholesalerId } = await params;
   const options = await getCatalogOptions();
-  const filter = resolveFilter(await searchParams, options);
+  /* 가격대 축은 이 화면에 드롭다운이 없다 — 주소에 실려 와도 읽지 않는다(#181) */
+  const filter = resolveFilter(
+    await searchParams,
+    options,
+    WHOLESALER_HOME_AXES,
+  );
 
   const all = await getWholesalerListings(wholesalerId);
 

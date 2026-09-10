@@ -13,7 +13,11 @@ export { WishlistView } from "./components/WishlistView";
  * 해서, 서버 전용 모듈이 섞이면 번들이 깨진다. fetch 자체는 `app/`이 한다.
  */
 export { LISTING_PATH } from "./api/paths";
-export { MAX_PAGE_SIZE, WISHLIST_SORTS } from "./constants";
+export {
+  MAX_PAGE_SIZE,
+  WHOLESALER_HOME_AXES,
+  WISHLIST_SORTS,
+} from "./constants";
 export {
   isFilterEmpty,
   productsOfWholesaler,

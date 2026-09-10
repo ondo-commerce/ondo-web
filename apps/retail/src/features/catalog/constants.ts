@@ -1,4 +1,4 @@
-import type { CatalogSort } from "./types";
+import type { CatalogSort, FilterAxes } from "./types";
 
 /**
  * 필터의 `전체` 값. 상태 코드와 섞이지 않게 별도 값으로 둔다.
@@ -30,6 +30,21 @@ export const PRICE_BANDS: readonly PriceBand[] = [
   { value: "20000", label: "2만 ~ 3만원", min: 20000, max: 30000 },
   { value: "30000", label: "3만원 이상", min: 30000, max: null },
 ];
+
+/** 홈 — 네 축 전부 드롭다운이 있다 */
+export const ALL_AXES: FilterAxes = {
+  category: true,
+  color: true,
+  size: true,
+  price: true,
+};
+
+/**
+ * 도매처 홈 — 가격대 축이 없다. 한 도매처 안이라 가격 폭이 좁아 축이 안 나뉜다.
+ * 드롭다운을 그리는 쪽과 주소를 읽는 쪽(`page.tsx`)이 **같은 값**을 봐야 한 쪽만
+ * 감춘 축이 생기지 않는다(#181).
+ */
+export const WHOLESALER_HOME_AXES: FilterAxes = { ...ALL_AXES, price: false };
 
 /** 정렬 라벨. 찜 목록만 정렬이 있다 — 목록 API에 정렬 파라미터가 없다 */
 export const SORT_LABEL: Record<CatalogSort, string> = {

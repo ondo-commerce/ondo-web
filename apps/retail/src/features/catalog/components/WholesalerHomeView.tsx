@@ -6,6 +6,7 @@ import Link from "next/link";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { ongoingCount, type TradeStats } from "@/shared/tradeStats";
 import { CatalogSection } from "./CatalogSection";
+import { WHOLESALER_HOME_AXES } from "../constants";
 import { formatUnpaid } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
@@ -92,14 +93,16 @@ export function WholesalerHomeView({
       <div className="mt-2">
         <Panel>
           <Panel.Title>전체 상품</Panel.Title>
-          {/* 가격대 필터가 없다 — 한 도매처 안이라 가격 폭이 좁아 축이 안 나뉜다 */}
+          {/* 가격대 필터가 없다 — 한 도매처 안이라 가격 폭이 좁아 축이 안 나뉜다.
+              감추는 축은 `page.tsx`가 주소를 읽을 때 쓰는 것과 같은 상수다 —
+              드롭다운만 감추면 `?price=`가 주소로 걸린다(#181) */}
           <CatalogSection
             basePath={`/wholesalers/${wholesaler.id}`}
             products={products}
             filter={filter}
             options={options}
             paging={paging}
-            showPriceFilter={false}
+            showPriceFilter={WHOLESALER_HOME_AXES.price}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
           />
