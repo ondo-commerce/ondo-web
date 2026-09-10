@@ -35,8 +35,6 @@ import {
  */
 export const INVENTORY_PATH = {
   inbounds: "/api/wholesale/inbounds",
-  stockAdjustments: (variantId: number) =>
-    `/api/wholesale/variants/${variantId}/stock-adjustments`,
   stockMovements: (variantId: number) =>
     `/api/wholesale/variants/${variantId}/stock-movements`,
 } as const;
