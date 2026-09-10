@@ -34,6 +34,7 @@ export function PostPriceTable({
   showAvgCost = true,
   describedBy,
   flagMissingPrice = false,
+  flaggedRowIds = [],
 }: {
   /**
    * 오류 포커스 대상의 DOM id(`fieldId("listing.variantPrices")`). 저장이 막히면
@@ -67,6 +68,12 @@ export function PostPriceTable({
    * 안 막으므로(dev-verify F6) 저장이 막힌 이유를 칸이 가리켜야 한다.
    */
   flagMissingPrice?: boolean;
+  /**
+   * 서버가 지적한 행(`ProductFormErrors.priceRowIds`). 그 행의 두 칸을 빨갛게 해서
+   * 표 아래 한 줄이 어느 행 얘기인지 가리키고, 첫 오류 포커스가 그 행으로 간다(#210).
+   * 값으로는 판정할 수 없는 오류라(서버만 아는 규칙) 행 id로 받는다.
+   */
+  flaggedRowIds?: readonly string[];
 }) {
   /*
    * 일괄 입력 칸의 값. 폼 값이 아니라 이 표만의 상태다 — 저장에 실리는 건 행마다
@@ -138,6 +145,7 @@ export function PostPriceTable({
       <Table.Body>
         {rows.map((row) => {
           const value = values[row.id] ?? EMPTY_PRICE_VALUE;
+          const flagged = flaggedRowIds.includes(row.id);
 
           return (
             <Table.Row key={row.id}>
@@ -163,7 +171,7 @@ export function PostPriceTable({
                   className={INVALID_INPUT_CLASS}
                   disabled={disabled}
                   value={value.orderLimit}
-                  aria-invalid={!isIntegerInput(value.orderLimit)}
+                  aria-invalid={flagged || !isIntegerInput(value.orderLimit)}
                   onChange={(e) =>
                     onChange(row.id, { ...value, orderLimit: e.target.value })
                   }
@@ -184,6 +192,7 @@ export function PostPriceTable({
                   disabled={disabled}
                   value={value.price}
                   aria-invalid={
+                    flagged ||
                     !isIntegerInput(value.price) ||
                     (flagMissingPrice && isPriceMissing(value.price))
                   }

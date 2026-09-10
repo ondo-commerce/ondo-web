@@ -296,6 +296,17 @@ export function isPriceMissing(text: string): boolean {
 }
 
 /**
+ * 요청 `variantPrices[i]`의 i번째가 가리키는 가격표 행 id. **`toListingRequest`와 같은 순서**다
+ * (색상 순 → 그 색의 사이즈 순). 서버가 `listing.variantPrices[i].*`로 지적하면 이 배열의
+ * i번째 행이 그 칸이다 — 순서가 어긋나면 엉뚱한 행이 빨개지므로 두 곳이 같은 함수를 쓴다.
+ */
+export function requestPriceRowIds(product: ProductFormValue): string[] {
+  return product.options.flatMap((option) =>
+    option.sizes.map((size) => priceRowId(option.color.id, size)),
+  );
+}
+
+/**
  * 요청에 실릴 행(옵션 매트릭스의 색×사이즈) 가운데 `failed`에 걸리는 행의 id.
  * `prices`에 남은 옛 키(지운 색)는 보지 않는다 — 안 보낼 칸이 저장을 막으면 안 된다.
  * 아직 안 친 칸은 빈 값으로 본다(요청에도 그렇게 실린다).
@@ -305,10 +316,8 @@ function priceRowIdsWhere(
   post: PostFormValue,
   failed: (value: PriceValue) => boolean,
 ): string[] {
-  return product.options.flatMap((option) =>
-    option.sizes
-      .map((size) => priceRowId(option.color.id, size))
-      .filter((id) => failed(post.prices[id] ?? EMPTY_PRICE_VALUE)),
+  return requestPriceRowIds(product).filter((id) =>
+    failed(post.prices[id] ?? EMPTY_PRICE_VALUE),
   );
 }
 
@@ -391,6 +400,9 @@ export function toPostForm(product: ProductView): PostFormValue {
  * (colorId, size) 중 한쪽만"). `existing`에 색상 id + 사이즈가 같은 SKU가 있으면(수정)
  * `variantId`만 실어 서버가 기존 것을 고치게 하고, 없으면(등록·새로 켠 사이즈)
  * `colorId`+`size`만 실어 새 variant를 만들게 한다. 둘을 같이 실으면 400이다(dev-verify F2).
+ *
+ * 행 순서는 `requestPriceRowIds`와 같아야 한다 — 서버가 `variantPrices[i]`로 지적한 행을
+ * 그 배열로 되짚는다(#210).
  */
 export function toListingRequest(
   product: ProductFormValue,
@@ -524,7 +536,14 @@ export function toUpdateRequest(
  * 검증 · 오류
  * ------------------------------------------------------------------------ */
 
-export type ProductFormErrors = FormErrors<ProductField>;
+export type ProductFormErrors = FormErrors<ProductField> & {
+  /**
+   * 서버가 지적한 가격표 행의 id(`priceRowId`). 문구는 `listing.variantPrices` 한 줄이고
+   * 이건 **어느 행인지**만 가리킨다 — 서버 `listing.variantPrices[i].*`의 i를 요청 순서로
+   * 되짚은 것(`serverPriceRowIds`). 그 행의 칸이 빨개지고 첫 오류 포커스가 거기로 간다(#210).
+   */
+  priceRowIds?: readonly string[];
+};
 
 /**
  * 보내기 전에 잡는 것 — **서버에 못 보낼 값**과 **서버가 안 잡아 주는 값.** 리프
@@ -595,7 +614,10 @@ export function clearPostErrors(
   if (prev.name !== next.name) delete rest["listing.title"];
   if (prev.description !== next.description) delete rest["listing.description"];
   if (prev.images !== next.images) delete rest["listing.images"];
-  if (prev.prices !== next.prices) delete rest["listing.variantPrices"];
+  if (prev.prices !== next.prices) {
+    delete rest["listing.variantPrices"];
+    delete rest.priceRowIds;
+  }
   return rest;
 }
 
@@ -610,14 +632,47 @@ export function firstInvalidField(
  * (리프 아님·옵션 없음·가격 없음 …)는 **코드로** 해당 칸을 가리킨다 — 서버 문구는 칸
  * 아래 그대로 보여 주되 어느 칸인지는 코드가 정한다. 모르는 실패면 `null`이라 호출부가
  * 폼 위 한 줄로 보낸다.
+ *
+ * 실서버 필드명은 칸 이름 그대로가 아니다 — `nameWellFormed`, `listing.variantPrices[0].targetSpecified`
+ * (dev-verify F4). 칸으로 잇는 건 `toFieldErrors`의 접두어 매칭이 하고, 가격표는 여기서
+ * 한 번 더 **행**까지 짚는다(`priceRowIds`). `product`는 그 행 순서를 되짚는 데 쓴다.
  */
-export function toProductFormErrors(error: unknown): ProductFormErrors | null {
+export function toProductFormErrors(
+  error: unknown,
+  product: ProductFormValue,
+): ProductFormErrors | null {
   const validation = toFieldErrors(error, PRODUCT_FIELD_ORDER);
-  if (validation) return validation;
+  if (validation) {
+    const priceRowIds = serverPriceRowIds(error, product);
+    return priceRowIds.length > 0 ? { ...validation, priceRowIds } : validation;
+  }
   if (!isApiError(error)) return null;
 
   const field = fieldOfCode(error.code);
   return field ? { [field]: error.message } : null;
+}
+
+/** 서버 필드명 `listing.variantPrices[i]…`의 i */
+const VARIANT_PRICE_INDEX = /^listing\.variantPrices\[(\d+)\]/;
+
+/**
+ * 서버가 `listing.variantPrices[i].*`로 지적한 행들의 id. i는 요청 `variantPrices` 순서라
+ * `requestPriceRowIds`로 되짚는다. 같은 행을 여러 번 지적해도 한 번, 범위 밖 i는 버린다
+ * (그때는 `listing.variantPrices` 한 줄만 남아 표 자체로 포커스가 간다).
+ */
+export function serverPriceRowIds(
+  error: unknown,
+  product: ProductFormValue,
+): string[] {
+  if (!isApiError(error)) return [];
+  const ids = requestPriceRowIds(product);
+  const found = new Set<string>();
+  for (const item of error.fieldErrors) {
+    const index = VARIANT_PRICE_INDEX.exec(item.field)?.[1];
+    const id = index === undefined ? undefined : ids[Number(index)];
+    if (id !== undefined) found.add(id);
+  }
+  return [...found];
 }
 
 function fieldOfCode(code: string): ProductField | null {

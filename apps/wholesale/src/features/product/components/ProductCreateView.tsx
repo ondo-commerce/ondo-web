@@ -47,7 +47,7 @@ export function ProductCreateView() {
       onSuccess: (created) =>
         router.push(`/products?${LIST_PARAM.productId}=${created.id}`),
       onError: (error) => {
-        const mapped = toProductFormErrors(error);
+        const mapped = toProductFormErrors(error, product);
         if (mapped) {
           showErrors(mapped);
           return;

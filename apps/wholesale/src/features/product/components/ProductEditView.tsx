@@ -115,7 +115,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
       }
       router.push(`/products?${LIST_PARAM.productId}=${product.id}`);
     } catch (error) {
-      const mapped = toProductFormErrors(error);
+      const mapped = toProductFormErrors(error, productForm);
       if (mapped) {
         showErrors(mapped);
         return;
