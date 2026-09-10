@@ -186,8 +186,12 @@ function ProductEditForm({ product }: { product: ProductView }) {
               {errors._form}
             </p>
           ) : null}
+          {/* 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
+              100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7) */}
           <Button asChild variant="line" size="lg">
-            <Link href="/products">취소</Link>
+            <Link href={`/products?${LIST_PARAM.productId}=${product.id}`}>
+              취소
+            </Link>
           </Button>
           <Button size="lg" onClick={submit} disabled={saving}>
             저장하기

@@ -212,6 +212,23 @@ export function toListQuery(params: ProductListParams): ProductListQuery {
 }
 
 /**
+ * URL의 `page`가 서버가 가진 장 수를 넘었나. 북마크·뒤로가기로 들어온 옛 주소는
+ * 서버가 빈 장을 준다 — 그걸 `검색 결과가 없습니다`로 그리면 돌아갈 길이 없다(wire-product F6).
+ * `totalPages`가 0(빈 목록)이어도 1페이지는 범위 안이다.
+ */
+export function isPageOutOfRange(page: number, totalPages: number): boolean {
+  return page > Math.max(totalPages, 1);
+}
+
+/**
+ * `이전`이 갈 장. 범위 밖 장에서는 한 장 앞이 아니라 **마지막 실제 장**으로 —
+ * `?page=9`에서 `이전`을 눌러 8로 가면 또 빈 장이다.
+ */
+export function previousPage(page: number, totalPages: number): number {
+  return Math.min(page - 1, Math.max(totalPages, 1));
+}
+
+/**
  * 게시 상태 필터. **받은 페이지 안에서만** 거른다 — `GET /products`에 상태 파라미터가
  * 없어서다. 다음 페이지에 있는 판매중 상품은 이 페이지에 안 보인다. 서버 필터가
  * 생기면 이 함수는 지우고 `toListQuery`에 실린다.
