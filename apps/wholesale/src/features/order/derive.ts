@@ -51,6 +51,25 @@ const ORDER_DATE_FORMAT = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
+/** 포장 카드의 만든 시각. 날짜는 뺀다 — 대기열은 그날 안에 비워지는 게 보통이라 시:분이면 구분된다 */
+const PACKING_TIME_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  hour: "2-digit",
+  minute: "2-digit",
+  /* `hour12: false`는 엔진에 따라 자정을 `24:05`로 준다 — h23이 `00:05`로 고정한다 */
+  hourCycle: "h23",
+});
+
+/** `14:05`(KST). 값이 깨졌으면 `-` — 번호 옆 보조 표식이라 화면을 죽일 일이 아니다 */
+export function formatPackingTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    PACKING_TIME_FORMAT.formatToParts(date).find((p) => p.type === type)
+      ?.value ?? "";
+  return `${part("hour")}:${part("minute")}`;
+}
+
 /** `2024.08.01`. `Intl`이 주는 `2024. 08. 01.`을 화면 표기로 바꾼다 */
 export function formatOrderDate(iso: string): string {
   const date = new Date(iso);
@@ -136,6 +155,7 @@ export function packingItemLabel(
  *
  * 회차 번호는 서버에 없다. 만든 순서 위치로 매기므로 `#2`를 지우면 옛 `#3`이 `#2`가 된다.
  * 더미 시절 규칙("번호는 재사용하지 않는다")은 서버가 번호를 주기 전엔 지킬 수 없다(04-wire.md §3).
+ * 대신 안 바뀌는 표식(만든 시각·id)을 카드에 같이 싣는다(F9, #196).
  */
 export function toPackingBatchViews(
   items: readonly PackingQueueItem[],
@@ -145,6 +165,7 @@ export function toPackingBatchViews(
     .map((packing, index) => ({
       id: packing.id,
       no: index + 1,
+      createdAtLabel: formatPackingTime(packing.createdAt),
       isCancellable: packing.isCancellable,
       lines: (packing.items ?? []).map((item) => ({
         id: item.id,

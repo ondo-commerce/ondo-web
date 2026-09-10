@@ -259,7 +259,7 @@ export function toBankAccountDraft(account: BankAccountView): BankAccountDraft {
 
 /**
  * 거래처 검색 — **화면 안에서** 이름·코드로 거른다. 서버에 `q`가 없다(스펙: "소매처 상호는 도매 DB 밖, 미수엔
- * 품명이 없다"). placeholder의 `품명`은 걸리지 않는다(04-wire §3).
+ * 품명이 없다"). 그래서 placeholder도 `거래처 검색`이다 — 품명은 약속하지 않는다(04-wire §3, #196).
  */
 export function filterRetailers(
   rows: readonly RetailerRowView[],

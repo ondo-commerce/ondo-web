@@ -121,11 +121,16 @@ export interface PackingBatchLineView {
 
 /**
  * 포장 대기 회차(= 포장 하나). 서버에 회차 번호가 없어 `no`는 만든 순서로 매긴다 —
- * 지우면 뒤 번호가 당겨진다(04-wire.md §3).
+ * 지우면 뒤 번호가 당겨진다(04-wire.md §3). 그래서 카드에 **만든 시각과 포장 id를 같이** 적는다 —
+ * 포장하는 사람이 상자에 적어 둔 표식이 번호가 밀려도 카드와 맞아떨어져야 한다(F9, #196).
+ * 서버가 고정 연번(`sequenceNo`)을 주면 `no`를 그 값으로 바꾼다.
  */
 export interface PackingBatchView {
   id: number;
+  /** 위치 번호. 고정이 아니다 — 앞 카드를 지우면 당겨진다 */
   no: number;
+  /** 만든 시각 `HH:mm`(KST). 번호와 달리 지워도 안 바뀌는 표식 */
+  createdAtLabel: string;
   /** 삭제 버튼 활성 조건. 출고에 잡힌 포장은 여기서 못 지운다 */
   isCancellable: boolean;
   lines: PackingBatchLineView[];

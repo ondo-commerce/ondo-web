@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Notice, Panel, SearchInput } from "@ondo/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BackorderRowDetail } from "./BackorderRowDetail";
 import { BackorderSummaryCard } from "./BackorderSummaryCard";
@@ -38,6 +39,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 export function BackorderListView() {
   /* 다른 탭(주문·재고)에서 바꾼 상태를 들고 오려면 탭 진입 때 자기 키를 한 번 비운다(F1). 같은 탭 안 왕복은 캐시 */
   useInvalidateOnMount(backorderKeys.all);
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   /** 서버에 보낸 검색어. `draft`를 잠깐 뒤에 옮긴 값 */
   const [q, setQ] = useState("");
@@ -112,6 +114,15 @@ export function BackorderListView() {
     if (cleared) setOpenVariantId((prev) => (prev === variantId ? null : prev));
   };
 
+  /**
+   * 펼쳐 보니 0행(다른 창에서 다 해소됨). 뮤테이션이 없어 무효화할 곳이 여기뿐이다 —
+   * 목록을 새로 받으면 그 행이 빠지므로 확정으로 다 해소됐을 때와 똑같이 접고 입력을 지운다(#201)
+   */
+  const refreshResolved = (variantId: number) => {
+    finishAllocation(variantId, true);
+    void queryClient.invalidateQueries({ queryKey: backorderKeys.lists() });
+  };
+
   return (
     <QueryBoundaryGroup>
       <ListDetailLayout
@@ -123,10 +134,12 @@ export function BackorderListView() {
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
             <div className="mb-4 flex shrink-0 items-center gap-3">
+              {/* 서버 `q`는 품명만 건다 — 품번·색상은 0건이다(dev-verify-bis F3, #196).
+                  칸이 약속한 걸 쳤는데 0건이 나오면 안 되므로 문구를 거는 범위로 맞춘다 */}
               <SearchInput
                 className="mr-auto"
-                placeholder="품번·품명 검색"
-                aria-label="품번·품명 검색"
+                placeholder="품명 검색"
+                aria-label="품명 검색"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />
@@ -148,6 +161,7 @@ export function BackorderListView() {
                     onAllocated={(cleared) =>
                       finishAllocation(variantId, cleared)
                     }
+                    onResolvedElsewhere={() => refreshResolved(variantId)}
                   />
                 )}
               />

@@ -189,10 +189,12 @@ export function SettlementListView() {
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
           <div className="mb-4 flex shrink-0 items-center gap-3">
+            {/* 걸리는 건 거래처 이름·코드뿐이다(`derive.filterRetailers`). 미수엔 품명이 없어 `품명`을
+                약속하면 0건만 본다 — 문구를 실제 거는 범위로 맞춘다(wire-settlement F9, #196) */}
             <SearchInput
               className="mr-auto"
-              placeholder="거래처·품명 검색"
-              aria-label="거래처·품명 검색"
+              placeholder="거래처 검색"
+              aria-label="거래처 검색"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />

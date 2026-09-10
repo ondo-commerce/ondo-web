@@ -6,6 +6,13 @@ export const EMPTY_MARK = "-";
 /** 목록 한 페이지. 스펙: `size > 100`이면 400 `VALIDATION_FAILED` */
 export const PAGE_SIZE = 100;
 
+/**
+ * 목록 정렬 — 많이 밀린 SKU 먼저(화면 규칙). **명시해서 보낸다** — 스냅샷의 서버 기본은
+ * `latestBackorderedAt,desc`라 안 보내면 화면 규칙과 갈린다. 스펙이 아는 키는 이것과
+ * `latestBackorderedAt` 둘뿐이라 2차 키(`variantId`)는 못 붙인다(400) — 동률은 `derive.sortSkus`가 가른다(#201)
+ */
+export const SKU_LIST_SORT = "backorderQty,desc";
+
 /** 예상 입고일 폼의 칸. 서버 `VALIDATION_FAILED`의 `field`가 이 이름이면 그 칸 아래 붙는다 */
 export const ETA_FIELDS: readonly EtaField[] = [
   "expectedInboundDate",
