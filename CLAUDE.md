@@ -13,7 +13,7 @@ apps/wholesale/   도매 ERP (포트 3000)   apps/retail/   소매 마켓 (포�
       components/ types.ts constants.ts fixtures.ts derive.ts index.ts
   src/shared/                 그 앱 안에서 2곳 이상 쓰는 것
 packages/ui/      도메인 없는 것만 (primitives / patterns)
-packages/config/  eslint · typescript · prettier 공유 설정
+packages/config/  eslint · typescript 공유 설정 (prettier는 루트 .prettierrc.json)
 ```
 
 **선례로 삼을 것: `apps/wholesale/src/features/product/`.** 폴더 구성·주석 밀도·네이밍의 기준이다.

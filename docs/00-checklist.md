@@ -4,76 +4,78 @@
 > **담당 표기**
 > - `FE` = 내가 혼자 결정하고 실행 (대부분)
 > - `요청` = BE에 요청/합의해야 하는 의존성. 내 작업이 아니라 **받아내야 하는 것**
+>
+> 체크 상태는 **2026-09-10에 실제 파일·GitHub 설정과 대조**했다 (#7). 레포 밖(Vercel 대시보드·Notion)에서만 확인되는 항목은 손대지 않았다.
 
 ---
 
 ## P0 — Week 0. 이거 없으면 첫 커밋을 못 친다
 
 ### 레포 & 환경
-- [ ] `FE` `ondo-web` 레포 생성 (모노레포 1개) → [01](01-repository.md)
-- [ ] `FE` `main` 브랜치 보호 규칙 ON (PR 필수 / CI green / force push 금지)
-- [ ] `FE` Node 버전 고정 (`.nvmrc` + `engines`) — **22 LTS**
-- [ ] `FE` 패키지 매니저 고정 (`packageManager: "pnpm@9.x"`) — npm/yarn 혼용 시 lockfile 지옥
-- [ ] `FE` Turborepo 초기화 + `apps/wholesale`, `apps/retail` 생성 → [02](02-folder-structure.md)
-- [ ] `FE` Vercel 프로젝트 **2개** 연결 (Root Directory 각각 지정 + `turbo-ignore`)
+- [x] `FE` `ondo-web` 레포 생성 (모노레포 1개) → [01](01-repository.md)
+- [x] `FE` `main` 브랜치 보호 규칙 ON (PR 필수 / CI green / force push 금지) — 필수 status check `ci` 등록됨
+- [x] `FE` Node 버전 고정 (`.nvmrc`) — **24.18.0**. `engines`는 안 넣었다 — CI가 `.nvmrc`를 읽는다
+- [x] `FE` 패키지 매니저 고정 (`packageManager: "pnpm@11.18.0"`) — npm/yarn 혼용 시 lockfile 지옥
+- [x] `FE` Turborepo 초기화 + `apps/wholesale`, `apps/retail` 생성 → [02](02-folder-structure.md)
+- [x] `FE` Vercel 프로젝트 **2개** 연결 (Root Directory 각각 지정 + `turbo-ignore`) — GitHub deployments에 `ondo-wholesale`·`ondo-retail` 확인
 - [ ] `FE` `.env.example` 커밋 + `shared/config/env.ts`에서 zod 검증 (`.env*`는 gitignore)
 
 ### 협업 규칙
-- [ ] `FE` 브랜치 전략 확정 (`main`/`dev`/`feat-*`) → [03](03-git.md#브랜치-전략)
-- [ ] `FE` 커밋 컨벤션 확정 (Conventional Commits) → [03](03-git.md#git-convention)
-- [ ] `FE` `.github/pull_request_template.md` 커밋
-- [ ] `FE` `.github/ISSUE_TEMPLATE/*.yml` 3종 커밋
-- [ ] `FE` `CODEOWNERS` 커밋
-- [ ] `FE` 라벨 세트 생성 (`feat` `fix` `chore` `debt` `blocked` / `P0`~`P3` / `wholesale` `retail` `ui` `api`)
+- [x] `FE` 브랜치 전략 확정 (`main`/`dev`/`feat-*`) → [03](03-git.md#브랜치-전략)
+- [x] `FE` 커밋 컨벤션 확정 (Conventional Commits) → [03](03-git.md#git-convention)
+- [x] `FE` `.github/pull_request_template.md` 커밋
+- [x] `FE` `.github/ISSUE_TEMPLATE/*.yml` 3종 커밋
+- [x] `FE` `CODEOWNERS` 커밋
+- [ ] `FE` 라벨 세트 생성 (`feat` `fix` `chore` `debt` `blocked` / `P0`~`P3` / `wholesale` `retail` `ui` `api`) — 지금은 `feat` `fix` `chore`만 있다. `debt` `blocked` · 우선순위 · area 라벨은 아직
 
 ### API 계약 — **이게 P0인 이유: FE가 BE를 기다리면 6개월 안에 못 끝난다**
-- [ ] `요청` **OpenAPI 3.1을 단일 진실 원천으로** 쓰자고 합의 → [05](05-api-contract.md)
-- [ ] `요청` `openapi.yaml` 스켈레톤(도메인 8~10개, 경로/응답형태만) 먼저 공유해달라고 요청
+- [x] `요청` **OpenAPI 3.1을 단일 진실 원천으로** 쓰자고 합의 → [05](05-api-contract.md)
+- [x] `요청` `openapi.yaml` 스켈레톤(도메인 8~10개, 경로/응답형태만) 먼저 공유해달라고 요청 — 스냅샷은 `packages/api/openapi/{wholesale,retail}.json`
 - [ ] `요청` 공통 응답 봉투 / **에러 응답 포맷** / 페이지네이션 규약 합의 → [05](05-api-contract.md#be에-요청할-것)
 - [ ] `요청` 인증 방식 합의: 토큰 종류·전달 위치·만료·갱신 흐름 → [07](07-pre-dev-decisions.md#팀-합의가-필요한-것)
 - [ ] `요청` 스테이징 API 도메인 1개 + Vercel preview 도메인 CORS 허용
-- [ ] `FE` `openapi-typescript` 코드젠 파이프라인 구성 (`pnpm codegen`)
-- [ ] `FE` **MSW 핸들러 스캐폴딩 → BE 없이 화면 개발 시작 가능한 상태 만들기** ★
+- [x] `FE` `openapi-typescript` 코드젠 파이프라인 구성 (`pnpm codegen`) — CI가 drift까지 잡는다
+- [x] `FE` **MSW 핸들러 스캐폴딩 → BE 없이 화면 개발 시작 가능한 상태 만들기** ★ — `packages/api/src/mocks`, `NEXT_PUBLIC_API_MOCK=1`
 
 ### 되돌리기 비싼 결정 3건 ADR 기록
-- [ ] `FE` ADR-0001 모노레포 구조 → [adr/0001](adr/0001-monorepo-for-web-apps.md)
-- [ ] `FE` ADR-0002 API 타입 코드젠 + MSW → [adr/0002](adr/0002-openapi-codegen-and-msw.md)
-- [ ] `FE` ADR-0003 상태관리 경계 → [adr/0003](adr/0003-state-management-boundary.md)
+- [x] `FE` ADR-0001 모노레포 구조 → [adr/0001](adr/0001-monorepo-for-web-apps.md)
+- [x] `FE` ADR-0002 API 타입 코드젠 + MSW → [adr/0002](adr/0002-openapi-codegen-and-msw.md)
+- [x] `FE` ADR-0003 상태관리 경계 → [adr/0003](adr/0003-state-management-boundary.md)
 
 ---
 
 ## P1 — Week 1. 없으면 2주 뒤에 코드가 썩는다
 
 ### 코드 품질 게이트
-- [ ] `FE` ESLint + Prettier 공유 설정 패키지화 (`packages/config`)
-- [ ] `FE` **`@typescript-eslint/no-explicit-any: "error"`** — warn 아님 → [08](08-tech-debt-rules.md)
-- [ ] `FE` `tsconfig` strict + `noUncheckedIndexedAccess` ON (나중에 켜면 에러 300개)
+- [x] `FE` ESLint + tsconfig 공유 설정 패키지화 (`packages/config`). **Prettier는 루트 `.prettierrc.json`에 둔다** — 설정이 `{}`(기본값)이고 루트 한 곳에서 `prettier --write .`로 돌리는 게 더 단순해서, 패키지로 옮기지 않기로 했다 (#7)
+- [x] `FE` **`@typescript-eslint/no-explicit-any: "error"`** — warn 아님 → [08](08-tech-debt-rules.md). `typescript-eslint` v8 `recommended`가 error로 켠다
+- [x] `FE` `tsconfig` strict + `noUncheckedIndexedAccess` ON (나중에 켜면 에러 300개) — `packages/config/typescript/base.json`
 - [x] `FE` feature 경계 강제 (`no-restricted-imports`) → [02](02-folder-structure.md)
-- [ ] `FE` husky + lint-staged (커밋 시 변경 파일만 lint/format)
-- [ ] `FE` commitlint (Conventional Commits 강제)
-- [ ] `FE` CI: `codegen` → `typecheck` → `lint` → `build` → [.github/workflows/ci.yml](../.github/workflows/ci.yml)
+- [x] `FE` husky + lint-staged (커밋 시 변경 파일만 lint/format)
+- [x] `FE` commitlint (Conventional Commits 강제)
+- [x] `FE` CI: `codegen` → `typecheck` → `lint` → `build` → [.github/workflows/ci.yml](../.github/workflows/ci.yml)
 - [ ] `FE` Turborepo Remote Cache 연결 (Vercel) — CI 시간 1/3
 
 ### 디자인 시스템 최소 세트
 - [ ] `FE` Tailwind 토큰 확정: color / spacing / radius / font scale → [04](04-component-strategy.md#디자인-토큰)
 - [ ] `FE` `packages/ui` 생성 + **primitive 8종만 먼저**: Button, Input, Select, Modal, Toast, Badge, Spinner, Table
-- [ ] `FE` `cn()` 유틸 + `class-variance-authority` variant 패턴 고정
-- [ ] `FE` 아이콘 라이브러리 1개로 고정 (lucide-react)
+- [x] `FE` `cn()` 유틸 + `class-variance-authority` variant 패턴 고정
+- [x] `FE` 아이콘 라이브러리 1개로 고정 (lucide-react)
 - [ ] `FE` 디자이너와 토큰 이름 싱크 (Figma 변수명 ↔ Tailwind 토큰명)
 
 ### 앱 골격
-- [ ] `FE` 라우팅 구조 확정 (route group `(auth)` / `(main)`)
+- [x] `FE` 라우팅 구조 확정 — route group은 도매 `(account)` / `(erp)`, 소매 `(account)` / `(shop)`
 - [ ] `FE` 전역 Provider 스택 (QueryClient, Toast, ErrorBoundary)
-- [ ] `FE` API 클라이언트 래퍼 1개 (토큰 주입 / 401 갱신 / 에러 정규화)
+- [x] `FE` API 클라이언트 래퍼 1개 (토큰 주입 / 401 갱신 / 에러 정규화) — `packages/api/src/runtime/client.ts`
 - [ ] `FE` `error.tsx` / `not-found.tsx` / `loading.tsx` 기본형
 - [ ] `FE` 폼 스택 고정: react-hook-form + zod + `zodResolver`
-- [ ] `FE` **레퍼런스 feature 1개 완성** (`product`) → 이후 전부 이걸 복사 ★
+- [x] `FE` **레퍼런스 feature 1개 완성** (`product`) → 이후 전부 이걸 복사 ★
 - [ ] `FE` 에러 코드 → 사용자 문구 매핑 테이블 1장
 
 ### 문서
 - [ ] `FE` Notion 페이지 생성 → [06](06-docs-structure.md)
 - [ ] `FE` 레포 `README.md`: 실행법 5줄 + 스크립트 표
-- [ ] `FE` `CONTRIBUTING.md`: 브랜치·커밋·PR 규칙 요약 (= [03](03-git.md) 압축본)
+- [x] `FE` `CONTRIBUTING.md`: 브랜치·커밋·PR 규칙 요약 (= [03](03-git.md) 압축본)
 
 ---
 
