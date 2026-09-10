@@ -30,6 +30,7 @@ import {
   checkoutHref,
   groupByWholesaler,
   orderBlockedReason,
+  selectableLines,
   selectedIds,
   selectedLines,
   selectionCounter,
@@ -101,6 +102,8 @@ export function CartView({
   const empty = lines.length === 0;
   const picked = selectedLines(lines, selected);
   const totals = totalsOf(picked);
+  /* 전체 선택이 건드리는 것도, 잠기는 기준도 켤 수 있는 줄이다 — 그룹 머리와 같다 */
+  const selectable = selectableLines(lines);
   const removedCount = ui.lastRemoved?.length ?? 0;
 
   const changeQty = (line: CartLine, next: string) => {
@@ -202,10 +205,11 @@ export function CartView({
             allOn={allSelected(lines, selected)}
             counter={selectionCounter(lines, selected)}
             selectedCount={picked.length}
+            noneSelectable={selectable.length === 0}
             busy={busy}
             onToggleAll={(on) =>
               setLinesSelected(
-                lines.map((line) => line.lineId),
+                selectable.map((line) => line.lineId),
                 on,
               )
             }

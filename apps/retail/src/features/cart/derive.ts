@@ -286,6 +286,15 @@ export function lineIssueText(issue: CartLineIssue): string {
    저절로 켜지고, 스토어가 서버 목록을 몰라도 된다.
    ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * 켤 수 있는 줄 — 주문 불가 행은 켤 수 없다. **전체 선택 체크와 그룹 머리 체크가
+ * 같은 이 함수를 본다.** 비면 두 체크 다 `disabled`다 — 각자 세면 한 층만
+ * 활성인 채 눌러도 아무 일이 없는 체크가 된다(#177).
+ */
+export function selectableLines(lines: readonly CartLine[]): CartLine[] {
+  return lines.filter((line) => line.orderable);
+}
+
 /** 지금 켜져 있는 조합. 주문 불가 행은 켤 수 없다 */
 export function selectedIds(
   lines: readonly CartLine[],
@@ -319,7 +328,7 @@ export function allSelected(
   lines: readonly CartLine[],
   selected: ReadonlySet<string>,
 ): boolean {
-  const selectable = lines.filter((line) => line.orderable);
+  const selectable = selectableLines(lines);
   return (
     selectable.length > 0 &&
     selectable.every((line) => selected.has(line.lineId))

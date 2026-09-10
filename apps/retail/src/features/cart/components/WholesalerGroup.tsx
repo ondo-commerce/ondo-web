@@ -1,7 +1,13 @@
 import { Checkbox } from "@ondo/ui";
 import { CartLineItem } from "./CartLineItem";
 import type { CartGroup } from "../derive";
-import { allSelected, comboSheetsLabel, formatWon, totalsOf } from "../derive";
+import {
+  allSelected,
+  comboSheetsLabel,
+  formatWon,
+  selectableLines,
+  totalsOf,
+} from "../derive";
 import type { CartLine, CartLineIssue } from "../types";
 
 /**
@@ -37,8 +43,9 @@ export function WholesalerGroup({
   /* 그룹 체크는 따로 든 상태가 아니라 조합 집합에서 계산해 나온다. 상태로
      두면 조합 하나를 껐을 때 그룹만 켜진 채로 남는다 */
   const groupOn = allSelected(group.lines, selected);
-  /* 주문 불가 행은 켤 수 없다 — 머리 체크가 건드리는 것도 켤 수 있는 줄뿐이다 */
-  const selectable = group.lines.filter((line) => line.orderable);
+  /* 주문 불가 행은 켤 수 없다 — 머리 체크가 건드리는 것도 켤 수 있는 줄뿐이고,
+     그런 줄이 없으면 체크 자체가 잠긴다. 전체 선택도 같은 규칙이다(#177) */
+  const selectable = selectableLines(group.lines);
 
   return (
     <section
