@@ -7,6 +7,7 @@ import {
   DROPPED_NOTICE,
   FILTER_ALL,
   FIRST_PAGE,
+  PAGE_MAX,
   SIZE_LABEL,
 } from "./constants";
 import type {
@@ -172,14 +173,20 @@ export function resolveSort(
 /**
  * 주소의 `?page=`(1-base)를 정리한다. 숫자가 아니거나 1 미만이면 첫 장이다.
  *
- * 범위를 넘는 큰 수는 여기서 못 막는다 — 몇 장인지는 서버가 답해야 안다. 그 경우 서버가
- * 빈 배열을 주고 화면은 0건 + 페이저로 돌아갈 길을 보여준다.
+ * 서버 `page`가 int32라 그 위(`PAGE_MAX` 초과)도 첫 장으로 떨어뜨린다 — 보내면 400
+ * `VALIDATION_FAILED`가 `error.tsx`로 새어 주소를 잘못 친 사장에게 "운영자에게 알려
+ * 주세요"가 뜬다(#169). `Number()`로 읽지 않는다 — `1e5`·`0x10`이 `isInteger`를 통과한다.
+ *
+ * **몇 장인지는 여기서 모른다** — 마지막 장을 넘는 수는 서버가 빈 장을 주고 화면이
+ * `backordersEmptyKind`로 "이 페이지에는 미송이 없어요"와 `첫 장으로`를 세운다(#168).
  */
 export function resolvePage(
   params: Record<string, string | string[] | undefined>,
 ): number {
-  const value = Number(one(params, "page"));
-  return Number.isInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
+  const raw = one(params, "page") ?? "";
+  if (!/^\d{1,10}$/.test(raw)) return FIRST_PAGE;
+  const value = Number(raw);
+  return value >= FIRST_PAGE && value <= PAGE_MAX ? value : FIRST_PAGE;
 }
 
 /**
