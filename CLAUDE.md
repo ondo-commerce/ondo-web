@@ -13,7 +13,7 @@ apps/wholesale/   도매 ERP (포트 3000)   apps/retail/   소매 마켓 (포�
       components/ types.ts constants.ts fixtures.ts derive.ts index.ts
   src/shared/                 그 앱 안에서 2곳 이상 쓰는 것
 packages/ui/      도메인 없는 것만 (primitives / patterns)
-packages/config/  eslint · typescript · prettier 공유 설정
+packages/config/  eslint · typescript 공유 설정 (prettier는 루트 .prettierrc.json)
 ```
 
 **선례로 삼을 것: `apps/wholesale/src/features/product/`.** 폴더 구성·주석 밀도·네이밍의 기준이다.
@@ -40,7 +40,7 @@ pnpm typecheck && pnpm lint && pnpm build
 - 1커밋 = 1논리 변경. `--no-verify` 금지 (husky가 commitlint·lint-staged를 돌린다)
 - 브랜치 `<type>-<이슈번호>-<요약>` (예: `feat-23-inventory-list`). **슬래시 금지** — Vercel preview 도메인이 잘린다
 - `feat`→`dev` squash · `dev`→`main` merge commit · `dev`→`feat` 동기화는 rebase
-- PR 400줄 넘으면 사유 한 줄, 800줄 넘으면 분할 (`docs/03-git.md`)
+- PR 400줄 넘으면 사유 한 줄, 800줄 넘으면 분할. **이슈·PR은 화면 1장 단위** — 한 화면이 800줄을 넘으면 사유와 파일 구성을 PR 본문에 (`docs/03-git.md`)
 
 ## import 방향 — 한 방향뿐이다
 
