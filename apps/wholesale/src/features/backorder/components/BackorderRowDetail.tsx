@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@ondo/ui";
+import { Button, Notice } from "@ondo/ui";
 import { AllocationCounterBar } from "./AllocationCounterBar";
 import { BackorderAllocationTable } from "./BackorderAllocationTable";
 import { useAllocateMutation } from "../api/mutations";
@@ -26,12 +26,17 @@ import { QueryBoundary } from "@/shared/api/QueryBoundary";
  * 입력값(`draft`)은 여기 두지 않고 `BackorderListView`가 SKU별로 든다 — 접으면 이 컴포넌트가
  * 내려가는데 그때 손으로 고친 배분이 사라지면 안 된다(F2). 대신 **상한 자르기와 초기값은
  * 여기서 한다**: 행과 가용재고를 아는 쪽이 여기뿐이다.
+ *
+ * 펼침이 **0행**이면(다른 창에서 다 해소된 SKU) 표 대신 빈 상태 한 줄이다 — 좌측 행은 아직 옛 수량을
+ * 보이고 있어서, 머리만 있는 표와 `0 │ 5 │ 0` 카운터를 두면 사장은 어느 쪽이 맞는지 모른다
+ * (wire-backorder F2, #201). 404가 아니라 200 빈 배열이라 `QueryBoundary notFound`로는 못 잡는다.
  */
 export function BackorderRowDetail({
   variantId,
   draft,
   onDraftChange,
   onAllocated,
+  onResolvedElsewhere,
 }: {
   variantId: number;
   /** 저장된 입력. `undefined`면 아직 손대지 않은 것(선착순으로 채운다) */
@@ -39,6 +44,8 @@ export function BackorderRowDetail({
   onDraftChange: (next: AllocationDraft) => void;
   /** 서버가 받아 준 뒤. `cleared`면 이 SKU의 미송이 전부 해소됐다 */
   onAllocated: (cleared: boolean) => void;
+  /** 펼쳐 보니 미송이 남아 있지 않을 때 `목록 다시 불러오기`를 누르면. 목록을 새로 받고 이 행을 접는 자리 */
+  onResolvedElsewhere: () => void;
 }) {
   return (
     <QueryBoundary>
@@ -47,6 +54,7 @@ export function BackorderRowDetail({
         draft={draft}
         onDraftChange={onDraftChange}
         onAllocated={onAllocated}
+        onResolvedElsewhere={onResolvedElsewhere}
       />
     </QueryBoundary>
   );
@@ -57,11 +65,13 @@ function BackorderRowDetailBody({
   draft,
   onDraftChange,
   onAllocated,
+  onResolvedElsewhere,
 }: {
   variantId: number;
   draft: AllocationDraft | undefined;
   onDraftChange: (next: AllocationDraft) => void;
   onAllocated: (cleared: boolean) => void;
+  onResolvedElsewhere: () => void;
 }) {
   const { data } = useSkuBackordersQuery(variantId);
   const { lines, summary } = data;
@@ -81,6 +91,27 @@ function BackorderRowDetailBody({
     onDone: (batch) =>
       onAllocated(allResolved(lines, batch.resolvedBackorderIds)),
   });
+
+  if (lines.length === 0) {
+    return (
+      <Notice
+        className="my-2"
+        action={
+          <Button
+            type="button"
+            variant="line"
+            size="sm"
+            onClick={onResolvedElsewhere}
+          >
+            목록 다시 불러오기
+          </Button>
+        }
+      >
+        이 SKU의 미송은 모두 해소됐어요. 좌측 수량은 목록을 받았을 때의 값이라
+        다시 불러오면 이 행이 사라져요.
+      </Notice>
+    );
+  }
 
   return (
     <>

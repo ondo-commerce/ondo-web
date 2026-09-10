@@ -103,6 +103,20 @@ export function skuCode(productNumber: number, variantNumber: number): string {
   return `${productNumber}-${variantNumber}`;
 }
 
+/**
+ * 목록 정렬 — 총 미송 많은 순, **동률이면 variantId 오름차순**.
+ * 서버 정렬(`backorderQty,desc`)엔 2차 키가 없어 배분 확정으로 총 미송이 같아지면 재조회마다 순서가
+ * 흔들렸다 — 방금 확정한 행이 펼친 채로 아래로 밀려 사장이 눈으로 다시 찾았다(wire-backorder F5, #201).
+ * 2차 키를 화면에서 고정하면 같은 응답은 늘 같은 순서다. 1차 키가 서버와 같아서 페이지 경계는 안 건드린다.
+ */
+export function sortSkus(
+  rows: readonly BackorderSkuView[],
+): BackorderSkuView[] {
+  return [...rows].sort(
+    (a, b) => b.backorderQty - a.backorderQty || a.variantId - b.variantId,
+  );
+}
+
 export function toSkuView(sku: BackorderSku): BackorderSkuView {
   return {
     variantId: sku.variantId,
