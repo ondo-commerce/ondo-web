@@ -1099,6 +1099,38 @@ export function isOrderFilterEmpty(filter: OrderFilter): boolean {
   );
 }
 
+/**
+ * 표가 비었을 때 **왜** 비었는지. 셋은 다른 말과 다른 다음 행동을 가진다.
+ *
+ * - `none` — 이 기간에 주문이 하나도 없다(`totalElements === 0`). 조건 문제가
+ *   아니라 아직 주문한 적이 없는 것이라 `초기화`가 없다.
+ * - `outOfRange` — 서버에는 주문이 있는데 이 장이 비었다. 옛 북마크 · 뒤로 가기 ·
+ *   주문이 줄어든 뒤의 링크로 마지막 장을 넘어 들어온 것이다. 서버가 빈 배열에
+ *   `totalPages: 1`을 주니 페이저도 안 서서 돌아갈 길이 `첫 장으로` 하나다(#184).
+ * - `filtered` — 받은 장은 있는데 도매처·상태 축이 다 걸러냈다. 조건을 지우면 된다.
+ *
+ * `orders.length === 0`을 `none`으로 읽던 때는 범위 밖 장에서 주문이 있는 사장에게
+ * `아직 주문한 적이 없어요`라고 말했다. **`none`은 `totalElements === 0`일 때만이다.**
+ * 기간이 기본값이 아닐 때의 0건은 `filtered`다 — 기간을 넓히면 주문이 나올 수
+ * 있는데 "주문한 적이 없다"고 단정할 수 없다.
+ */
+export type OrdersEmptyKind = "none" | "outOfRange" | "filtered";
+
+export function ordersEmptyKind(input: {
+  /** 서버가 이 장에 준 주문 수 */
+  received: number;
+  /** 도매처·상태 축을 건 뒤 남은 수 */
+  visible: number;
+  paging: OrderPage;
+  filter: OrderFilter;
+}): OrdersEmptyKind | null {
+  if (input.visible > 0) return null;
+  if (input.paging.totalElements === 0) {
+    return input.filter.period === DEFAULT_PERIOD ? "none" : "filtered";
+  }
+  return input.received === 0 ? "outOfRange" : "filtered";
+}
+
 export interface OrdersLocation {
   filter: OrderFilter;
   sort: OrderSort;

@@ -9,13 +9,19 @@ import { OrderLegList } from "./OrderLegList";
 import { OrderListToolbar } from "./OrderListToolbar";
 import { OrderPager } from "./OrderPager";
 import { OrderStatusBadge } from "./OrderStatusBadge";
-import { LIST_HEADERS, ORDERS_TEXT, ORDER_PATH } from "../constants";
+import {
+  FIRST_PAGE,
+  LIST_HEADERS,
+  ORDERS_TEXT,
+  ORDER_PATH,
+} from "../constants";
 import {
   filterOrders,
   formatSheets,
   formatWon,
   isOrderFilterEmpty,
   orderWholesalers,
+  ordersEmptyKind,
   ordersHref,
   receivedLabel,
   sortOrders,
@@ -52,6 +58,18 @@ export function OrderListView({
   const { filter, sort, open } = location;
 
   const visible = sortOrders(filterOrders(orders, filter), sort);
+  const empty = ordersEmptyKind({
+    received: orders.length,
+    visible: visible.length,
+    paging,
+    filter,
+  });
+  const emptyCopy =
+    empty === "none"
+      ? ORDERS_TEXT.noOrders
+      : empty === "outOfRange"
+        ? ORDERS_TEXT.outOfRange
+        : ORDERS_TEXT.empty;
 
   /* 펼침도 주소에 싣는다. `replace`가 아니라 `push`면 뒤로 가기가 펼침 하나마다
      걸려서 목록을 빠져나갈 수 없다. 표와 카드가 이 하나를 같이 쓴다 */
@@ -76,20 +94,24 @@ export function OrderListView({
           canReset={!isOrderFilterEmpty(filter)}
         />
 
-        {visible.length === 0 ? (
-          /* 빈 표만 남기지 않는다 — 왜 비었는지와 다음 행동을 같이 준다 */
+        {empty !== null ? (
+          /* 빈 표만 남기지 않는다 — 왜 비었는지와 다음 행동을 같이 준다. 범위 밖
+             장은 페이저가 안 서서(`totalPages: 1`) 여기 링크가 유일한 돌아갈 길이다 */
           <div className="py-16 text-center">
-            <h3 className="text-base font-medium">
-              {orders.length === 0
-                ? ORDERS_TEXT.noOrders.title
-                : ORDERS_TEXT.empty.title}
-            </h3>
+            <h3 className="text-base font-medium">{emptyCopy.title}</h3>
             <p className="text-muted-foreground text-body mt-1.5">
-              {orders.length === 0
-                ? ORDERS_TEXT.noOrders.description
-                : ORDERS_TEXT.empty.description}
+              {emptyCopy.description}
             </p>
-            {orders.length === 0 ? null : (
+            {empty === "none" ? null : empty === "outOfRange" ? (
+              /* 조건은 그대로 두고 장만 첫 장으로 — 좁혀 둔 조건까지 버리지 않는다 */
+              <Button asChild variant="line" className="mt-3.5">
+                <Link
+                  href={ordersHref(location, { page: FIRST_PAGE, open: null })}
+                >
+                  {ORDERS_TEXT.outOfRange.action}
+                </Link>
+              </Button>
+            ) : (
               <Button asChild variant="line" className="mt-3.5">
                 <Link href={ORDER_PATH.orders}>{ORDERS_TEXT.reset}</Link>
               </Button>
