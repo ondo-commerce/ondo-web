@@ -94,6 +94,28 @@ export function applyDrafts(
 }
 
 /**
+ * lineId → 서버에 저장된 수량. 스토어의 `prune`이 이걸 받아 사라진 줄의 흔적을
+ * 지우고, 서버 값이 대신할 수 있는 draft를 놓는다(#176).
+ */
+export function serverQtyOf(
+  lines: readonly CartLine[],
+): ReadonlyMap<string, number> {
+  return new Map(lines.map((line) => [line.lineId, line.qty]));
+}
+
+/**
+ * 칸의 글자를 서버 값이 대신해도 되는가. 글자를 읽은 수량이 서버 수량과 같으면
+ * 그렇다 — `0000012`와 `12`는 같은 수량이라 서버 값이 보기 좋다. 못 읽는
+ * 글자(`45.5`)는 0장이라 서버 수량과 같을 수 없고, 상한을 넘긴 글자도 `parseQty`가
+ * 500으로 접어 서버 500과 같아지는데 그 글자는 `setDraft` 전에 이미 `500`으로
+ * 바뀌어 있다 — 그래서 `issue`가 있으면 놓지 않는다.
+ */
+export function draftSettled(draft: string, serverQty: number): boolean {
+  const { qty, issue } = parseQty(draft);
+  return issue === null && draft.trim() !== "" && qty === serverQty;
+}
+
+/**
  * DELETE는 성공했는데 `router.refresh()`가 아직 안 닿은 줄을 뺀다. 그 사이에도
  * 줄이 남아 있으면 사장이 "안 지워졌나" 하고 한 번 더 누른다.
  */
@@ -264,6 +286,15 @@ export function lineIssueText(issue: CartLineIssue): string {
    저절로 켜지고, 스토어가 서버 목록을 몰라도 된다.
    ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * 켤 수 있는 줄 — 주문 불가 행은 켤 수 없다. **전체 선택 체크와 그룹 머리 체크가
+ * 같은 이 함수를 본다.** 비면 두 체크 다 `disabled`다 — 각자 세면 한 층만
+ * 활성인 채 눌러도 아무 일이 없는 체크가 된다(#177).
+ */
+export function selectableLines(lines: readonly CartLine[]): CartLine[] {
+  return lines.filter((line) => line.orderable);
+}
+
 /** 지금 켜져 있는 조합. 주문 불가 행은 켤 수 없다 */
 export function selectedIds(
   lines: readonly CartLine[],
@@ -297,7 +328,7 @@ export function allSelected(
   lines: readonly CartLine[],
   selected: ReadonlySet<string>,
 ): boolean {
-  const selectable = lines.filter((line) => line.orderable);
+  const selectable = selectableLines(lines);
   return (
     selectable.length > 0 &&
     selectable.every((line) => selected.has(line.lineId))

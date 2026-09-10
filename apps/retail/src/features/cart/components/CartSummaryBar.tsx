@@ -2,7 +2,9 @@
 
 import { Button } from "@ondo/ui";
 import Link from "next/link";
+import type { MouseEvent } from "react";
 import { QTY_UNIT } from "@/shared/qty";
+import { LEAVING_TO_CHECKOUT } from "../constants";
 import { formatWon, type CartTotals } from "../derive";
 
 /**
@@ -22,18 +24,44 @@ import { formatWon, type CartTotals } from "../derive";
  *
  * `주문하기`는 **주문서로 가는 것까지**다. 고른 조합의 `cartItemId`를 주소에
  * 실어 넘기고(`checkoutHref`), 접수는 주문서(`features/order`)가 한다.
+ *
+ * **보통 클릭은 가로채서 `onOrder`에 넘긴다.** 주문서는 서버 수량을 읽는데, 칸을
+ * 고치고 400ms 안에 누르면 주문서 요청이 저장(PATCH)보다 먼저 나가 옛 수량으로
+ * 그려진다(#179). 부르는 쪽이 기다리던 저장을 끝낸 뒤 이동한다. `<a>`는 그대로
+ * 둔다 — 새 탭 열기·미리보기가 살아야 하고(`Button` 규칙), 수식키 클릭은
+ * 브라우저에 맡긴다. 기다리는 동안(`leaving`)은 진짜 `disabled` 버튼이다.
  */
 export function CartSummaryBar({
   totals,
   blockedReason,
   href,
+  leaving,
+  onOrder,
 }: {
   totals: CartTotals;
   /** 못 넘어가는 이유. null이면 넘어갈 수 있다 */
   blockedReason: string | null;
   /** 주문서 주소. 고른 조합의 id가 실려 있다 */
   href: string;
+  /** `주문하기`를 눌러 저장이 끝나기를 기다리는 중 */
+  leaving: boolean;
+  /** 보통 클릭. 저장을 끝내고 `href`로 가는 것은 부르는 쪽 몫이다 */
+  onOrder: () => void;
 }) {
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    onOrder();
+  };
+
   return (
     <div className="border-border bg-accent -mx-4 -mb-4 mt-4 rounded-b-panel border-t px-4 py-3.5">
       <div className="flex flex-wrap items-center gap-x-9 gap-y-3">
@@ -52,25 +80,27 @@ export function CartSummaryBar({
         </div>
 
         <div className="ml-auto phone:ml-0 phone:w-full">
-          {blockedReason ? (
+          {blockedReason || leaving ? (
             <Button disabled className="phone:w-full">
               주문하기
             </Button>
           ) : (
             <Button asChild className="phone:w-full">
-              <Link href={href}>주문하기</Link>
+              <Link href={href} onClick={handleClick}>
+                주문하기
+              </Link>
             </Button>
           )}
         </div>
       </div>
 
-      {/* 못 누르는 이유가 버튼 옆에 글자로 있다. disabled만 걸면 사장이 버튼을
-          반복해서 누르다 만다 */}
+      {/* 못 누르는 이유(또는 기다리는 이유)가 버튼 옆에 글자로 있다. disabled만
+          걸면 사장이 버튼을 반복해서 누르다 만다 */}
       <p
         role="status"
         className="text-muted-foreground text-body mt-2.5 min-h-5"
       >
-        {blockedReason ?? ""}
+        {blockedReason ?? (leaving ? LEAVING_TO_CHECKOUT : "")}
       </p>
     </div>
   );

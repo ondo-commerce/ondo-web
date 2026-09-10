@@ -2,6 +2,7 @@
 
 import { Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CartSummaryBar } from "./CartSummaryBar";
 import { CartToolbar } from "./CartToolbar";
@@ -30,9 +31,11 @@ import {
   checkoutHref,
   groupByWholesaler,
   orderBlockedReason,
+  selectableLines,
   selectedIds,
   selectedLines,
   selectionCounter,
+  serverQtyOf,
   toRemovedLines,
   totalsOf,
   visibleLines,
@@ -41,6 +44,7 @@ import {
   clearRemoved,
   forgetRestored,
   hideLines,
+  markSaved,
   prune,
   rememberRemoved,
   revertDraft,
@@ -77,20 +81,22 @@ export function CartView({
   /** `GET /cart-items`를 뷰로 바꾼 것. 순서는 서버 순서다 */
   lines: readonly CartLine[];
 }) {
+  const router = useRouter();
   const ui = useCartUi();
   const busy = useCartBusy();
   const remove = useRemoveCartItemsMutation();
   const restore = useRestoreCartItemsMutation();
   /* 저장 실패는 칸을 서버 값으로 되돌리고 그 줄에 이유를 남긴다 — 저장 안 된
      숫자를 칸에 두면 합계가 서버와 다른 값을 말한다 */
-  const saveQty = useQtySaver({ onFailed: revertDraft });
+  const saveQty = useQtySaver({ onFailed: revertDraft, onSaved: markSaved });
   /* 빼기·되돌리기가 서버에서 거절됐을 때. 수량 저장 실패는 줄마다 따로 뜬다 */
   const [failure, setFailure] = useState<string | null>(null);
 
-  /* 서버 목록에서 사라진 줄의 흔적(숨김 · 선택 해제 · draft)을 지운다.
-     refresh가 닿았다는 신호가 곧 이 prop이 바뀌는 것이다 */
+  /* 서버 목록에서 사라진 줄의 흔적(숨김 · 선택 해제 · draft)을 지우고, 서버 값이
+     대신할 수 있는 draft를 놓는다. refresh가 닿았다는 신호가 곧 이 prop이 바뀌는
+     것이다 — 다른 화면에 갔다 돌아온 첫 렌더도 서버가 새로 말한 것이다 */
   useEffect(() => {
-    prune(new Set(serverLines.map((line) => line.lineId)));
+    prune(serverQtyOf(serverLines));
   }, [serverLines]);
 
   const lines = applyDrafts(visibleLines(serverLines, ui.hidden), ui.drafts);
@@ -98,6 +104,8 @@ export function CartView({
   const empty = lines.length === 0;
   const picked = selectedLines(lines, selected);
   const totals = totalsOf(picked);
+  /* 전체 선택이 건드리는 것도, 잠기는 기준도 켤 수 있는 줄이다 — 그룹 머리와 같다 */
+  const selectable = selectableLines(lines);
   const removedCount = ui.lastRemoved?.length ?? 0;
 
   const changeQty = (line: CartLine, next: string) => {
@@ -110,7 +118,25 @@ export function CartView({
     /* 서버는 1장 이상만 받는다(`ChangeQtyRequest.qty minimum 1`). 0 · 빈 칸 ·
        못 읽는 글자는 보내지 않는다 — 칸에만 남고 `주문하기`가 막힌다 */
     if (issue === "NOT_A_NUMBER" || qty < 1) return;
-    saveQty(line.lineId, { cartItemId: line.cartItemId, qty });
+    saveQty.save(line.lineId, { cartItemId: line.cartItemId, qty });
+  };
+
+  /**
+   * `주문하기`. 주문서는 draft를 안 얹고 서버 수량만 읽는다 — 칸을 고치고 400ms
+   * 안에 누르면 주문서 요청이 PATCH보다 먼저 나가 옛 수량으로 그려진다(#179).
+   * 기다리던 저장을 끝낸 뒤에 이동한다. 하나라도 실패했으면 가지 않는다 — 그 줄은
+   * 서버 값으로 되돌아가 이유가 떠 있고, 그걸 못 본 채 옛 수량을 주문하면 안 된다.
+   */
+  const [leaving, setLeaving] = useState(false);
+  const goCheckout = async () => {
+    const href = checkoutHref(picked);
+    setLeaving(true);
+    const ok = await saveQty.flush();
+    if (ok) {
+      router.push(href);
+      return;
+    }
+    setLeaving(false);
   };
 
   /* 묶음 요청은 reject하지 않고 성공분·실패분을 갈라 돌려준다(`BatchResult`).
@@ -199,10 +225,11 @@ export function CartView({
             allOn={allSelected(lines, selected)}
             counter={selectionCounter(lines, selected)}
             selectedCount={picked.length}
+            noneSelectable={selectable.length === 0}
             busy={busy}
             onToggleAll={(on) =>
               setLinesSelected(
-                lines.map((line) => line.lineId),
+                selectable.map((line) => line.lineId),
                 on,
               )
             }
@@ -233,6 +260,7 @@ export function CartView({
                 group={group}
                 issues={ui.issues}
                 selected={selected}
+                busy={busy}
                 onToggleLines={setLinesSelected}
                 onToggleLine={toggleLine}
                 onChangeQty={changeQty}
@@ -244,6 +272,8 @@ export function CartView({
               totals={totals}
               blockedReason={orderBlockedReason(totals)}
               href={checkoutHref(picked)}
+              leaving={leaving}
+              onOrder={goCheckout}
             />
           </>
         )}

@@ -20,11 +20,16 @@ import { CART_ACTION_ID } from "../constants";
  * 못 누른다고 읽는데 실제로는 눌려서, 되돌릴 수 없는 실행이 그냥 일어난다
  * (직전 회차 F11). 서버로 요청이 나가 있는 동안(`busy`)도 같다 — DELETE가 돌아오기
  * 전에 한 번 더 눌리면 같은 줄을 두 번 지우려 든다.
+ *
+ * `전체 선택`도 켤 줄이 없으면(주문 불가 행만 남음) `disabled`다 — 그룹 머리
+ * 체크와 같은 규칙(`selectableLines`)이다. 한 층만 활성이면 눌러도 `(0/1)` 그대로인
+ * 체크가 된다(#177).
  */
 export function CartToolbar({
   allOn,
   counter,
   selectedCount,
+  noneSelectable,
   busy,
   onToggleAll,
   onRemoveSelected,
@@ -33,6 +38,8 @@ export function CartToolbar({
   /** `(3/4)` */
   counter: string;
   selectedCount: number;
+  /** 켤 수 있는 줄이 하나도 없다 */
+  noneSelectable: boolean;
   /** 장바구니를 바꾸는 요청이 나가 있다 */
   busy: boolean;
   onToggleAll: (on: boolean) => void;
@@ -43,6 +50,7 @@ export function CartToolbar({
       <label className="flex cursor-pointer items-center gap-2 text-body">
         <Checkbox
           checked={allOn}
+          disabled={noneSelectable}
           onCheckedChange={(next) => onToggleAll(next === true)}
           className="size-4.5"
         />
