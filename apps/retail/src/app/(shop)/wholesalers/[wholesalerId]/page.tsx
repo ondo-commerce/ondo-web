@@ -5,6 +5,7 @@ import { getCatalogOptions } from "@/app/(shop)/masters";
 import {
   LISTING_PATH,
   MAX_PAGE_SIZE,
+  WHOLESALER_HOME_AXES,
   WholesalerHomeView,
   isFilterEmpty,
   productsOfWholesaler,
@@ -16,8 +17,8 @@ import {
   type CatalogFilter,
   type CatalogProduct,
   type ListingSummaryWire,
+  type TradeStatsSlot,
 } from "@/features/catalog";
-import { partnerStatsOf } from "@/features/settlement";
 import { serverApi } from "@/shared/api/server";
 
 type PageProps = {
@@ -81,7 +82,12 @@ export async function generateMetadata({
 export default async function Page({ params, searchParams }: PageProps) {
   const { wholesalerId } = await params;
   const options = await getCatalogOptions();
-  const filter = resolveFilter(await searchParams, options);
+  /* 가격대 축은 이 화면에 드롭다운이 없다 — 주소에 실려 와도 읽지 않는다(#181) */
+  const filter = resolveFilter(
+    await searchParams,
+    options,
+    WHOLESALER_HOME_AXES,
+  );
 
   const all = await getWholesalerListings(wholesalerId);
 
@@ -98,8 +104,11 @@ export default async function Page({ params, searchParams }: PageProps) {
 
   /* 진행 중·미송·미결제 잔액은 거래 원장에서 나온다. 마켓(`catalog`)과
      정산(`settlement`)은 서로를 import하지 않으므로 **여기서 합친다**(F1 · #128).
-     정산은 아직 fixtures라 id 축이 다르다(`w-moodon` vs 숫자) — 거래 없음으로 선다 */
-  const tradeStats = partnerStatsOf(wholesaler.id);
+     TODO(#183): 정산이 아직 fixtures라 원장의 도매처 id(`w-moodon`)와 서버 id
+     (숫자)가 다른 축이다 — 어느 도매처도 못 찾아 늘 `거래 없음`으로 섰고, 실제로
+     미수가 있는 도매처도 0원으로 보였다. 정산이 실서버로 붙어 숫자 id로 찾을 수
+     있을 때까지는 "아직 알 수 없다"고 넘긴다 */
+  const tradeStats: TradeStatsSlot = { status: "unavailable" };
 
   return (
     <WholesalerHomeView

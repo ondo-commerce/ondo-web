@@ -1,6 +1,5 @@
 import { Button, Table } from "@ondo/ui";
 import { Phone } from "lucide-react";
-import Link from "next/link";
 import { ongoingCount } from "@/shared/tradeStats";
 import { PREPAID_EXCLUDED, SHEET_UNIT, TOTAL_LABEL } from "../constants";
 import {
@@ -16,7 +15,7 @@ import { BackorderBadge } from "./BackorderBadge";
 import { CopyIconButton } from "./CopyButton";
 
 /**
- * 거래처 관리 표(8열). 소매에서 가장 넓은 표다.
+ * 거래처 관리 표(7열). 소매에서 가장 넓은 표다.
  *
  * 앞 회차 도매 `settlements`가 1280×720에서 `미수 잔액` 열이 잘리는 P1을 겪었다.
  * 여기서는 `Table`이 `min-w-max` + `overflow-x-auto`로 **자기 상자 안에서만**
@@ -24,6 +23,11 @@ import { CopyIconButton } from "./CopyButton";
  *
  * 승인·심사·거래 요청을 뜻하는 낱말이 한 곳도 없다 — §3-0 A로 승인 층이
  * 폐기됐고 이 화면은 「거래 이력 조회」다.
+ *
+ * TODO(#183): 와이어프레임의 8번째 열 `도매처 홈`이 없다. 이 표는 fixtures라 도매처
+ * id가 `w-moodon`류인데 도매처 홈은 서버 숫자 id를 받아서 네 링크가 전부 404였다.
+ * 없는 곳으로 보내는 링크보다 없는 편이 낫다 — 정산이 실서버로 붙어 숫자 id를
+ * 갖게 되면 `PartnerCards`와 같이 되살린다.
  */
 export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
   return (
@@ -37,9 +41,6 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
           <Table.Th align="center">미송</Table.Th>
           <Table.Th>미수 잔액</Table.Th>
           <Table.Th align="center">연락 · 계좌</Table.Th>
-          <Table.Th align="center">
-            <span className="sr-only">도매처 홈</span>
-          </Table.Th>
         </tr>
       </Table.Head>
 
@@ -82,15 +83,6 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
                 />
               </span>
             </Table.Td>
-            <Table.Td align="center">
-              <Button asChild variant="line" size="sm">
-                {/* 도매처 홈은 #98로 이미 있다. 거기 `거래처에서 보기`가 이 목록으로
-                    되돌려 보내므로 왕복이 끊기지 않는다 */}
-                <Link href={`/wholesalers/${row.wholesalerId}`}>
-                  도매처 홈<span className="sr-only"> ({row.name})</span>
-                </Link>
-              </Button>
-            </Table.Td>
           </Table.Row>
         ))}
       </Table.Body>
@@ -117,7 +109,6 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
           <td className="border-border border-t px-2 pt-3 pb-2 text-right font-medium tabular-nums">
             {formatWon(totalReceivable(rows))}
           </td>
-          <td className="border-border border-t" />
           <td className="border-border border-t" />
         </tr>
       </tfoot>
