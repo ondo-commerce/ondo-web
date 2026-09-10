@@ -157,7 +157,13 @@ export function useCartBusy(): boolean {
  * `qty=10`이 늦게 도착하는 순서 뒤집힘을 막는다. 행마다 타이머가 따로다.
  *
  * 화면을 떠날 때 기다리던 저장은 **버리지 않고 바로 보낸다.** 사장이 수량을 고치고
- * 곧장 `주문하기`를 누르면 마지막 글자가 서버에 못 닿은 채 주문서로 가기 때문이다.
+ * 곧장 다른 화면으로 가면 마지막 글자가 서버에 못 닿기 때문이다.
+ *
+ * 다만 **주문서로 갈 때는 그것으로 모자란다** — 언마운트 flush는 주문서 RSC 요청이
+ * 먼저 나간 뒤에 PATCH를 보내서, 주문서가 옛 수량으로 한 번 그려진다. 주문 API가
+ * 붙으면 그 한 박자 안에 눌린 `주문 접수하기`가 옛 수량을 주문한다(#179). 그래서
+ * `flush`를 따로 준다: 기다리던 것을 지금 보내고 **나가 있는 것까지 끝나기를
+ * 기다린다.** `주문하기`는 이것이 끝난 뒤에 이동한다.
  */
 export function useQtySaver(callbacks: {
   onFailed: (lineId: string, error: unknown) => void;
@@ -166,12 +172,20 @@ export function useQtySaver(callbacks: {
    * 표시한다(#176) — 여기서 지우면 refresh가 닿기 전까지 칸이 옛 값으로 튄다.
    */
   onSaved: (lineId: string) => void;
-}) {
-  const { mutate } = useChangeQtyMutation();
+}): {
+  /** 글자가 바뀔 때마다 부른다. `QTY_SAVE_DELAY_MS` 뒤에 보낸다 */
+  save: (lineId: string, input: { cartItemId: number; qty: number }) => void;
+  /** 기다리던 저장을 지금 보내고 나가 있는 것까지 기다린다. 전부 됐으면 true */
+  flush: () => Promise<boolean>;
+} {
+  const { mutateAsync } = useChangeQtyMutation();
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const pending = useRef(
     new Map<string, { cartItemId: number; qty: number }>(),
   );
+  /* 나가 있는 요청. `flush`가 이것까지 기다려야 주문서가 저장 뒤 수량을 읽는다 —
+     디바운스가 이미 끝나 요청이 나간 줄은 `pending`에 없다 */
+  const inflight = useRef(new Set<Promise<boolean>>());
   /* 콜백이 렌더마다 새 함수여도 저장기는 같은 함수로 남게 ref로 받는다.
      렌더 중에 ref를 쓰지 않고(react-hooks/refs) 커밋 뒤에 최신 것으로 바꾼다 */
   const handlers = useRef(callbacks);
@@ -185,25 +199,36 @@ export function useQtySaver(callbacks: {
       pending.current.delete(lineId);
       timers.current.delete(lineId);
       if (!input) return;
-      mutate(input, {
-        onSuccess: () => handlers.current.onSaved(lineId),
-        onError: (error) => handlers.current.onFailed(lineId, error),
-      });
+      /* reject하지 않는다 — 실패는 콜백이 그 줄에 적고, 여기서는 됐는지만 남긴다.
+         `flush`가 `Promise.all`로 모으는데 하나가 던지면 나머지를 못 기다린다 */
+      const request = mutateAsync(input).then(
+        () => {
+          handlers.current.onSaved(lineId);
+          return true;
+        },
+        (error: unknown) => {
+          handlers.current.onFailed(lineId, error);
+          return false;
+        },
+      );
+      inflight.current.add(request);
+      void request.finally(() => inflight.current.delete(request));
     },
-    [mutate],
+    [mutateAsync],
   );
 
-  useEffect(() => {
-    const activeTimers = timers.current;
-    return () => {
-      for (const [lineId, timer] of activeTimers) {
-        clearTimeout(timer);
-        send(lineId);
-      }
-    };
+  /* 기다리던 것을 전부 지금 보낸다. `send`가 순회 중인 Map에서 지우는데, JS Map은
+     순회 중 현재 항목을 지워도 안전하다 */
+  const sendAll = useCallback(() => {
+    for (const [lineId, timer] of timers.current) {
+      clearTimeout(timer);
+      send(lineId);
+    }
   }, [send]);
 
-  return useCallback(
+  useEffect(() => sendAll, [sendAll]);
+
+  const save = useCallback(
     (lineId: string, input: { cartItemId: number; qty: number }) => {
       const previous = timers.current.get(lineId);
       if (previous) clearTimeout(previous);
@@ -215,6 +240,14 @@ export function useQtySaver(callbacks: {
     },
     [send],
   );
+
+  const flush = useCallback(async () => {
+    sendAll();
+    const results = await Promise.all([...inflight.current]);
+    return results.every(Boolean);
+  }, [sendAll]);
+
+  return { save, flush };
 }
 
 /**
