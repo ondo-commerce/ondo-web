@@ -10,6 +10,7 @@ import {
   LINE_PENDING_NOTE,
   ORDER_PATH,
   ORDER_STATUS_LABEL,
+  PAGE_MAX,
   PAYMENT_LABEL,
   PERIODS,
   PICKUP_LABEL,
@@ -678,7 +679,24 @@ export function rejectedLegsOf(
     });
 }
 
-/** `?ids=771,772` → `[771, 772]`. 숫자가 아닌 것·중복은 버린다 */
+/**
+ * 주소에 실린 id 한 토막 → 서버 id(int64). 못 읽으면 null.
+ *
+ * **`Number()`로 읽지 않는다.** `Number("1e5")`는 100000, `Number("0x10")`은 16으로
+ * `isInteger`를 통과해 서버로 나가고, `99999999999999999999`는 int64를 넘는데도
+ * 나가서 400 `VALIDATION_FAILED` → `error.tsx`의 "운영자에게 알려 주세요"가 뜬다
+ * (F5). 같은 주소가 `nope-123`이면 `찾을 수 없어요`인데 자릿수만 길다고 운영자를
+ * 부르게 할 수 없다 — 숫자 글자만, 그리고 `isSafeInteger`(2^53) 안일 때만 id다.
+ * 2^53은 int64(2^63)보다 작으니 자릿수 상한은 이 검사에 포함된다. 그 위 id는
+ * JS `number`로 정확히 들 수도 없어서 어차피 보낼 수 없다.
+ */
+function parseServerId(raw: string): number | null {
+  if (!/^\d{1,19}$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+/** `?ids=771,772` → `[771, 772]`. 숫자가 아닌 것·범위 밖·중복은 버린다 */
 export function resolveCheckoutIds(
   params: Record<string, string | string[] | undefined>,
 ): number[] {
@@ -687,21 +705,18 @@ export function resolveCheckoutIds(
 
   const ids = new Set<number>();
   for (const part of raw.split(",")) {
-    const value = Number(part.trim());
-    if (Number.isInteger(value) && value > 0) ids.add(value);
+    const value = parseServerId(part.trim());
+    if (value !== null) ids.add(value);
   }
   return [...ids];
 }
 
-/** `?orderId=5012` → `5012`. 없거나 숫자가 아니면 null */
+/** `?orderId=5012` → `5012`. 없거나 id로 못 읽는 값이면 null — 서버를 안 부른다 */
 export function resolveOrderId(
   raw: string | string[] | undefined,
 ): number | null {
   const one = Array.isArray(raw) ? raw[0] : raw;
-  const value = Number(one);
-  return one !== undefined && Number.isInteger(value) && value > 0
-    ? value
-    : null;
+  return one === undefined ? null : parseServerId(one);
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1056,12 +1071,21 @@ export function resolveOpen(
   return resolveOrderId(one(params, "open"));
 }
 
-/** 주소의 `?page=`(1-base)를 정리한다. 숫자가 아니거나 1 미만이면 첫 장이다 */
+/**
+ * 주소의 `?page=`(1-base)를 정리한다. 숫자가 아니거나 1 미만이면 첫 장이다.
+ *
+ * 서버 `page`가 int32라 그 위(`PAGE_MAX` 초과)도 첫 장으로 떨어뜨린다 — 보내면
+ * 400이 `error.tsx`로 샌다. **몇 장인지는 여기서 모른다** — 마지막 장을 넘는
+ * 수는 서버가 빈 장을 주고 화면이 `ordersEmptyKind`로 "이 페이지에는 주문이
+ * 없어요"를 세운다(#184).
+ */
 export function resolvePage(
   params: Record<string, string | string[] | undefined>,
 ): number {
-  const value = Number(one(params, "page"));
-  return Number.isInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
+  const raw = one(params, "page") ?? "";
+  if (!/^\d{1,10}$/.test(raw)) return FIRST_PAGE;
+  const value = Number(raw);
+  return value >= FIRST_PAGE && value <= PAGE_MAX ? value : FIRST_PAGE;
 }
 
 /** 기간 축만 서버가 거른다(`from`). 여기서는 나머지 두 축을 **받은 장 안에서** 건다 */
@@ -1097,6 +1121,38 @@ export function isOrderFilterEmpty(filter: OrderFilter): boolean {
     filter.wholesaler === FILTER_ALL &&
     filter.status === FILTER_ALL
   );
+}
+
+/**
+ * 표가 비었을 때 **왜** 비었는지. 셋은 다른 말과 다른 다음 행동을 가진다.
+ *
+ * - `none` — 이 기간에 주문이 하나도 없다(`totalElements === 0`). 조건 문제가
+ *   아니라 아직 주문한 적이 없는 것이라 `초기화`가 없다.
+ * - `outOfRange` — 서버에는 주문이 있는데 이 장이 비었다. 옛 북마크 · 뒤로 가기 ·
+ *   주문이 줄어든 뒤의 링크로 마지막 장을 넘어 들어온 것이다. 서버가 빈 배열에
+ *   `totalPages: 1`을 주니 페이저도 안 서서 돌아갈 길이 `첫 장으로` 하나다(#184).
+ * - `filtered` — 받은 장은 있는데 도매처·상태 축이 다 걸러냈다. 조건을 지우면 된다.
+ *
+ * `orders.length === 0`을 `none`으로 읽던 때는 범위 밖 장에서 주문이 있는 사장에게
+ * `아직 주문한 적이 없어요`라고 말했다. **`none`은 `totalElements === 0`일 때만이다.**
+ * 기간이 기본값이 아닐 때의 0건은 `filtered`다 — 기간을 넓히면 주문이 나올 수
+ * 있는데 "주문한 적이 없다"고 단정할 수 없다.
+ */
+export type OrdersEmptyKind = "none" | "outOfRange" | "filtered";
+
+export function ordersEmptyKind(input: {
+  /** 서버가 이 장에 준 주문 수 */
+  received: number;
+  /** 도매처·상태 축을 건 뒤 남은 수 */
+  visible: number;
+  paging: OrderPage;
+  filter: OrderFilter;
+}): OrdersEmptyKind | null {
+  if (input.visible > 0) return null;
+  if (input.paging.totalElements === 0) {
+    return input.filter.period === DEFAULT_PERIOD ? "none" : "filtered";
+  }
+  return input.received === 0 ? "outOfRange" : "filtered";
 }
 
 export interface OrdersLocation {

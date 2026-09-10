@@ -3,7 +3,6 @@
 import { Button, Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { DescList, DescRow } from "./PaymentSummary";
 import { OrderResultCard } from "./OrderResultCard";
 import { PartialAcceptDialog } from "./PartialAcceptDialog";
@@ -14,7 +13,7 @@ import {
   ORDER_PATH,
 } from "../constants";
 import { formatSheets, formatWon, orderTotals } from "../derive";
-import { useRejectedLegs } from "../store";
+import { dismissPlaced, usePlacedResult } from "../store";
 import type { OrderRecord } from "../types";
 
 /**
@@ -27,15 +26,16 @@ import type { OrderRecord } from "../types";
  * 코드로 옮겨오지 않게.
  *
  * 안 된 도매처는 주문에 없어 그 응답에 없다 — 접수 직후 세션에 남긴 것을
- * 읽어 모달을 띄운다(`useRejectedLegs`). 새로고침하면 모달만 사라진다.
+ * 읽어 모달을 띄운다(`usePlacedResult`). 새로고침하면 모달만 사라진다.
  *
  * **`실패`라는 낱말이 이 화면 어디에도 없다**(RT-43).
  */
 export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
-  const rejected = useRejectedLegs(order?.orderId ?? 0);
   /* 모달은 열린 채로 시작한다 — 접수 결과에 안 된 건이 있으면 그걸 먼저 봐야
-     한다. 닫으면 그 아래 완료 화면이 그대로 남는다 */
-  const [dismissed, setDismissed] = useState(false);
+     한다. 닫으면 그 아래 완료 화면이 그대로 남는다. 닫은 사실은 `useState`가
+     아니라 세션(store)에 둔다 — 지역 상태면 `주문 내역 보기`로 갔다 뒤로 왔을 때
+     닫은 모달이 또 뜬다(F7) */
+  const { rejected, dismissed } = usePlacedResult(order?.orderId ?? 0);
 
   if (order === null) {
     return (
@@ -128,7 +128,9 @@ export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
           order={order}
           rejected={rejected}
           open={!dismissed}
-          onOpenChange={(next) => setDismissed(!next)}
+          onOpenChange={(next) => {
+            if (!next) dismissPlaced();
+          }}
           onCloseFocus={focusNext}
         />
       ) : null}

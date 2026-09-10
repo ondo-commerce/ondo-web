@@ -48,6 +48,12 @@ export const ORDERS_PAGE_SIZE = 100;
 /** 첫 장. 주소의 `?page=`는 1-base이고 서버는 0-base라 여기서 한 번 뺀다 */
 export const FIRST_PAGE = 1;
 
+/**
+ * 주소로 받을 수 있는 가장 큰 장(1-base). 서버 `page`가 int32(스냅샷)라 `page - 1`이
+ * 2^31 - 1을 넘으면 400이다 — 그 위는 `resolvePage`가 첫 장으로 떨어뜨린다
+ */
+export const PAGE_MAX = 2 ** 31;
+
 /** `이전 · 다음` 링크. 2장 이상일 때만 보인다 */
 export const PAGER_LABEL = {
   prev: "이전",
@@ -303,6 +309,16 @@ export const ORDERS_TEXT = {
   noOrders: {
     title: "아직 주문한 적이 없어요",
     description: "마음에 드는 상품을 담고 주문해 보세요.",
+  },
+  /**
+   * 마지막 장을 넘는 `?page=`로 들어왔을 때. 주문은 있는데 이 장만 비었다 —
+   * `아직 주문한 적이 없어요`라고 하면 주문이 있는 사장에게 거짓말이다(#184).
+   * 페이저가 안 서는 자리라(`totalPages: 1`) 돌아갈 링크를 여기서 준다
+   */
+  outOfRange: {
+    title: "이 페이지에는 주문이 없어요",
+    description: "옛 링크이거나 주문이 줄어 이 장이 비었어요.",
+    action: "첫 장으로",
   },
 } as const;
 
