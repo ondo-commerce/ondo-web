@@ -1,10 +1,9 @@
 "use client";
 
 import { cn } from "@ondo/ui";
-import { ImageIcon } from "lucide-react";
-import Image from "next/image";
 import { useState } from "react";
 import { THUMB_SLOTS } from "../constants";
+import { ProductImage } from "@/shared/components/ProductImage";
 
 /**
  * 상품 사진 갤러리 — 1:1 큰 자리 + 5칸 썸네일.
@@ -17,8 +16,8 @@ import { THUMB_SLOTS } from "../constants";
  * 사진이 5장을 넘으면 마지막 칸이 `+N`이 된다(원본 `+6`). 그 칸을 누르면 5번째
  * 사진으로 간다 — 6번째 이후를 여는 확대 뷰는 원본에 없어 만들지 않았다.
  *
- * `unoptimized`: 이미지 호스트가 `next.config`의 `remotePatterns`에 없다 —
- * 도매가 올린 주소 그대로 그린다.
+ * 사진이 못 받아지면 대표·썸네일 모두 같은 회색 슬롯으로 떨어진다(`ProductImage`) —
+ * `alt` 문장과 깨진 아이콘이 보이면 화면이 고장 난 것처럼 읽힌다(#217 D4).
  */
 export function ProductGallery({
   images,
@@ -37,19 +36,13 @@ export function ProductGallery({
   return (
     <div>
       <div className="bg-secondary text-border-strong relative grid aspect-square place-items-center gap-2 overflow-hidden rounded-control">
-        {current ? (
-          <Image
-            src={current}
-            alt={`${productName} ${selected}번째 사진`}
-            fill
-            unoptimized
-            sizes="(max-width: 60rem) 100vw, 480px"
-            className="object-cover"
-            priority
-          />
-        ) : (
-          <ImageIcon aria-hidden className="size-10" />
-        )}
+        <ProductImage
+          src={current}
+          alt={`${productName} ${selected}번째 사진`}
+          sizes="(max-width: 60rem) 100vw, 480px"
+          priority
+          iconClassName="size-10"
+        />
         <p aria-live="polite" className="sr-only">
           {images.length === 0 ? "사진이 없어요" : `${selected}번째 사진`}
         </p>
@@ -80,14 +73,7 @@ export function ProductGallery({
                     "outline-foreground -outline-offset-2 outline-2",
                 )}
               >
-                <Image
-                  src={url}
-                  alt=""
-                  fill
-                  unoptimized
-                  sizes="96px"
-                  className="object-cover"
-                />
+                <ProductImage src={url} sizes="96px" iconClassName="size-4" />
                 {isLast ? (
                   <span className="bg-card/80 text-foreground relative rounded px-1">
                     +{hidden}

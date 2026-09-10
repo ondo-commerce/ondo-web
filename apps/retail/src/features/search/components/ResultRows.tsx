@@ -1,13 +1,13 @@
 "use client";
 
 import { Button, IconButton, cn } from "@ondo/ui";
-import { Heart, ImageIcon } from "lucide-react";
-import Image from "next/image";
+import { Heart } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { rowMeta, rowPriceLabel } from "../derive";
 import type { SearchProduct, SearchWholesaler } from "../types";
 import { useProductFavorite } from "@/features/catalog";
+import { ProductImage } from "@/shared/components/ProductImage";
 
 /**
  * 검색 결과의 줄. 카드가 아니라 줄인 이유는 두 축(상품·도매처)이 한 화면에
@@ -39,19 +39,11 @@ export function ProductResultRow({ product }: { product: SearchProduct }) {
         aria-hidden
         className="bg-secondary text-border-strong relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-md"
       >
-        {product.thumbnailUrl ? (
-          /* 이미지 호스트가 `next.config`에 없어 최적화 파이프를 안 탄다 */
-          <Image
-            src={product.thumbnailUrl}
-            alt=""
-            fill
-            unoptimized
-            sizes="56px"
-            className="object-cover"
-          />
-        ) : (
-          <ImageIcon className="size-5" />
-        )}
+        <ProductImage
+          src={product.thumbnailUrl}
+          sizes="56px"
+          iconClassName="size-5"
+        />
       </span>
 
       <div className="min-w-0 flex-1">

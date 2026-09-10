@@ -73,6 +73,14 @@ export const COPY_STATUS_TEXT = {
 export const COPY_STATUS_MS = 2500;
 
 /** 거래처 관리 패널 부제. 미송 배지가 무엇을 여는지 표 위에서 미리 말한다 */
+/**
+ * 정산·거래처가 아직 더미를 읽는다는 안내. 소매 정산 엔드포인트가 없어 fixtures로 그리는데,
+ * 실서버 도매처(무드온·라온…) 사이에 데님하우스·라비앙이 섞여 보이면 실데이터로 읽힌다(#217 R6).
+ * 연동 회차에 fixtures와 같이 지운다.
+ */
+export const FIXTURE_NOTICE =
+  "서버 연동 전 예시 데이터예요. 실제 거래 내역과 달라요.";
+
 export const PARTNERS_SUB =
   "거래한 적 있는 도매처예요. 미송 배지를 누르면 그 도매처만 걸러서 미송 현황이 열려요.";
 

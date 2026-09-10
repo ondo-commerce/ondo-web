@@ -1,11 +1,11 @@
 "use client";
 
 import { IconButton, cn } from "@ondo/ui";
-import { Heart, ImageIcon } from "lucide-react";
-import Image from "next/image";
+import { Heart } from "lucide-react";
 import Link from "next/link";
 import { optionSummary, priceLabel } from "../derive";
 import type { CatalogProduct } from "../types";
+import { ProductImage } from "@/shared/components/ProductImage";
 
 /**
  * 마켓 상품 카드 한 장. 홈 · 도매처 홈 · 찜 목록 세 화면이 같은 것을 쓴다.
@@ -41,21 +41,11 @@ export function ProductCard({
             빼서 아래 상품명 링크 하나만 남긴다 */}
         <Link href={href} aria-hidden tabIndex={-1} className="block">
           <div className="bg-secondary text-border-strong relative grid aspect-square place-items-center overflow-hidden rounded-control">
-            {product.thumbnailUrl ? (
-              /* 이미지 호스트가 `next.config`에 없어 최적화 파이프를 안 탄다 —
-                 도매가 올린 주소 그대로 그린다 */
-              <Image
-                src={product.thumbnailUrl}
-                alt=""
-                fill
-                unoptimized
-                sizes="(max-width: 40rem) 50vw, 20vw"
-                className="object-cover"
-              />
-            ) : (
-              /* 사진이 없는 게시글. 확정 와이어프레임도 회색 슬롯이다 */
-              <ImageIcon aria-hidden className="size-7" />
-            )}
+            {/* 사진이 없거나 못 받은 게시글은 회색 슬롯 — 확정 와이어프레임과 같다 */}
+            <ProductImage
+              src={product.thumbnailUrl}
+              sizes="(max-width: 40rem) 50vw, 20vw"
+            />
           </div>
         </Link>
 

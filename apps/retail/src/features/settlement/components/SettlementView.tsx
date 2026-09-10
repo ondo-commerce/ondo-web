@@ -1,6 +1,7 @@
-import { Panel } from "@ondo/ui";
+import { Notice, Panel } from "@ondo/ui";
+import { Info } from "lucide-react";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
-import { SETTLEMENT_SUB } from "../constants";
+import { FIXTURE_NOTICE, SETTLEMENT_SUB } from "../constants";
 import {
   findSettlement,
   formatDate,
@@ -42,9 +43,18 @@ export function SettlementView({
   const current = findSettlement(currentId, rows);
 
   return (
-    <>
+    /* 주문 내역·미송과 같은 폭. 화면 끝까지 흐르면 1440px에서 표 열 사이가 비어
+       한 줄로 읽히지 않고, 화면을 오갈 때 본문이 좌우로 뛴다(#217 R2) */
+    <div className="mx-auto max-w-wrap">
       <Panel>
         <Panel.Title sub={SETTLEMENT_SUB}>정산 · 미수</Panel.Title>
+        {/* 더미라는 사실을 화면이 말한다 — 실서버 도매처 사이에 섞이면 실데이터로 읽힌다 */}
+        <Notice className="mb-4">
+          <span className="flex items-start gap-2">
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+            {FIXTURE_NOTICE}
+          </span>
+        </Notice>
         {/* 거래처가 0곳이어도 카드 3장은 `0원`으로 남는다 — 요약이 통째로
             사라지면 사장이 화면이 덜 그려진 것으로 읽는다 */}
         <StatCards cards={summaryCards(rows)} />
@@ -79,7 +89,7 @@ export function SettlementView({
           />
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
