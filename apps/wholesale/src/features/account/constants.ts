@@ -167,7 +167,10 @@ export const VALIDATION_MESSAGE = {
  * ⚠️ dev 서버(`api-dev.ddmondo.co.kr`)에는 이 계정이 없다 — 거기 쓸 계정은 BE에
  * 따로 받는다. 승인 대기·거절 계정은 시드에 없어서 그 화면들은 실서버로 확인할 수 없다.
  */
-export const DEV_SEED_ACCOUNT = "dev@ondo.test / Ondo!2345";
+/* MUL-103 V901 시드(2026-09-07). 셋 다 APPROVED고 계정마다 상품·주문이 다르다.
+   옛 dev@ondo.test(PENDING)는 더 안 쓴다 */
+export const DEV_SEED_ACCOUNT =
+  "moodon · raon · cottonclub@ondo.test / ondo1234!";
 
 /**
  * 흉내라는 사실을 감추지 않는 한 줄. 계정 메뉴(로그아웃이 있는 자리)에 둔다 —

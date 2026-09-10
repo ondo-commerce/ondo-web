@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // MSW가 생성한 파일(`msw init`). 손대지 않으므로 검사도 안 한다 — 맨 위 eslint-disable가
+    // "쓸모없는 지시문" 경고를 낸다 (#218)
+    "public/mockServiceWorker.js",
   ]),
 ]);
 
