@@ -16,7 +16,9 @@ type PageProps = { params: Promise<{ orderId: string }> };
 
 /**
  * 주소의 `orderId`로 `GET /orders/{orderId}`. 없는 주문(404)은 null이다 —
- * 숫자가 아닌 주소(`/orders/nope-123`)는 서버를 부르지 않고 바로 null.
+ * 숫자가 아니거나 id 범위를 넘는 주소(`/orders/nope-123` ·
+ * `/orders/99999999999999999999`)는 서버를 부르지 않고 바로 null. 보내면 400이
+ * `error.tsx`로 새어 "운영자에게 알려 주세요"가 뜬다(`resolveOrderId`).
  * 그 밖의 실패(5xx·연결 실패)는 그대로 던져 `error.tsx`가 받는다.
  */
 async function fetchOrder(rawId: string): Promise<OrderRecord | null> {

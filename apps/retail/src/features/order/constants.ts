@@ -48,6 +48,12 @@ export const ORDERS_PAGE_SIZE = 100;
 /** 첫 장. 주소의 `?page=`는 1-base이고 서버는 0-base라 여기서 한 번 뺀다 */
 export const FIRST_PAGE = 1;
 
+/**
+ * 주소로 받을 수 있는 가장 큰 장(1-base). 서버 `page`가 int32(스냅샷)라 `page - 1`이
+ * 2^31 - 1을 넘으면 400이다 — 그 위는 `resolvePage`가 첫 장으로 떨어뜨린다
+ */
+export const PAGE_MAX = 2 ** 31;
+
 /** `이전 · 다음` 링크. 2장 이상일 때만 보인다 */
 export const PAGER_LABEL = {
   prev: "이전",
