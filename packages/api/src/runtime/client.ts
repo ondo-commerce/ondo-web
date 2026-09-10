@@ -1,6 +1,7 @@
 import type { PageMeta } from "./envelope";
 import type { FieldError } from "./error";
 import { ApiError, TRANSPORT_ERROR_CODE } from "./error";
+import type { RetailSchema } from "../retail";
 
 /**
  * 쿼리스트링 값. 배열·객체를 받지 않는 이유는 서버가 반복 키(`?a=1&a=2`)를 쓰지
@@ -31,12 +32,73 @@ export interface Page<T> {
   meta: PageMeta;
 }
 
-/** 서버 에러 본문. 성공과 달리 `data` 봉투를 쓰지 않는다. */
+/**
+ * 서버 에러 본문. 성공과 달리 `data` 봉투를 쓰지 않는다.
+ *
+ * `errors[]` 항목은 서버마다 모양이 달라 여기서는 `unknown`으로 받고 `toFieldError`가
+ * 하나씩 `FieldError`로 맞춘다.
+ */
 interface ErrorPayload {
   code: string;
   message: string;
-  errors?: readonly FieldError[];
+  errors?: readonly unknown[];
   traceId?: string;
+}
+
+/**
+ * 소매 서버의 `errors[]` 항목 — 스냅샷 `FieldError` `{ field, code, message }`.
+ * `code`는 스냅샷상 필수지만 빠져도 문구는 살린다 — 칸 아래 문구가 사라지는 쪽이 더 나쁘다.
+ */
+type RetailRawFieldError = Omit<RetailSchema<"FieldError">, "code"> &
+  Partial<Pick<RetailSchema<"FieldError">, "code">>;
+
+/**
+ * 도매 서버의 `errors[]` 항목. 도매 스냅샷엔 이 스키마가 없어 손으로 적었다 —
+ * 2026-09-10 dev 응답 `{"field":"name","reason":"must not be blank"}`. `code`는 안 준다.
+ */
+interface WholesaleRawFieldError {
+  field: string;
+  reason: string;
+}
+
+function isRetailRawFieldError(value: unknown): value is RetailRawFieldError {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.field === "string" &&
+    typeof candidate.message === "string" &&
+    (candidate.code === undefined || typeof candidate.code === "string")
+  );
+}
+
+function isWholesaleRawFieldError(
+  value: unknown,
+): value is WholesaleRawFieldError {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.field === "string" && typeof candidate.reason === "string"
+  );
+}
+
+/**
+ * 서버별 `errors[]` 항목을 앱이 읽는 한 모양으로 맞춘다.
+ *
+ * 둘 다 아닌 항목은 버린다 — `undefined`를 칸 아래에 붙이는 것보다 폼 위 서버 문구
+ * (`ApiError.message`)로 떨어지는 쪽이 낫다.
+ */
+function toFieldError(value: unknown): FieldError | null {
+  if (isRetailRawFieldError(value)) {
+    return {
+      field: value.field,
+      code: value.code ?? null,
+      message: value.message,
+    };
+  }
+  if (isWholesaleRawFieldError(value)) {
+    return { field: value.field, code: null, message: value.reason };
+  }
+  return null;
 }
 
 /**
@@ -284,7 +346,10 @@ async function toApiError(response: Response): Promise<ApiError> {
     status: response.status,
     code: payload.code,
     message: payload.message,
-    fieldErrors: payload.errors ?? [],
+    fieldErrors: (payload.errors ?? []).flatMap((item) => {
+      const normalized = toFieldError(item);
+      return normalized === null ? [] : [normalized];
+    }),
     traceId: payload.traceId ?? null,
   });
 }
@@ -295,6 +360,8 @@ function isErrorPayload(value: unknown): value is ErrorPayload {
   }
   const candidate = value as Record<string, unknown>;
   return (
-    typeof candidate.code === "string" && typeof candidate.message === "string"
+    typeof candidate.code === "string" &&
+    typeof candidate.message === "string" &&
+    (candidate.errors === undefined || Array.isArray(candidate.errors))
   );
 }

@@ -35,12 +35,13 @@ export function toFieldErrors<K extends string>(
   const result: FormErrors<K> = {};
   const orphans: string[] = [];
 
-  for (const { field, reason } of error.fieldErrors) {
+  // 도매 서버는 `reason`으로 내리지만 `@ondo/api`가 `message`로 맞춰 준다 — 여기서는 `message`만 읽는다
+  for (const { field, message } of error.fieldErrors) {
     if (known.has(field)) {
       const key = field as K;
-      if (result[key] === undefined) result[key] = reason;
+      if (result[key] === undefined) result[key] = message;
     } else {
-      orphans.push(reason);
+      orphans.push(message);
     }
   }
 
