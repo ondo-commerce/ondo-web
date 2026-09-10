@@ -1,6 +1,5 @@
 import { Button } from "@ondo/ui";
 import { Phone } from "lucide-react";
-import Link from "next/link";
 import { ongoingCount } from "@/shared/tradeStats";
 import {
   CARD_LABEL,
@@ -66,8 +65,9 @@ export function PartnerCards({ rows }: { rows: readonly PartnerListRow[] }) {
               </dd>
             </dl>
 
-            {/* 전화·계좌 복사·도매처 홈. 시장에서 한 손으로 누르는 자리라 좁은
-                폭에서 손가락 크기(44px)가 되는 것은 표와 같다 */}
+            {/* 전화·계좌 복사. 시장에서 한 손으로 누르는 자리라 좁은 폭에서
+                손가락 크기(44px)가 되는 것은 표와 같다.
+                TODO(#183): `도매처 홈` 버튼이 없다 — 이유는 `PartnerTable`과 같다 */}
             <div className="mt-3 flex items-center gap-2">
               <Button
                 asChild
@@ -83,11 +83,6 @@ export function PartnerCards({ rows }: { rows: readonly PartnerListRow[] }) {
                 text={`${row.bank.bankName} ${row.bank.accountNo}`}
                 label={`${row.name} 계좌 복사`}
               />
-              <Button asChild variant="line" size="sm" className="ml-auto">
-                <Link href={`/wholesalers/${row.wholesalerId}`}>
-                  도매처 홈<span className="sr-only"> ({row.name})</span>
-                </Link>
-              </Button>
             </div>
           </li>
         ))}

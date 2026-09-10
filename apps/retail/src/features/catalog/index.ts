@@ -40,6 +40,7 @@ export type {
   CategoryWire,
   FilterOptionsWire,
   ListingSummaryWire,
+  TradeStatsSlot,
 } from "./types";
 
 /* 찜은 세 화면(홈·도매처 홈·찜 목록)과 세 feature(상품 상세·검색·주문 상세)가

@@ -1,4 +1,3 @@
-import type { TradeStats } from "@/shared/tradeStats";
 import { OVERDUE_DAYS, PAID_WINDOW_DAYS, TODAY } from "./constants";
 import { LEDGER_ENTRIES, TRADE_PARTNERS } from "./fixtures";
 import type {
@@ -371,31 +370,4 @@ export function partnerListRows(): PartnerListRow[] {
 /** 미송 합계 장수. 표 `tfoot`의 `41장`이 이 값이고, 41 = 10 + 15 + 16이 화면 위에서 더해진다 */
 export function totalBackorderSheets(rows: readonly PartnerListRow[]): number {
   return rows.reduce((sum, row) => sum + row.backorderSheets, 0);
-}
-
-/**
- * 도매처 홈(`/wholesalers/[id]`) 요약 카드가 읽는 거래 지표. **거래 이력이 없으면 null**이다.
- *
- * 도매처 홈은 `features/catalog`의 화면인데 진행 중 · 미송 · 미수는 전부 이 feature의
- * 값이다. 예전에는 같은 숫자를 저쪽 더미에도 적어 두어서 무드온이 두 화면에서 다른
- * 말을 했다(F1 · #128). feature끼리 직접 import하지 않으므로(`CLAUDE.md`) 여기서
- * 내보내고 `app/`이 합친다 — `retail-backorder` 회차가 상호를 그렇게 이었다.
- *
- * null을 0으로 바꿔 돌려주지 않는다. **거래한 적 없는 것과 거래액이 0인 것은 다르고**,
- * 그 차이를 화면이 알아야 `거래처에서 보기`를 감출지 정할 수 있다(F9).
- */
-export function partnerStatsOf(wholesalerId: string): TradeStats | null {
-  const partner = TRADE_PARTNERS.find((p) => p.wholesalerId === wholesalerId);
-  if (!partner) return null;
-
-  const entries = ledgerOf(wholesalerId);
-
-  return {
-    pendingCount: partner.pendingCount,
-    backorderCount: partner.backorderCount,
-    backorderSheets: partner.backorderSheets,
-    backorderDelayed: partner.backorderDelayed,
-    balance: balanceOf(entries),
-    lastPaidAt: lastPaidAtOf(entries),
-  };
 }

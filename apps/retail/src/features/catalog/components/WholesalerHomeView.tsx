@@ -4,9 +4,9 @@ import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
-import { ongoingCount, type TradeStats } from "@/shared/tradeStats";
+import { ongoingCount } from "@/shared/tradeStats";
 import { CatalogSection } from "./CatalogSection";
-import { WHOLESALER_HOME_AXES } from "../constants";
+import { TRADE_STATS_PENDING, WHOLESALER_HOME_AXES } from "../constants";
 import { formatUnpaid } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
@@ -14,6 +14,7 @@ import type {
   CatalogOptions,
   CatalogPaging,
   CatalogProduct,
+  TradeStatsSlot,
   Wholesaler,
 } from "../types";
 
@@ -39,10 +40,11 @@ export function WholesalerHomeView({
 }: {
   wholesaler: Wholesaler;
   /**
-   * 거래 지표. **거래한 적 없는 도매처는 null**이다 — 0과 다르다.
-   * 원본은 `features/settlement`의 거래 원장이고 `app/`이 합쳐서 넘긴다(F1).
+   * 거래 지표. 원본은 `features/settlement`의 거래 원장이고 `app/`이 합쳐서
+   * 넘긴다(F1). **거래한 적 없는 것(`null`)과 아직 알 수 없는 것(`unavailable`)이
+   * 다르다** — 뒤쪽을 0으로 그리면 미수가 있는 도매처가 깨끗해 보인다(#183).
    */
-  tradeStats: TradeStats | null;
+  tradeStats: TradeStatsSlot;
   /** 이 도매처가 마켓에 올린 상품 — 서버가 준 첫 장에서 도매처 id로 거른 것 */
   products: readonly CatalogProduct[];
   filter: CatalogFilter;
@@ -50,6 +52,8 @@ export function WholesalerHomeView({
   paging: CatalogPaging;
 }) {
   const { favorites, toggleFavorite } = useFavorites();
+  /* 거래 이력이 **확인된** 도매처만. 알 수 없는 상태를 이력 있음으로 읽지 않는다 */
+  const traded = tradeStats.status === "ready" ? tradeStats.stats : null;
 
   return (
     <>
@@ -78,7 +82,7 @@ export function WholesalerHomeView({
           {/* 거래한 적 없는 도매처에서는 이 버튼을 감춘다. `/wholesalers`는 거래
               이력이 있는 곳만 서는 목록이라(§3-0 A), 누르면 방금 보던 도매처가
               없는 표로 떨어진다 — 사장이 목록을 뒤지다 만다(F9) */}
-          {tradeStats ? (
+          {traded ? (
             <div className="ml-auto phone:ml-0">
               <Button asChild variant="line" size="sm">
                 <Link href="/wholesalers">거래처에서 보기</Link>
@@ -119,10 +123,22 @@ export function WholesalerHomeView({
  * 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서 무드온이 두 화면에서
  * 다르게 읽혔다(F1 · #128).
  *
- * `tradeStats`가 null이면 **거래한 적 없는 도매처**다. 0건·0원으로 세우되 그건
+ * `stats`가 null이면 **거래한 적 없는 도매처**다. 0건·0원으로 세우되 그건
  * 계산 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
+ *
+ * `unavailable`이면 숫자를 안 적는다 — 정산이 fixtures인 동안 서버 도매처의
+ * 거래를 알 길이 없는데 0으로 세우면 거래 없음으로 읽힌다(#183).
  */
-function statCardsOf(tradeStats: TradeStats | null): StatCard[] {
+function statCardsOf(slot: TradeStatsSlot): StatCard[] {
+  if (slot.status === "unavailable") {
+    return [
+      { label: "진행 중", ...TRADE_STATS_PENDING },
+      { label: "미결제 잔액", ...TRADE_STATS_PENDING },
+    ];
+  }
+
+  const { stats: tradeStats } = slot;
+
   return [
     {
       label: "진행 중",

@@ -46,6 +46,16 @@ export const ALL_AXES: FilterAxes = {
  */
 export const WHOLESALER_HOME_AXES: FilterAxes = { ...ALL_AXES, price: false };
 
+/**
+ * 도매처 홈 통계 칸이 거래 정보를 아직 못 받을 때(`TradeStatsSlot.unavailable`) 쓰는 말.
+ * 숫자를 지어내지 않는다 — `0건 · 0원`은 "거래 없음"으로 읽혀서 실제로 미수가 있는
+ * 도매처가 깨끗해 보인다(#183).
+ */
+export const TRADE_STATS_PENDING = {
+  value: "—",
+  sub: "거래 정보 준비 중",
+} as const;
+
 /** 정렬 라벨. 찜 목록만 정렬이 있다 — 목록 API에 정렬 파라미터가 없다 */
 export const SORT_LABEL: Record<CatalogSort, string> = {
   "favorited-desc": "최근 찜한 순",
