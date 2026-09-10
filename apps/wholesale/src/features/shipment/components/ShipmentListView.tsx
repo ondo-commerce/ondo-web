@@ -350,7 +350,8 @@ export function ShipmentListView() {
                     : "text-destructive-strong text-sm"
                 }
               >
-                {noticeText(notice)}
+                {/* 검색어가 걸린 채면 `출고 대기` 칩이 (0)일 수 있어 갈 길을 바꿔 말한다(F5, #205) */}
+                {noticeText(notice, q !== "")}
               </p>
             ) : null}
             {stale ? (
