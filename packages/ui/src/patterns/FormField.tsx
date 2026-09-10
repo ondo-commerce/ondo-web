@@ -38,7 +38,8 @@ export function FormField({
           {label}
         </label>
         {required ? (
-          <span className="text-destructive" aria-hidden>
+          /* 글자라 strong이다 — red-500은 흰 배경에서 3.82:1로 AA 미달(#211) */
+          <span className="text-destructive-strong" aria-hidden>
             *
           </span>
         ) : null}

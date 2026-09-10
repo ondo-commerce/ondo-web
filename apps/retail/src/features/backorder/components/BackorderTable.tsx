@@ -43,16 +43,8 @@ export function BackorderTable({
           <Table.Th>{TABLE_HEADERS.qty}</Table.Th>
           <Table.Th align="center">{TABLE_HEADERS.orderedAt}</Table.Th>
           <Table.Th align="center">{TABLE_HEADERS.eta}</Table.Th>
-          {/*
-            버튼 열도 이름이 있어야 보조기술이 `주문 보기`가 어느 열인지 말한다.
-
-            `relative`가 붙은 이유가 폭이다. `sr-only`는 `position:absolute`인데
-            `Table.Th`에는 위치 기준이 없어서, 이 span의 컨테이닝 블록이 표의 가로
-            스크롤 상자를 **건너뛰고** 바깥으로 잡힌다. 그러면 표는 자기 상자 안에서
-            스크롤하는데도 **페이지 전체가 가로로 밀린다**(390px에서 문서 폭 660px).
-            기준을 th로 못박아 스크롤 상자 안에 가둔다.
-          */}
-          <Table.Th align="center" className="relative">
+          {/* 버튼 열도 이름이 있어야 보조기술이 `주문 보기`가 어느 열인지 말한다 */}
+          <Table.Th align="center">
             <span className="sr-only">{TABLE_HEADERS.action}</span>
           </Table.Th>
         </Table.Row>

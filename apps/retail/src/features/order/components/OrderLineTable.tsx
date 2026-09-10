@@ -50,10 +50,7 @@ export function OrderLineTable({
           <Table.Th>{LINE_HEADERS.price}</Table.Th>
           <Table.Th>{LINE_HEADERS.subtotal}</Table.Th>
           <Table.Th align="center">{LINE_HEADERS.status}</Table.Th>
-          {/* `relative`가 붙은 이유가 폭이다 — `sr-only`는 절대 위치라 위치 기준이
-              없으면 표의 가로 스크롤 상자를 건너뛰고 **페이지 전체를 옆으로
-              민다**(390px에서 문서 폭 713px · F1). 기준을 th로 못박는다 */}
-          <Table.Th align="center" className="relative">
+          <Table.Th align="center">
             <span className="sr-only">{LINE_HEADERS.favorite}</span>
           </Table.Th>
         </Table.Row>

@@ -94,7 +94,7 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
           }}
         />
         {errors.expectedInboundDate ? (
-          <p className="text-destructive mt-1.5 text-body">
+          <p className="text-destructive-strong mt-1.5 text-body">
             {errors.expectedInboundDate}
           </p>
         ) : null}
@@ -113,7 +113,7 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
           }}
         />
         {errors.expectedInboundReason ? (
-          <p className="text-destructive mt-1.5 text-body">
+          <p className="text-destructive-strong mt-1.5 text-body">
             {errors.expectedInboundReason}
           </p>
         ) : null}

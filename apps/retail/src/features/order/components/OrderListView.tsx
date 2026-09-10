@@ -111,12 +111,7 @@ export function OrderListView({
                 </caption>
                 <Table.Head>
                   <Table.Row>
-                    {/* `relative`가 붙은 이유가 폭이다. `sr-only`는 절대 위치인데
-                        `Table.Th`에 위치 기준이 없으면 이 span의 컨테이닝 블록이
-                        표의 가로 스크롤 상자를 **건너뛰고** 바깥으로 잡힌다. 그러면
-                        표는 자기 상자 안에서 스크롤하는데도 페이지 전체가 옆으로
-                        밀린다(390px에서 문서 폭 640px · F1) */}
-                    <Table.Th align="center" className="relative w-8">
+                    <Table.Th align="center" className="w-8">
                       <span className="sr-only">{LIST_HEADERS.expand}</span>
                     </Table.Th>
                     <Table.Th align="left">{LIST_HEADERS.ordered}</Table.Th>
