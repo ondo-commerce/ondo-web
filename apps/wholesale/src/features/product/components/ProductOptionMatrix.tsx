@@ -30,6 +30,7 @@ export function ProductOptionMatrix({
   triggerId,
   describedBy,
   invalid = false,
+  invalidOptionIds = [],
 }: {
   options: OptionDraft[];
   onChange: (next: OptionDraft[]) => void;
@@ -38,6 +39,11 @@ export function ProductOptionMatrix({
   triggerId?: string;
   describedBy?: string;
   invalid?: boolean;
+  /**
+   * 오류로 가리킬 행(`OptionDraft.id`). 사이즈를 안 켠 색이 저장을 막았을 때 그 색의 이름을
+   * 빨갛게 — 오류 문구는 표 아래 한 줄이고 어느 행인지는 여기가 가리킨다(#157 F5)
+   */
+  invalidOptionIds?: readonly string[];
 }) {
   const skuCount = options.reduce((n, o) => n + o.sizes.length, 0);
 
@@ -172,7 +178,12 @@ export function ProductOptionMatrix({
           <Table.Body>
             {options.map((option) => (
               <Table.Row key={option.id}>
-                <Table.Td align="left">
+                <Table.Td
+                  align="left"
+                  tone={
+                    invalidOptionIds.includes(option.id) ? "danger" : "default"
+                  }
+                >
                   <span className="flex items-center gap-2 whitespace-nowrap">
                     <ColorDot color={option.color.hex} className="size-3.5" />
                     {option.color.name}

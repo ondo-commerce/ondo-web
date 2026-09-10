@@ -547,7 +547,8 @@ export type ProductFormErrors = FormErrors<ProductField> & {
 
 /**
  * 보내기 전에 잡는 것 — **서버에 못 보낼 값**과 **서버가 안 잡아 주는 값.** 리프
- * 카테고리가 없으면 `categoryId`가 NaN이 되고, 옵션이 없으면 SKU가 0개다. 가격표는
+ * 카테고리가 없으면 `categoryId`가 NaN이 되고, 옵션이 없으면 SKU가 0개이며, 사이즈 없는
+ * 색은 서버가 거절하거나 SKU 없는 색으로 남는다(`sizelessOptionIds`). 가격표는
  * 정수가 아니면 못 보내고, 자릿수를 넘기면 서버가 500을 내고, 판매가 0은 서버가 그대로
  * 게시한다(dev-verify F3·F6) — 셋 다 여기서 막는다. 나머지 규칙(길이)은 서버 검증에
  * 맡기고 그 답을 칸에 붙인다 — 규칙을 두 벌 들면 한쪽만 바뀐다.
@@ -564,6 +565,9 @@ export function validateProductForm(
   if (product.category[2] === "") errors.categoryId = "소분류까지 골라 주세요.";
   if (!product.options.some((o) => o.sizes.length > 0))
     errors.colorOptions = "색상을 고르고 사이즈를 하나 이상 켜 주세요.";
+  else if (sizelessOptionIds(product).length > 0)
+    errors.colorOptions =
+      "사이즈를 켜지 않은 색상이 있어요. 사이즈를 켜거나 그 색상을 빼 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
   if (post) {
@@ -571,6 +575,16 @@ export function validateProductForm(
     if (priceError) errors["listing.variantPrices"] = priceError;
   }
   return errors;
+}
+
+/**
+ * 사이즈를 하나도 안 켠 색상(`OptionDraft.id`). 그대로 보내면 `colorOptions`에
+ * `{colorId, sizes: []}`로 실려 서버가 `OPTION_REQUIRED`로 거절하거나 SKU 없는 색을
+ * 만든다(wire-product F5). 조용히 빼지 않는다 — 사장이 고른 색이 요청에서 사라지면
+ * 저장은 됐는데 색이 없는 이유를 모른다. 대신 그 행을 가리켜 막는다.
+ */
+export function sizelessOptionIds(product: ProductFormValue): string[] {
+  return product.options.filter((o) => o.sizes.length === 0).map((o) => o.id);
 }
 
 /** 가격표 아래 한 줄. 어느 칸인지는 칸의 aria-invalid가 가리킨다(`PostPriceTable`) */
