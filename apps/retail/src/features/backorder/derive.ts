@@ -7,6 +7,7 @@ import {
   DROPPED_NOTICE,
   FILTER_ALL,
   FIRST_PAGE,
+  PAGE_MAX,
   SIZE_LABEL,
 } from "./constants";
 import type {
@@ -172,14 +173,20 @@ export function resolveSort(
 /**
  * 주소의 `?page=`(1-base)를 정리한다. 숫자가 아니거나 1 미만이면 첫 장이다.
  *
- * 범위를 넘는 큰 수는 여기서 못 막는다 — 몇 장인지는 서버가 답해야 안다. 그 경우 서버가
- * 빈 배열을 주고 화면은 0건 + 페이저로 돌아갈 길을 보여준다.
+ * 서버 `page`가 int32라 그 위(`PAGE_MAX` 초과)도 첫 장으로 떨어뜨린다 — 보내면 400
+ * `VALIDATION_FAILED`가 `error.tsx`로 새어 주소를 잘못 친 사장에게 "운영자에게 알려
+ * 주세요"가 뜬다(#169). `Number()`로 읽지 않는다 — `1e5`·`0x10`이 `isInteger`를 통과한다.
+ *
+ * **몇 장인지는 여기서 모른다** — 마지막 장을 넘는 수는 서버가 빈 장을 주고 화면이
+ * `backordersEmptyKind`로 "이 페이지에는 미송이 없어요"와 `첫 장으로`를 세운다(#168).
  */
 export function resolvePage(
   params: Record<string, string | string[] | undefined>,
 ): number {
-  const value = Number(one(params, "page"));
-  return Number.isInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
+  const raw = one(params, "page") ?? "";
+  if (!/^\d{1,10}$/.test(raw)) return FIRST_PAGE;
+  const value = Number(raw);
+  return value >= FIRST_PAGE && value <= PAGE_MAX ? value : FIRST_PAGE;
 }
 
 /**
@@ -254,18 +261,36 @@ export function sortByOrderedAt(
 }
 
 /**
- * 서버가 준 장이 비었는가 — 화면이 표·카드 대신 빈 상태를 그리는 단 하나의 분기.
+ * 표가 비었을 때 **왜** 비었는지 — 화면이 표·카드 대신 빈 상태를 그리는 단 하나의 분기.
+ * 둘은 다른 말과 다른 다음 행동을 가진다.
  *
- * `visible`이 아니라 **`lines`(받은 장)**를 본다. 도매처 칩은 받은 장에서 만들어지고
- * 주소의 `?wholesaler=`는 칩에 있는 값만 통과하므로(`resolveWholesalerId`), 필터로
- * 걸러져 0건이 되는 일은 없다 — 걸러진 도매처는 `전체`로 떨어지고 `Notice`가 그 사실을
- * 말한다. 그래서 이 화면의 0행은 "조건에 안 맞음"이 아니라 "미송 자체가 없음"이다.
+ * - `none` — 미송이 하나도 없다(`totalElements === 0`). 대부분 사장의 평소 상태라
+ *   `상품 둘러보기`·`주문 내역 보기`가 다음 행동이다.
+ * - `outOfRange` — 서버에는 미송이 있는데 이 장이 비었다. 옛 북마크 · 뒤로 가기 ·
+ *   미송이 줄어든 뒤의 링크로 마지막 장을 넘어 들어온 것이다. 서버가 빈 배열에
+ *   `totalPages: 1`을 주니 페이저도 안 서서 돌아갈 길이 `첫 장으로` 하나다(#168).
  *
- * 범위 밖 `?page=N`도 빈 배열로 돌아와 여기에 걸린다. 그 경우 사장에게는 미송이 있는데
- * 없다고 말하는 셈이라, 첫 장으로 돌려보내는 처리는 #168 몫이다.
+ * 주문 내역의 `ordersEmptyKind`와 같은 규칙인데 **`filtered`가 없다.** 도매처 칩은 받은
+ * 장에서 만들어지고 주소의 `?wholesaler=`는 칩에 있는 값만 통과하므로
+ * (`resolveWholesalerId`), 필터로 걸러져 0건이 되는 일은 없다 — 걸러진 도매처는 `전체`로
+ * 떨어지고 `Notice`가 그 사실을 말한다. 그래서 `visible > 0`이 아닌데 받은 장이 있는
+ * 경우는 만들어지지 않고, 만약 생기더라도 빈 상태가 아니라 표(0행 + `합계 0장`)로 둔다.
+ *
+ * `lines.length === 0`을 곧 "미송 없음"으로 읽던 때는 범위 밖 장에서 미송이 있는 사장에게
+ * `지금 기다리는 미송이 없어요`라고 말했다. **`none`은 `totalElements === 0`일 때만이다.**
  */
-export function hasNoBackorders(lines: readonly BackorderLine[]): boolean {
-  return lines.length === 0;
+export type BackordersEmptyKind = "none" | "outOfRange";
+
+export function backordersEmptyKind(input: {
+  /** 서버가 이 장에 준 미송 수 */
+  received: number;
+  /** 도매처 칩을 건 뒤 남은 수 */
+  visible: number;
+  paging: BackorderPage;
+}): BackordersEmptyKind | null {
+  if (input.visible > 0) return null;
+  if (input.paging.totalElements === 0) return "none";
+  return input.received === 0 ? "outOfRange" : null;
 }
 
 /* ────────────────────────────────────────────────────────────────────────

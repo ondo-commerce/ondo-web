@@ -7,9 +7,10 @@ import { BackorderToolbar } from "./BackorderToolbar";
 import { EmptyBackorders } from "./EmptyBackorders";
 import { BACKORDER_SUB } from "../constants";
 import {
+  backorderHref,
+  backordersEmptyKind,
   droppedNoticeText,
   filterByWholesaler,
-  hasNoBackorders,
   sortByOrderedAt,
   summarize,
   wholesalerChips,
@@ -57,7 +58,7 @@ export function BackorderView({
    * 상호는 `features/catalog`만 아는 값이라 page가 찾아 넘긴다.
    */
   dropped: DroppedWholesaler | null;
-  /** 서버 페이지 위치. 2장 이상일 때만 페이저가 선다 */
+  /** 서버 페이지 위치. 2장 이상일 때만 페이저가 서고, `totalElements`가 빈 장의 이유를 가른다 */
   paging: BackorderPage;
 }) {
   const visible = sortByOrderedAt(
@@ -66,7 +67,11 @@ export function BackorderView({
   );
   const summary = summarize(visible, today);
   const droppedNotice = droppedNoticeText(dropped);
-  const empty = hasNoBackorders(lines);
+  const empty = backordersEmptyKind({
+    received: lines.length,
+    visible: visible.length,
+    paging,
+  });
 
   return (
     <div className="mx-auto max-w-wrap">
@@ -92,16 +97,23 @@ export function BackorderView({
           <Notice className="mb-3">{droppedNotice}</Notice>
         ) : null}
 
-        {empty ? (
+        {empty !== null ? (
           /*
             받은 장이 0건이면 툴바·표·카드·페이저 자리를 통째로 빈 상태로 바꾼다.
-            요약 3카드는 위 패널에 그대로 선다 — `0건 / 총 0장`은 거짓이 아니다.
+            요약 3카드는 위 패널에 그대로 선다 — `0건 / 총 0장`은 **이 장** 기준이라
+            거짓이 아니다(`BackorderPage` 주석의 한계 그대로).
 
             툴바까지 숨기는 이유: 칩은 `전체` 하나뿐이고 정렬은 뒤집을 행이 없다.
             주문 내역이 0건에도 툴바를 남기는 것은 **필터 때문에** 0건일 수 있어서인데,
-            이 화면의 0행은 필터가 만들지 못한다(`hasNoBackorders` 주석).
+            이 화면의 0행은 필터가 만들지 못한다(`backordersEmptyKind` 주석).
+
+            범위 밖 장(`outOfRange`)은 페이저가 안 서서(`totalPages: 1`) 빈 상태 안의
+            `첫 장으로`가 유일한 돌아갈 길이다(#168). 도매처·정렬은 그대로 싣는다.
           */
-          <EmptyBackorders />
+          <EmptyBackorders
+            kind={empty}
+            firstPageHref={backorderHref(wholesalerId, sort)}
+          />
         ) : (
           <>
             <BackorderToolbar

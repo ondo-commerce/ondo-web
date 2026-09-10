@@ -20,6 +20,13 @@ export const BACKORDER_PAGE_SIZE = 100;
 export const FIRST_PAGE = 1;
 
 /**
+ * 주소로 받을 수 있는 가장 큰 장(1-base). 서버 `page`가 int32(스냅샷)라 `page - 1`이
+ * 2^31 - 1을 넘으면 400이다 — 그 위는 `resolvePage`가 첫 장으로 떨어뜨린다.
+ * 주문 내역(`features/order`)과 같은 규약이고, feature 간 import가 없어 여기 다시 둔다
+ */
+export const PAGE_MAX = 2 ** 31;
+
+/**
  * 서버 사이즈 코드 → 화면 라벨. `FREE`만 다르다(사양 §4 라벨 통일 — `F`·`FREE`가 아니라 `Free`).
  * 나머지(`S`·`M`·`L`…)는 코드가 곧 라벨이라 여기 없다.
  */
@@ -119,6 +126,19 @@ export const EMPTY_BACKORDERS = {
   title: "지금 기다리는 미송이 없어요",
   description:
     "주문한 물건이 전부 들어왔거나, 아직 도매처가 확정한 주문이 없어요.",
+} as const;
+
+/**
+ * 마지막 장을 넘는 `?page=`로 들어왔을 때. 미송은 있는데 이 장만 비었다 —
+ * `지금 기다리는 미송이 없어요`라고 하면 미송이 있는 사장에게 거짓말이다(#168).
+ * 페이저가 안 서는 자리라(`totalPages: 1`) 돌아갈 링크를 여기서 준다.
+ * 주문 내역(`features/order`)의 같은 상황과 문구·규칙을 맞춘다 — feature 간 import가
+ * 없어 여기 다시 둔다.
+ */
+export const OUT_OF_RANGE_BACKORDERS = {
+  title: "이 페이지에는 미송이 없어요",
+  description: "옛 링크이거나 미송이 줄어 이 장이 비었어요.",
+  action: "첫 장으로",
 } as const;
 
 export const TOTAL_ROW_LABEL = "합계";
