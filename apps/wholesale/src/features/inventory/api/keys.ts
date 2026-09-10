@@ -4,7 +4,7 @@
  * 같은 키여야 입고 뒤 상품 탭의 SKU 표도 같이 새로워진다.
  *
  * 계층: `all` ⊃ `movements()` ⊃ `movementsOf(variantId)`.
- * 입고·조정은 그 SKU의 이력(`movementsOf`)과 상품 상세(`productKeys.detail`)를 비운다.
+ * 입고는 그 SKU의 이력(`movementsOf`)과 상품 상세(`productKeys.detail`)를 비운다.
  */
 export const inventoryKeys = {
   all: ["inventory"] as const,

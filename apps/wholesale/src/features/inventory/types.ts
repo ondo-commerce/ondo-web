@@ -5,7 +5,8 @@ import type { WholesaleSchema } from "@ondo/api";
  * 서버가 필드를 바꾸면 여기가 아니라 `codegen`이 알려준다.
  *
  * 재고 목록·SKU 재고는 **상품 응답**을 그대로 읽는다(스펙: "재고탭 SKU 표가 모두 이 응답을 쓴다").
- * 재고 전용 응답은 입고·조정·변동 이력 셋뿐이다.
+ * 재고 전용 응답은 입고·변동 이력 둘이다 — 조정(`stock-adjustments`)은 화면이 없어 이 feature가
+ * 부르지 않는다. 조정 화면 이슈가 열리면 그 PR에서 요청 타입·훅·목을 같이 만든다(#203).
  * ------------------------------------------------------------------------ */
 
 export type ProductSummary = WholesaleSchema<"ProductSummaryResponse">;
@@ -16,7 +17,6 @@ export type StockMovement = WholesaleSchema<"StockMovementResponse">;
 export type InboundCreateRequest = WholesaleSchema<"InboundCreateRequest">;
 export type InboundItemRequest = WholesaleSchema<"InboundItemRequest">;
 export type InboundCreated = WholesaleSchema<"InboundCreatedResponse">;
-export type StockAdjustmentRequest = WholesaleSchema<"StockAdjustmentRequest">;
 export type SkuSize = Variant["size"];
 
 /**

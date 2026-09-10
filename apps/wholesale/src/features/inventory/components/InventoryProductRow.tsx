@@ -2,6 +2,7 @@
 
 import { Button, Table } from "@ondo/ui";
 import type { ReactNode } from "react";
+import { AvailableQtyCell } from "./AvailableQtyCell";
 import { InventoryStockTable } from "./InventoryStockTable";
 import { sumQuantities } from "../derive";
 import type {
@@ -24,7 +25,8 @@ import { formatNumber } from "@/shared/lib/format";
  * 404(다른 직원이 방금 지운 상품)는 다시 불러도 같아서 버튼 대신 문구만 남긴다.
  *
  * 합계는 색상 그룹 접힘 행이 쓰는 것과 **같은 파생 함수**를 쓴다 —
- * 상품 합계를 여기서 따로 세면 펼친 표의 합과 갈린다. 판매가능은 서버 값의 합이다.
+ * 상품 합계를 여기서 따로 세면 펼친 표의 합과 갈린다. 판매가능은 서버 값의 합이고,
+ * 그 칸의 색도 SKU 행과 같은 `AvailableQtyCell`이 정한다.
  */
 export function InventoryProductRow({
   row,
@@ -84,10 +86,8 @@ function TotalCells({
     return (
       <>
         <Table.Td>{formatNumber(totals.stock)}</Table.Td>
-        {/* 판매가능이 음수면 빨강이다. 0으로 감추지 않는다(§7 Q4) — 판 것보다 재고가 적다는 뜻이다 */}
-        <Table.Td tone={totals.availableQty < 0 ? "danger" : "default"}>
-          {formatNumber(totals.availableQty)}
-        </Table.Td>
+        {/* 톤은 SKU 행과 같은 칸이 정한다 — 여기서 따로 가르면 접었을 때와 펼쳤을 때 색이 갈린다(#203) */}
+        <AvailableQtyCell value={totals.availableQty} />
       </>
     );
   }

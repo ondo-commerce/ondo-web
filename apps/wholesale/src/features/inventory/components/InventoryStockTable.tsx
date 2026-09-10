@@ -3,16 +3,12 @@
 import { ColorDot, Chip, Table } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { AvailableQtyCell } from "./AvailableQtyCell";
 import { InventoryFilterBar } from "./InventoryFilterBar";
 import { FILTER_ALL } from "../constants";
 import { filterSkus, groupByColor, sumQuantities } from "../derive";
 import type { InventoryProductView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
-
-/** 판매가능은 양수만 파랑이다. 0과 음수는 같은 회색 — 팔 수 없다는 뜻이 같다(§7 Q4) */
-function availableClass(value: number): string {
-  return value > 0 ? "text-primary" : "text-muted-foreground";
-}
 
 /**
  * 상품 행을 펼쳤을 때 나오는 SKU 재고 표. 상세 응답(`GET /products/{id}`)이 원본이고
@@ -120,9 +116,7 @@ export function InventoryStockTable({
                     <Table.Td>{formatNumber(totals.stock)}</Table.Td>
                     <Table.Td>{formatNumber(totals.reservedQty)}</Table.Td>
                     <Table.Td>{formatNumber(totals.backorderQty)}</Table.Td>
-                    <Table.Td className={availableClass(totals.availableQty)}>
-                      {formatNumber(totals.availableQty)}
-                    </Table.Td>
+                    <AvailableQtyCell value={totals.availableQty} />
                   </Table.Row>
                 );
               }
@@ -156,9 +150,7 @@ export function InventoryStockTable({
                   <Table.Td>{formatNumber(s.stock)}</Table.Td>
                   <Table.Td>{formatNumber(s.reservedQty)}</Table.Td>
                   <Table.Td>{formatNumber(s.backorderQty)}</Table.Td>
-                  <Table.Td className={availableClass(s.availableQty)}>
-                    {formatNumber(s.availableQty)}
-                  </Table.Td>
+                  <AvailableQtyCell value={s.availableQty} />
                 </Table.Row>
               ));
             })}

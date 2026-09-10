@@ -5,12 +5,7 @@ import { apiFetch } from "@ondo/api";
 import { inventoryKeys } from "./keys";
 import { INVENTORY_PATH } from "./queries";
 import { isStaleRejection } from "../derive";
-import type {
-  InboundCreated,
-  InboundCreateRequest,
-  StockAdjustmentRequest,
-  StockMovement,
-} from "../types";
+import type { InboundCreated, InboundCreateRequest } from "../types";
 import { productKeys } from "@/shared/api/product";
 
 /**
@@ -61,30 +56,6 @@ export function useInboundMutation(
     onError: (error, body) =>
       isStaleRejection(error)
         ? invalidateStock(queryClient, productId, variantIdsOf(body))
-        : undefined,
-  });
-}
-
-/**
- * 재고 조정(실사 반영). 부호 포함 증감이고 응답이 이력 한 줄이다.
- * 화면에 조정 입력 수단은 아직 없다(inventory 01-pm §9 — Figma 확정본에 없다). 경로·무효화만
- * 붙여 둔다 — 조정 화면이 생길 때 이 훅을 부른다.
- */
-export function useStockAdjustmentMutation(
-  productId: number,
-  variantId: number,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: StockAdjustmentRequest) =>
-      apiFetch<StockMovement>(INVENTORY_PATH.stockAdjustments(variantId), {
-        method: "POST",
-        body,
-      }),
-    onSuccess: () => invalidateStock(queryClient, productId, [variantId]),
-    onError: (error) =>
-      isStaleRejection(error)
-        ? invalidateStock(queryClient, productId, [variantId])
         : undefined,
   });
 }

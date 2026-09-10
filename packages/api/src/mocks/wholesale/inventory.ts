@@ -3,19 +3,22 @@ import type { WholesaleSchema } from "../../wholesale";
 import { findMockProduct, findMockVariant } from "./product";
 
 /**
- * 재고 목 — 입고·재고 조정·변동 이력. 상품 목(`./product`)의 variant 상태를 **같이 쓴다**:
+ * 재고 목 — 입고·변동 이력. 상품 목(`./product`)의 variant 상태를 **같이 쓴다**:
  * 여기서 입고하면 `GET /products/{id}`의 `stockQty`·`avgCost`가 바뀐다. 재고 탭이 그 응답으로
  * SKU 표를 그리기 때문이다(스펙: "재고탭 SKU 표가 모두 이 응답을 쓴다").
  *
  * BE 컨트롤러는 스텁(MUL-83)이고 `InventoryStubExamples.java`가 있지만 **그 값은 상태를 흉내 낼 수
  * 없다** — 입고 응답이 SKU 90231·`qtyAfter 1284`로 고정이라 시드 SKU(3001~3020)의 수량과 맞물려
- * 움직이지 않는다. 그래서 스텁 값 대신 스펙 설명("재고를 올린다", "변동 이력에 ADJUST 한 줄",
- * "시간 역순", "`0`은 거절", "같은 키 재요청은 200 + 동일 본문")을 여기서 흉내 낸다.
+ * 움직이지 않는다. 그래서 스텁 값 대신 스펙 설명("재고를 올린다", "시간 역순",
+ * "같은 키 재요청은 200 + 동일 본문")을 여기서 흉내 낸다.
+ *
+ * 재고 조정(`POST …/stock-adjustments`)은 **여기 없다** — 화면이 없어 앱이 부르지 않는 경로라
+ * 목만 살아 있었다(#203). 조정 화면 이슈가 열리면 그 PR에서 훅과 같이 만든다.
  * 스텁의 모양(필드·enum)은 스펙이 지킨다 — `WholesaleSchema`라 스펙이 바뀌면 컴파일에서 깨진다.
  *
  * 시드(`V900__seed_dev.sql`)에는 `stock_movement`·`inbound`·`avg_cost`가 없다. 그래서
  * **이력은 비어서 시작**한다 — 처음 펼친 SKU는 "아직 재고가 움직인 적이 없습니다"를 보이고,
- * 입고·조정을 하면 그때부터 쌓인다. 평균원가도 0에서 시작해 이동평균으로 올라간다.
+ * 입고를 하면 그때부터 쌓인다. 평균원가도 0에서 시작해 이동평균으로 올라간다.
  * 새로고침하면 시드로 돌아간다.
  */
 
@@ -235,49 +238,6 @@ export const inventoryHandlers = [
     inboundsByKey.set(key, { bodyHash, response });
     return HttpResponse.json({ data: response }, { status: 201 });
   }),
-
-  http.post(
-    "*/api/wholesale/variants/:variantId/stock-adjustments",
-    async ({ params, request }) => {
-      const v = findMockVariant(Number(params.variantId));
-      if (!v)
-        return fail(
-          404,
-          "RESOURCE_NOT_FOUND",
-          "SKU가 없거나 접근할 수 없습니다.",
-        );
-      const body =
-        (await request.json()) as WholesaleSchema<"StockAdjustmentRequest">;
-      const change = body.qtyChange;
-      if (!Number.isInteger(change) || change === 0)
-        return fail(
-          400,
-          "INVARIANT_VIOLATED",
-          "증감 수량은 0이 아닌 정수여야 합니다.",
-          "qtyChange",
-        );
-      const after = v.stockQty + change;
-      if (after < 0)
-        return fail(409, "STOCK_BELOW_ZERO", "재고가 0 아래로 내려갑니다.");
-      if (after < v.allocatedQty)
-        return fail(
-          409,
-          "STOCK_BELOW_ALLOCATED",
-          "주문처리중 수량보다 재고가 적어집니다.",
-        );
-
-      const m = record(
-        v.id,
-        "ADJUST",
-        v.stockQty,
-        change,
-        null,
-        new Date().toISOString(),
-      );
-      v.stockQty = after;
-      return HttpResponse.json({ data: movementResponse(m) }, { status: 201 });
-    },
-  ),
 
   http.get(
     "*/api/wholesale/variants/:variantId/stock-movements",

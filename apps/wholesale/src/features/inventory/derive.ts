@@ -221,6 +221,16 @@ export function sumQuantities(
   );
 }
 
+/**
+ * 판매가능 칸의 톤. **양수만 파랑, 0 이하는 전부 회색 — 값은 그대로 보인다**(PM Q4).
+ * 음수를 빨강으로 세우지 않는다: 0과 음수는 "지금 팔 수 없다"는 뜻이 같고, 값이 그대로 보이니
+ * 얼마나 모자란지는 숫자가 말한다. SKU 행·색상 그룹 접힘 행·상품 행이 **전부 이 하나**를 쓴다 —
+ * 행마다 따로 두면 같은 값이 펼치면 회색, 접으면 빨강이 된다(#203).
+ */
+export function availableQtyTone(value: number): "primary" | "muted" {
+  return value > 0 ? "primary" : "muted";
+}
+
 /** 모드 A 예상 금액 = 입고수량 × 매입단가. 하나라도 비면 빈칸(null) */
 export function estimatedAmount(
   qty: number | null,
