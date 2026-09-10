@@ -4,7 +4,7 @@ import { Button, Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { OrderLineCards } from "./OrderLineCards";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderStats } from "./OrderStats";
@@ -57,12 +57,19 @@ export function OrderDetailView({
   const cancelable = lock === null;
 
   /* 확인 단계가 나타나면 `취소 확정`으로, 사라지면 `주문 취소`로 포커스를 옮긴다 —
-     버튼이 그 자리에서 바뀌어 그냥 두면 포커스가 `<body>`로 떨어진다(WCAG 2.4.3) */
+     버튼이 그 자리에서 바뀌어 그냥 두면 포커스가 `<body>`로 떨어진다(WCAG 2.4.3).
+     "사라지면"에는 `그만두기`로 `idle`에 돌아오는 것도 든다 — `done`만 보던 때는
+     그만둔 뒤 포커스가 문서 맨 위로 떨어졌다(F6). 처음 그려질 때의 `idle`은 아무
+     데도 안 옮긴다 — 화면에 들어오자마자 포커스를 뺏지 않는다 */
+  const prevStep = useRef<CancelStep>(step);
   useEffect(() => {
+    const leftConfirming = prevStep.current === "confirming";
+    prevStep.current = step;
+
     const id =
       step === "confirming"
         ? CANCEL_ACTION_ID.confirm
-        : step === "done"
+        : leftConfirming
           ? CANCEL_ACTION_ID.cancel
           : null;
     if (id) document.getElementById(id)?.focus();
