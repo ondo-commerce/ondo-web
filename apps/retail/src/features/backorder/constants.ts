@@ -121,6 +121,19 @@ export const EMPTY_BACKORDERS = {
     "주문한 물건이 전부 들어왔거나, 아직 도매처가 확정한 주문이 없어요.",
 } as const;
 
+/**
+ * 마지막 장을 넘는 `?page=`로 들어왔을 때. 미송은 있는데 이 장만 비었다 —
+ * `지금 기다리는 미송이 없어요`라고 하면 미송이 있는 사장에게 거짓말이다(#168).
+ * 페이저가 안 서는 자리라(`totalPages: 1`) 돌아갈 링크를 여기서 준다.
+ * 주문 내역(`features/order`)의 같은 상황과 문구·규칙을 맞춘다 — feature 간 import가
+ * 없어 여기 다시 둔다.
+ */
+export const OUT_OF_RANGE_BACKORDERS = {
+  title: "이 페이지에는 미송이 없어요",
+  description: "옛 링크이거나 미송이 줄어 이 장이 비었어요.",
+  action: "첫 장으로",
+} as const;
+
 export const TOTAL_ROW_LABEL = "합계";
 
 /**
