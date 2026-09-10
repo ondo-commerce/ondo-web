@@ -25,6 +25,7 @@ export function WholesalerGroup({
   group,
   issues,
   selected,
+  busy,
   onToggleLines,
   onToggleLine,
   onChangeQty,
@@ -33,6 +34,8 @@ export function WholesalerGroup({
   group: CartGroup;
   issues: Readonly<Record<string, CartLineIssue | null>>;
   selected: ReadonlySet<string>;
+  /** 장바구니를 바꾸는 요청이 나가 있다 — 행의 빼기(X)가 잠긴다 */
+  busy: boolean;
   /** 그룹 머리 체크 — 이 도매처의 조합을 통째로 켜고 끈다 */
   onToggleLines: (lineIds: readonly string[], on: boolean) => void;
   onToggleLine: (lineId: string, on: boolean) => void;
@@ -88,6 +91,7 @@ export function WholesalerGroup({
             line={line}
             issue={issues[line.lineId] ?? null}
             checked={selected.has(line.lineId)}
+            busy={busy}
             onToggle={(on) => onToggleLine(line.lineId, on)}
             onChangeQty={(next) => onChangeQty(line, next)}
             onRemove={() => onRemove(line)}

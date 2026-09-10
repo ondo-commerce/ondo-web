@@ -32,11 +32,16 @@ import type { CartLine, CartLineIssue } from "../types";
  * 썸네일이 빈 회색 상자인 것은 서버가 주는 `thumbnailUrl`의 호스트가 아직 이미지
  * 설정에 없어서다 — 상품 화면 연동(#163)이 호스트를 열면 그때 같이 붙인다.
  * 값이 아니라 자리라서 `aria-hidden`이다.
+ *
+ * **빼기(X)는 요청이 나가 있는 동안(`busy`) 잠긴다** — `선택 삭제`·`되돌리기`와
+ * 같은 규칙이다. 느린 DELETE 중에 두 번 눌리면 DELETE가 두 건 나간다. 서버가
+ * 없는 id도 204라 피해는 없지만, 같은 실패 문구가 두 번 뜬다(#178).
  */
 export function CartLineItem({
   line,
   issue,
   checked,
+  busy,
   onToggle,
   onChangeQty,
   onRemove,
@@ -44,6 +49,8 @@ export function CartLineItem({
   line: CartLine;
   /** 이번에 살 것으로 골랐는가 */
   checked: boolean;
+  /** 장바구니를 바꾸는 요청이 나가 있다 */
+  busy: boolean;
   onToggle: (on: boolean) => void;
   /** 수량이 걸린 이유. 값과 따로 온다 — 500으로 되돌린 뒤에도 남아야 한다 */
   issue: CartLineIssue | null;
@@ -112,6 +119,7 @@ export function CartLineItem({
         <IconButton
           variant="ghost"
           aria-label={`${line.productName} ${line.colorLabel} ${line.size} 장바구니에서 빼기`}
+          disabled={busy}
           onClick={onRemove}
         >
           <X aria-hidden className="size-4" />

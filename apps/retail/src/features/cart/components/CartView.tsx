@@ -240,6 +240,7 @@ export function CartView({
                 group={group}
                 issues={ui.issues}
                 selected={selected}
+                busy={busy}
                 onToggleLines={setLinesSelected}
                 onToggleLine={toggleLine}
                 onChangeQty={changeQty}
