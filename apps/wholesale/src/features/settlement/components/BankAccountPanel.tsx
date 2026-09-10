@@ -53,6 +53,28 @@ export function BankAccountPanel({ onClose }: { onClose: () => void }) {
   const [editor, setEditor] = useState<Editor | null>(null);
   /** 저장·삭제는 됐는데 목록 재조회가 실패한 상태. 옛 목록으로 다음 작업을 하지 않게 잠근다(⑦) */
   const [staleText, setStaleText] = useState<string | null>(null);
+  /** 수정 중이던 계좌가 재조회 뒤 목록에서 사라져 폼을 닫은 사실. 목록 위 한 줄로 남긴다 */
+  const [goneText, setGoneText] = useState<string | null>(null);
+
+  /*
+   * 수정 대상이 목록에 없으면 폼을 닫는다(wire-settlement F7, #207). PATCH·DELETE가 404면 뮤테이션이
+   * 목록을 다시 받는데, `editor`는 클릭 순간의 스냅샷이라 목록이 바뀌어도 저절로 안 닫힌다 —
+   * 폼이 남으면 `저장`·`계좌 삭제`가 살아 있어 없는 계좌에 또 보낸다. 재조회가 끝난 목록이 기준이다.
+   * effect가 아니라 렌더 중에 맞춘다(React의 "props로 state 조정" 패턴) — 폼이 한 프레임 더 보이지 않는다.
+   */
+  const editing = editor?.kind === "edit" ? editor.account : null;
+  if (editing !== null && !accounts.some((row) => row.id === editing.id)) {
+    setEditor(null);
+    setGoneText(
+      `${editing.bankName} ${editing.accountNo} 계좌는 이미 없어져 수정을 닫았어요`,
+    );
+  }
+
+  /** 폼을 새로 열면 직전 "닫았어요" 문구는 할 일을 다 했다 */
+  const openEditor = (next: Editor) => {
+    setGoneText(null);
+    setEditor(next);
+  };
 
   const finish = (refreshed: boolean, what: string) => {
     setEditor(null);
@@ -98,6 +120,12 @@ export function BankAccountPanel({ onClose }: { onClose: () => void }) {
           </p>
         ) : null}
 
+        {goneText ? (
+          <p role="alert" className="text-destructive-strong mb-3 text-sm">
+            {goneText}
+          </p>
+        ) : null}
+
         {accounts.length === 0 ? (
           <p className="text-muted-foreground py-8 text-center text-sm">
             등록된 계좌가 없습니다
@@ -114,7 +142,7 @@ export function BankAccountPanel({ onClose }: { onClose: () => void }) {
                     type="button"
                     disabled={stale}
                     aria-pressed={selected}
-                    onClick={() => setEditor({ kind: "edit", account })}
+                    onClick={() => openEditor({ kind: "edit", account })}
                     className={`border-border w-full rounded-control border px-3 py-2 text-left text-sm ${
                       selected ? "bg-secondary" : "bg-card hover:bg-secondary"
                     } disabled:cursor-not-allowed`}
@@ -144,7 +172,7 @@ export function BankAccountPanel({ onClose }: { onClose: () => void }) {
             variant="line"
             size="sm"
             disabled={stale || editor?.kind === "create"}
-            onClick={() => setEditor({ kind: "create" })}
+            onClick={() => openEditor({ kind: "create" })}
           >
             + 계좌 추가
           </Button>
