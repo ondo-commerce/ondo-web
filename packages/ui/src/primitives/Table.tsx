@@ -159,7 +159,8 @@ const td = cva(
         muted: "text-muted-foreground",
         soft: "text-secondary-foreground",
         success: "text-success",
-        danger: "text-destructive",
+        /* 글자라 strong이다 — red-500은 14px 본문에서 3.82:1로 AA 미달(#211) */
+        danger: "text-destructive-strong",
       },
       numeric: {
         true: "tabular-nums",
