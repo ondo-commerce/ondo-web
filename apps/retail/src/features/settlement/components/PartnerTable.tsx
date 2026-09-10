@@ -37,10 +37,7 @@ export function PartnerTable({ rows }: { rows: readonly PartnerListRow[] }) {
           <Table.Th align="center">미송</Table.Th>
           <Table.Th>미수 잔액</Table.Th>
           <Table.Th align="center">연락 · 계좌</Table.Th>
-          <Table.Th align="center" className="relative">
-            {/* `sr-only`는 position:absolute라 위치 기준을 잡아 줄 조상이 없으면
-                표 바깥(문서 기준)에 놓여 **페이지를 가로로 밀어낸다.** 이 칸을
-                기준점으로 만들어 표 자기 스크롤 상자 안에 가둔다 */}
+          <Table.Th align="center">
             <span className="sr-only">도매처 홈</span>
           </Table.Th>
         </tr>

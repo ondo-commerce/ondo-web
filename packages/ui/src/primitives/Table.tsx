@@ -121,6 +121,13 @@ export interface TableThProps extends ThHTMLAttributes<HTMLTableCellElement> {
   align?: keyof typeof align;
 }
 
+/* `relative`가 붙은 이유가 폭이다. 버튼 열처럼 글자 없는 머리글은 `sr-only`로 이름을 넣는데,
+   `sr-only`는 position:absolute라 위치 기준이 없으면 컨테이닝 블록이 표의 가로 스크롤
+   상자를 **건너뛰고** 문서에 잡힌다 — 표는 자기 상자 안에서 스크롤하는데 페이지 전체가
+   옆으로 밀린다(소매 390px에서 문서 폭 640~713px). `Table.Td`는 hover 레이어 때문에
+   이미 relative인데 th만 static이라 머리글과 본문이 다르게 굴었다. 여기서 기준을 못박아
+   호출부가 매번 `className="relative"`로 가두지 않아도 되게 한다.
+   stickyHead의 `[&>thead>tr>th]:sticky`는 이 클래스보다 선택자가 구체적이라 그대로 이긴다 */
 Table.Th = function TableTh({
   className,
   align: a = "right",
@@ -129,7 +136,7 @@ Table.Th = function TableTh({
   return (
     <th
       className={cn(
-        "border-y border-gray-100 text-muted-foreground px-3 py-2 text-body font-normal whitespace-nowrap",
+        "border-y border-gray-100 text-muted-foreground relative px-3 py-2 text-body font-normal whitespace-nowrap",
         align[a],
         className,
       )}
