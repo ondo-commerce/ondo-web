@@ -350,12 +350,24 @@ export function isStaleRejection(error: unknown): boolean {
   return isApiError(error) && (error.status === 409 || error.status === 404);
 }
 
-/** 우측 빈 자리에 남길 처리 결과 문구. 재조회 실패면 옛 목록임을 먼저 말한다 */
-export function noticeText(notice: ShipmentNotice): string {
+/**
+ * 우측 빈 자리에 남길 처리 결과 문구. 재조회 실패면 옛 목록임을 먼저 말한다.
+ *
+ * 포장 완료는 `출고 대기`로 가라고 하는데, 검색어가 걸려 있으면 그 칩이 `(0)`일 수 있다 —
+ * 검색은 봉투 상품명에도 걸려서 방금 포장한 봉투가 안 잡힌다(wire-shipment F5, #205).
+ * 그래서 검색 중(`searching`)이면 "검색을 지우면"을 앞에 둔다. 검색을 지우는 순간 원래 문구로 돌아간다.
+ */
+export function noticeText(
+  notice: ShipmentNotice,
+  searching: boolean = false,
+): string {
   if (notice.kind === "packed") {
-    return notice.refreshed
-      ? `${notice.outboundLabel} 포장 완료했어요 — 출고 대기에서 확인하세요`
-      : `${notice.outboundLabel} 포장은 됐지만 목록을 새로 못 불러왔어요`;
+    if (!notice.refreshed) {
+      return `${notice.outboundLabel} 포장은 됐지만 목록을 새로 못 불러왔어요`;
+    }
+    return searching
+      ? `${notice.outboundLabel} 포장 완료했어요 — 검색을 지우면 출고 대기에서 보여요`
+      : `${notice.outboundLabel} 포장 완료했어요 — 출고 대기에서 확인하세요`;
   }
   return notice.refreshed
     ? `출고 완료 — 장끼 ${notice.statementCode} 발행했어요`
