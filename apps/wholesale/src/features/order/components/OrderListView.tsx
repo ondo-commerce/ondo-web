@@ -156,10 +156,13 @@ export function OrderListView() {
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
             <div className="mb-3 flex shrink-0 items-center gap-3">
+              {/* 서버 `q`는 거래처명·상품명만 건다 — 주문번호는 안 걸린다(04-wire §3-1). 칸이 약속한 걸
+                  쳤는데 0건이 나오면 안 되므로 문구를 서버가 실제로 거는 범위로 맞춘다(F2, #196).
+                  주문번호 검색은 BE가 `q`에 `orderNumber`를 붙여 주면 문구만 되돌린다 */}
               <SearchInput
                 className="mr-auto"
-                placeholder="주문번호·거래처·품명 검색"
-                aria-label="주문번호·거래처·품명 검색"
+                placeholder="거래처·품명 검색"
+                aria-label="거래처·품명 검색"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />

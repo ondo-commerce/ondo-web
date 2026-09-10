@@ -123,10 +123,12 @@ export function BackorderListView() {
               패널 제목을 두지 않는다. 상단 네비게이션이 이미 어느 탭인지 보여주고 있어서,
               탭 이름을 패널에 한 번 더 쓰면 같은 말이 두 번 나오고 세로만 먹는다 */}
             <div className="mb-4 flex shrink-0 items-center gap-3">
+              {/* 서버 `q`는 품명만 건다 — 품번·색상은 0건이다(dev-verify-bis F3, #196).
+                  칸이 약속한 걸 쳤는데 0건이 나오면 안 되므로 문구를 거는 범위로 맞춘다 */}
               <SearchInput
                 className="mr-auto"
-                placeholder="품번·품명 검색"
-                aria-label="품번·품명 검색"
+                placeholder="품명 검색"
+                aria-label="품명 검색"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />
