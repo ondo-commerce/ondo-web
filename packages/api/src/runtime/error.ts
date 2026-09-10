@@ -1,7 +1,18 @@
-/** 서버가 필드 단위로 알려주는 상세. 폼의 `setError`에 그대로 넘길 수 있게 이름을 맞췄다. */
+/**
+ * 서버가 필드 단위로 알려주는 상세. 폼의 `setError`에 그대로 넘길 수 있게 이름을 맞췄다.
+ *
+ * 두 서버가 내는 모양이 다르다 — 소매 스냅샷 `FieldError`는 `{ field, code, message }`,
+ * 도매는 스냅샷에 스키마가 없고 실제로는 `{ field, reason }`을 낸다(2026-09-10 dev 확인).
+ * 앱이 둘을 구분하지 않게 `client.ts`의 `toApiError`가 **여기 모양으로 맞춰서** 넣는다:
+ * 도매 `reason`은 `message`로, 도매엔 없는 `code`는 `null`로.
+ */
 export interface FieldError {
+  /** JS 경로 표기. 중첩이면 `items[2].quantity` */
   field: string;
-  reason: string;
+  /** 칸 단위 코드(`NOT_BLANK` …). 도매 서버는 안 주므로 그때는 `null` */
+  code: string | null;
+  /** 그 칸 아래에 그대로 붙는 문구 */
+  message: string;
 }
 
 /**

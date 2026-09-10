@@ -484,7 +484,7 @@ export function toPackingRequest(
 export function actionErrorText(error: unknown): string {
   if (isApiError(error)) {
     if (error.code === WHOLESALE_ERROR_CODE.VALIDATION_FAILED) {
-      const reasons = error.fieldErrors.map((f) => f.reason);
+      const reasons = error.fieldErrors.map((f) => f.message);
       return reasons.length > 0 ? reasons.join(" ") : error.message;
     }
     const known = ORDER_ERROR_TEXT[error.code];
