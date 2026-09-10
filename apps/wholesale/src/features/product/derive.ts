@@ -118,7 +118,7 @@ export function toProductView(detail: ProductDetail): ProductView {
   };
 }
 
-/** 이미지 칸에 든 문자열이 실제 URL인가. fixtures 시절의 `IMG 1` 같은 라벨과 가른다 */
+/** 이미지 칸에 든 문자열이 `next/image`에 넘길 수 있는 절대 URL인가. 아니면 `ListingImage`가 아이콘으로 대신한다 */
 export function isImageUrl(value: string): boolean {
   return /^https?:\/\//.test(value);
 }

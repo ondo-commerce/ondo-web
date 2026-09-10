@@ -28,7 +28,11 @@ import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView } from "../types";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
-import { QueryBoundary, QuerySkeleton } from "@/shared/api/QueryBoundary";
+import {
+  QueryBoundary,
+  QueryErrorView,
+  QuerySkeleton,
+} from "@/shared/api/QueryBoundary";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
 
 /**
@@ -36,11 +40,34 @@ import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
  *
  * 경계가 패널이 아니라 화면 하나를 감싼다. 두 패널이 **한 폼 상태**를 나눠 갖는데
  * 그 초기값이 서버 응답이라, 패널마다 따로 기다리면 상태를 둘 곳이 없다.
- * 대신 기다리는 동안의 모양은 같은 2단 레이아웃으로 그려서 자리는 흔들리지 않는다.
+ * 대신 기다리는 동안·실패했을 때의 모양은 같은 2단 레이아웃으로 그려서 자리는 흔들리지 않는다
+ * — 실패를 기본 에러 블록에 맡기면 `Panel` 없는 alert가 본문 전체 폭에 그려진다(wire-product F4).
  */
 export function ProductEditView({ productId }: { productId: number }) {
   return (
     <QueryBoundary
+      errorFallback={({ described, retry }) => (
+        <FormSplitLayout
+          left={
+            <Panel className="flex-1">
+              <Panel.Title>상품 수정</Panel.Title>
+              <QueryErrorView described={described} onRetry={retry} />
+            </Panel>
+          }
+          right={
+            <Panel className="flex-1">
+              <Panel.Title>게시글 수정</Panel.Title>
+            </Panel>
+          }
+          actions={
+            <Button asChild variant="line" size="lg">
+              <Link href={`/products?${LIST_PARAM.productId}=${productId}`}>
+                취소
+              </Link>
+            </Button>
+          }
+        />
+      )}
       fallback={
         <FormSplitLayout
           left={

@@ -17,9 +17,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AddSlot, Chip, ImageSlot, SlotGrid } from "@ondo/ui";
-import Image from "next/image";
 import { useId } from "react";
-import { isImageUrl } from "../derive";
+import { ListingImage } from "./ListingImage";
 
 const MAX_IMAGE_COUNT = 9;
 
@@ -117,19 +116,7 @@ export function PostImageGrid({
                 isCover={i === 0}
                 disabled={disabled}
               >
-                {isImageUrl(img) ? (
-                  <Image
-                    src={img}
-                    alt={`이미지 ${i + 1}`}
-                    fill
-                    sizes="88px"
-                    // 이미지 호스트가 미정이라 remotePatterns가 없다(ProductDetailPanel 주석)
-                    unoptimized
-                    className="rounded-control object-cover"
-                  />
-                ) : (
-                  img
-                )}
+                <ListingImage src={img} alt={`이미지 ${i + 1}`} />
               </SortableImageSlot>
             ))}
             {shown.length < MAX_IMAGE_COUNT ? (
