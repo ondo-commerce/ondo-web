@@ -6,7 +6,11 @@ import type { ReactNode } from "react";
 import { ProductOptionMatrix } from "./ProductOptionMatrix";
 import { useCategoriesQuery } from "../api/queries";
 import { errorId, fieldId, INVALID_INPUT_CLASS } from "../constants";
-import { categoryChildren, type ProductFormErrors } from "../derive";
+import {
+  categoryChildren,
+  sizelessOptionIds,
+  type ProductFormErrors,
+} from "../derive";
 import type { CategoryNode, ProductFormValue } from "../types";
 import { QueryBoundary } from "@/shared/api/QueryBoundary";
 import { FieldError } from "@/shared/components/FieldError";
@@ -87,6 +91,10 @@ function ProductFormFields({
   };
 
   const categoryInvalid = errors.categoryId !== undefined;
+  /* 오류가 붙어 있는 동안만 행을 가리킨다. 늘 가리키면 색을 고른 직후부터 빨개서
+     아직 사이즈를 고르는 중인 화면이 틀린 화면으로 읽힌다 */
+  const sizelessIds =
+    errors.colorOptions !== undefined ? sizelessOptionIds(value) : [];
 
   return (
     <>
@@ -169,6 +177,7 @@ function ProductFormFields({
           onChange={(options) => onChange({ ...value, options })}
           triggerId={fieldId("colorOptions")}
           invalid={errors.colorOptions !== undefined}
+          invalidOptionIds={sizelessIds}
           describedBy={
             errors.colorOptions ? errorId("colorOptions") : undefined
           }
@@ -206,11 +215,10 @@ function CategorySelect({
   onChange: (next: string) => void;
 }) {
   return (
-    <Select
-      value={value || undefined}
-      onValueChange={onChange}
-      disabled={disabled}
-    >
+    /* 빈 값도 `""`로 넘겨 늘 controlled로 둔다. `value || undefined`로 두면 상위를 바꿔
+       하위가 비는 순간 controlled→uncontrolled 경고가 난다(wire-product F9). Radix Select는
+       빈 문자열을 "선택 없음"으로 예약해 두어서 placeholder가 그대로 보인다 */
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
       <Select.Trigger
         id={id}
         className={`max-w-44 ${INVALID_INPUT_CLASS}`}

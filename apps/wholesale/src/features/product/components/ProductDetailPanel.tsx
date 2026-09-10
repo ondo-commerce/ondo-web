@@ -1,10 +1,9 @@
 "use client";
 
 import { Button, Chip, ImageSlot, Panel, SlotGrid } from "@ondo/ui";
-import Image from "next/image";
 import Link from "next/link";
+import { ListingImage } from "./ListingImage";
 import { useProductDetailQuery } from "../api/queries";
-import { isImageUrl } from "../derive";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -12,25 +11,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-muted-foreground w-24 shrink-0">{label}</dt>
       <dd className="min-w-0 flex-1 whitespace-pre-line">{value}</dd>
     </div>
-  );
-}
-
-/**
- * 게시글 이미지 한 칸. 서버가 URL을 주므로 실제 그림을 그린다.
- * `unoptimized`인 이유: 이미지 호스트가 아직 정해지지 않아 `next.config`의
- * `remotePatterns`에 적을 값이 없다. 최적화 프록시를 거치면 그 목록에 없는 호스트는 400이다.
- */
-function ListingImage({ src, alt }: { src: string; alt: string }) {
-  if (!isImageUrl(src)) return <>{src}</>;
-  return (
-    <Image
-      src={src}
-      alt={alt}
-      fill
-      sizes="88px"
-      unoptimized
-      className="rounded-control object-cover"
-    />
   );
 }
 

@@ -120,9 +120,11 @@ export const PRICE_INPUT_MAX = 10 ** PRICE_INPUT_MAX_DIGITS - 1;
  * 서버 검증 실패(`errors[].field`)를 폼 칸에 붙일 때 아는 이름들. 순서는 화면 순서 —
  * 첫 오류 칸으로 포커스를 옮길 때 이 순서로 찾는다.
  *
- * ⚠️ 서버가 실제로 쓰는 필드명은 **미확인**이다(스펙에 없다). Spring 검증의 관례
- * (`listing.title`처럼 점으로 잇는다)로 적었고, 여기 없는 이름은 `toFieldErrors`가
- * `_form`으로 모아 폼 위에 올린다 — 틀려도 사장이 아무 말도 못 보는 일은 없다.
+ * 서버 필드명은 스펙에 없고 dev에서 본 것만 안다(dev-verify F4): `name`·`listing.title`은
+ * 그대로, 나머지는 이 이름을 **접두어**로 갖는다 — `nameWellFormed`,
+ * `listing.variantPrices[0].targetSpecified`. 접두어로 잇는 건 `toFieldErrors`가 하고,
+ * 그래도 못 이은 이름은 `_form`으로 폼 위에 올린다 — 틀려도 사장이 아무 말도 못 보는 일은 없다.
+ * 전체 목록은 BE에 요청해 둔 상태다(#210).
  */
 export const PRODUCT_FIELD_ORDER: readonly ProductField[] = [
   "name",

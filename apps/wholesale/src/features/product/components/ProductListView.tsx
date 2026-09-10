@@ -11,7 +11,9 @@ import { ProductTable } from "./ProductTable";
 import { useProductListQuery } from "../api/queries";
 import {
   filterByPostStatus,
+  isPageOutOfRange,
   parseListParams,
+  previousPage,
   toListQuery,
   withListParams,
   type ProductListParams,
@@ -174,13 +176,24 @@ function ProductListBody({
   const { data } = useProductListQuery(toListQuery(params));
   const rows = filterByPostStatus(data.rows, params.status);
   const totalPages = Math.max(data.meta.totalPages, 1);
+  const outOfRange = isPageOutOfRange(params.page, data.meta.totalPages);
 
   return (
     <>
       {/* 검색줄은 남고 행만 흐른다 — 화면 전체 스크롤이 없다.
           stickyHead 표는 세로 스크롤을 직접 받으므로 `Panel.Body` 밖에 놓는다.
-          빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙) */}
-      {rows.length === 0 ? (
+          빈 목록일 때는 흐를 것이 없어서 그대로 Panel.Body를 쓴다 (주문 탭과 같은 규칙).
+          범위 밖 장은 "없다"가 아니라 "여기가 아니다" — 1페이지로 가는 길을 같이 둔다(F6) */}
+      {outOfRange ? (
+        <Panel.Body className="flex flex-col items-center gap-3 py-12 text-center">
+          <p className="text-muted-foreground text-sm">
+            이 페이지에는 상품이 없어요
+          </p>
+          <Button variant="line" size="sm" onClick={() => onPage(1)}>
+            1페이지로
+          </Button>
+        </Panel.Body>
+      ) : rows.length === 0 ? (
         <Panel.Body>
           <p className="text-muted-foreground py-12 text-center text-sm">
             검색 결과가 없습니다
@@ -195,8 +208,9 @@ function ProductListBody({
         />
       )}
 
-      {/* 서버가 100행씩 자른다. 한 페이지에 다 들어오면(대부분) 이 줄은 없다 */}
-      {totalPages > 1 ? (
+      {/* 서버가 100행씩 자른다. 한 페이지에 다 들어오면(대부분) 이 줄은 없다.
+          범위 밖 장에서는 늘 그린다 — `이전`이 마지막 실제 장으로 데려간다 */}
+      {totalPages > 1 || outOfRange ? (
         <nav
           aria-label="페이지 이동"
           className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
@@ -208,7 +222,7 @@ function ProductListBody({
             variant="line"
             size="sm"
             disabled={params.page <= 1}
-            onClick={() => onPage(params.page - 1)}
+            onClick={() => onPage(previousPage(params.page, totalPages))}
           >
             이전
           </Button>

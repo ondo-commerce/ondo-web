@@ -118,7 +118,7 @@ export function toProductView(detail: ProductDetail): ProductView {
   };
 }
 
-/** 이미지 칸에 든 문자열이 실제 URL인가. fixtures 시절의 `IMG 1` 같은 라벨과 가른다 */
+/** 이미지 칸에 든 문자열이 `next/image`에 넘길 수 있는 절대 URL인가. 아니면 `ListingImage`가 아이콘으로 대신한다 */
 export function isImageUrl(value: string): boolean {
   return /^https?:\/\//.test(value);
 }
@@ -212,6 +212,23 @@ export function toListQuery(params: ProductListParams): ProductListQuery {
 }
 
 /**
+ * URL의 `page`가 서버가 가진 장 수를 넘었나. 북마크·뒤로가기로 들어온 옛 주소는
+ * 서버가 빈 장을 준다 — 그걸 `검색 결과가 없습니다`로 그리면 돌아갈 길이 없다(wire-product F6).
+ * `totalPages`가 0(빈 목록)이어도 1페이지는 범위 안이다.
+ */
+export function isPageOutOfRange(page: number, totalPages: number): boolean {
+  return page > Math.max(totalPages, 1);
+}
+
+/**
+ * `이전`이 갈 장. 범위 밖 장에서는 한 장 앞이 아니라 **마지막 실제 장**으로 —
+ * `?page=9`에서 `이전`을 눌러 8로 가면 또 빈 장이다.
+ */
+export function previousPage(page: number, totalPages: number): number {
+  return Math.min(page - 1, Math.max(totalPages, 1));
+}
+
+/**
  * 게시 상태 필터. **받은 페이지 안에서만** 거른다 — `GET /products`에 상태 파라미터가
  * 없어서다. 다음 페이지에 있는 판매중 상품은 이 페이지에 안 보인다. 서버 필터가
  * 생기면 이 함수는 지우고 `toListQuery`에 실린다.
@@ -296,6 +313,17 @@ export function isPriceMissing(text: string): boolean {
 }
 
 /**
+ * 요청 `variantPrices[i]`의 i번째가 가리키는 가격표 행 id. **`toListingRequest`와 같은 순서**다
+ * (색상 순 → 그 색의 사이즈 순). 서버가 `listing.variantPrices[i].*`로 지적하면 이 배열의
+ * i번째 행이 그 칸이다 — 순서가 어긋나면 엉뚱한 행이 빨개지므로 두 곳이 같은 함수를 쓴다.
+ */
+export function requestPriceRowIds(product: ProductFormValue): string[] {
+  return product.options.flatMap((option) =>
+    option.sizes.map((size) => priceRowId(option.color.id, size)),
+  );
+}
+
+/**
  * 요청에 실릴 행(옵션 매트릭스의 색×사이즈) 가운데 `failed`에 걸리는 행의 id.
  * `prices`에 남은 옛 키(지운 색)는 보지 않는다 — 안 보낼 칸이 저장을 막으면 안 된다.
  * 아직 안 친 칸은 빈 값으로 본다(요청에도 그렇게 실린다).
@@ -305,10 +333,8 @@ function priceRowIdsWhere(
   post: PostFormValue,
   failed: (value: PriceValue) => boolean,
 ): string[] {
-  return product.options.flatMap((option) =>
-    option.sizes
-      .map((size) => priceRowId(option.color.id, size))
-      .filter((id) => failed(post.prices[id] ?? EMPTY_PRICE_VALUE)),
+  return requestPriceRowIds(product).filter((id) =>
+    failed(post.prices[id] ?? EMPTY_PRICE_VALUE),
   );
 }
 
@@ -391,6 +417,9 @@ export function toPostForm(product: ProductView): PostFormValue {
  * (colorId, size) 중 한쪽만"). `existing`에 색상 id + 사이즈가 같은 SKU가 있으면(수정)
  * `variantId`만 실어 서버가 기존 것을 고치게 하고, 없으면(등록·새로 켠 사이즈)
  * `colorId`+`size`만 실어 새 variant를 만들게 한다. 둘을 같이 실으면 400이다(dev-verify F2).
+ *
+ * 행 순서는 `requestPriceRowIds`와 같아야 한다 — 서버가 `variantPrices[i]`로 지적한 행을
+ * 그 배열로 되짚는다(#210).
  */
 export function toListingRequest(
   product: ProductFormValue,
@@ -524,11 +553,19 @@ export function toUpdateRequest(
  * 검증 · 오류
  * ------------------------------------------------------------------------ */
 
-export type ProductFormErrors = FormErrors<ProductField>;
+export type ProductFormErrors = FormErrors<ProductField> & {
+  /**
+   * 서버가 지적한 가격표 행의 id(`priceRowId`). 문구는 `listing.variantPrices` 한 줄이고
+   * 이건 **어느 행인지**만 가리킨다 — 서버 `listing.variantPrices[i].*`의 i를 요청 순서로
+   * 되짚은 것(`serverPriceRowIds`). 그 행의 칸이 빨개지고 첫 오류 포커스가 거기로 간다(#210).
+   */
+  priceRowIds?: readonly string[];
+};
 
 /**
  * 보내기 전에 잡는 것 — **서버에 못 보낼 값**과 **서버가 안 잡아 주는 값.** 리프
- * 카테고리가 없으면 `categoryId`가 NaN이 되고, 옵션이 없으면 SKU가 0개다. 가격표는
+ * 카테고리가 없으면 `categoryId`가 NaN이 되고, 옵션이 없으면 SKU가 0개이며, 사이즈 없는
+ * 색은 서버가 거절하거나 SKU 없는 색으로 남는다(`sizelessOptionIds`). 가격표는
  * 정수가 아니면 못 보내고, 자릿수를 넘기면 서버가 500을 내고, 판매가 0은 서버가 그대로
  * 게시한다(dev-verify F3·F6) — 셋 다 여기서 막는다. 나머지 규칙(길이)은 서버 검증에
  * 맡기고 그 답을 칸에 붙인다 — 규칙을 두 벌 들면 한쪽만 바뀐다.
@@ -545,6 +582,9 @@ export function validateProductForm(
   if (product.category[2] === "") errors.categoryId = "소분류까지 골라 주세요.";
   if (!product.options.some((o) => o.sizes.length > 0))
     errors.colorOptions = "색상을 고르고 사이즈를 하나 이상 켜 주세요.";
+  else if (sizelessOptionIds(product).length > 0)
+    errors.colorOptions =
+      "사이즈를 켜지 않은 색상이 있어요. 사이즈를 켜거나 그 색상을 빼 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
   if (post) {
@@ -552,6 +592,16 @@ export function validateProductForm(
     if (priceError) errors["listing.variantPrices"] = priceError;
   }
   return errors;
+}
+
+/**
+ * 사이즈를 하나도 안 켠 색상(`OptionDraft.id`). 그대로 보내면 `colorOptions`에
+ * `{colorId, sizes: []}`로 실려 서버가 `OPTION_REQUIRED`로 거절하거나 SKU 없는 색을
+ * 만든다(wire-product F5). 조용히 빼지 않는다 — 사장이 고른 색이 요청에서 사라지면
+ * 저장은 됐는데 색이 없는 이유를 모른다. 대신 그 행을 가리켜 막는다.
+ */
+export function sizelessOptionIds(product: ProductFormValue): string[] {
+  return product.options.filter((o) => o.sizes.length === 0).map((o) => o.id);
 }
 
 /** 가격표 아래 한 줄. 어느 칸인지는 칸의 aria-invalid가 가리킨다(`PostPriceTable`) */
@@ -595,7 +645,10 @@ export function clearPostErrors(
   if (prev.name !== next.name) delete rest["listing.title"];
   if (prev.description !== next.description) delete rest["listing.description"];
   if (prev.images !== next.images) delete rest["listing.images"];
-  if (prev.prices !== next.prices) delete rest["listing.variantPrices"];
+  if (prev.prices !== next.prices) {
+    delete rest["listing.variantPrices"];
+    delete rest.priceRowIds;
+  }
   return rest;
 }
 
@@ -610,14 +663,47 @@ export function firstInvalidField(
  * (리프 아님·옵션 없음·가격 없음 …)는 **코드로** 해당 칸을 가리킨다 — 서버 문구는 칸
  * 아래 그대로 보여 주되 어느 칸인지는 코드가 정한다. 모르는 실패면 `null`이라 호출부가
  * 폼 위 한 줄로 보낸다.
+ *
+ * 실서버 필드명은 칸 이름 그대로가 아니다 — `nameWellFormed`, `listing.variantPrices[0].targetSpecified`
+ * (dev-verify F4). 칸으로 잇는 건 `toFieldErrors`의 접두어 매칭이 하고, 가격표는 여기서
+ * 한 번 더 **행**까지 짚는다(`priceRowIds`). `product`는 그 행 순서를 되짚는 데 쓴다.
  */
-export function toProductFormErrors(error: unknown): ProductFormErrors | null {
+export function toProductFormErrors(
+  error: unknown,
+  product: ProductFormValue,
+): ProductFormErrors | null {
   const validation = toFieldErrors(error, PRODUCT_FIELD_ORDER);
-  if (validation) return validation;
+  if (validation) {
+    const priceRowIds = serverPriceRowIds(error, product);
+    return priceRowIds.length > 0 ? { ...validation, priceRowIds } : validation;
+  }
   if (!isApiError(error)) return null;
 
   const field = fieldOfCode(error.code);
   return field ? { [field]: error.message } : null;
+}
+
+/** 서버 필드명 `listing.variantPrices[i]…`의 i */
+const VARIANT_PRICE_INDEX = /^listing\.variantPrices\[(\d+)\]/;
+
+/**
+ * 서버가 `listing.variantPrices[i].*`로 지적한 행들의 id. i는 요청 `variantPrices` 순서라
+ * `requestPriceRowIds`로 되짚는다. 같은 행을 여러 번 지적해도 한 번, 범위 밖 i는 버린다
+ * (그때는 `listing.variantPrices` 한 줄만 남아 표 자체로 포커스가 간다).
+ */
+export function serverPriceRowIds(
+  error: unknown,
+  product: ProductFormValue,
+): string[] {
+  if (!isApiError(error)) return [];
+  const ids = requestPriceRowIds(product);
+  const found = new Set<string>();
+  for (const item of error.fieldErrors) {
+    const index = VARIANT_PRICE_INDEX.exec(item.field)?.[1];
+    const id = index === undefined ? undefined : ids[Number(index)];
+    if (id !== undefined) found.add(id);
+  }
+  return [...found];
 }
 
 function fieldOfCode(code: string): ProductField | null {
