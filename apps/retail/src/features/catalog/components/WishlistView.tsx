@@ -81,76 +81,79 @@ export function WishlistView({
   }));
 
   return (
-    <Panel>
-      <Panel.Title sub="최근 찜한 순으로 보여줘요. 새로고침하면 찜이 비워져요 — 아직 서버에 저장되지 않아요.">
-        찜 목록
-      </Panel.Title>
+    /* 주문 내역·정산과 같은 폭(#217 R2). 홈 그리드만 화면 끝까지 흐른다 */
+    <div className="mx-auto max-w-wrap">
+      <Panel>
+        <Panel.Title sub="최근 찜한 순으로 보여줘요. 새로고침하면 찜이 비워져요 — 아직 서버에 저장되지 않아요.">
+          찜 목록
+        </Panel.Title>
 
-      {/* 아직 답이 안 온 동안. 카드 자리를 비워 두면 "찜한 게 없다"로 읽힌다 */}
-      {pending ? (
-        <p role="status" className="text-muted-foreground text-body py-4">
-          찜한 상품을 불러오는 중이에요.
-        </p>
-      ) : null}
+        {/* 아직 답이 안 온 동안. 카드 자리를 비워 두면 "찜한 게 없다"로 읽힌다 */}
+        {pending ? (
+          <p role="status" className="text-muted-foreground text-body py-4">
+            찜한 상품을 불러오는 중이에요.
+          </p>
+        ) : null}
 
-      {/* 게시가 내려간 상품은 상세가 404라 카드로 못 그린다. 조용히 빼면 찜한
+        {/* 게시가 내려간 상품은 상세가 404라 카드로 못 그린다. 조용히 빼면 찜한
           수와 카드 수가 어긋나 보이므로 빠진 수를 말한다 */}
-      {missing > 0 ? (
-        <p role="status" className="text-muted-foreground text-body pb-3">
-          찜한 상품 {missing}개는 지금 게시돼 있지 않아 목록에서 빠졌어요.
-        </p>
-      ) : null}
+        {missing > 0 ? (
+          <p role="status" className="text-muted-foreground text-body pb-3">
+            찜한 상품 {missing}개는 지금 게시돼 있지 않아 목록에서 빠졌어요.
+          </p>
+        ) : null}
 
-      {!pending && pinned.size === 0 ? (
-        <EmptyWishlist />
-      ) : !pending && products.length === 0 ? null : (
-        <>
-          <div className="flex flex-wrap items-center gap-2 pb-3">
-            {/* 칩 목록을 **찜한 상품에서 만든다** — 고정 목록으로 두면 찜한 게
+        {!pending && pinned.size === 0 ? (
+          <EmptyWishlist />
+        ) : !pending && products.length === 0 ? null : (
+          <>
+            <div className="flex flex-wrap items-center gap-2 pb-3">
+              {/* 칩 목록을 **찜한 상품에서 만든다** — 고정 목록으로 두면 찜한 게
                 하나도 없는 도매처 칩이 나오고, 눌러 보면 0건이다 */}
-            {chips.map((chip) => (
-              <Link
-                key={chip.id}
-                href={wishlistHref(chip.id, sort, DEFAULT_SORT)}
-                aria-current={chip.id === activeSeller ? "true" : undefined}
-                className={filterChipClass(chip.id === activeSeller)}
-              >
-                {chip.name}
-              </Link>
-            ))}
+              {chips.map((chip) => (
+                <Link
+                  key={chip.id}
+                  href={wishlistHref(chip.id, sort, DEFAULT_SORT)}
+                  aria-current={chip.id === activeSeller ? "true" : undefined}
+                  className={filterChipClass(chip.id === activeSeller)}
+                >
+                  {chip.name}
+                </Link>
+              ))}
 
-            <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
-              <ResultCount
-                noun="찜한 상품"
-                visible={visible.length}
-                total={visible.length}
-              />
-              <SortDropdown
-                options={sortOptions}
-                value={sort}
-                selectedLabel={SORT_LABEL[sort]}
-              />
+              <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
+                <ResultCount
+                  noun="찜한 상품"
+                  visible={visible.length}
+                  total={visible.length}
+                />
+                <SortDropdown
+                  options={sortOptions}
+                  value={sort}
+                  selectedLabel={SORT_LABEL[sort]}
+                />
+              </div>
             </div>
-          </div>
 
-          {visible.length === 0 ? (
-            <CatalogEmpty
-              resetHref={wishlistHref(FILTER_ALL, sort, DEFAULT_SORT)}
-              filtered
-            />
-          ) : (
-            <>
-              <div className="bg-border -mx-4 h-px" />
-              <ProductGrid
-                products={visible}
-                favorites={favorites}
-                onToggleFavorite={toggleFavorite}
+            {visible.length === 0 ? (
+              <CatalogEmpty
+                resetHref={wishlistHref(FILTER_ALL, sort, DEFAULT_SORT)}
+                filtered
               />
-            </>
-          )}
-        </>
-      )}
-    </Panel>
+            ) : (
+              <>
+                <div className="bg-border -mx-4 h-px" />
+                <ProductGrid
+                  products={visible}
+                  favorites={favorites}
+                  onToggleFavorite={toggleFavorite}
+                />
+              </>
+            )}
+          </>
+        )}
+      </Panel>
+    </div>
   );
 }
 

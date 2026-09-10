@@ -33,7 +33,7 @@ import {
   visibleErrors,
   type SettingsValues,
 } from "../derive";
-import { APPLICATION, SETTINGS_ACCOUNT } from "../fixtures";
+import { APPLICATION } from "../fixtures";
 import {
   applyLicenseReupload,
   saveProfile,
@@ -50,6 +50,10 @@ import type { AttachedFile, SettingsField } from "../types";
  * 않으면 구분할 방법이 없다 — 더미 경계를 화면이 직접 말하게 한다.
  */
 const DUMMY_NOTE = "서버가 없어 새로 고치면 원래대로 돌아와요.";
+
+/** 화면 맨 위. 어느 칸이 진짜 계정 값이고 어느 칸이 더미인지를 먼저 말한다(#217 R6) */
+const FIXTURE_NOTICE =
+  "이메일은 로그인한 계정 값이고, 사업자·대표자·연락처는 서버 연동 전 예시 값이에요.";
 
 /** 여러 설명을 한 입력에 묶는다. 빈 것은 빼야 존재하지 않는 id를 가리키지 않는다 */
 function describedBy(
@@ -88,7 +92,12 @@ const NOTICE_CLASS =
  * 패널마다 `저장`이 따로인 것은 확정 와이어프레임 그대로다 — 검증도 포커스
  * 이동도 그 패널 안에서만 일어난다.
  */
-export function SettingsView() {
+export function SettingsView({
+  email,
+}: {
+  /** `/me`가 준 로그인 이메일. 서버 컴포넌트(`app/(shop)/settings/page.tsx`)가 넘긴다 */
+  email: string;
+}) {
   const saved = useSettingsProfile();
   const license = useLicense();
   const status = useAccountStatus();
@@ -308,6 +317,13 @@ export function SettingsView() {
           h1은 있어야 첫 헤딩이 패널 제목으로 시작하지 않는다(`HomeView` 선례) */}
       <h1 className="sr-only">설정</h1>
 
+      <Notice className="mb-2">
+        <span className="flex items-start gap-2">
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {FIXTURE_NOTICE}
+        </span>
+      </Notice>
+
       {/* 패널 사이 8px — 확정 와이어프레임 `_base.css` 실측값 */}
       <div className="space-y-2">
         {/* ① 가게 정보 ------------------------------------------------- */}
@@ -395,7 +411,7 @@ export function SettingsView() {
                 className="mb-0"
                 id={labelId("email")}
                 label="이메일"
-                value={SETTINGS_ACCOUNT.email}
+                value={email}
                 help="로그인 ID라 바꿀 수 없어요."
               />
 

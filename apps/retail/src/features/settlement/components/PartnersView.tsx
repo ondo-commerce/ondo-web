@@ -1,5 +1,6 @@
-import { Panel } from "@ondo/ui";
-import { PARTNERS_SUB } from "../constants";
+import { Notice, Panel } from "@ondo/ui";
+import { Info } from "lucide-react";
+import { FIXTURE_NOTICE, PARTNERS_SUB } from "../constants";
 import { partnerListRows } from "../derive";
 import { EmptyPartners } from "./EmptyPartners";
 import { PartnerCards } from "./PartnerCards";
@@ -20,35 +21,46 @@ export function PartnersView() {
   const rows = partnerListRows();
 
   return (
-    <Panel>
-      <Panel.Title
-        sub={PARTNERS_SUB}
-        action={
-          /* 이 숫자는 표 본문 줄 수 그 자체다 — 따로 세면 어긋난다 */
-          <span className="text-muted-foreground text-body">
-            거래처 <b className="text-foreground font-medium">{rows.length}</b>
-            곳
-          </span>
-        }
-      >
-        거래처 관리
-      </Panel.Title>
+    /* 주문 내역·정산과 같은 폭(#217 R2) */
+    <div className="mx-auto max-w-wrap">
+      <Panel>
+        <Panel.Title
+          sub={PARTNERS_SUB}
+          action={
+            /* 이 숫자는 표 본문 줄 수 그 자체다 — 따로 세면 어긋난다 */
+            <span className="text-muted-foreground text-body">
+              거래처{" "}
+              <b className="text-foreground font-medium">{rows.length}</b>곳
+            </span>
+          }
+        >
+          거래처 관리
+        </Panel.Title>
 
-      {rows.length === 0 ? (
-        <EmptyPartners />
-      ) : (
-        <>
-          {/* 같은 목록을 폭에 따라 다른 모양으로 그린다. 값은 둘 다 `rows` 하나에서
+        {/* 더미라는 사실을 화면이 말한다 — 실서버 도매처 사이에 섞이면 실데이터로 읽힌다 */}
+        <Notice className="mb-4">
+          <span className="flex items-start gap-2">
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+            {FIXTURE_NOTICE}
+          </span>
+        </Notice>
+
+        {rows.length === 0 ? (
+          <EmptyPartners />
+        ) : (
+          <>
+            {/* 같은 목록을 폭에 따라 다른 모양으로 그린다. 값은 둘 다 `rows` 하나에서
               나오므로 폭이 바뀌어도 말이 갈리지 않는다. 경계가 `tablet`(≤960px)인
               이유는 `PartnerCards`의 주석에 있다(F3) */}
-          <div className="tablet:block hidden">
-            <PartnerCards rows={rows} />
-          </div>
-          <div className="tablet:hidden">
-            <PartnerTable rows={rows} />
-          </div>
-        </>
-      )}
-    </Panel>
+            <div className="tablet:block hidden">
+              <PartnerCards rows={rows} />
+            </div>
+            <div className="tablet:hidden">
+              <PartnerTable rows={rows} />
+            </div>
+          </>
+        )}
+      </Panel>
+    </div>
   );
 }

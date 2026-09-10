@@ -147,7 +147,6 @@ export function LoginView() {
                 name="password"
                 autoComplete="current-password"
                 required
-                placeholder="••••••••"
                 value={values.password}
                 aria-invalid={errors.password !== undefined}
                 aria-describedby={
