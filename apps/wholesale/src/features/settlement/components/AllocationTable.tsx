@@ -18,12 +18,15 @@ import { formatNumber } from "@/shared/lib/format";
 export function AllocationTable({
   targets,
   values,
+  issues,
   disabled,
   onChange,
 }: {
   /** 미수가 남은 주문만, FIFO 순으로 정렬된 목록 (`derive.allocationTargets`) */
   targets: readonly OrderRowView[];
   values: Readonly<Record<number, number>>;
+  /** 상한을 넘긴 행의 이유 한 줄(`derive.allocationIssues`). 있는 행만 빨갛게 + 칸 아래 문구 */
+  issues: Readonly<Record<number, string>>;
   /** 입금액을 아직 안 적었으면 배분할 돈이 없다 → 입력칸을 전부 잠근다 */
   disabled: boolean;
   onChange: (orderId: number, raw: string) => void;
@@ -50,6 +53,7 @@ export function AllocationTable({
       <Table.Body>
         {targets.map((order) => {
           const value = values[order.id] ?? 0;
+          const issue = issues[order.id];
           return (
             <Table.Row key={order.id}>
               <Table.Td align="left">{order.orderNumber}</Table.Td>
@@ -64,15 +68,25 @@ export function AllocationTable({
               </Table.Td>
               <Table.Td>{formatNumber(order.outstanding)}</Table.Td>
               <Table.Td>
-                {/* 상한은 따로 안 본다 — 부르는 쪽이 미수·입금액 잔여로 자른다(clampAllocation) */}
+                {/* 상한을 넘겨도 값을 자르지 않는다 — 칸을 빨갛게 하고 얼마까지인지 아래에 적는다.
+                    조용히 바꾸면 사장은 왜 다른 숫자가 됐는지 모른다(wire-settlement F4, #207) */}
                 <NumericInput
                   size="sm"
                   className="w-25"
                   aria-label={`주문 ${order.orderNumber} 배분액`}
+                  aria-invalid={issue !== undefined}
                   disabled={disabled}
                   value={value === 0 ? "" : formatNumber(value)}
                   onChange={(e) => onChange(order.id, e.target.value)}
                 />
+                {issue !== undefined ? (
+                  <p
+                    role="alert"
+                    className="text-destructive-strong mt-1 text-xs whitespace-nowrap"
+                  >
+                    {issue}
+                  </p>
+                ) : null}
               </Table.Td>
             </Table.Row>
           );

@@ -6,9 +6,10 @@ import { AllocationTable } from "./AllocationTable";
 import { useCreatePaymentMutation } from "../api/mutations";
 import { DEPOSIT_FIELDS, METHOD_LABEL, PAYER_LABEL } from "../constants";
 import {
+  allocationGapText,
+  allocationIssues,
   allocationTargets,
   allocationTotal,
-  clampAllocation,
   depositErrorText,
   formatAmountInput,
   formatInputDateTime,
@@ -100,6 +101,12 @@ export function DepositFormPanel({
     amount,
   );
   const total = allocationTotal(allocations);
+  /* 상한(미수·남은 입금액)을 넘긴 행마다 이유 한 줄. 값을 자르지 않고 말한다(#207 F4) */
+  const issues = allocationIssues(targets, allocations, amount);
+  const hasIssue = Object.keys(issues).length > 0;
+  const gapText = allocationGapText(amount, total);
+  /* 합계가 입금액을 넘긴 상태. 요약 숫자와 아래 한 줄을 빨갛게 — 미달은 허용이라 회색이다 */
+  const overAllocated = amount !== null && total > amount;
 
   /* 서버 오류: `VALIDATION_FAILED`는 칸으로, 정책·상태 오류(400 코드·409·404·5xx)는 버튼 위 한 줄 */
   const serverErrors = create.error
@@ -118,22 +125,22 @@ export function DepositFormPanel({
     onDraftChange(patch);
   };
 
-  /** 입금액이 바뀌면 자동 배분을 다시 계산해야 하므로 사람이 고친 값도 함께 지운다 */
+  /**
+   * 입금액이 바뀌어도 사람이 고친 행은 **지우지 않는다**(#207 F5). 자동 행만 남은 입금액으로 다시 계산되고,
+   * 새 입금액 안에 못 드는 손댄 행은 칸이 빨개지며 얼마까지인지 말한다 — 조용히 37,500으로 되돌리면
+   * 한 글자 수정에 맞춰 둔 배분이 통째로 날아간다.
+   */
   const changeAmount = (raw: string) => {
-    change({ amountRaw: toAmountDigits(raw), editedAllocations: {} });
+    change({ amountRaw: toAmountDigits(raw) });
   };
 
+  /** 친 값을 그대로 든다. 상한은 자르지 않고 `issues`가 행 아래에서 말한다(#207 F4) */
   const changeAllocation = (orderId: number, raw: string) => {
-    const order = targets.find((o) => o.id === orderId);
-    if (!order) return;
-    const parsed = parseNumberInput(raw) ?? 0;
-    // 이 행을 뺀 나머지 합이 입금액에서 남긴 몫이 이 행의 상한이다(⑤)
-    const others = total - (allocations[orderId] ?? 0);
-    const budget = Math.max(0, (amount ?? 0) - others);
+    if (!targets.some((o) => o.id === orderId)) return;
     change({
       editedAllocations: {
         ...draft.editedAllocations,
-        [orderId]: clampAllocation(parsed, order.outstanding, budget),
+        [orderId]: parseNumberInput(raw) ?? 0,
       },
     });
   };
@@ -142,9 +149,13 @@ export function DepositFormPanel({
   /** 입금액을 안 적었거나 0이면 기록할 사실이 없다 — 두 버튼 모두 잠근다. 옛 숫자(`stale`)로도 안 보낸다 */
   const canSubmit =
     amount !== null && amount > 0 && !amountOverMax && !busy && !stale;
-  /** 배분이 입금액과 딱 맞을 때만 정산까지 간다. 미달·초과는 `입금만 진행`으로 남긴다 */
+  /** 배분이 상한 안이고 입금액과 딱 맞을 때만 정산까지 간다. 미달·초과는 `입금만 진행`으로 남긴다 */
   const canSettle =
-    canSubmit && orders !== null && targets.length > 0 && total === amount;
+    canSubmit &&
+    orders !== null &&
+    targets.length > 0 &&
+    !hasIssue &&
+    total === amount;
 
   const submit = (mode: DepositMode) => {
     if (amount === null || !canSubmit) return;
@@ -157,7 +168,8 @@ export function DepositFormPanel({
       });
       return;
     }
-    // 빈칸이었으면 지금 시각을 칸에 굳힌다 — 재전송 때 시각이 바뀌면 같은 키에 다른 본문이 된다
+    // 빈칸이었으면 지금 시각을 칸에 굳힌다 — 재전송 때 시각이 바뀌면 같은 키에 다른 본문이 된다.
+    // 굳힌 문자열과 위 `paidAt`은 같은 분(分) 단위 값이다(`parsePaidAt`이 빈칸을 같은 형식으로 거친다, #207 F2)
     if (draft.receivedAt.trim() === "") {
       onDraftChange(
         { receivedAt: formatInputDateTime(now) },
@@ -294,24 +306,44 @@ export function DepositFormPanel({
             <AllocationTable
               targets={targets}
               values={allocations}
+              issues={issues}
               disabled={amount === null || busy}
               onChange={changeAllocation}
             />
           )}
 
-          {/* 요약 줄. 합계는 입금액을 넘지 못하게 칸에서 잘라 준다 — 미달은 허용한다(그때는 `입금 및 정산`만 막힌다) */}
+          {/* 요약 줄. 합계가 입금액과 어긋나면 그 아래 한 줄로 방향과 크기를 말한다 —
+              미달은 허용(`입금만 진행`), 초과·상한 위반은 `입금 및 정산`이 잠긴다 */}
           {targets.length > 0 ? (
-            <div className="mt-3 flex items-baseline justify-end gap-3 text-sm">
-              <span className="text-muted-foreground">입금액</span>
-              <span className="text-primary font-medium tabular-nums">
-                {formatNumber(amount ?? 0)}
-              </span>
-              <span className="text-border-strong">|</span>
-              <span className="text-muted-foreground">배분 합계</span>
-              <span className="text-base font-medium tabular-nums">
-                {formatNumber(total)}
-              </span>
-            </div>
+            <>
+              <div className="mt-3 flex items-baseline justify-end gap-3 text-sm">
+                <span className="text-muted-foreground">입금액</span>
+                <span className="text-primary font-medium tabular-nums">
+                  {formatNumber(amount ?? 0)}
+                </span>
+                <span className="text-border-strong">|</span>
+                <span className="text-muted-foreground">배분 합계</span>
+                <span
+                  className={`text-base font-medium tabular-nums ${
+                    overAllocated ? "text-destructive-strong" : ""
+                  }`}
+                >
+                  {formatNumber(total)}
+                </span>
+              </div>
+              {gapText ? (
+                <p
+                  role="status"
+                  className={`mt-1 text-right text-xs ${
+                    overAllocated
+                      ? "text-destructive-strong"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {gapText}
+                </p>
+              ) : null}
+            </>
           ) : null}
         </Panel.Section>
       </Panel.Body>
