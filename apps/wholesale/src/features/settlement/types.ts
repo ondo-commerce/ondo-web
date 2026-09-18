@@ -26,6 +26,11 @@ export type PaymentCreateRequest = WholesaleSchema<"PaymentCreateRequest">;
 export type PaymentAllocationRequest =
   WholesaleSchema<"PaymentAllocationRequest">;
 export type PaymentCreated = WholesaleSchema<"PaymentCreatedResponse">;
+/**
+ * 선수금 요약(정산 탭 3카드). 취소된 입금·취소된 배분은 뺀 값이고 `prepaid = totalPaid − totalAllocated`다(스펙).
+ * 입금 폼의 사용 가능액 = 이번 입금액 + `prepaid`.
+ */
+export type PrepaidSummary = WholesaleSchema<"PrepaidSummaryResponse">;
 export type BankAccount = WholesaleSchema<"BankAccountResponse">;
 export type BankAccountCreateRequest =
   WholesaleSchema<"BankAccountCreateRequest">;
@@ -92,11 +97,18 @@ export interface OrderRowView {
   /** 출고분이 있는 주문은 서버값, 없으면 `UNSHIPPED` */
   settlementStatus: SettlementBadgeStatus;
   /**
-   * 미수 잔액 = **출고된 금액 − 배정액**(한 정의, 거래처 행의 원장 잔액과 같은 기준).
-   * 출고분이 있는 주문(`PARTIALLY_SHIPPED`·`SHIPPED`)은 서버 `outstandingAmount` 그대로, 출고 전 주문은 0 —
-   * 응답에 출고 금액 필드가 없어 `status.key`로 근사한다(04-wire §3-6)
+   * 남은 미수 = **출고된 금액 − 이미 붙은 배분**(한 정의, 거래처 행의 원장 잔액과 같은 기준).
+   * 서버 `outstandingAmount`가 이 정의다(2026-09-18 dev 확인: 출고 전 주문은 `shippedAmount` 0 · `outstandingAmount` 0).
+   * 출고분이 있는지는 `shippedAmount`로 본다 — 예전엔 이 필드가 없어 `status.key`로 근사했다
    */
   outstanding: number;
+}
+
+/** 선수금 3카드. 셋 다 서버값 그대로 — `남은 선수금 = 총 입금액 − 배분 완료액`을 화면에서 다시 세지 않는다 */
+export interface PrepaidView {
+  totalPaid: number;
+  totalAllocated: number;
+  prepaid: number;
 }
 
 /** 원장 표 한 줄 */

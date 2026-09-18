@@ -12,6 +12,7 @@ import {
   toBankAccountView,
   toLedgerView,
   toOrderView,
+  toPrepaidView,
   toRetailerRow,
 } from "../derive";
 import type {
@@ -20,6 +21,8 @@ import type {
   LedgerEntryType,
   LedgerView,
   OrderRowView,
+  PrepaidSummary,
+  PrepaidView,
   ReceivableLedgerPage,
   ReceivableRetailer,
   RetailerRowView,
@@ -35,6 +38,8 @@ import type {
 export const SETTLEMENT_PATH = {
   receivableRetailers: "/api/wholesale/receivables/retailers",
   receivables: "/api/wholesale/receivables",
+  prepaid: (retailerId: number) =>
+    `/api/wholesale/receivables/retailers/${retailerId}/prepaid`,
   payments: "/api/wholesale/payments",
   orders: "/api/wholesale/orders",
   bankAccounts: "/api/wholesale/bank-accounts",
@@ -105,6 +110,19 @@ export function useLedgerQuery(query: LedgerQuery) {
         },
       }),
     select: (page): LedgerView => toLedgerView(page),
+  });
+}
+
+/**
+ * 소매처 하나의 선수금 3카드(`GET /receivables/retailers/{id}/prepaid`). 거래 관계가 없는 소매처는 404지만
+ * 이 탭은 미수 목록에 있는 소매처만 펼치므로 오지 않는다 — 와도 경계의 기본 빈 상태로 그린다.
+ */
+export function usePrepaidQuery(retailerId: number) {
+  return useSuspenseQuery({
+    queryKey: settlementKeys.prepaid(retailerId),
+    queryFn: () =>
+      apiFetch<PrepaidSummary>(SETTLEMENT_PATH.prepaid(retailerId)),
+    select: (summary): PrepaidView => toPrepaidView(summary),
   });
 }
 

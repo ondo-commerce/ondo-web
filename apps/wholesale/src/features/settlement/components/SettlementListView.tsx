@@ -11,6 +11,7 @@ import {
 } from "react";
 import { BankAccountPanel } from "./BankAccountPanel";
 import { DepositFormPanel } from "./DepositFormPanel";
+import { PrepaidSummaryPanel } from "./PrepaidSummaryPanel";
 import { SettlementRelationTable } from "./SettlementRelationTable";
 import { SettlementSegmentView } from "./SettlementSegmentView";
 import { settlementKeys } from "../api/keys";
@@ -164,20 +165,29 @@ export function SettlementListView() {
       </QueryBoundary>
     </Panel>
   ) : openRetailer && draft ? (
-    <DepositFormPanel
-      key={openRetailer.id}
-      retailer={openRetailer}
-      orders={orders}
-      draft={draft}
-      onDraftChange={(patch, options) =>
-        updateDraft(openRetailer.id, patch, options)
-      }
-      inList={visibleIds?.has(openRetailer.id) ?? true}
-      stale={stale}
-      notice={notice}
-      onRefresh={retryRefresh}
-      onDone={finishPayment}
-    />
+    /* 선수금 3카드가 위, 입금 폼이 아래 — 폼의 `총 사용 가능`이 카드의 남은 선수금에 기댄다(#138).
+       둘은 경계가 따로다: 카드가 실패해도 입금 폼은 그대로 남는다 */
+    <>
+      <PrepaidSummaryPanel
+        key={`prepaid-${openRetailer.id}`}
+        retailer={openRetailer}
+        onRefresh={retryRefresh}
+      />
+      <DepositFormPanel
+        key={openRetailer.id}
+        retailer={openRetailer}
+        orders={orders}
+        draft={draft}
+        onDraftChange={(patch, options) =>
+          updateDraft(openRetailer.id, patch, options)
+        }
+        inList={visibleIds?.has(openRetailer.id) ?? true}
+        stale={stale}
+        notice={notice}
+        onRefresh={retryRefresh}
+        onDone={finishPayment}
+      />
+    </>
   ) : undefined;
 
   return (

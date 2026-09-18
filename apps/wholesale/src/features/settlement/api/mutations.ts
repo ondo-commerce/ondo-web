@@ -45,12 +45,18 @@ function refetch(
   );
 }
 
-/** 입금 뒤 낡는 것 — 소매처 미수(행), 그 소매처의 주문 미수·정산 상태(표·배분 표), 원장 */
+/**
+ * 입금 뒤 낡는 것 — 소매처 미수(행), 그 소매처의 주문 미수·정산 상태(표·배분 표), 원장, 선수금 3카드.
+ *
+ * 응답의 `ledgerBalance`·`prepaidRemaining`으로 캐시를 직접 고치지 않는다 — 3카드의 `totalPaid`·`totalAllocated`는
+ * 응답에 없어 화면이 더해야 하고, 그 순간 취소분 처리가 서버와 갈릴 수 있다. 원장 잔액과 같은 방식으로 전부 다시 받는다.
+ */
 function refetchAfterPayment(queryClient: QueryClient, retailerId: number) {
   return refetch(queryClient, [
     settlementKeys.retailers(),
     settlementKeys.orders(retailerId),
     settlementKeys.ledgers(retailerId),
+    settlementKeys.prepaid(retailerId),
   ]);
 }
 

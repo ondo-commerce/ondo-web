@@ -17,9 +17,10 @@ import type {
   LedgerRowView,
   LedgerView,
   OrderRowView,
-  OrderStatus,
   PaymentAllocationRequest,
   PaymentCreateRequest,
+  PrepaidSummary,
+  PrepaidView,
   ReceivableLedgerPage,
   ReceivableRetailer,
   RetailerRowView,
@@ -171,9 +172,12 @@ export function retailerLabel(name: string, code: string): string {
   return code === "" ? name : `${name} · ${code}`;
 }
 
-/** 출고분이 있는 주문인가. 응답에 출고 금액이 없어 이행 상태로 근사한다 — 부분이라도 나갔으면 미수가 있다 */
-export function hasShipped(status: OrderStatus): boolean {
-  return status === "PARTIALLY_SHIPPED" || status === "SHIPPED";
+/**
+ * 출고분이 있는 주문인가 = `shippedAmount > 0`. 이행 상태(`SHIPPED`)로 근사하지 않는다 —
+ * dev에 `SHIPPED`인데 `shippedAmount` 0인 옛 주문이 있고(2026-09-18), 미수는 출고 **금액**이 만든다.
+ */
+export function hasShipped(shippedAmount: number): boolean {
+  return shippedAmount > 0;
 }
 
 /**
@@ -181,12 +185,12 @@ export function hasShipped(status: OrderStatus): boolean {
  * 표의 미수 합이 행의 미수와 같아야 한다(선수금이 없을 때).
  *
  * 출고 전 주문은 미수 0 · `UNSHIPPED`(미출고)로 눕히고 배분 표(`allocationTargets`)에도 안 올린다.
- * 서버가 그 주문에 `outstandingAmount`(주문 금액 기준)를 내려도 쓰지 않는다 — 원장에 없는 돈이라 배분하면
- * 행 `0원`·표 `부분 정산`·원장 `+선수금`이 동시에 서는 화면이 된다(F1).
+ * 서버도 이제 출고 전 주문의 `outstandingAmount`를 0으로 내린다(출고 미수 − 이미 붙은 배분) — 그래도 한 번 더
+ * 0으로 눕히는 건 서버가 옛 정의(주문 금액 기준)로 돌아갔을 때 원장에 없는 돈을 배분하지 않기 위해서다(F1).
  * 이미 배정이 붙은 출고 전 주문(서버가 허용했을 때)은 상태만 서버값을 남기고 미수는 역시 0이다.
  */
 export function toOrderView(order: SettlementOrder): OrderRowView {
-  const shipped = hasShipped(order.status.key);
+  const shipped = hasShipped(order.shippedAmount);
   return {
     id: order.id,
     orderNumber: String(order.orderNumber),
@@ -206,6 +210,15 @@ export function toOrderView(order: SettlementOrder): OrderRowView {
 /** 표에 보이는 주문들의 미수 합. 거래처 행(원장)과 같은 수여야 한다 — 다르면 정의가 갈린 것 */
 export function outstandingTotal(orders: readonly OrderRowView[]): number {
   return orders.reduce((sum, o) => sum + o.outstanding, 0);
+}
+
+/** 선수금 3카드. 서버값을 옮기기만 한다 — `prepaid`를 두 값의 차로 다시 세면 취소분 처리가 서버와 갈릴 수 있다 */
+export function toPrepaidView(summary: PrepaidSummary): PrepaidView {
+  return {
+    totalPaid: summary.totalPaid,
+    totalAllocated: summary.totalAllocated,
+    prepaid: summary.prepaid,
+  };
 }
 
 /**
