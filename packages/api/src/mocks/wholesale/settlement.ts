@@ -46,7 +46,7 @@ interface MockLedgerEntry {
   /** SALE일 때만 */
   orderId: number | null;
   orderNumber: number | null;
-  /** PAYMENT일 때만 */
+  /** PAYMENT·PAYMENT_VOID일 때만(스펙). 목은 입금 취소가 없어 PAYMENT 줄만 채운다 */
   paymentId: number | null;
 }
 
@@ -278,16 +278,30 @@ function paymentResponse(
     method: payment.method,
     memo: payment.memo as string,
     unallocatedAmount: payment.amount - allocated,
+    // 등록 후 거래처 선수금 전체(스펙: `prepaid = totalPaid − totalAllocated`). 이번 입금만이 아니다
+    prepaidRemaining: prepaidOf(payment.retailerId),
     allocations: payment.allocations.map((a) => ({
       id: a.id,
       orderId: a.orderId,
       orderNumber: a.orderNumber,
       amount: a.amount,
       createdAt: a.createdAt,
+      paymentId: payment.id,
     })),
     ledgerBalance: balanceOf(payment.retailerId),
     createdAt: payment.createdAt,
   };
+}
+
+/** 소매처의 남은 선수금 = Σ(입금액 − 그 입금의 배정 합). 목은 입금 취소가 없어 뺄 것이 없다 */
+function prepaidOf(retailerId: number): number {
+  return payments
+    .filter((p) => p.retailerId === retailerId)
+    .reduce(
+      (acc, p) =>
+        acc + p.amount - p.allocations.reduce((s, a) => s + a.amount, 0),
+      0,
+    );
 }
 
 function bankAccountResponse(
@@ -342,7 +356,13 @@ function findBankAccount(raw: string | readonly string[] | undefined) {
 
 const PAID_BY: readonly PaidBy[] = ["RETAILER", "AGENT"];
 const METHODS: readonly PaymentMethod[] = ["CASH", "BANK_TRANSFER"];
-const ENTRY_TYPES: readonly LedgerEntryType[] = ["SALE", "PAYMENT"];
+/** 스펙 enum 4종. 목은 입금 취소·조정 줄을 만들지 않지만 필터 값으로는 받는다(서버가 400을 안 내는 값은 목도 안 낸다) */
+const ENTRY_TYPES: readonly LedgerEntryType[] = [
+  "SALE",
+  "PAYMENT",
+  "PAYMENT_VOID",
+  "ADJUST",
+];
 
 /* --- 핸들러 ------------------------------------------------------------- */
 
@@ -386,7 +406,7 @@ export const settlementHandlers = [
       return fail(
         400,
         "VALIDATION_FAILED",
-        "entryType은 SALE 또는 PAYMENT여야 합니다.",
+        `entryType은 ${ENTRY_TYPES.join(", ")} 중 하나여야 합니다.`,
         "entryType",
       );
     // 404 없음 — 거래 이력 없는 소매처도 200 + [] + 잔액 0(스펙)

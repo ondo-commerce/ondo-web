@@ -1,11 +1,10 @@
 import { Badge } from "@ondo/ui";
 import {
-  LEDGER_ARROW,
-  LEDGER_LABEL,
   ORDER_STATUS_TONE,
   SETTLEMENT_LABEL,
   SETTLEMENT_TONE,
 } from "../constants";
+import { ledgerArrow, ledgerLabel } from "../derive";
 import type {
   LedgerEntryType,
   OrderStatus,
@@ -42,14 +41,15 @@ export function SettlementBadge({ status }: { status: SettlementBadgeStatus }) {
  * 미수원장의 구분 배지.
  *
  * `wholesale_screen_spec.md` §8.1은 이 배지를 "2색 규칙의 유일한 예외"로 허용했지만
- * **게이트 결정이 그 예외를 쓰지 않는 쪽을 택했다.** 그래서 입금과 판매가 같은 회색이고,
- * 구분은 배지 안의 화살표(`↓`/`↑`)와 금액의 부호가 맡는다.
+ * **게이트 결정이 그 예외를 쓰지 않는 쪽을 택했다.** 그래서 입금·판매·입금 취소·조정이 전부 같은 회색이고,
+ * 구분은 배지 안의 화살표(`↓`/`↑`/`↕`)와 금액의 부호가 맡는다.
+ * 라벨은 `derive`를 거친다 — 스냅샷보다 서버 enum이 앞서 있을 때도 코드값이라도 보이게.
  */
 export function LedgerBadge({ entryType }: { entryType: LedgerEntryType }) {
   return (
     <Badge tone="done">
-      {LEDGER_ARROW[entryType]}
-      {LEDGER_LABEL[entryType]}
+      {ledgerArrow(entryType)}
+      {ledgerLabel(entryType)}
     </Badge>
   );
 }

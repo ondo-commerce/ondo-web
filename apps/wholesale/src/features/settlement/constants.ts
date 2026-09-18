@@ -74,26 +74,37 @@ export const METHOD_LABEL: Record<PaymentMethod, string> = {
   BANK_TRANSFER: "계좌 이체",
 };
 
-/** 원장 구분 2종(스펙 enum). 반품·수기 조정은 스펙에도 화면에도 없다 */
+/**
+ * 원장 구분 4종(스펙 enum, 2026-09-18). `PAYMENT_VOID`는 입금 취소가 원장에 남기는 줄(입금 전으로 되돌린다),
+ * `ADJUST`는 서버 쪽 수기 조정이다 — 둘 다 화면에서 만들 수는 없고 읽기만 한다. 반품은 여전히 없다.
+ * 모르는 종류가 오면 `derive.ledgerLabel`이 코드값을 그대로 보인다 — 여기서 빠졌다고 화면이 죽지 않는다.
+ */
 export const LEDGER_LABEL: Record<LedgerEntryType, string> = {
   PAYMENT: "입금",
+  PAYMENT_VOID: "입금 취소",
   SALE: "판매",
+  ADJUST: "조정",
 };
 
 /**
  * 원장 구분의 화살표. **색 대신 이 기호가 구분을 맡는다**(게이트 Q2) —
- * 돈이 들어오면 ↓, 나가면(외상이 늘면) ↑다. 배지 색은 둘 다 회색 하나뿐이라
- * 이 기호와 금액 부호(`+` / `-`)를 빼면 두 줄이 같아 보인다. 지우지 말 것.
+ * 돈이 들어오면 ↓, 나가면(외상이 늘면) ↑다. 입금 취소는 들어왔던 돈이 도로 나가는 것이라 ↑.
+ * 조정은 방향이 정해져 있지 않아 ↕ — 방향은 같은 줄의 금액 부호가 말한다.
+ * 배지 색은 전부 회색 하나뿐이라 이 기호와 금액 부호(`+` / `-`)를 빼면 줄이 같아 보인다. 지우지 말 것.
  */
 export const LEDGER_ARROW: Record<LedgerEntryType, string> = {
   PAYMENT: "↓",
+  PAYMENT_VOID: "↑",
   SALE: "↑",
+  ADJUST: "↕",
 };
 
-/** 원장 구분 필터에 세울 순서 */
+/** 원장 구분 필터에 세울 순서. 입금과 그 취소를 붙여 둔다 */
 export const LEDGER_ENTRY_TYPES: readonly LedgerEntryType[] = [
   "PAYMENT",
+  "PAYMENT_VOID",
   "SALE",
+  "ADJUST",
 ];
 
 /**

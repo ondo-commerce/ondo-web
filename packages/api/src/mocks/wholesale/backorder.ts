@@ -212,7 +212,17 @@ function nullable(value: string | null): string {
   return value as unknown as string;
 }
 
+/** 열린 미송 중 가장 늦게 생긴 시각. 열린 게 없으면 null(스펙은 string이지만 서버도 이때 null을 준다) */
+function latestBackorderedAt(rows: readonly MockBackorder[]): string | null {
+  return rows.reduce<string | null>(
+    (latest, b) =>
+      latest === null || b.createdAt > latest ? b.createdAt : latest,
+    null,
+  );
+}
+
 function skuResponse(v: MockVariant): WholesaleSchema<"BackorderSkuResponse"> {
+  const open = openOf(v.id);
   return {
     variantId: v.id,
     productId: v.productId,
@@ -221,9 +231,10 @@ function skuResponse(v: MockVariant): WholesaleSchema<"BackorderSkuResponse"> {
     productName: v.productName,
     color: v.color,
     size: v.size,
-    backorderQty: sum(openOf(v.id), (b) => b.remainingQty),
+    backorderQty: sum(open, (b) => b.remainingQty),
     availableQty: availableQty(v),
     expectedInboundDate: nullable(v.expectedInboundDate),
+    latestBackorderedAt: nullable(latestBackorderedAt(open)),
   };
 }
 

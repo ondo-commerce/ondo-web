@@ -455,6 +455,8 @@ function summaryResponse(
     summaryProductName: first ? `${first.productName} (${first.color})` : "",
     additionalItemCount: Math.max(order.items.length - 1, 0),
     orderAmount: mockOrderAmount(order),
+    // 정산 목의 판매 원장 줄과 같은 식 — 표의 `미수 = 출고 금액 − 배정액`이 원장 잔액과 맞아야 한다
+    shippedAmount: mockShippedAmount(order),
     status: { key: f.key, label: STATUS_LABEL[f.key] },
     ...mockOrderSettlement(order),
     isConfirmable: f.isConfirmable,

@@ -173,6 +173,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retail-gateway/settlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 도매처별 정산 요약 (소매 백엔드 → 도매)
+         * @description 그 소매처와 거래 관계가 있는 도매처 전부 — 거래 관계는 주문이 들어와야 생긴다. 빚이 큰 순.
+         *
+         *     부호는 소매 화면 기준: `balance` 플러스 = 갚을 돈, 마이너스 = 선수금.
+         *     연체는 출고마다 기한(출고일 + 외상기간, 당일은 연체 아님)으로 센다. 외상기간은 거래처 설정(MUL-128)
+         *     전까지 모든 주문 1일이다. `paidLast7Days`는 오늘 포함 최근 7일 입금 합. 취소된 입금은 어디에도 안 센다.
+         */
+        get: operations["summaries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail-gateway/settlements/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 도매처 하나와의 거래 원장 (소매 백엔드 → 도매)
+         * @description 출고(`SHIPMENT`, +)와 입금(`PAYMENT`, −)을 오래된 순으로. 취소된 입금은 그 줄과 취소 줄을 둘 다 뺀다.
+         *
+         *     주문번호는 안 온다 — `retailOrderId`로 소매가 채운다. 장끼 표시 코드도 `shippedAt` · `statementNumber`로
+         *     소매가 조립한다. 입금 줄의 `allocations`는 한 입금이 붙은 주문들이고 `unallocated`는 안 붙은 돈이다.
+         *     거래 관계가 없는 도매처면 빈 목록.
+         */
+        get: operations["ledger_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retail-gateway/variants": {
         parameters: {
             query?: never;
@@ -221,6 +269,59 @@ export interface paths {
         get: operations["wholesalers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 선수금으로 정산 (Idempotency-Key 필수)
+         * @description 새 입금 없이 받아 둔 선수금을 출고된 주문에 붙인다 — 원장은 안 바뀐다.
+         *     미송 선결제처럼 돈이 먼저 오고 물건이 나중에 나간 주문을 출고 뒤 정산하는 길이다.
+         *
+         *     돈은 **오래된 입금부터** 꺼낸다. 한 주문이 입금 여럿에 걸치면 `allocations`에 줄이 여럿이고
+         *     줄마다 `paymentId`가 다르다. 주문별 상한은 입금 등록과 같다(출고로 생긴 미수 − 이미 붙은 배분).
+         *     같은 키 재요청은 200 + 동일 본문(멱등).
+         *
+         *     에러: 400 `VALIDATION_FAILED` · `DUPLICATE_ORDER` · `ORDER_RETAILER_MISMATCH` /
+         *     404 `RESOURCE_NOT_FOUND` / 409 `IDEMPOTENCY_KEY_REUSED` · `ORDER_NOT_CONFIRMED` ·
+         *     `ALLOCATION_EXCEEDS_PREPAID` · `ALLOCATION_EXCEEDS_OUTSTANDING`
+         */
+        post: operations["createAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/allocations/{allocationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 배분 취소
+         * @description 주문에 붙인 돈을 떼어낸다 (MUL-127). 줄은 지우지 않고 취소 표시만 한다. 원장은 안 바뀐다 —
+         *     돈은 그대로 받은 상태이고, 그 금액은 **선수금으로 돌아간다**. 주문의 남은 미수가 다시 늘어난다.
+         *     금액을 고치려면 취소하고 입금 등록 · 선수금 정산으로 다시 붙인다.
+         *
+         *     에러: 404 `RESOURCE_NOT_FOUND` / 409 `STATE_CONFLICT`(이미 취소된 배분 · 취소된 입금의 배분)
+         */
+        post: operations["cancelAllocation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -442,6 +543,32 @@ export interface paths {
          *     상품에 넣을 수 있는 색은 이 목록이 전부다.
          */
         get: operations["colors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 대시보드 summary (집계 한 방)
+         * @description 로그인한 도매처 기준 대시보드 1차 화면의 숫자를 한 번에 내린다 — 파라미터 없음.
+         *     30초 polling 용이라 목록 API 여러 개를 합산하지 않아도 된다.
+         *
+         *     `now`는 서버 시각 — 경과 시간은 이 값 기준으로 계산한다.
+         *     "오늘"(`today`)의 경계는 자정이 아니라 영업일 시작(KST 낮 12시)이다.
+         *     `outbound.staleCount`는 이번 영업일 시작 전에 포장했는데 아직 출고
+         *     확정하지 않은 봉투 수, `today.cancelled`는 오늘 접수분 중 취소 건수다.
+         */
+        get: operations["summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -879,14 +1006,47 @@ export interface paths {
          * 입금 등록 (배분 겸함, Idempotency-Key 필수)
          * @description "입금만 진행"과 "입금 및 정산"이 같은 엔드포인트 — `allocations`가 비면 선수금.
          *     `paidBy`(누구 손)와 `method`(무슨 수단)는 다른 축이다. 같은 키 재요청은 200 + 동일 본문(멱등).
-         *     응답의 `ledgerBalance`로 헤더를 재조회 없이 갱신한다.
+         *     응답의 `ledgerBalance`로 헤더를 재조회 없이 갱신한다 — 음수 = 소매처 채무, 양수 = 선수금.
+         *
+         *     배분은 **출고된 금액에만** 붙는다. 주문별 상한 = 출고로 생긴 미수 − 이미 붙은 배분이라
+         *     출고 전 주문은 0 이다(`ALLOCATION_EXCEEDS_OUTSTANDING`). 먼저 받은 돈은 선수금으로 남는다.
+         *     배분 합계 상한은 **이번 입금액 + 남은 선수금**이다 — 이번 입금을 먼저 쓰고 모자라면 오래된 입금부터
+         *     끌어 쓴다. 그래서 `unallocatedAmount`는 이번 입금에서 안 쓴 돈이고, `allocations[].paymentId`가
+         *     이번 입금이 아닐 수 있다. `prepaidRemaining`은 등록 후 거래처 선수금 전체.
          *
          *     에러: 400 `VALIDATION_FAILED` · `PAID_AT_IN_FUTURE` · `DUPLICATE_ORDER` ·
          *     `ORDER_RETAILER_MISMATCH` / 404 `RESOURCE_NOT_FOUND` / 409 `IDEMPOTENCY_KEY_REUSED` ·
-         *     `STATE_CONFLICT` · `ORDER_NOT_CONFIRMED` · `ALLOCATION_EXCEEDS_PAYMENT` ·
-         *     `ALLOCATION_EXCEEDS_OUTSTANDING`
+         *     `ORDER_NOT_CONFIRMED` · `ALLOCATION_EXCEEDS_PAYMENT` · `ALLOCATION_EXCEEDS_OUTSTANDING`
          */
         post: operations["createPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/payments/{paymentId}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 입금 취소 (사유 필수)
+         * @description 잘못 넣은 입금을 되돌린다 (MUL-127). 입금은 지우지 않고 무효 표시만 하고, 원장에 **입금 취소** 줄
+         *     (`entryType` `PAYMENT_VOID`, 화면 부호 음수)을 쌓는다 — 거래처 미수가 입금 전으로 돌아간다.
+         *     그 입금에서 나간 배분은 전부 효력을 잃어 주문 미수가 다시 생기고, 남았던 선수금도 사라진다.
+         *
+         *     응답의 `ledgerBalance`(음수 = 채무) · `prepaidRemaining`으로 헤더와 선수금 카드를 갱신한다.
+         *     취소는 되돌릴 수 없다 — 필요하면 입금을 새로 등록한다.
+         *
+         *     에러: 400 `VALIDATION_FAILED`(사유 없음 · 200자 초과) / 404 `RESOURCE_NOT_FOUND` /
+         *     409 `STATE_CONFLICT`(이미 취소된 입금)
+         */
+        post: operations["voidPayment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -974,11 +1134,14 @@ export interface paths {
         };
         /**
          * 미수원장 (아코디언 펼침)
-         * @description 판매·입금을 시간순으로. 화면 하단 "현재 잔액"은 `meta.ledgerBalance`(전체 기준 최신값)를
-         *     쓴다 — `data[0].balanceAfter`는 페이지·필터에 따라 과거 시점 값이라 틀린다.
+         * @description 판매·입금을 시간순으로(기본 최신순, `sort=occurredAt,asc`로 오래된 순). 화면 하단 "현재 잔액"은
+         *     `meta.ledgerBalance`(전체 기준 최신값)를 쓴다 — `data[0].balanceAfter`는 페이지·필터에 따라
+         *     과거 시점 값이라 틀린다. `balanceAfter`는 그 줄을 등록한 순간의 잔액이다.
          *     404 없음 — 거래 이력 없는 `retailerId`도 200 + `[]` + 잔액 0.
          *
-         *     에러: 400 `VALIDATION_FAILED`
+         *     `orderId`·`orderNumber`는 SALE 줄만, `paymentId`는 PAYMENT·PAYMENT_VOID 줄만 값이 있고 나머지는 null.
+         *
+         *     에러: 400 `VALIDATION_FAILED`(`retailerId` 없음 · 모르는 `entryType` · `size > 100` · 모르는 정렬)
          */
         get: operations["ledger"];
         put?: never;
@@ -999,11 +1162,38 @@ export interface paths {
         /**
          * 미수 — 소매처 목록 (아코디언 헤더)
          * @description `ledgerBalance`는 부호 그대로 — 음수 = 소매처 채무, 양수 = 선수금(표기를 뒤집으면 안 된다).
-         *     확정 주문만 센다. 검색(q) 파라미터 없음 — 소매처 상호는 도매 DB 밖, 미수엔 품명이 없다.
+         *     `orderCount`는 확정 주문 수. 확정 주문도 오간 돈도 없는 소매처는 목록에 없다.
+         *     검색(q) 파라미터 없음 — 소매처 상호는 도매 DB 밖, 미수엔 품명이 없다.
+         *     `retailerCode`는 출처가 아직 없어 null 이다. `lastOccurredAt`은 거래가 없으면 null.
          *
-         *     에러: 400 `VALIDATION_FAILED` · `SORT_NOT_ALLOWED`
+         *     정렬: `ledgerBalance`(기본 `ledgerBalance,asc` = 빚이 큰 순) · `lastOccurredAt` · `retailerName`.
+         *
+         *     에러: 400 `VALIDATION_FAILED`(`size > 100` · 모르는 정렬 키)
          */
         get: operations["receivableRetailers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/receivables/retailers/{retailerId}/prepaid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 선수금 요약 (정산 탭 3카드)
+         * @description 총 입금액 · 배분 완료액 · 남은 선수금. 취소된 입금과 취소된 배분은 뺀다.
+         *     `prepaid = totalPaid − totalAllocated`. 입금 등록 폼의 사용 가능액은 이번 입금액 + `prepaid`다.
+         *
+         *     에러: 404 `RESOURCE_NOT_FOUND`(거래 관계가 없는 소매처)
+         */
+        get: operations["prepaidSummary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1122,6 +1312,8 @@ export interface components {
             orderId: number;
             /** Format: int32 */
             orderNumber: number;
+            /** Format: int64 */
+            paymentId: number;
         };
         AllocationBatchResponse: {
             /** Format: int64 */
@@ -1130,6 +1322,33 @@ export interface components {
             createdAt: string;
             packings: components["schemas"]["AllocationPackingResponse"][];
             resolvedBackorderIds: number[];
+        };
+        AllocationCancelledResponse: {
+            /** Format: int64 */
+            allocationId: number;
+            /** Format: int32 */
+            amount: number;
+            /** Format: date-time */
+            cancelledAt: string;
+            /** Format: int64 */
+            orderId: number;
+            /** Format: int64 */
+            paymentId: number;
+            /** Format: int32 */
+            prepaidRemaining: number;
+        };
+        AllocationCreateRequest: {
+            allocations: components["schemas"]["PaymentAllocationRequest"][];
+            /** Format: int64 */
+            retailerId: number;
+        };
+        AllocationCreatedResponse: {
+            allocations: components["schemas"]["Allocation"][];
+            /** Format: int32 */
+            prepaidRemaining: number;
+            /** Format: int64 */
+            retailerId: number;
+            retailerName: string;
         };
         AllocationItemRequest: {
             /** Format: int32 */
@@ -1189,6 +1408,16 @@ export interface components {
             data: components["schemas"]["StockMovementResponse"][];
             meta: components["schemas"]["PageMeta"];
         };
+        Backorder: {
+            /** Format: int32 */
+            noDateSkuCount: number;
+            /** Format: int32 */
+            overdueSkuCount: number;
+            /** Format: int32 */
+            qty: number;
+            /** Format: int32 */
+            skuCount: number;
+        };
         BackorderAllocationItem: {
             /** Format: int32 */
             allocateQty: number;
@@ -1235,6 +1464,8 @@ export interface components {
             color: string;
             /** Format: date */
             expectedInboundDate: string;
+            /** Format: date-time */
+            latestBackorderedAt: string;
             /** Format: int64 */
             productId: number;
             productName: string;
@@ -1357,6 +1588,15 @@ export interface components {
              */
             type: "TERMS" | "PRIVACY" | "INFO_CONFIRM" | "MARKETING_SMS" | "MARKETING_EMAIL" | "MARKETING_PUSH";
         };
+        DashboardSummaryResponse: {
+            backorder: components["schemas"]["Backorder"];
+            newOrders: components["schemas"]["NewOrders"];
+            /** Format: date-time */
+            now: string;
+            outbound: components["schemas"]["Outbound"];
+            packing: components["schemas"]["Packing"];
+            today: components["schemas"]["Today"];
+        };
         DocumentRequest: {
             /** @example uploads/2026/09/ab12cd34.jpg */
             fileKey: string;
@@ -1432,7 +1672,7 @@ export interface components {
             /** Format: int32 */
             balanceChange: number;
             /** @enum {string} */
-            entryType: "SALE" | "PAYMENT";
+            entryType: "SALE" | "PAYMENT" | "PAYMENT_VOID" | "ADJUST";
             /** Format: int64 */
             id: number;
             /** Format: date-time */
@@ -1503,6 +1743,13 @@ export interface components {
              * @enum {string}
              */
             approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
+        };
+        NewOrders: {
+            /** Format: int32 */
+            count: number;
+            /** Format: date-time */
+            oldestOrderedAt: string;
+            oldestRetailerName: string;
         };
         OrderConfirmRequest: {
             items: components["schemas"]["AllocationItemRequest"][];
@@ -1597,8 +1844,22 @@ export interface components {
             retailerName: string;
             /** @enum {string} */
             settlementStatus: "UNPAID" | "PARTIALLY_SETTLED" | "SETTLED";
+            /** Format: int32 */
+            shippedAmount: number;
             status: components["schemas"]["OrderStatusResponse"];
             summaryProductName: string;
+        };
+        Orders: {
+            /** Format: int32 */
+            amount: number;
+            /** Format: int32 */
+            count: number;
+        };
+        Outbound: {
+            /** Format: int32 */
+            notShippedCount: number;
+            /** Format: int32 */
+            staleCount: number;
         };
         OutboundCreateRequest: {
             packingItemIds: number[];
@@ -1686,6 +1947,14 @@ export interface components {
             summaryProductName: string;
             /** Format: int32 */
             totalQty: number;
+        };
+        Overdue: {
+            /** Format: int64 */
+            amount: number;
+            /** Format: int32 */
+            count: number;
+            /** Format: int32 */
+            maxDays: number;
         };
         Packing: {
             /** Format: int64 */
@@ -1834,11 +2103,37 @@ export interface components {
             paidAt: string;
             /** @enum {string} */
             paidBy: "RETAILER" | "AGENT";
+            /** Format: int32 */
+            prepaidRemaining: number;
             /** Format: int64 */
             retailerId: number;
             retailerName: string;
             /** Format: int32 */
             unallocatedAmount: number;
+        };
+        PaymentVoidRequest: {
+            reason: string;
+        };
+        PaymentVoidedResponse: {
+            /** Format: int32 */
+            ledgerBalance: number;
+            /** Format: int64 */
+            paymentId: number;
+            /** Format: int32 */
+            prepaidRemaining: number;
+            voidReason: string;
+            /** Format: date-time */
+            voidedAt: string;
+        };
+        PrepaidSummaryResponse: {
+            /** Format: int32 */
+            prepaid: number;
+            /** Format: int64 */
+            retailerId: number;
+            /** Format: int32 */
+            totalAllocated: number;
+            /** Format: int32 */
+            totalPaid: number;
         };
         ProductCreateRequest: {
             /**
@@ -2135,6 +2430,40 @@ export interface components {
             storeBuilding: string;
             storeUnit: string;
         };
+        RetailSettlementLedgerResponse: {
+            allocations: components["schemas"]["Allocation"][];
+            /** Format: date */
+            date: string;
+            /** Format: int64 */
+            delta: number;
+            /** Format: int64 */
+            id: number;
+            kind: string;
+            method: string;
+            /** Format: int64 */
+            retailOrderId: number;
+            /** Format: date-time */
+            shippedAt: string;
+            /** Format: int32 */
+            statementNumber: number;
+            /** Format: int64 */
+            unallocated: number;
+        };
+        RetailSettlementSummaryResponse: {
+            /** Format: int64 */
+            balance: number;
+            bankAccountHolder: string;
+            bankAccountNo: string;
+            bankName: string;
+            /** Format: date */
+            lastPaidAt: string;
+            overdue: components["schemas"]["Overdue"];
+            /** Format: int64 */
+            paidLast7Days: number;
+            /** Format: int64 */
+            wholesalerId: number;
+            wholesalerName: string;
+        };
         RetailVariantInfoResponse: {
             colorName: string;
             /** Format: int64 */
@@ -2162,6 +2491,12 @@ export interface components {
             name: string;
             storeBuilding: string;
             storeUnit: string;
+        };
+        Shipped: {
+            /** Format: int32 */
+            count: number;
+            /** Format: int32 */
+            qty: number;
         };
         SignupRequest: {
             /** @example 여성의류 */
@@ -2240,6 +2575,12 @@ export interface components {
             type: "IN" | "OUT" | "ADJUST";
             /** Format: int64 */
             variantId: number;
+        };
+        Today: {
+            /** Format: int32 */
+            cancelled: number;
+            orders: components["schemas"]["Orders"];
+            shipped: components["schemas"]["Shipped"];
         };
         VariantPriceRequest: {
             /**
@@ -2472,6 +2813,55 @@ export interface operations {
             };
         };
     };
+    summaries: {
+        parameters: {
+            query: {
+                retailerId: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailSettlementSummaryResponse"][];
+                    };
+                };
+            };
+        };
+    };
+    ledger_1: {
+        parameters: {
+            query: {
+                retailerId: number;
+                wholesalerId: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["RetailSettlementLedgerResponse"][];
+                    };
+                };
+            };
+        };
+    };
     variants: {
         parameters: {
             query: {
@@ -2515,6 +2905,69 @@ export interface operations {
                 content: {
                     "*/*": {
                         data: components["schemas"]["RetailWholesalerResponse"][];
+                    };
+                };
+            };
+        };
+    };
+    createAllocation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AllocationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description 같은 키 재요청(replay) — 첫 응답과 동일 본문 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["AllocationCreatedResponse"];
+                    };
+                };
+            };
+            /** @description 정산됨 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["AllocationCreatedResponse"];
+                    };
+                };
+            };
+        };
+    };
+    cancelAllocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                allocationId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["AllocationCancelledResponse"];
                     };
                 };
             };
@@ -2776,6 +3229,28 @@ export interface operations {
                 content: {
                     "*/*": {
                         data: components["schemas"]["ColorGroupResponse"][];
+                    };
+                };
+            };
+        };
+    };
+    summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["DashboardSummaryResponse"];
                     };
                 };
             };
@@ -3296,7 +3771,18 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created */
+            /** @description 같은 키 재요청(replay) — 첫 응답과 동일 본문 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["PaymentCreatedResponse"];
+                    };
+                };
+            };
+            /** @description 등록됨 */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3304,6 +3790,34 @@ export interface operations {
                 content: {
                     "*/*": {
                         data: components["schemas"]["PaymentCreatedResponse"];
+                    };
+                };
+            };
+        };
+    };
+    voidPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paymentId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentVoidRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["PaymentVoidedResponse"];
                     };
                 };
             };
@@ -3483,6 +3997,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ApiResponseListReceivableRetailerResponse"];
+                };
+            };
+        };
+    };
+    prepaidSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                retailerId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": {
+                        data: components["schemas"]["PrepaidSummaryResponse"];
+                    };
                 };
             };
         };
