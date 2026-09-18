@@ -16,6 +16,8 @@ import {
   TAB_HREF,
 } from "../constants";
 import { documentTitle } from "../derive";
+/** Next의 늦은 제목 덮어쓰기는 스트리밍 직후 한 프레임 안에 온다 — 1초면 넉넉히 뒤다 */
+const TITLE_REASSERT_MS = 1_000;
 import {
   QueryBoundary,
   QueryBoundaryGroup,
@@ -43,7 +45,7 @@ export function DashboardView() {
   const peek = useDashboardSummaryPeek();
   /* 경과 기준 시각. 서버 시각이 없을 때(첫 로딩·summary 실패)만 브라우저 시계 — 큐가 summary 때문에 멈추면 안 된다 */
   const now = peek?.now ?? new Date().toISOString();
-  useDocumentTitleBadge(peek?.newOrderCount ?? 0);
+  useDocumentTitleBadge(peek?.newOrderCount ?? 0, peek?.now);
 
   return (
     <QueryBoundaryGroup>
@@ -119,15 +121,26 @@ export function DashboardView() {
 /**
  * 탭 제목에 신규 주문 건수 배지 — `(4) 대시보드 · 온도 ERP`. 다른 창을 보고 있어도 탭 글자로 보인다.
  *
+ * 한 번 쓰고 끝내면 안 된다. 첫 응답 직후 Next가 라우트 `metadata.title`을 뒤늦게 한 번 더 써서 배지를 지우는데,
+ * 건수가 그대로면 effect가 다시 안 돌아 지워진 채로 남았다(#245). 그래서 쓰고 잠시 뒤 한 번 더 쓰고,
+ * polling마다 바뀌는 서버 시각(`now`)을 의존성에 넣어 30초마다 다시 쓴다.
+ *
  * 되돌릴 땐 **우리가 붙인 제목일 때만** 되돌린다. 라우트를 옮기면 Next가 새 제목을 먼저 쓰고 그 뒤에
  * 이 cleanup이 돌아서, 무조건 되돌리면 주문 탭 제목이 `대시보드`로 남는다.
  */
-function useDocumentTitleBadge(newOrderCount: number) {
+function useDocumentTitleBadge(
+  newOrderCount: number,
+  tick: string | undefined,
+) {
   useEffect(() => {
     const badged = documentTitle(newOrderCount);
     document.title = badged;
+    const reassert = window.setTimeout(() => {
+      document.title = badged;
+    }, TITLE_REASSERT_MS);
     return () => {
+      window.clearTimeout(reassert);
       if (document.title === badged) document.title = DASHBOARD_TITLE;
     };
-  }, [newOrderCount]);
+  }, [newOrderCount, tick]);
 }
