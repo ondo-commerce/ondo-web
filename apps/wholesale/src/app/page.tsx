@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** 대시보드는 아직 화면이 없으므로 실제로 쓸 수 있는 첫 화면으로 보낸다 */
+/** 첫 화면은 대시보드다 — 확정을 기다리는 주문을 다른 무엇보다 먼저 보게 한다 */
 export default function RootPage() {
-  redirect("/products");
+  redirect("/dashboard");
 }
