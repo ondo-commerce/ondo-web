@@ -1,7 +1,7 @@
-import { Table } from "@ondo/ui";
+import { Button, Table } from "@ondo/ui";
 import { LedgerBadge } from "./StatusBadge";
 import { LEDGER_PAGE_SIZE } from "../constants";
-import type { LedgerView } from "../types";
+import type { LedgerRowView, LedgerView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
@@ -27,14 +27,22 @@ function formatSignedAmount(value: number): string {
  * 이 표의 `날짜·구분·금액·잔액`은 위로 사라지고 `현재 잔액`은 아래로 빠진다 — `Table`의 sticky는
  * 가장 가까운 스크롤 컨테이너 기준이라 바깥에 붙일 수 없다. 그래서 이 표가 직접 스크롤하게 하고
  * 잔액 줄은 그 밖 고정 자리에 둔다. `Table stickyHead`는 flex 자식이어야 하므로 세로 flex로 감싼다.
+ *
+ * 입금 줄엔 `취소`가 붙는다(#138, `POST /payments/{id}/void`). 진입은 ghost고 빨강은 다이얼로그의 마지막 확인에만.
+ * 같은 페이지에 취소 줄이 이미 붙은 입금은 버튼을 안 단다(`derive.toLedgerView`).
  */
 export function ReceivableLedgerTable({
   ledger,
   hasFilter,
+  voidDisabled,
+  onVoid,
 }: {
   ledger: LedgerView;
   /** 구분 필터가 걸려 있는가. 빈 이유를 가른다 */
   hasFilter: boolean;
+  /** 직전 쓰기의 재조회가 실패한 상태 — 옛 원장으로 취소하지 않게 잠근다 */
+  voidDisabled: boolean;
+  onVoid: (row: LedgerRowView) => void;
 }) {
   return (
     <div className="flex max-h-96 flex-col">
@@ -52,6 +60,10 @@ export function ReceivableLedgerTable({
               <Table.Th align="left">구분</Table.Th>
               <Table.Th>금액</Table.Th>
               <Table.Th>잔액</Table.Th>
+              {/* 버튼만 들어가는 열이라 글자 없이 이름만 */}
+              <Table.Th className="w-14">
+                <span className="sr-only">취소</span>
+              </Table.Th>
             </Table.Row>
           </Table.Head>
           <Table.Body>
@@ -66,6 +78,20 @@ export function ReceivableLedgerTable({
                 <Table.Td>{formatSignedAmount(row.amount)}</Table.Td>
                 <Table.Td tone="muted">
                   {formatSignedAmount(row.balanceAfter)}
+                </Table.Td>
+                <Table.Td className="py-1">
+                  {row.voidable ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`${row.date} 입금 ${formatNumber(row.amount)}원 취소`}
+                      disabled={voidDisabled}
+                      onClick={() => onVoid(row)}
+                    >
+                      취소
+                    </Button>
+                  ) : null}
                 </Table.Td>
               </Table.Row>
             ))}

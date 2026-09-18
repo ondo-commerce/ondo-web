@@ -155,9 +155,25 @@ export const DEPOSIT_ERROR_TEXT: Readonly<Record<string, string>> = {
     "지금 상태에서는 등록할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ORDER_NOT_CONFIRMED:
     "확정되지 않은 주문에는 배분할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
-  ALLOCATION_EXCEEDS_PAYMENT: "배분 합계가 입금액을 넘었어요.",
+  ALLOCATION_EXCEEDS_PAYMENT:
+    "배분 합계가 사용 가능액(입금액 + 남은 선수금)을 넘었어요. 선수금을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ALLOCATION_EXCEEDS_OUTSTANDING:
-    "미수보다 많이 배분한 주문이 있어요. 목록을 새로 불러왔으니 배분을 확인하고 다시 눌러 주세요.",
+    "남은 미수보다 많이 배분한 주문이 있어요. 목록을 새로 불러왔으니 배분을 확인하고 다시 눌러 주세요.",
+  // 선수금 정산(`POST /allocations`)만 내는 코드. 나머지 코드는 입금 등록과 같다
+  ALLOCATION_EXCEEDS_PREPAID:
+    "배분 합계가 남은 선수금을 넘었어요. 선수금을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
+};
+
+/** 입금 취소 사유 상한(스펙: 200자 초과면 `VALIDATION_FAILED`). 넘기기 전에 칸에서 막는다 */
+export const PAYMENT_VOID_REASON_MAX = 200;
+
+/**
+ * 입금 취소가 거절됐을 때의 문구. `STATE_CONFLICT`가 입금 등록과 뜻이 달라(이미 취소된 입금) 표를 따로 둔다.
+ * 404·409 뒤엔 원장을 다시 받으므로 문구가 뜰 때는 그 입금 줄에 이미 취소 줄이 붙어 있다.
+ */
+export const PAYMENT_VOID_ERROR_TEXT: Readonly<Record<string, string>> = {
+  STATE_CONFLICT: "이미 취소된 입금이에요. 원장을 새로 불러왔어요.",
+  RESOURCE_NOT_FOUND: "이미 없는 입금이에요. 원장을 새로 불러왔어요.",
 };
 
 /** 계좌 요청의 칸 */

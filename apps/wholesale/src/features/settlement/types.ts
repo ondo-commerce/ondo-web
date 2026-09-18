@@ -26,6 +26,18 @@ export type PaymentCreateRequest = WholesaleSchema<"PaymentCreateRequest">;
 export type PaymentAllocationRequest =
   WholesaleSchema<"PaymentAllocationRequest">;
 export type PaymentCreated = WholesaleSchema<"PaymentCreatedResponse">;
+/**
+ * 선수금 요약(정산 탭 3카드). 취소된 입금·취소된 배분은 뺀 값이고 `prepaid = totalPaid − totalAllocated`다(스펙).
+ * 입금 폼의 사용 가능액 = 이번 입금액 + `prepaid`.
+ */
+export type PrepaidSummary = WholesaleSchema<"PrepaidSummaryResponse">;
+/** 선수금으로 정산(`POST /allocations`) — 새 입금 없이 받아 둔 선수금을 출고된 주문에 붙인다. 원장은 안 바뀐다 */
+export type AllocationCreateRequest =
+  WholesaleSchema<"AllocationCreateRequest">;
+export type AllocationCreated = WholesaleSchema<"AllocationCreatedResponse">;
+/** 입금 취소(`POST /payments/{id}/void`). 사유 필수(200자까지). 원장에 `PAYMENT_VOID` 줄이 쌓이고 그 입금의 배분은 전부 풀린다 */
+export type PaymentVoidRequest = WholesaleSchema<"PaymentVoidRequest">;
+export type PaymentVoided = WholesaleSchema<"PaymentVoidedResponse">;
 export type BankAccount = WholesaleSchema<"BankAccountResponse">;
 export type BankAccountCreateRequest =
   WholesaleSchema<"BankAccountCreateRequest">;
@@ -92,11 +104,18 @@ export interface OrderRowView {
   /** 출고분이 있는 주문은 서버값, 없으면 `UNSHIPPED` */
   settlementStatus: SettlementBadgeStatus;
   /**
-   * 미수 잔액 = **출고된 금액 − 배정액**(한 정의, 거래처 행의 원장 잔액과 같은 기준).
-   * 출고분이 있는 주문(`PARTIALLY_SHIPPED`·`SHIPPED`)은 서버 `outstandingAmount` 그대로, 출고 전 주문은 0 —
-   * 응답에 출고 금액 필드가 없어 `status.key`로 근사한다(04-wire §3-6)
+   * 남은 미수 = **출고된 금액 − 이미 붙은 배분**(한 정의, 거래처 행의 원장 잔액과 같은 기준).
+   * 서버 `outstandingAmount`가 이 정의다(2026-09-18 dev 확인: 출고 전 주문은 `shippedAmount` 0 · `outstandingAmount` 0).
+   * 출고분이 있는지는 `shippedAmount`로 본다 — 예전엔 이 필드가 없어 `status.key`로 근사했다
    */
   outstanding: number;
+}
+
+/** 선수금 3카드. 셋 다 서버값 그대로 — `남은 선수금 = 총 입금액 − 배분 완료액`을 화면에서 다시 세지 않는다 */
+export interface PrepaidView {
+  totalPaid: number;
+  totalAllocated: number;
+  prepaid: number;
 }
 
 /** 원장 표 한 줄 */
@@ -109,6 +128,13 @@ export interface LedgerRowView {
   amount: number;
   /** 이 줄 시점의 잔액. 서버값 — 화면에서 누적하지 않는다 */
   balanceAfter: number;
+  /** 입금·입금 취소 줄만 값이 있다(스펙). 입금 취소가 이 id로 간다 */
+  paymentId: number | null;
+  /**
+   * 취소할 수 있는 입금 줄인가 = `PAYMENT`이고 같은 페이지에 그 입금의 `PAYMENT_VOID` 줄이 없다.
+   * 페이지·필터 밖의 취소 줄은 못 보므로 근사다 — 이미 취소된 입금이면 서버가 409 `STATE_CONFLICT`로 뒤를 받친다
+   */
+  voidable: boolean;
 }
 
 /** 원장 한 페이지 + 전체 잔액 */
@@ -154,12 +180,31 @@ export type DepositMode = "paymentOnly" | "settle";
 /** 입금 요청의 칸. 서버 `VALIDATION_FAILED`의 `field`가 이 이름이면 그 칸으로 간다 */
 export type DepositField = keyof PaymentCreateRequest;
 
-/** 입금 직후 남기는 결과. 재조회가 실패했으면(`refreshed=false`) 옛 숫자라는 걸 말하고 새 입금을 잠근다 */
+/**
+ * 선수금 정산 폼의 입력 한 벌. 입금 폼(`DepositDraft`)에서 배분 표와 멱등키만 남긴 것 —
+ * 새 입금이 없으니 금액·일시·주체·방식이 없다. 펼친 거래처를 바꾸면 버린다(입금 폼과 달리 소매처별로 들지 않는다).
+ */
+export interface AllocationDraft {
+  /** 사람이 직접 고친 배분액만. 손대지 않은 행은 남은 선수금으로 자동 배분(`DepositDraft.editedAllocations`와 같은 규칙) */
+  editedAllocations: Record<number, number>;
+  /** `Idempotency-Key`. 입력이 바뀔 때마다 새로, 같은 입력의 재전송은 같은 키(스펙: 같은 키 재요청은 200 + 동일 본문) */
+  idempotencyKey: string;
+}
+
+/**
+ * 쓰기 직후 남기는 결과 — 입금 등록 · 선수금 정산 · 입금 취소가 같은 자리에 같은 모양으로 남는다.
+ * 재조회가 실패했으면(`refreshed=false`) 옛 숫자라는 걸 말하고 다음 쓰기를 잠근다.
+ */
 export interface SettlementNotice {
+  kind: "payment" | "allocation" | "void";
   retailerName: string;
+  /** 입금액 · 이번 배분 합계 · 취소한 입금액 */
   amount: number;
-  /** 어느 주문에도 안 붙은 금액(서버 `unallocatedAmount`). 선수금 칸이 화면에 없어 문구로만 */
-  unallocated: number;
+  /**
+   * 처리 뒤 거래처 선수금 전체(서버 `prepaidRemaining`). 입금의 `unallocatedAmount`(이번 입금에서 안 쓴 돈)가 아니다 —
+   * 이번 배분이 옛 선수금을 끌어 썼으면 둘이 다르고, 사장이 알아야 할 건 지금 남은 돈이다
+   */
+  prepaidRemaining: number;
   refreshed: boolean;
 }
 
