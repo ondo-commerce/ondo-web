@@ -32,7 +32,10 @@ export type BankAccountCreateRequest =
 export type BankAccountUpdateRequest =
   WholesaleSchema<"BankAccountUpdateRequest">;
 
-/** 원장 구분 2종 — 스펙 enum 그대로. 반품·수기 조정은 스펙에도 없다 */
+/**
+ * 원장 구분 4종 — 스펙 enum 그대로(`SALE` 판매 · `PAYMENT` 입금 · `PAYMENT_VOID` 입금 취소 · `ADJUST` 조정).
+ * `orderId`·`orderNumber`는 SALE 줄만, `paymentId`는 PAYMENT·PAYMENT_VOID 줄만 값이 있다(스펙). 반품은 없다
+ */
 export type LedgerEntryType = LedgerEntry["entryType"];
 /** 주문 이행 상태 5종. 라벨은 서버 `status.label`을 그대로 쓰고 색만 constants에서 고른다 */
 export type OrderStatus = SettlementOrder["status"]["key"];

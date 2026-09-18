@@ -1,5 +1,10 @@
 import { isApiError } from "@ondo/api";
-import { BANK_ACCOUNT_ERROR_TEXT, DEPOSIT_ERROR_TEXT } from "./constants";
+import {
+  BANK_ACCOUNT_ERROR_TEXT,
+  DEPOSIT_ERROR_TEXT,
+  LEDGER_ARROW,
+  LEDGER_LABEL,
+} from "./constants";
 import { exceedsNumericMax } from "@/shared/lib/numericInput";
 import type {
   BankAccount,
@@ -223,6 +228,25 @@ export function toLedgerView(page: ReceivableLedgerPage): LedgerView {
     totalElements: page.meta.totalElements,
     totalPages: page.meta.totalPages,
   };
+}
+
+/*
+ * 원장 구분 라벨·화살표는 **모르는 값을 받아도 돌려준다.** `LEDGER_LABEL`은 스펙 enum 기준 `Record`라
+ * 타입만 보면 빠질 수 없지만, 서버가 enum을 늘리고(2026-09-18에 2종이 늘었다) 스냅샷을 아직 안 받은 사이엔
+ * 런타임 값이 타입 밖이다. 그때 배지가 빈 채로 그려지는 것보다 코드값 그대로가 낫다 — 사장이 BE에 물을 수 있다.
+ * 문자열 인덱스로 읽으려고 한 번 넓힌다(`noUncheckedIndexedAccess`가 `undefined`를 강제한다).
+ */
+const LEDGER_LABEL_BY_CODE: Readonly<Record<string, string>> = LEDGER_LABEL;
+const LEDGER_ARROW_BY_CODE: Readonly<Record<string, string>> = LEDGER_ARROW;
+
+/** 원장 배지 글자. 모르는 종류면 코드값 그대로 */
+export function ledgerLabel(entryType: string): string {
+  return LEDGER_LABEL_BY_CODE[entryType] ?? entryType;
+}
+
+/** 원장 배지 화살표. 모르는 종류면 기호 없음 — 방향은 금액 부호가 말한다 */
+export function ledgerArrow(entryType: string): string {
+  return LEDGER_ARROW_BY_CODE[entryType] ?? "";
 }
 
 /** 입금 일시 칸에 채울 `2026-09-07 15:30`(KST). 빈칸으로 보낸 뒤 재전송 때 시각이 바뀌지 않게 첫 제출에 굳힌다 */
