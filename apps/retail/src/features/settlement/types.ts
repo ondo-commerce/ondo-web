@@ -7,6 +7,86 @@
  * 어느 것이 맞는지 아무도 모른다 — 실제로 도매처 홈(#98)이 그렇게 갈라져 있었다.
  */
 
+/* ────────────────────────────────────────────────────────────────────────
+   wire — **손으로 적은 응답 타입이다.** 소매 스냅샷(`packages/api/openapi/retail.json`)에
+   이 path가 없고 dev 서버에서 소매 스펙 문서를 못 받는다(#240). 도매 스냅샷의
+   `retail-gateway/settlements`(도매 → 소매 백엔드)는 소매 서버가 한 번 더 모양을
+   바꿔 내보내서(`wholesalerName`→`name` · 계좌 3필드→`bank` 객체 · `retailOrderId`→
+   `orderNo` 문자열) 별칭으로 못 쓴다. **dev 실측(2026-09-18 · bombom@ondo.test)이
+   원본이다.** 스냅샷에 실리면 `RetailSchema<"…">` 별칭으로 바꾼다(ADR-0002).
+   ──────────────────────────────────────────────────────────────────────── */
+
+/** `GET /api/retail/settlements` 한 줄의 `overdue`. 연체 기한은 서버 규칙(출고일 + 외상기간, 당일은 연체 아님)이다 */
+export interface OverdueWire {
+  amount: number;
+  count: number;
+  /** 가장 오래 밀린 것의 D+n. 연체가 없으면 0 */
+  maxDays: number;
+}
+
+/**
+ * 입금 계좌. 실측 세 줄이 전부 `bank: null`이라 **비null 모양은 미확정**이다 —
+ * 도매 dev 계정 셋에 주계좌가 등록돼 있는데도 null이라 BE에 확인 중(#240).
+ * 필드 이름은 스펙 `WholesalerWithBank`(주문서 응답)의 계좌 3필드와 같게 둔다.
+ * 읽는 쪽(`derive.toBankAccount`)은 이 객체가 아니라 평평하게 와도 받는다.
+ */
+export interface BankAccountWire {
+  bankName: string;
+  bankAccountNo: string;
+  bankAccountHolder: string;
+}
+
+/**
+ * `GET /api/retail/settlements` 한 줄 = 거래한 적 있는 도매처 하나.
+ * 실측: `{"wholesalerId":101,"name":"무드온","balance":46000,"overdue":{"amount":46000,
+ * "count":1,"maxDays":9},"lastPaidAt":null,"paidLast7Days":0,"bank":null}`
+ */
+export interface PartnerSettlementWire {
+  /** 숫자다. 도매처 홈(`/wholesalers/[id]`)·미송(`?wholesaler=`)이 받는 서버 id와 같은 축 */
+  wholesalerId: number;
+  name: string;
+  /** 소매 화면 기준 부호 — 플러스 = 갚을 돈, 마이너스 = 선수금 */
+  balance: number;
+  overdue: OverdueWire;
+  /** ISO 날짜. 입금 이력이 없으면 null */
+  lastPaidAt: string | null;
+  /** 오늘 포함 최근 7일 입금 합. 취소된 입금은 안 센다(서버 규칙) */
+  paidLast7Days: number;
+  /** 평평한 3필드(`bankName`…)가 줄에 바로 실려 올 가능성도 열어 둔다 — `derive.toBankAccount` */
+  bank: BankAccountWire | null;
+}
+
+/**
+ * `GET /api/retail/settlements/{wholesalerId}/ledger` 한 줄.
+ * 실측: `{"id":1,"date":"2026-09-08","kind":"SHIPMENT","statementNo":"JG-20260908-001",
+ * "orderNo":"20260908-0230-0002","method":null,"delta":46000,"allocations":null,"unallocated":null}`
+ *
+ * `kind`·`method`를 union으로 좁히지 않는다 — 도매 원장에 `PAYMENT_VOID`(입금 취소)·`ADJUST`(조정)가
+ * 2026-09-18 추가됐고 소매 원장에도 올 수 있다. 모르는 값은 화면이 코드값을 그대로 보인다.
+ */
+export interface LedgerEntryWire {
+  id: number;
+  /** ISO 날짜 */
+  date: string;
+  /** 실측 `SHIPMENT`. 입금은 `PAYMENT`(서버 설명) */
+  kind: string;
+  /** 장끼 번호 `JG-YYYYMMDD-NNN`. 출고 줄만 */
+  statementNo: string | null;
+  /** 통합 주문번호 `20260908-0230-0002`. 출고는 그 출고의 주문, 입금은 배정된 주문 */
+  orderNo: string | null;
+  /** 입금 줄만. `PAYMENT` 줄이 dev에 아직 없어 값(`CASH` / `BANK_TRANSFER` 추정)은 미실측 */
+  method: string | null;
+  /** 출고는 양수, 입금은 음수 */
+  delta: number;
+  /**
+   * 입금 하나가 붙은 주문들. 항목 모양은 미실측이라 읽지 않는다 — 화면은 `orderNo` ·
+   * `unallocated` · `delta`로 근거를 적는다. 모양이 확정되면 타입을 채운다
+   */
+  allocations: readonly unknown[] | null;
+  /** 아직 어느 주문에도 안 붙은 돈. 출고 줄은 null */
+  unallocated: number | null;
+}
+
 /**
  * 원장 한 줄의 성격. **두 값뿐이다.**
  *

@@ -7,6 +7,17 @@
  */
 
 /**
+ * 서버 path. 이 feature가 부르는 path는 이 둘뿐이다 — 둘 다 Server Component가
+ * `serverApi()`로 받는다. 거래처 목록 전용 path(`/wholesalers`)는 **없다**(404 실측) —
+ * 거래처 화면도 `list`로 그린다.
+ */
+export const SETTLEMENT_API_PATH = {
+  list: "/api/retail/settlements",
+  ledger: (wholesalerId: string) =>
+    `/api/retail/settlements/${wholesalerId}/ledger`,
+} as const;
+
+/**
  * 화면의 기준일(= 오늘). **고정 상수다.**
  *
  * `new Date()`를 쓰면 더미 날짜는 굳은 채 D+n만 매일 커져서, 와이어프레임과 맞춰
