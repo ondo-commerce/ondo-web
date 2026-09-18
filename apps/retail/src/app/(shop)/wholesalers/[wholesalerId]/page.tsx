@@ -19,6 +19,12 @@ import {
   type ListingSummaryWire,
   type TradeStatsSlot,
 } from "@/features/catalog";
+import {
+  SETTLEMENT_API_PATH,
+  findSettlement,
+  toPartnerSettlements,
+  type PartnerSettlementWire,
+} from "@/features/settlement";
 import { serverApi } from "@/shared/api/server";
 
 type PageProps = {
@@ -68,6 +74,31 @@ const getWholesalerListings = cache(
     fetchListingsOf(wholesalerId, resolveFilter({}, await getCatalogOptions())),
 );
 
+/**
+ * 이 도매처와의 거래 지표. `GET /settlements`에서 이 도매처 줄을 찾는다 — 정산·
+ * 거래처 표와 **같은 응답·같은 변환**이라 세 화면이 같은 금액을 말한다(F1 · #183).
+ * 마켓(`catalog`)과 정산(`settlement`)은 서로를 import하지 않으므로 여기서 합친다.
+ *
+ * **못 받으면 `unavailable`이고 던지지 않는다.** 이 화면의 본문은 상품 목록이다 —
+ * 통계 카드 하나 때문에 상품까지 `error.tsx`로 보내지 않는다(`layout.tsx`가 장바구니
+ * 뱃지를 삼키는 것과 같은 이유). 줄이 없으면 `null` = 거래한 적 없는 도매처다.
+ */
+async function fetchTradeStats(wholesalerId: string): Promise<TradeStatsSlot> {
+  const api = await serverApi();
+  try {
+    const rows = toPartnerSettlements(
+      await api.fetch<PartnerSettlementWire[]>(SETTLEMENT_API_PATH.list),
+    );
+    const row = findSettlement(wholesalerId, rows);
+    return {
+      status: "ready",
+      stats: row ? { balance: row.balance, lastPaidAt: row.lastPaidAt } : null,
+    };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
 /** 탭 제목에 상호를 넣는다 — 도매처를 여럿 벌려 놓고 비교하는 화면이다 */
 export async function generateMetadata({
   params,
@@ -97,18 +128,12 @@ export default async function Page({ params, searchParams }: PageProps) {
   const wholesaler = wholesalerOf(all, wholesalerId);
   if (!wholesaler) notFound();
 
-  /* 필터가 없으면 방금 받은 목록이 곧 화면이다 — 같은 요청을 또 보내지 않는다 */
-  const products = isFilterEmpty(filter)
-    ? all
-    : await fetchListingsOf(wholesalerId, filter);
-
-  /* 진행 중·미송·미결제 잔액은 거래 원장에서 나온다. 마켓(`catalog`)과
-     정산(`settlement`)은 서로를 import하지 않으므로 **여기서 합친다**(F1 · #128).
-     TODO(#183): 정산이 아직 fixtures라 원장의 도매처 id(`w-moodon`)와 서버 id
-     (숫자)가 다른 축이다 — 어느 도매처도 못 찾아 늘 `거래 없음`으로 섰고, 실제로
-     미수가 있는 도매처도 0원으로 보였다. 정산이 실서버로 붙어 숫자 id로 찾을 수
-     있을 때까지는 "아직 알 수 없다"고 넘긴다 */
-  const tradeStats: TradeStatsSlot = { status: "unavailable" };
+  /* 필터가 없으면 방금 받은 목록이 곧 화면이다 — 같은 요청을 또 보내지 않는다.
+     통계는 목록과 독립이라 같이 기다린다 */
+  const [products, tradeStats] = await Promise.all([
+    isFilterEmpty(filter) ? all : fetchListingsOf(wholesalerId, filter),
+    fetchTradeStats(wholesalerId),
+  ]);
 
   return (
     <WholesalerHomeView

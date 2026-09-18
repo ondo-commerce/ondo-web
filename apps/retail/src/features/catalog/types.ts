@@ -1,5 +1,4 @@
 import type { RetailSchema } from "@ondo/api";
-import type { TradeStats } from "@/shared/tradeStats";
 
 /* ------------------------------------------------------------------------
  * wire — 스펙에서 생성한 타입의 별칭(ADR-0002). 손으로 쓴 Response 타입은 없다.
@@ -99,13 +98,28 @@ export interface CatalogPaging {
 export type CatalogSort = "favorited-desc" | "price-asc" | "price-desc";
 
 /**
+ * 한 도매처와의 거래 지표. 원본은 `features/settlement`의 `GET /settlements` 한 줄이고
+ * `app/(shop)/wholesalers/[wholesalerId]/page.tsx`가 이 모양으로 옮겨 넘긴다 —
+ * feature끼리 직접 import하지 않으므로(`CLAUDE.md`) 이 feature는 정산 응답을 모른다.
+ *
+ * **서버가 주는 둘뿐이다.** fixtures 시절의 확정 대기·미송 건수는 없다 — 도매처별로
+ * 그 수를 주는 소매 API가 없어서 `진행 중` 카드는 `준비 중`으로 남는다(#240).
+ */
+export interface TradeStats {
+  /** 미수 잔액. **음수면 선수금**이다(§3-0 E). 거래처 관리 표와 같은 값 */
+  balance: number;
+  /** 마지막 입금일(ISO). 입금 이력이 없으면 null이고 화면에 `—`가 나간다 */
+  lastPaidAt: string | null;
+}
+
+/**
  * 도매처 홈 통계 칸이 받는 값. **세 상태가 다르다.**
  *
  * - `ready` + `stats`: 거래 이력이 있다
- * - `ready` + `null`: 거래한 적 없는 도매처 — 0건·0원으로 세우되 계산 결과가 아니라
+ * - `ready` + `null`: 거래한 적 없는 도매처 — 0원으로 세우되 계산 결과가 아니라
  *   "거래가 없다"는 뜻이다(#122 AC19)
- * - `unavailable`: 거래 정보를 **아직 알 수 없다.** 정산이 fixtures인 동안은 원장의
- *   도매처 id(`w-moodon`)와 서버 id(숫자)가 다른 축이라 어느 도매처도 못 찾는다.
+ * - `unavailable`: 거래 정보를 **아직 알 수 없다.** 정산 요청이 실패했을 때다 —
+ *   상품 목록은 떴는데 통계 하나 때문에 화면 전체를 에러로 보내지 않는다.
  *   이걸 `null`로 넘기면 실제로 미수가 있는 도매처도 `0원`으로 보인다(#183)
  */
 export type TradeStatsSlot =

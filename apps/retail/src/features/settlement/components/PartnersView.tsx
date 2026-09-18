@@ -1,25 +1,28 @@
-import { Notice, Panel } from "@ondo/ui";
-import { Info } from "lucide-react";
-import { FIXTURE_NOTICE, PARTNERS_SUB } from "../constants";
-import { partnerListRows } from "../derive";
+import { Panel } from "@ondo/ui";
+import { PARTNERS_SUB } from "../constants";
+import type { PartnerSettlement } from "../types";
 import { EmptyPartners } from "./EmptyPartners";
 import { PartnerCards } from "./PartnerCards";
 import { PartnerTable } from "./PartnerTable";
 
 /**
- * 거래처 관리 — 패널 하나, 표 하나.
+ * 거래처 관리 — 패널 하나, 표 하나. 값은 정산과 **같은 응답**(`GET /settlements`)이다.
  *
  * **승인 관리가 아니라 「거래 이력 조회」다**(§3-0 A). 목록에 서는 기준은 주문
  * 이력 하나라, 마켓에 상품이 걸려 있어도 주문한 적 없는 도매처는 여기 없다.
  *
- * `미수 잔액` 열은 정산 원장에서 파생된다(`partnerListRows`) — 이 화면과
- * `/settlements`가 같은 함수를 보게 해 둔 것이 이번 회차의 핵심이다.
+ * 거래처 목록 전용 API가 없어(#240 · `/api/retail/wholesalers` 404) 정산 응답으로
+ * 채울 수 있는 열만 있다. 위치 · 마지막 주문 · 진행 중 · 미송 · 전화는 응답에 없어
+ * **열을 뺐다** — 더미로 채우면 실서버 도매처 옆에 지어낸 값이 실데이터처럼 선다.
  *
- * 데이터가 정적 더미라 로딩·에러 상태가 없다. 지어내지 않는다.
+ * 기다림은 `(shop)/loading.tsx`, 실패는 `(shop)/error.tsx`가 그린다.
  */
-export function PartnersView() {
-  const rows = partnerListRows();
-
+export function PartnersView({
+  rows,
+}: {
+  /** 거래한 도매처 전부. 정산 화면과 같은 순서(미수 잔액 내림차순) */
+  rows: readonly PartnerSettlement[];
+}) {
   return (
     /* 주문 내역·정산과 같은 폭(#217 R2) */
     <div className="mx-auto max-w-wrap">
@@ -36,14 +39,6 @@ export function PartnersView() {
         >
           거래처 관리
         </Panel.Title>
-
-        {/* 더미라는 사실을 화면이 말한다 — 실서버 도매처 사이에 섞이면 실데이터로 읽힌다 */}
-        <Notice className="mb-4">
-          <span className="flex items-start gap-2">
-            <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {FIXTURE_NOTICE}
-          </span>
-        </Notice>
 
         {rows.length === 0 ? (
           <EmptyPartners />

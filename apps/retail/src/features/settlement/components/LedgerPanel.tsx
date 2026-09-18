@@ -6,6 +6,7 @@ import {
   formatBasis,
   formatDate,
   formatDelta,
+  kindLabel,
   methodLabel,
   runningBalance,
 } from "../derive";
@@ -22,8 +23,9 @@ import { PartnerSwitch } from "./PartnerSwitch";
  * 도매 `orders`·`inventory`의 "가려진 대상에 조작이 걸린다"와 같은 축이다.
  * 제목과 전환 버튼이 표 위에 있어서 원장이 길어져도 둘 다 남는다.
  *
- * 잔액은 넘겨받은 원장만으로 다시 누적한다(`runningBalance`) — 도매처를 바꿔도
- * 이전 도매처 금액이 섞일 자리가 없다.
+ * 잔액 열은 **서버 `balance`에서 출발한다**(`runningBalance`) — 맨 윗줄이 곧
+ * 서버 잔액이고 아래로 `delta`를 빼 내려간다. 원장을 더한 값과 서버 값이 다르면
+ * 서버가 맞다(#240).
  */
 export function LedgerPanel({
   partner,
@@ -36,7 +38,7 @@ export function LedgerPanel({
   /** 전환 드롭다운이 보여줄 거래처 전부 */
   partners: readonly PartnerSettlement[];
 }) {
-  const rows = runningBalance(entries);
+  const rows = runningBalance(entries, partner.balance);
 
   return (
     <Panel>
@@ -82,9 +84,7 @@ export function LedgerPanel({
                 {rows.map(({ entry, balance }) => (
                   <Table.Row key={entry.id}>
                     <Table.Td align="center">{formatDate(entry.date)}</Table.Td>
-                    <Table.Td align="left">
-                      {entry.kind === "SHIPMENT" ? "출고" : "입금"}
-                    </Table.Td>
+                    <Table.Td align="left">{kindLabel(entry.kind)}</Table.Td>
                     <Table.Td align="left" tone="muted">
                       {formatBasis(entry)}
                     </Table.Td>
@@ -95,7 +95,7 @@ export function LedgerPanel({
                       {entry.method ? methodLabel(entry.method) : "—"}
                     </Table.Td>
                     <Table.Td>{formatDelta(entry.delta)}</Table.Td>
-                    {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액이다 —
+                    {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액(서버 값)이다 —
                     끝까지 스크롤하지 않아도 최종 잔액을 읽을 수 있다 */}
                     <Table.Td>{formatBalance(balance)}</Table.Td>
                   </Table.Row>

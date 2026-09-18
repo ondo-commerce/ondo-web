@@ -47,7 +47,9 @@ export const ALL_AXES: FilterAxes = {
 export const WHOLESALER_HOME_AXES: FilterAxes = { ...ALL_AXES, price: false };
 
 /**
- * 도매처 홈 통계 칸이 거래 정보를 아직 못 받을 때(`TradeStatsSlot.unavailable`) 쓰는 말.
+ * 도매처 홈 통계 칸이 값을 못 받을 때 쓰는 말. 두 자리가 쓴다 —
+ * `진행 중` 카드는 늘(도매처별 확정 대기·미송 건수를 주는 소매 API가 없다 · #240),
+ * `미결제 잔액` 카드는 정산 요청이 실패했을 때(`TradeStatsSlot.unavailable`).
  * 숫자를 지어내지 않는다 — `0건 · 0원`은 "거래 없음"으로 읽혀서 실제로 미수가 있는
  * 도매처가 깨끗해 보인다(#183).
  */

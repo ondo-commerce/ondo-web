@@ -2,36 +2,21 @@
  * 정산 · 거래처 화면의 고정 값과 문구.
  *
  * **컴포넌트 안에 문장을 적지 않는다** — 같은 말이 두 곳에 있으면 한쪽만 고쳐진다.
- * 기준일과 연체 일수를 여기 모아 둔 것도 같은 이유다: 규칙이 정해지면 이 파일
- * 한 줄만 고치고 §7 검산표를 다시 돌리면 된다.
+ *
+ * 기준일·연체 일수·입금 창 길이는 **여기 없다.** 연체 판정과 최근 7일 입금은 서버가
+ * 세서 주므로(`overdue` · `paidLast7Days`) 화면이 날짜 계산을 하지 않는다(#240).
  */
 
 /**
- * 화면의 기준일(= 오늘). **고정 상수다.**
- *
- * `new Date()`를 쓰면 더미 날짜는 굳은 채 D+n만 매일 커져서, 와이어프레임과 맞춰
- * 놓은 `연체 1건 · 최장 D+10`이 다음 날 깨진다. API가 붙으면 서버 시각이 이 자리를
- * 대신한다.
+ * 서버 path. 이 feature가 부르는 path는 이 둘뿐이다 — 둘 다 Server Component가
+ * `serverApi()`로 받는다. 거래처 목록 전용 path(`/wholesalers`)는 **없다**(404 실측) —
+ * 거래처 화면도 `list`로 그린다.
  */
-export const TODAY = "2026-09-01";
-
-/**
- * 연체 기준 — 출고일 + 이 일수가 **지나면** 연체다. 기한 당일(D+0)은 연체가 아니다.
- *
- * 사양 §3-0 G가 "출고일 + N일"까지만 정하고 N을 미결로 남겼다. 20일로 두면 이번
- * 더미에서 연체가 정확히 1건 나와 확정 와이어프레임의 `1건`과 맞는다. 값이 정해지면
- * 이 한 줄만 바뀐다.
- */
-export const OVERDUE_DAYS = 20;
-
-/**
- * `이번 주 보낸 입금`이 세는 창의 길이(기준일 포함).
- *
- * 달력상의 주(월~일)로 세지 않는다 — 기준일 2026-09-01이 화요일이라 월요일 시작
- * 주로 세면 08.28 입금이 창 밖으로 나가 카드가 `0원`이 된다. 사장이 "이번 주에
- * 얼마 보냈나"를 물을 때 기대하는 것은 최근 며칠이지 달력 주 경계가 아니다.
- */
-export const PAID_WINDOW_DAYS = 7;
+export const SETTLEMENT_API_PATH = {
+  list: "/api/retail/settlements",
+  ledger: (wholesalerId: string) =>
+    `/api/retail/settlements/${wholesalerId}/ledger`,
+} as const;
 
 /** 정산 화면 패널 부제. 미수가 **언제** 생기는지(RT-64)와 누가 입금을 등록하는지(RT-63)를 한 줄에 담는다 */
 export const SETTLEMENT_SUB =
@@ -47,6 +32,12 @@ export const LEDGER_SUB =
  */
 export const PAYMENT_NOTICE =
   "입금은 소매처가 등록할 수 없어요. 도매처가 통장을 확인해 등록하면 미수에 반영돼요.";
+
+/**
+ * 계좌가 없는 도매처의 계좌 줄. 빈칸으로 두면 "아직 안 그려진 것"으로 읽힌다 —
+ * 없다는 사실을 글자로 말해야 사장이 도매처에 계좌를 물어본다.
+ */
+export const BANK_MISSING = "계좌 미등록";
 
 /** 거래처가 한 곳도 없을 때. 아이콘 + 한 줄 + 다음 행동 버튼이 빈 상태 공통 형식이다(RT-33) */
 export const EMPTY_PARTNERS = {
@@ -72,23 +63,12 @@ export const COPY_STATUS_TEXT = {
 /** 복사 표시가 남아 있는 시간(ms). 너무 짧으면 못 보고, 너무 길면 다음 줄을 눌렀을 때 헷갈린다 */
 export const COPY_STATUS_MS = 2500;
 
-/** 거래처 관리 패널 부제. 미송 배지가 무엇을 여는지 표 위에서 미리 말한다 */
 /**
- * 정산·거래처가 아직 더미를 읽는다는 안내. 소매 정산 엔드포인트가 없어 fixtures로 그리는데,
- * 실서버 도매처(무드온·라온…) 사이에 데님하우스·라비앙이 섞여 보이면 실데이터로 읽힌다(#217 R6).
- * 연동 회차에 fixtures와 같이 지운다.
+ * 거래처 관리 패널 부제. 이 화면이 **무엇으로 서는지**(주문 이력)와 어디로 이어지는지를
+ * 표 위에서 미리 말한다. fixtures 시절의 미송 배지 안내는 열과 같이 빠졌다(#240).
  */
-export const FIXTURE_NOTICE =
-  "서버 연동 전 예시 데이터예요. 실제 거래 내역과 달라요.";
-
 export const PARTNERS_SUB =
-  "거래한 적 있는 도매처예요. 미송 배지를 누르면 그 도매처만 걸러서 미송 현황이 열려요.";
-
-/** 수량 단위. 소매는 `장`이다(게이트 Q9) — `shared/qty.ts`의 `QTY_UNIT`과 같은 값이다 */
-export const SHEET_UNIT = "장";
-
-/** 미송 배지에 `지연`을 **글자로도** 붙인다 — 색을 못 봐도 어느 줄이 밀렸는지 읽혀야 한다 */
-export const DELAYED_LABEL = "지연";
+  "거래한 적 있는 도매처예요. 도매처 홈에서 그 집 상품을, 정산에서 거래 원장을 볼 수 있어요.";
 
 /** 표 `tfoot`의 합계 라벨 */
 export const TOTAL_LABEL = "합계";
@@ -97,10 +77,34 @@ export const TOTAL_LABEL = "합계";
  * 합계 옆에 붙는 규칙 한 줄.
  *
  * 총 미수는 **양수 잔액만** 더한 값이다(§5 A5). 그 규칙이 화면에 없으면 미수 잔액
- * 열 4줄을 더한 값과 합계가 안 맞아서, 사장이 자기 계산을 의심한다(F5).
+ * 열을 손으로 더한 값과 합계가 안 맞아서, 사장이 자기 계산을 의심한다(F5).
  * 선수금 줄이 있을 때만 붙는다.
  */
 export const PREPAID_EXCLUDED = "선수금 제외";
+
+/** `이번 주 보낸 입금` 카드의 보조 줄. 서버가 세는 창(오늘 포함 7일)을 글자로 말한다 */
+export const PAID_WINDOW_LABEL = "오늘 포함 최근 7일";
+
+/**
+ * 원장 `구분` 칸의 한글. **여기 없는 코드는 코드값 그대로 보인다**(`derive.kindLabel`) —
+ * 빈칸은 "구분 없음"으로 읽히고, `기타` 같은 대체 표기는 진짜 종류처럼 읽힌다.
+ * 주문 내역의 `orderStatusLabel`과 같은 결이다.
+ */
+export const KIND_LABEL: Readonly<Record<string, string>> = {
+  SHIPMENT: "출고",
+  PAYMENT: "입금",
+};
+
+/**
+ * 결제 수단 코드 → 한글. `BANK_TRANSFER`는 주문 스펙(`PaymentTerm`)의 값이고 `TRANSFER`는
+ * fixtures 시절 값이다 — 소매 원장의 `PAYMENT` 줄이 dev에 아직 없어 어느 쪽이 올지
+ * 미실측이라 둘 다 받는다(#240). 그 밖의 값은 코드값 그대로.
+ */
+export const METHOD_LABEL: Readonly<Record<string, string>> = {
+  CASH: "현금",
+  BANK_TRANSFER: "계좌 이체",
+  TRANSFER: "계좌 이체",
+};
 
 /**
  * 좁은 폭(≤960px)에서 표 대신 세로로 쌓을 때 값 앞에 서는 라벨.
@@ -112,12 +116,9 @@ export const CARD_LABEL = {
   balance: "미수 잔액",
   overdue: "연체",
   lastPaid: "마지막 입금",
-  lastOrdered: "마지막 주문",
-  ongoing: "진행 중",
-  backorder: "미송",
+  bank: "입금 계좌",
   basis: "근거",
   method: "결제 수단",
   delta: "증감",
   ledgerBalance: "잔액",
-  contact: "연락 · 계좌",
 } as const;

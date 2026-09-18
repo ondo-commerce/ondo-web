@@ -4,6 +4,7 @@ import {
   formatBasis,
   formatDate,
   formatDelta,
+  kindLabel,
   methodLabel,
 } from "../derive";
 import type { LedgerRow } from "../types";
@@ -21,7 +22,7 @@ import type { LedgerRow } from "../types";
  * 경계·형식은 `retail-backorder`의 `BackorderCards`와 같다 — 두 화면이 같은 규칙으로
  * 접혀야 사장이 폭마다 다른 화면을 배우지 않는다.
  *
- * **잔액을 다시 누적하지 않는다.** 표와 같은 `runningBalance` 결과를 받는다.
+ * **잔액을 다시 계산하지 않는다.** 표와 같은 `runningBalance` 결과를 받는다.
  */
 export function LedgerCards({
   rows,
@@ -39,9 +40,7 @@ export function LedgerCards({
       {rows.map(({ entry, balance }) => (
         <li key={entry.id} className="py-3.5 first:pt-0">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="font-medium">
-              {entry.kind === "SHIPMENT" ? "출고" : "입금"}
-            </span>
+            <span className="font-medium">{kindLabel(entry.kind)}</span>
             <span className="text-muted-foreground text-body tabular-nums">
               {formatDate(entry.date)}
             </span>
@@ -59,8 +58,8 @@ export function LedgerCards({
             <dt className="text-muted-foreground">{CARD_LABEL.delta}</dt>
             <dd className="tabular-nums">{formatDelta(entry.delta)}</dd>
 
-            {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액이다 — 표에서 화면 밖으로
-                밀려나 있던 바로 그 값이라 굵게 세운다 */}
+            {/* 맨 윗줄 잔액이 곧 이 도매처의 미수 잔액(서버 값)이다 — 표에서 화면
+                밖으로 밀려나 있던 바로 그 값이라 굵게 세운다 */}
             <dt className="text-muted-foreground">
               {CARD_LABEL.ledgerBalance}
             </dt>
