@@ -11,6 +11,7 @@ import {
 } from "react";
 import { BankAccountPanel } from "./BankAccountPanel";
 import { DepositFormPanel } from "./DepositFormPanel";
+import { PrepaidAllocationPanel } from "./PrepaidAllocationPanel";
 import { PrepaidSummaryPanel } from "./PrepaidSummaryPanel";
 import { SettlementRelationTable } from "./SettlementRelationTable";
 import { SettlementSegmentView } from "./SettlementSegmentView";
@@ -22,11 +23,21 @@ import {
   EMPTY_LIST_TEXT,
   RETAILER_PAGE_SIZE,
 } from "../constants";
-import { emptyDepositDraft, filterRetailers, noticeText } from "../derive";
+import {
+  allocatedAmountOf,
+  emptyAllocationDraft,
+  emptyDepositDraft,
+  filterRetailers,
+  noticeText,
+} from "../derive";
 import type {
+  AllocationCreated,
+  AllocationDraft,
   DepositDraft,
+  LedgerRowView,
   OrderRowView,
   PaymentCreated,
+  PaymentVoided,
   RetailerView,
   SettlementNotice,
 } from "../types";
@@ -35,10 +46,12 @@ import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
- * 정산 관리 — 좌 거래처 목록(아코디언) + 우 입금 등록 패널.
+ * 정산 관리 — 좌 거래처 목록(아코디언) + 우 선수금 3카드 · 입금 등록 패널.
  *
  * 화면은 하나다. 좌측의 펼친 영역이 세그먼트로 두 얼굴(정산 상태 / 미수원장)을 갖고,
- * 우측은 펼친 거래처에 대한 입금 등록 패널이 된다 — 다른 페이지로 넘어가지 않는다.
+ * 우측은 펼친 거래처에 대한 선수금 3카드(위)와 입금 등록 패널(아래)이 된다 — 다른 페이지로 넘어가지 않는다.
+ * 카드의 `선수금으로 정산`을 누르면 아래 패널이 새 입금 없이 배분만 하는 패널로 바뀌고, 끝나면 입금 등록으로 돌아온다.
+ * 원장의 입금 줄 `취소`는 좌측에서 열리지만 결과 문구·잠금은 우측과 같은 자리(`notice`)를 쓴다(#138).
  * 툴바 `더보기`에서 `정산 계좌 관리`를 고르면 우측이 계좌 패널로 바뀐다.
  *
  * **한 번에 한 거래처만 펼친다.** 펼친 거래처가 곧 우측 입금의 대상이라,
@@ -66,18 +79,26 @@ export function SettlementListView() {
    * 입금이 등록되면 그 거래처 것만 지운다.
    */
   const [drafts, setDrafts] = useState<Record<number, DepositDraft>>({});
-  /** 직전 입금의 결과. 재조회 실패면 새 입금을 잠근다 */
+  /**
+   * 선수금 정산 폼. 있으면 우측 아래가 입금 등록 대신 `선수금으로 정산` 패널이다.
+   * 펼친 거래처 것 하나뿐이라 거래처를 바꾸면 버린다 — 입금 폼처럼 소매처별로 들지 않는다(진입이 카드 버튼이라 다시 열면 된다)
+   */
+  const [prepaidDraft, setPrepaidDraft] = useState<AllocationDraft | null>(
+    null,
+  );
+  /** 직전 쓰기(입금·선수금 정산·입금 취소)의 결과. 재조회 실패면 다음 쓰기를 잠근다 */
   const [notice, setNotice] = useState<SettlementNotice | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const refresh = useSettlementRefresh();
 
-  /** 직전 처리는 됐는데 재조회가 실패한 상태 — 새 입금을 잠그고 `다시 불러오기`를 먼저 */
+  /** 직전 처리는 됐는데 재조회가 실패한 상태 — 새 쓰기를 잠그고 `다시 불러오기`를 먼저 */
   const stale = notice !== null && !notice.refreshed;
 
   const toggleRetailer = (retailer: RetailerView) => {
     setOpenRetailer((prev) => (prev?.id === retailer.id ? null : retailer));
     setOrders(null);
+    setPrepaidDraft(null);
     // 처음 펼치는 거래처면 빈 폼을 만든다 — 렌더가 아니라 클릭 순간에 `crypto.randomUUID()`를 읽는다
     setDrafts((prev) =>
       retailer.id in prev
@@ -145,9 +166,53 @@ export function SettlementListView() {
       [created.retailerId]: emptyDepositDraft(crypto.randomUUID()),
     }));
     setNotice({
+      kind: "payment",
       retailerName: created.retailerName,
       amount: created.amount,
       prepaidRemaining: created.prepaidRemaining,
+      refreshed,
+    });
+  };
+
+  /** 3카드의 `선수금으로 정산`. 빈 폼을 만든다 — 렌더가 아니라 클릭 순간에 키를 읽는다 */
+  const openPrepaidAllocation = () => {
+    setPrepaidDraft(emptyAllocationDraft(crypto.randomUUID()));
+    if (notice?.refreshed) setNotice(null);
+  };
+
+  /** 선수금 정산 폼 입력 병합 + 새 멱등키(입금 폼과 같은 규칙) */
+  const updatePrepaidDraft = (patch: Partial<AllocationDraft>) => {
+    setPrepaidDraft((prev) =>
+      prev === null
+        ? prev
+        : { ...prev, ...patch, idempotencyKey: crypto.randomUUID() },
+    );
+  };
+
+  /** 선수금 정산이 받아들여지고 재조회까지 끝난 뒤. 입금 등록 패널로 되돌리고 결과를 남긴다 */
+  const finishAllocation = (created: AllocationCreated, refreshed: boolean) => {
+    setPrepaidDraft(null);
+    setNotice({
+      kind: "allocation",
+      retailerName: created.retailerName,
+      amount: allocatedAmountOf(created),
+      prepaidRemaining: created.prepaidRemaining,
+      refreshed,
+    });
+  };
+
+  /** 입금 취소가 받아들여지고 재조회까지 끝난 뒤. 응답엔 소매처·금액이 없어 취소한 줄과 펼친 거래처에서 가져온다 */
+  const finishVoid = (
+    retailer: RetailerView,
+    row: LedgerRowView,
+    voided: PaymentVoided,
+    refreshed: boolean,
+  ) => {
+    setNotice({
+      kind: "void",
+      retailerName: retailer.name,
+      amount: row.amount,
+      prepaidRemaining: voided.prepaidRemaining,
       refreshed,
     });
   };
@@ -180,23 +245,44 @@ export function SettlementListView() {
         retailer={openRetailer}
         onPrepaidChange={handlePrepaidChange}
         onRefresh={retryRefresh}
-      />
-      <DepositFormPanel
-        key={openRetailer.id}
-        retailer={openRetailer}
-        orders={orders}
-        /* 카드가 아직 안 왔거나 실패했으면 0 — 상한이 입금액뿐이라 보수적일 뿐, 서버가 뒤를 받친다 */
-        prepaid={prepaid ?? 0}
-        draft={draft}
-        onDraftChange={(patch, options) =>
-          updateDraft(openRetailer.id, patch, options)
+        /* 붙일 선수금이 없거나(0 · 못 받음) 옛 숫자거나 이미 열려 있으면 잠근다 */
+        allocateDisabled={
+          stale || (prepaid ?? 0) === 0 || prepaidDraft !== null
         }
-        inList={visibleIds?.has(openRetailer.id) ?? true}
-        stale={stale}
-        notice={notice}
-        onRefresh={retryRefresh}
-        onDone={finishPayment}
+        onAllocate={openPrepaidAllocation}
       />
+      {prepaidDraft ? (
+        <PrepaidAllocationPanel
+          key={`allocate-${openRetailer.id}`}
+          retailer={openRetailer}
+          orders={orders}
+          prepaid={prepaid ?? 0}
+          draft={prepaidDraft}
+          onDraftChange={updatePrepaidDraft}
+          stale={stale}
+          notice={notice}
+          onRefresh={retryRefresh}
+          onCancel={() => setPrepaidDraft(null)}
+          onDone={finishAllocation}
+        />
+      ) : (
+        <DepositFormPanel
+          key={openRetailer.id}
+          retailer={openRetailer}
+          orders={orders}
+          /* 카드가 아직 안 왔거나 실패했으면 0 — 상한이 입금액뿐이라 보수적일 뿐, 서버가 뒤를 받친다 */
+          prepaid={prepaid ?? 0}
+          draft={draft}
+          onDraftChange={(patch, options) =>
+            updateDraft(openRetailer.id, patch, options)
+          }
+          inList={visibleIds?.has(openRetailer.id) ?? true}
+          stale={stale}
+          notice={notice}
+          onRefresh={retryRefresh}
+          onDone={finishPayment}
+        />
+      )}
     </>
   ) : undefined;
 
@@ -257,6 +343,10 @@ export function SettlementListView() {
                     retailerId={retailer.id}
                     onOrdersChange={handleOrdersChange}
                     onRefresh={retryRefresh}
+                    voidDisabled={stale}
+                    onPaymentVoided={(row, voided, refreshed) =>
+                      finishVoid(retailer, row, voided, refreshed)
+                    }
                   />
                 </QueryBoundary>
               )}

@@ -24,20 +24,37 @@ export function PrepaidSummaryPanel({
   retailer,
   onPrepaidChange,
   onRefresh,
+  allocateDisabled,
+  onAllocate,
 }: {
   retailer: RetailerView;
   /** 받은 남은 선수금. 내려갈 때는 `null` — 부모가 안정된 참조(useCallback)로 넘긴다 */
   onPrepaidChange: (prepaid: number | null) => void;
   /** 재조회 실패 시 `다시 불러오기`. 부모의 것 하나를 쓴다 — 우측 패널의 잠금도 같이 풀려야 한다 */
   onRefresh: () => void;
+  /** 남은 선수금이 0이거나, 옛 숫자(stale)거나, 이미 그 패널이 열려 있으면 잠근다 — 부모가 셋을 안다 */
+  allocateDisabled: boolean;
+  /** 우측 아래 패널을 `선수금으로 정산`으로 바꾼다(`POST /allocations`) */
+  onAllocate: () => void;
 }) {
   return (
     <Panel className="shrink-0">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-sm">선수금 잔액</h3>
-        <span className="text-muted-foreground text-xs">
-          {retailerLabel(retailer.name, retailer.code)}
-        </span>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-sm">선수금 잔액</h3>
+          <span className="text-muted-foreground text-xs">
+            {retailerLabel(retailer.name, retailer.code)}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="line"
+          size="sm"
+          disabled={allocateDisabled}
+          onClick={onAllocate}
+        >
+          선수금으로 정산
+        </Button>
       </div>
       <QueryBoundary>
         <PrepaidCards

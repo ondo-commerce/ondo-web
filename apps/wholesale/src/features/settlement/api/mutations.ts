@@ -6,11 +6,15 @@ import { settlementKeys } from "./keys";
 import { SETTLEMENT_PATH } from "./queries";
 import { isStaleRejection } from "../derive";
 import type {
+  AllocationCreated,
+  AllocationCreateRequest,
   BankAccount,
   BankAccountCreateRequest,
   BankAccountUpdateRequest,
   PaymentCreated,
   PaymentCreateRequest,
+  PaymentVoided,
+  PaymentVoidRequest,
 } from "../types";
 
 /**
@@ -92,6 +96,86 @@ export function useCreatePaymentMutation({ onDone }: PaymentDone = {}) {
     onError: (error, { body }) =>
       isStaleRejection(error)
         ? refetchAfterPayment(queryClient, body.retailerId)
+        : undefined,
+  });
+}
+
+/**
+ * 선수금 정산 뒤 낡는 것 — 그 소매처의 주문 미수·정산 상태와 선수금 3카드. 원장은 안 바뀐다(스펙: 돈은 그대로
+ * 받은 상태) — 소매처 행의 미수 잔액도 원장 잔액이라 그대로다. 그래도 표와 카드는 같은 돈을 보므로 둘을 같이 받는다.
+ */
+function refetchAfterAllocation(queryClient: QueryClient, retailerId: number) {
+  return refetch(queryClient, [
+    settlementKeys.orders(retailerId),
+    settlementKeys.prepaid(retailerId),
+  ]);
+}
+
+export interface AllocationDone {
+  onDone?: (created: AllocationCreated, refreshed: boolean) => void;
+}
+
+export interface AllocationVariables {
+  body: AllocationCreateRequest;
+  /** 입금 등록과 같은 규칙 — 입력이 바뀌면 새 키, 같은 입력의 재전송은 같은 키(`AllocationDraft.idempotencyKey`) */
+  idempotencyKey: string;
+}
+
+/** 선수금으로 정산(`POST /allocations`, Idempotency-Key 필수). 새 입금 없이 남은 선수금을 출고된 주문에 붙인다 */
+export function useCreateAllocationMutation({ onDone }: AllocationDone = {}) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ body, idempotencyKey }: AllocationVariables) =>
+      apiFetch<AllocationCreated>(SETTLEMENT_PATH.allocations, {
+        method: "POST",
+        body,
+        idempotencyKey,
+      }),
+    onSuccess: async (created, { body }) => {
+      const refreshed = await refetchAfterAllocation(
+        queryClient,
+        body.retailerId,
+      );
+      onDone?.(created, refreshed);
+    },
+    onError: (error, { body }) =>
+      isStaleRejection(error)
+        ? refetchAfterAllocation(queryClient, body.retailerId)
+        : undefined,
+  });
+}
+
+export interface PaymentVoidDone {
+  onDone?: (voided: PaymentVoided, refreshed: boolean) => void;
+}
+
+export interface PaymentVoidVariables {
+  paymentId: number;
+  /** 무효화할 키를 고르려고 받는다 — 응답에 소매처가 없다 */
+  retailerId: number;
+  body: PaymentVoidRequest;
+}
+
+/**
+ * 입금 취소(`POST /payments/{id}/void`). 그 입금의 배분이 전부 풀리고 원장에 취소 줄이 쌓이므로
+ * 입금 등록과 같은 넷(행·주문·원장·선수금)을 다시 받는다. 되돌릴 수 없다(스펙) — 다이얼로그가 한 번 막는다.
+ */
+export function useVoidPaymentMutation({ onDone }: PaymentVoidDone = {}) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ paymentId, body }: PaymentVoidVariables) =>
+      apiFetch<PaymentVoided>(SETTLEMENT_PATH.paymentVoid(paymentId), {
+        method: "POST",
+        body,
+      }),
+    onSuccess: async (voided, { retailerId }) => {
+      const refreshed = await refetchAfterPayment(queryClient, retailerId);
+      onDone?.(voided, refreshed);
+    },
+    // 404(이미 없는 입금)·409(이미 취소된 입금)면 원장이 낡은 것 — 다시 받아 그 줄의 `취소`가 사라지게 한다
+    onError: (error, { retailerId }) =>
+      isStaleRejection(error)
+        ? refetchAfterPayment(queryClient, retailerId)
         : undefined,
   });
 }

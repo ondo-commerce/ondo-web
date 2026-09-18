@@ -41,6 +41,9 @@ export const SETTLEMENT_PATH = {
   prepaid: (retailerId: number) =>
     `/api/wholesale/receivables/retailers/${retailerId}/prepaid`,
   payments: "/api/wholesale/payments",
+  paymentVoid: (paymentId: number) =>
+    `/api/wholesale/payments/${paymentId}/void`,
+  allocations: "/api/wholesale/allocations",
   orders: "/api/wholesale/orders",
   bankAccounts: "/api/wholesale/bank-accounts",
   bankAccount: (bankAccountId: number) =>

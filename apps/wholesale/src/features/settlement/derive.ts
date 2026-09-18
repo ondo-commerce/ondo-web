@@ -4,9 +4,14 @@ import {
   DEPOSIT_ERROR_TEXT,
   LEDGER_ARROW,
   LEDGER_LABEL,
+  PAYMENT_VOID_ERROR_TEXT,
+  PAYMENT_VOID_REASON_MAX,
 } from "./constants";
 import { exceedsNumericMax } from "@/shared/lib/numericInput";
 import type {
+  AllocationCreated,
+  AllocationCreateRequest,
+  AllocationDraft,
   BankAccount,
   BankAccountCreateRequest,
   BankAccountDraft,
@@ -19,6 +24,7 @@ import type {
   OrderRowView,
   PaymentAllocationRequest,
   PaymentCreateRequest,
+  PaymentVoidRequest,
   PrepaidSummary,
   PrepaidView,
   ReceivableLedgerPage,
@@ -149,7 +155,7 @@ export function parsePaidAt(raw: string, now: Date): string | null {
  *
  * 서버 `ledgerBalance`는 계정 잔액 관점(음수 = 소매처 채무, 양수 = 선수금)이고 화면 열은 미수 관점(양수)이라
  * 부호를 뒤집는다. 선수금으로 잔액이 +가 되면 "미수 −50,000원"이 되어야 하는데 그건 미수가 아니라
- * 예치금이므로 0으로 눕힌다 — 선수금 칸은 화면에 없다(#138, 04-wire §3).
+ * 예치금이므로 0으로 눕힌다 — 선수금은 이 열이 아니라 우측 3카드(`남은 선수금`)가 보인다(#138).
  */
 export function outstandingOf(ledgerBalance: number): number {
   return Math.max(0, -ledgerBalance);
@@ -226,15 +232,30 @@ export function toPrepaidView(summary: PrepaidSummary): PrepaidView {
  * 사양)이라 페이지 안에서 뒤집는다. 잔액은 줄마다 서버가 확정한 값이라 순서를 바꿔도 틀리지 않는다.
  */
 export function toLedgerView(page: ReceivableLedgerPage): LedgerView {
+  // 이 페이지 안에서 이미 취소 줄이 붙은 입금. 그 입금 줄엔 `취소` 버튼을 안 단다 — 눌러도 409뿐이다
+  const voided = new Set(
+    page.data
+      .filter((e) => e.entryType === "PAYMENT_VOID")
+      .map((e) => e.paymentId),
+  );
   const rows: LedgerRowView[] = [...page.data]
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id - b.id)
-    .map((e) => ({
-      id: e.id,
-      date: formatDateTime(e.occurredAt),
-      entryType: e.entryType,
-      amount: e.balanceChange,
-      balanceAfter: e.balanceAfter,
-    }));
+    .map((e) => {
+      // 스펙에 nullable이 없어 타입은 number지만 SALE·ADJUST 줄은 null이 온다
+      const paymentId = e.paymentId ?? null;
+      return {
+        id: e.id,
+        date: formatDateTime(e.occurredAt),
+        entryType: e.entryType,
+        amount: e.balanceChange,
+        balanceAfter: e.balanceAfter,
+        paymentId,
+        voidable:
+          e.entryType === "PAYMENT" &&
+          paymentId !== null &&
+          !voided.has(paymentId),
+      };
+    });
   return {
     rows,
     balance: page.meta.ledgerBalance,
@@ -530,6 +551,42 @@ export function emptyDepositDraft(idempotencyKey: string): DepositDraft {
 }
 
 /* ------------------------------------------------------------------------
+ * 선수금 정산 폼 · 입금 취소
+ * ------------------------------------------------------------------------ */
+
+/** 새 선수금 정산 폼. 키는 입금 폼과 같은 규칙으로 부르는 쪽이 만든다 */
+export function emptyAllocationDraft(idempotencyKey: string): AllocationDraft {
+  return { editedAllocations: {}, idempotencyKey };
+}
+
+/** 배분 표 값 → `POST /allocations` 본문. 0원 행은 입금 등록과 같은 이유로 안 보낸다 */
+export function toAllocationRequest(
+  retailerId: number,
+  values: Readonly<Record<number, number>>,
+): AllocationCreateRequest {
+  return { retailerId, allocations: toAllocationRequests(values) };
+}
+
+/**
+ * 선수금 정산 응답에서 이번에 붙은 돈의 합. 한 주문이 입금 여럿에 걸치면 줄이 여럿이라(스펙) 줄 수가 아니라 금액을 더한다.
+ * 보낸 합계와 같아야 하지만 서버가 확정한 줄을 더하는 쪽을 믿는다.
+ */
+export function allocatedAmountOf(created: AllocationCreated): number {
+  return created.allocations.reduce((sum, a) => sum + a.amount, 0);
+}
+
+/** 입금 취소 사유 → 요청 본문. 앞뒤 공백을 떼고 보낸다 — 공백만이면 `canVoid`가 먼저 막는다 */
+export function toPaymentVoidRequest(reason: string): PaymentVoidRequest {
+  return { reason: reason.trim() };
+}
+
+/** 취소 사유가 서버 규칙 안인가(비어 있지 않고 `PAYMENT_VOID_REASON_MAX`자 이하). 버튼 조건 */
+export function canVoid(reason: string): boolean {
+  const trimmed = reason.trim();
+  return trimmed !== "" && trimmed.length <= PAYMENT_VOID_REASON_MAX;
+}
+
+/* ------------------------------------------------------------------------
  * 계좌 폼
  * ------------------------------------------------------------------------ */
 
@@ -585,10 +642,22 @@ export function canSaveBankAccount(draft: BankAccountDraft): boolean {
  * 실패·결과 문구
  * ------------------------------------------------------------------------ */
 
-/** 입금 거절 문구. 알려진 코드는 우리 문구, 나머지는 `describeError`의 종류별 제목 */
+/**
+ * 입금 거절 문구. 알려진 코드는 우리 문구, 나머지는 `describeError`의 종류별 제목.
+ * 선수금 정산(`POST /allocations`)도 이 표를 쓴다 — 코드 집합이 입금 등록과 같고 `ALLOCATION_EXCEEDS_PREPAID` 하나만 더 있다.
+ */
 export function depositErrorText(error: unknown): string {
   if (isApiError(error)) {
     const known = DEPOSIT_ERROR_TEXT[error.code];
+    if (known !== undefined) return known;
+  }
+  return describeError(error).title;
+}
+
+/** 입금 취소 거절 문구. `VALIDATION_FAILED`(사유 없음·200자 초과)는 칸에서 먼저 막아 여기 오면 서버 문구 그대로 */
+export function paymentVoidErrorText(error: unknown): string {
+  if (isApiError(error)) {
+    const known = PAYMENT_VOID_ERROR_TEXT[error.code];
     if (known !== undefined) return known;
   }
   return describeError(error).title;
@@ -611,8 +680,8 @@ export function isStaleRejection(error: unknown): boolean {
 }
 
 /**
- * 입금 직후 문구. 재조회 실패면 옛 숫자임을 먼저 말한다(⑦).
- * 꼬리의 선수금은 응답 `prepaidRemaining`(등록 후 거래처 선수금 전체) — 3카드가 아직 옛 숫자여도 이 문구는 맞다.
+ * 쓰기 직후 문구(입금 등록 · 선수금 정산 · 입금 취소). 재조회 실패면 옛 숫자임을 먼저 말한다(⑦).
+ * 꼬리의 선수금은 응답 `prepaidRemaining`(처리 후 거래처 선수금 전체) — 3카드가 아직 옛 숫자여도 이 문구는 맞다.
  */
 export function noticeText(notice: SettlementNotice): string {
   const amount = `${formatNumber(notice.amount)}원`;
@@ -620,7 +689,19 @@ export function noticeText(notice: SettlementNotice): string {
     notice.prepaidRemaining > 0
       ? ` (선수금 ${formatNumber(notice.prepaidRemaining)}원 남음)`
       : "";
+  const what =
+    notice.kind === "payment"
+      ? `${notice.retailerName}에 입금 ${amount}`
+      : notice.kind === "allocation"
+        ? `${notice.retailerName}에 선수금 ${amount}`
+        : `${notice.retailerName}의 입금 ${amount}`;
+  const done =
+    notice.kind === "payment"
+      ? "등록"
+      : notice.kind === "allocation"
+        ? "정산"
+        : "취소";
   return notice.refreshed
-    ? `${notice.retailerName}에 입금 ${amount} 등록했어요${tail} — 미수원장에서 확인하세요`
-    : `${notice.retailerName}에 입금 ${amount}은 됐지만 목록을 새로 못 불러왔어요${tail}`;
+    ? `${what} ${done}했어요${tail} — 미수원장에서 확인하세요`
+    : `${what} ${done}은 됐지만 목록을 새로 못 불러왔어요${tail}`;
 }
