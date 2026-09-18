@@ -1,4 +1,5 @@
-import { Table } from "@ondo/ui";
+import { Button, Table } from "@ondo/ui";
+import Link from "next/link";
 import { BANK_MISSING, PREPAID_EXCLUDED, TOTAL_LABEL } from "../constants";
 import {
   formatBalance,
@@ -11,7 +12,11 @@ import type { PartnerSettlement } from "../types";
 import { CopyIconButton } from "./CopyButton";
 
 /**
- * 거래처 관리 표(4열). 값은 정산 화면과 같은 `GET /settlements` 한 줄이다.
+ * 거래처 관리 표(5열). 값은 정산 화면과 같은 `GET /settlements` 한 줄이다.
+ *
+ * `도매처 홈` 링크가 **서버 숫자 id**(`wholesalerId`)로 간다. fixtures 시절엔
+ * `w-moodon`류 문자열이라 네 링크가 전부 404였고(#183) 그래서 열을 감췄었다 —
+ * 정산이 실서버로 붙어 도매처 홈이 받는 id와 같은 축이 됐다.
  *
  * 앞 회차 도매 `settlements`가 1280×720에서 `미수 잔액` 열이 잘리는 P1을 겪었다.
  * 여기서는 `Table`이 `min-w-max` + `overflow-x-auto`로 **자기 상자 안에서만**
@@ -34,6 +39,10 @@ export function PartnerTable({ rows }: { rows: readonly PartnerSettlement[] }) {
           <Table.Th>미수 잔액</Table.Th>
           <Table.Th align="center">마지막 입금</Table.Th>
           <Table.Th align="center">입금 계좌</Table.Th>
+          {/* 버튼 열. 머리글 글자가 없어도 열 자체는 있어야 tfoot 칸 수가 맞는다 */}
+          <Table.Th align="center">
+            <span className="sr-only">도매처 홈</span>
+          </Table.Th>
         </tr>
       </Table.Head>
 
@@ -58,6 +67,13 @@ export function PartnerTable({ rows }: { rows: readonly PartnerSettlement[] }) {
                 BANK_MISSING
               )}
             </Table.Td>
+            <Table.Td align="center">
+              <Button asChild variant="line" size="sm">
+                <Link href={`/wholesalers/${row.wholesalerId}`}>
+                  도매처 홈<span className="sr-only"> ({row.name})</span>
+                </Link>
+              </Button>
+            </Table.Td>
           </Table.Row>
         ))}
       </Table.Body>
@@ -77,6 +93,7 @@ export function PartnerTable({ rows }: { rows: readonly PartnerSettlement[] }) {
           <td className="border-border border-t px-2 pt-3 pb-2 text-right font-medium tabular-nums">
             {formatWon(totalReceivable(rows))}
           </td>
+          <td className="border-border border-t" />
           <td className="border-border border-t" />
           <td className="border-border border-t" />
         </tr>

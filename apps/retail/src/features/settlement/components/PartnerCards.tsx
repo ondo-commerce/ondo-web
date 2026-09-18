@@ -1,3 +1,5 @@
+import { Button } from "@ondo/ui";
+import Link from "next/link";
 import {
   BANK_MISSING,
   CARD_LABEL,
@@ -60,6 +62,13 @@ export function PartnerCards({ rows }: { rows: readonly PartnerSettlement[] }) {
                 )}
               </dd>
             </dl>
+
+            {/* 서버 숫자 id로 간다 — 문자열 더미 id라 404였던 링크(#183)를 되살린 자리 */}
+            <Button asChild variant="line" size="sm" className="mt-3">
+              <Link href={`/wholesalers/${row.wholesalerId}`}>
+                도매처 홈<span className="sr-only"> ({row.name})</span>
+              </Link>
+            </Button>
           </li>
         ))}
       </ul>

@@ -4,7 +4,6 @@ import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
-import { ongoingCount } from "@/shared/tradeStats";
 import { CatalogSection } from "./CatalogSection";
 import { TRADE_STATS_PENDING, WHOLESALER_HOME_AXES } from "../constants";
 import { formatUnpaid } from "../derive";
@@ -40,9 +39,10 @@ export function WholesalerHomeView({
 }: {
   wholesaler: Wholesaler;
   /**
-   * 거래 지표. 원본은 `features/settlement`의 거래 원장이고 `app/`이 합쳐서
-   * 넘긴다(F1). **거래한 적 없는 것(`null`)과 아직 알 수 없는 것(`unavailable`)이
-   * 다르다** — 뒤쪽을 0으로 그리면 미수가 있는 도매처가 깨끗해 보인다(#183).
+   * 거래 지표. 원본은 `features/settlement`의 `GET /settlements`이고 `app/`이 이
+   * 도매처 줄을 찾아 넘긴다(F1). **거래한 적 없는 것(`null`)과 아직 알 수 없는 것
+   * (`unavailable`)이 다르다** — 뒤쪽을 0으로 그리면 미수가 있는 도매처가 깨끗해
+   * 보인다(#183).
    */
   tradeStats: TradeStatsSlot;
   /** 이 도매처가 마켓에 올린 상품 — 서버가 준 첫 장에서 도매처 id로 거른 것 */
@@ -119,39 +119,37 @@ export function WholesalerHomeView({
 /**
  * 통계 2칸이 쓸 값. fixtures 시절의 `누적 주문`은 스펙에 없어 뺐다.
  *
- * 나머지 둘은 `features/settlement`의 거래 원장에서 온 값이라, 거래처 관리 표와
- * 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서 무드온이 두 화면에서
- * 다르게 읽혔다(F1 · #128).
+ * `미결제 잔액`은 `features/settlement`의 `GET /settlements`에서 온 값이라, 거래처
+ * 관리 표·정산 표와 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서
+ * 무드온이 두 화면에서 다르게 읽혔다(F1 · #128).
  *
- * `stats`가 null이면 **거래한 적 없는 도매처**다. 0건·0원으로 세우되 그건
- * 계산 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
+ * `진행 중`은 **늘 `준비 중`이다** — 확정 대기·미송 건수를 도매처별로 주는 소매
+ * API가 없다(#240). 0건으로 세우면 진행 중인 주문이 있는 도매처가 한가해 보인다.
+ * 서버가 주면 이 카드만 실값으로 바꾼다.
  *
- * `unavailable`이면 숫자를 안 적는다 — 정산이 fixtures인 동안 서버 도매처의
- * 거래를 알 길이 없는데 0으로 세우면 거래 없음으로 읽힌다(#183).
+ * `stats`가 null이면 **거래한 적 없는 도매처**다. 0원으로 세우되 그건 계산
+ * 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
+ *
+ * `unavailable`이면 숫자를 안 적는다 — 정산 요청이 실패한 것이지 거래가 없는 게
+ * 아니다. 0으로 세우면 거래 없음으로 읽힌다(#183).
  */
 function statCardsOf(slot: TradeStatsSlot): StatCard[] {
+  const ongoing: StatCard = { label: "진행 중", ...TRADE_STATS_PENDING };
+
   if (slot.status === "unavailable") {
-    return [
-      { label: "진행 중", ...TRADE_STATS_PENDING },
-      { label: "미결제 잔액", ...TRADE_STATS_PENDING },
-    ];
+    return [ongoing, { label: "미결제 잔액", ...TRADE_STATS_PENDING }];
   }
 
   const { stats: tradeStats } = slot;
 
   return [
-    {
-      label: "진행 중",
-      /* 합을 따로 들고 있지 않다 — `확정 대기 + 미송`을 여기서 더한다 */
-      value: `${tradeStats ? ongoingCount(tradeStats) : 0}건`,
-      sub: `확정 대기 ${tradeStats?.pendingCount ?? 0} · 미송 ${tradeStats?.backorderCount ?? 0}`,
-    },
+    ongoing,
     {
       label: "미결제 잔액",
       value: formatUnpaid(tradeStats?.balance ?? 0),
       /* 소매는 금액을 보기만 하고 입금 등록 권한이 없다(RT-63).
          입금한 적이 없으면 `—`다 — 없는 날짜를 지어내지 않는다 */
-      sub: `마지막 입금 ${tradeStats?.lastPaidAt ? tradeStats.lastPaidAt.replaceAll("-", ".") : "—"}`,
+      sub: `마지막 입금 ${tradeStats?.lastPaidAt ? tradeStats.lastPaidAt.slice(0, 10).replaceAll("-", ".") : "—"}`,
     },
   ];
 }
