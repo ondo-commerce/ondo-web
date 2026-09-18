@@ -376,7 +376,7 @@ export function allocationTargets(
     .sort((a, b) => a.orderedAtIso.localeCompare(b.orderedAtIso));
 }
 
-/** 배분 합계. 이 값이 입금액과 같아야 `입금 및 정산`을 누를 수 있다 */
+/** 배분 합계. 이 값이 0보다 크고 사용 가능액 안이어야 `입금 및 정산`을 누를 수 있다 */
 export function allocationTotal(
   values: Readonly<Record<number, number>>,
 ): number {
@@ -384,13 +384,26 @@ export function allocationTotal(
 }
 
 /**
- * 표에 보일 배분값 = 사람이 고친 행은 그 값 그대로, 나머지 행은 **남은 입금액**으로 자동 배분(FIFO).
+ * 총 사용 가능 = **이번 입금액 + 남은 선수금**(스펙: 배분 합계 상한. 이번 입금을 먼저 쓰고 모자라면 오래된 입금부터
+ * 끌어 쓴다). 입금액이 빈칸이면 `null` — 표가 잠긴다. 선수금만으로 정산하는 길은 따로 있다(`POST /allocations`).
+ */
+export function availableTotal(
+  amount: number | null,
+  prepaid: number,
+): number | null {
+  return amount === null ? null : amount + prepaid;
+}
+
+/**
+ * 표에 보일 배분값 = 사람이 고친 행은 그 값 그대로, 나머지 행은 **남은 사용 가능액**으로 자동 배분(FIFO).
  * **같은 규칙으로 요청을 만든다** — 표와 요청이 다른 값을 보면 안 된다.
  *
- * 자동 배분은 입금액 전체가 아니라 `입금액 − 손댄 행의 합`을 위 행부터 미수만큼 채운다. 첫 행을 37,500→10,000으로
- * 줄이면 남은 27,500이 다음 행으로 흐른다(wire-settlement F4). 입금액이 바뀌어도 손댄 행은 그대로 두고
- * 자동 행만 다시 계산되므로 사람이 맞춘 배분이 한 글자 수정에 날아가지 않는다(F5, #207).
- * 입금액이 미수 총합보다 크면 남는 돈은 어디에도 붙지 않는다(미배정 = 선수금).
+ * 자동 배분은 사용 가능액 전체가 아니라 `사용 가능액 − 손댄 행의 합`을 위 행부터 미수만큼 채운다. 첫 행을
+ * 37,500→10,000으로 줄이면 남은 27,500이 다음 행으로 흐른다(wire-settlement F4). 입금액이 바뀌어도 손댄 행은 그대로
+ * 두고 자동 행만 다시 계산되므로 사람이 맞춘 배분이 한 글자 수정에 날아가지 않는다(F5, #207).
+ * 사용 가능액이 미수 총합보다 크면 남는 돈은 어디에도 붙지 않는다(선수금으로 남는다).
+ *
+ * `available`은 입금 폼이면 `입금액 + 남은 선수금`, 선수금 정산이면 `남은 선수금`이다 — 상한이 무엇이든 채우는 규칙은 같다.
  *
  * 손댄 값은 여기서 **자르지 않는다.** 상한을 넘겼는지는 `allocationIssues`가 행마다 말한다 — 조용히 바꾸면
  * 어느 행을 얼마나 고쳐야 하는지 화면이 말하지 않게 된다.
@@ -398,13 +411,13 @@ export function allocationTotal(
 export function resolveAllocations(
   targets: readonly OrderRowView[],
   edited: Readonly<Record<number, number>>,
-  amount: number | null,
+  available: number | null,
 ): Record<number, number> {
   const editedTotal = targets.reduce(
     (sum, order) => sum + (edited[order.id] ?? 0),
     0,
   );
-  let left = Math.max(0, (amount ?? 0) - editedTotal);
+  let left = Math.max(0, (available ?? 0) - editedTotal);
   const result: Record<number, number> = {};
   for (const order of targets) {
     const manual = edited[order.id];
@@ -422,48 +435,49 @@ export function resolveAllocations(
 /**
  * 행마다 상한을 넘긴 이유 한 줄. 넘긴 행만 담긴다 — 비어 있으면 배분 표가 서버 규칙 안이다.
  *
- * 두 상한은 서버가 409로 거절하는 것 그대로다: 미수보다 많으면 `ALLOCATION_EXCEEDS_OUTSTANDING`,
- * 합계가 입금액을 넘으면 `ALLOCATION_EXCEEDS_PAYMENT`. "남은 입금액"은 **이 행을 뺀 나머지 합**이 남긴 몫이라
- * 그 숫자로 줄이면 합계가 입금액에 딱 맞는다. `amount`가 없으면(빈칸) 표가 잠겨 있어 아무 말도 안 한다.
+ * 두 상한은 서버가 409로 거절하는 것 그대로다: 남은 미수보다 많으면 `ALLOCATION_EXCEEDS_OUTSTANDING`,
+ * 합계가 사용 가능액(입금액 + 남은 선수금)을 넘으면 `ALLOCATION_EXCEEDS_PAYMENT`(선수금 정산이면
+ * `ALLOCATION_EXCEEDS_PREPAID`). "남은 사용 가능액"은 **이 행을 뺀 나머지 합**이 남긴 몫이라 그 숫자로 줄이면
+ * 합계가 상한에 딱 맞는다. `available`이 없으면(입금액 빈칸) 표가 잠겨 있어 아무 말도 안 한다.
  */
 export function allocationIssues(
   targets: readonly OrderRowView[],
   values: Readonly<Record<number, number>>,
-  amount: number | null,
+  available: number | null,
 ): Record<number, string> {
-  if (amount === null) return {};
+  if (available === null) return {};
   const total = allocationTotal(values);
   const issues: Record<number, string> = {};
   for (const order of targets) {
     const value = values[order.id] ?? 0;
     if (value > order.outstanding) {
-      issues[order.id] = `미수 ${formatNumber(order.outstanding)}원까지`;
+      issues[order.id] = `남은 미수 ${formatNumber(order.outstanding)}원까지`;
       continue;
     }
-    const budget = Math.max(0, amount - (total - value));
+    const budget = Math.max(0, available - (total - value));
     if (value > budget) {
-      issues[order.id] = `남은 입금액 ${formatNumber(budget)}원까지`;
+      issues[order.id] = `남은 사용 가능액 ${formatNumber(budget)}원까지`;
     }
   }
   return issues;
 }
 
 /**
- * 요약 줄 아래 한 줄 — 합계가 입금액과 어긋난 방향과 크기. 딱 맞으면 `null`.
- * 모자란 건 허용이다(`입금만 진행`으로 남는다). 그래도 얼마가 어디에도 안 붙는지는 말해야
- * 사장이 채울지 남길지 정한다(wire-settlement F4).
+ * 요약 줄 아래 한 줄 — 합계가 사용 가능액과 어긋난 방향과 크기. 딱 맞으면 `null`.
+ * 모자란 건 허용이다 — 안 붙은 돈은 선수금으로 남고(스펙: `allocations`가 비면·모자라면 선수금) 3카드에 보인다.
+ * 그래도 얼마가 남는지는 말해야 사장이 채울지 남길지 정한다(wire-settlement F4).
  */
 export function allocationGapText(
-  amount: number | null,
+  available: number | null,
   total: number,
 ): string | null {
-  if (amount === null) return null;
-  const gap = amount - total;
+  if (available === null) return null;
+  const gap = available - total;
   if (gap > 0) {
-    return `${formatNumber(gap)}원이 어느 주문에도 안 붙어요 — 배분을 채우거나 입금만 진행하세요`;
+    return `${formatNumber(gap)}원은 어느 주문에도 안 붙고 선수금으로 남아요`;
   }
   if (gap < 0) {
-    return `배분 합계가 입금액을 ${formatNumber(-gap)}원 넘었어요`;
+    return `배분 합계가 사용 가능액을 ${formatNumber(-gap)}원 넘었어요`;
   }
   return null;
 }
@@ -596,12 +610,15 @@ export function isStaleRejection(error: unknown): boolean {
   return isApiError(error) && (error.status === 409 || error.status === 404);
 }
 
-/** 입금 직후 문구. 재조회 실패면 옛 숫자임을 먼저 말한다(⑦) */
+/**
+ * 입금 직후 문구. 재조회 실패면 옛 숫자임을 먼저 말한다(⑦).
+ * 꼬리의 선수금은 응답 `prepaidRemaining`(등록 후 거래처 선수금 전체) — 3카드가 아직 옛 숫자여도 이 문구는 맞다.
+ */
 export function noticeText(notice: SettlementNotice): string {
   const amount = `${formatNumber(notice.amount)}원`;
   const tail =
-    notice.unallocated > 0
-      ? ` (미배정 ${formatNumber(notice.unallocated)}원)`
+    notice.prepaidRemaining > 0
+      ? ` (선수금 ${formatNumber(notice.prepaidRemaining)}원 남음)`
       : "";
   return notice.refreshed
     ? `${notice.retailerName}에 입금 ${amount} 등록했어요${tail} — 미수원장에서 확인하세요`

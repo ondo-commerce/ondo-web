@@ -59,6 +59,8 @@ export function SettlementListView() {
   );
   /** 펼침 본문이 받은 확정 주문. 우측 배분 표가 쓴다. 본문이 내려가면 null */
   const [orders, setOrders] = useState<readonly OrderRowView[] | null>(null);
+  /** 3카드 패널이 받은 남은 선수금. 입금 폼의 `총 사용 가능`이 쓴다. 카드가 내려가거나 실패하면 null */
+  const [prepaid, setPrepaid] = useState<number | null>(null);
   /**
    * 입금 폼 입력, **소매처별.** 행을 접었다 펴도, 다른 거래처를 봤다 와도 적던 값이 남는다(⑥).
    * 입금이 등록되면 그 거래처 것만 지운다.
@@ -109,6 +111,11 @@ export function SettlementListView() {
     [],
   );
 
+  const handlePrepaidChange = useCallback(
+    (value: number | null) => setPrepaid(value),
+    [],
+  );
+
   /** 폼 입력 병합 + 새 멱등키. `keepKey`는 제출 시각을 칸에 굳힐 때만(같은 본문의 재전송이어야 하니 키를 지킨다) */
   const updateDraft = (
     retailerId: number,
@@ -140,7 +147,7 @@ export function SettlementListView() {
     setNotice({
       retailerName: created.retailerName,
       amount: created.amount,
-      unallocated: created.unallocatedAmount,
+      prepaidRemaining: created.prepaidRemaining,
       refreshed,
     });
   };
@@ -171,12 +178,15 @@ export function SettlementListView() {
       <PrepaidSummaryPanel
         key={`prepaid-${openRetailer.id}`}
         retailer={openRetailer}
+        onPrepaidChange={handlePrepaidChange}
         onRefresh={retryRefresh}
       />
       <DepositFormPanel
         key={openRetailer.id}
         retailer={openRetailer}
         orders={orders}
+        /* 카드가 아직 안 왔거나 실패했으면 0 — 상한이 입금액뿐이라 보수적일 뿐, 서버가 뒤를 받친다 */
+        prepaid={prepaid ?? 0}
         draft={draft}
         onDraftChange={(patch, options) =>
           updateDraft(openRetailer.id, patch, options)

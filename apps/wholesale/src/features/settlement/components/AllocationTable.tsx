@@ -2,18 +2,23 @@
 
 import { Table } from "@ondo/ui";
 import { OrderStatusBadge, SettlementBadge } from "./StatusBadge";
+import { allocationTotal, outstandingTotal } from "../derive";
 import type { OrderRowView } from "../types";
 import { NumericInput } from "@/shared/components/NumericInput";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
- * 입금 1건을 여러 주문에 나눠 붙이는 표(`allocations[]`, 입금 1 : 주문 N).
+ * 돈 한 뭉치를 여러 주문에 나눠 붙이는 표(`allocations[]`, 1 : N). 입금 등록(`POST /payments`)과
+ * 선수금 정산(`POST /allocations`)이 **같은 표**를 쓴다 — 상한이 무엇이든 행마다 붙이는 규칙은 같다.
  *
- * `배분` 열만 입력이고 나머지는 읽기 전용이다 — 나머지 4열은 서버값이라
- * 여기서 고치면 화면끼리 숫자가 갈린다.
+ * `이번 배분` 열만 입력이고 나머지는 읽기 전용이다 — 나머지 4열은 서버값이라
+ * 여기서 고치면 화면끼리 숫자가 갈린다. `남은 미수`는 서버 정의(출고 미수 − 이미 붙은 배분) 그대로다.
  *
- * 값은 이 컴포넌트가 들고 있지 않는다. 입금액이 바뀌면 자동 배분이 다시 계산돼야 하고
- * 그 계산은 폼 전체(입금액)를 아는 쪽에서만 할 수 있기 때문이다.
+ * 값은 이 컴포넌트가 들고 있지 않는다. 사용 가능액이 바뀌면 자동 배분이 다시 계산돼야 하고
+ * 그 계산은 폼 전체(입금액·선수금)를 아는 쪽에서만 할 수 있기 때문이다.
+ *
+ * 합계행은 Figma 개정(#138)에서 왔다 — `남은 미수` 합이 거래처 행의 미수 잔액과 같아야 하고, `이번 배분` 합이
+ * 요약 줄의 합계와 같아야 한다. 둘 다 derive의 같은 함수로 센다.
  */
 export function AllocationTable({
   targets,
@@ -27,7 +32,7 @@ export function AllocationTable({
   values: Readonly<Record<number, number>>;
   /** 상한을 넘긴 행의 이유 한 줄(`derive.allocationIssues`). 있는 행만 빨갛게 + 칸 아래 문구 */
   issues: Readonly<Record<number, string>>;
-  /** 입금액을 아직 안 적었으면 배분할 돈이 없다 → 입력칸을 전부 잠근다 */
+  /** 배분할 돈이 아직 없으면(입금액 빈칸) 입력칸을 전부 잠근다 */
   disabled: boolean;
   onChange: (orderId: number, raw: string) => void;
 }) {
@@ -46,8 +51,8 @@ export function AllocationTable({
           <Table.Th align="left">주문번호</Table.Th>
           <Table.Th align="center">주문 상태</Table.Th>
           <Table.Th align="center">정산 상태</Table.Th>
-          <Table.Th>미수</Table.Th>
-          <Table.Th>배분</Table.Th>
+          <Table.Th>남은 미수</Table.Th>
+          <Table.Th>이번 배분</Table.Th>
         </Table.Row>
       </Table.Head>
       <Table.Body>
@@ -92,6 +97,16 @@ export function AllocationTable({
           );
         })}
       </Table.Body>
+      {/* 합계행. hover 면이 생기면 안 되는 줄이라 `Table.Row` 대신 생짜 tr — 데이터 행이 아니다 */}
+      <tfoot>
+        <tr className="font-medium">
+          <Table.Td align="left" colSpan={3}>
+            합계
+          </Table.Td>
+          <Table.Td>{formatNumber(outstandingTotal(targets))}</Table.Td>
+          <Table.Td>{formatNumber(allocationTotal(values))}</Table.Td>
+        </tr>
+      </tfoot>
     </Table>
   );
 }

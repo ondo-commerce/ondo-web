@@ -155,9 +155,10 @@ export const DEPOSIT_ERROR_TEXT: Readonly<Record<string, string>> = {
     "지금 상태에서는 등록할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ORDER_NOT_CONFIRMED:
     "확정되지 않은 주문에는 배분할 수 없어요. 목록을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
-  ALLOCATION_EXCEEDS_PAYMENT: "배분 합계가 입금액을 넘었어요.",
+  ALLOCATION_EXCEEDS_PAYMENT:
+    "배분 합계가 사용 가능액(입금액 + 남은 선수금)을 넘었어요. 선수금을 새로 불러왔으니 확인한 뒤 다시 눌러 주세요.",
   ALLOCATION_EXCEEDS_OUTSTANDING:
-    "미수보다 많이 배분한 주문이 있어요. 목록을 새로 불러왔으니 배분을 확인하고 다시 눌러 주세요.",
+    "남은 미수보다 많이 배분한 주문이 있어요. 목록을 새로 불러왔으니 배분을 확인하고 다시 눌러 주세요.",
 };
 
 /** 계좌 요청의 칸 */

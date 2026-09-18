@@ -10,6 +10,7 @@ import {
   allocationIssues,
   allocationTargets,
   allocationTotal,
+  availableTotal,
   depositErrorText,
   formatAmountInput,
   formatInputDateTime,
@@ -53,10 +54,14 @@ type DepositField = (typeof DEPOSIT_FIELDS)[number];
  *
  * 배분 표의 주문은 **좌측 펼침 본문이 받은 것**을 그대로 쓴다(`orders`). 이 패널이 같은 쿼리를 따로 들면
  * 경계가 둘이 된다(wire-order F6). 못 받았으면(`null`) 배분은 잠그고 `입금만 진행`만 열어 둔다.
+ *
+ * 배분 상한은 **총 사용 가능 = 이번 입금액 + 남은 선수금**이다(#138, 스펙: 이번 입금을 먼저 쓰고 모자라면 오래된
+ * 입금부터 끌어 쓴다). 남은 선수금은 위 3카드 패널이 받아 부모가 넘긴다 — 같은 쿼리를 여기서 또 들지 않는다.
  */
 export function DepositFormPanel({
   retailer,
   orders,
+  prepaid,
   draft,
   onDraftChange,
   inList,
@@ -68,6 +73,8 @@ export function DepositFormPanel({
   retailer: RetailerView;
   /** 이 거래처의 확정 주문. 좌측 펼침 본문이 넘긴다. 아직 못 받았으면 null */
   orders: readonly OrderRowView[] | null;
+  /** 남은 선수금(3카드의 세 번째 값). 아직 못 받았으면 0 — 그러면 상한이 입금액뿐이라 더 보수적일 뿐 틀리진 않는다 */
+  prepaid: number;
   draft: DepositDraft;
   /** 부모가 병합하고 키를 새로 만든다. `keepKey`면 키를 유지한다(제출 시각 굳히기) */
   onDraftChange: (
@@ -94,19 +101,21 @@ export function DepositFormPanel({
   const amount = parseNumberInput(draft.amountRaw);
   /* 상한을 넘긴 입금액. 칸은 빨갛게, 라벨 아래 한 줄, 두 버튼 다 잠근다(#199) */
   const amountOverMax = exceedsNumericMax(draft.amountRaw);
+  /* 총 사용 가능 = 입금액 + 남은 선수금. 입금액이 빈칸이면 null — 표가 잠긴다 */
+  const available = availableTotal(amount, prepaid);
   const targets = allocationTargets(orders ?? []);
   const allocations = resolveAllocations(
     targets,
     draft.editedAllocations,
-    amount,
+    available,
   );
   const total = allocationTotal(allocations);
-  /* 상한(미수·남은 입금액)을 넘긴 행마다 이유 한 줄. 값을 자르지 않고 말한다(#207 F4) */
-  const issues = allocationIssues(targets, allocations, amount);
+  /* 상한(남은 미수·남은 사용 가능액)을 넘긴 행마다 이유 한 줄. 값을 자르지 않고 말한다(#207 F4) */
+  const issues = allocationIssues(targets, allocations, available);
   const hasIssue = Object.keys(issues).length > 0;
-  const gapText = allocationGapText(amount, total);
-  /* 합계가 입금액을 넘긴 상태. 요약 숫자와 아래 한 줄을 빨갛게 — 미달은 허용이라 회색이다 */
-  const overAllocated = amount !== null && total > amount;
+  const gapText = allocationGapText(available, total);
+  /* 합계가 사용 가능액을 넘긴 상태. 요약 숫자와 아래 한 줄을 빨갛게 — 미달은 허용이라 회색이다 */
+  const overAllocated = available !== null && total > available;
 
   /* 서버 오류: `VALIDATION_FAILED`는 칸으로, 정책·상태 오류(400 코드·409·404·5xx)는 버튼 위 한 줄 */
   const serverErrors = create.error
@@ -149,13 +158,17 @@ export function DepositFormPanel({
   /** 입금액을 안 적었거나 0이면 기록할 사실이 없다 — 두 버튼 모두 잠근다. 옛 숫자(`stale`)로도 안 보낸다 */
   const canSubmit =
     amount !== null && amount > 0 && !amountOverMax && !busy && !stale;
-  /** 배분이 상한 안이고 입금액과 딱 맞을 때만 정산까지 간다. 미달·초과는 `입금만 진행`으로 남긴다 */
+  /**
+   * 배분이 한 건이라도 있고 상한(남은 미수·사용 가능액) 안일 때 정산까지 간다. 예전엔 합계가 입금액과 **딱 맞아야**
+   * 했는데, 선수금 축이 생기며 그 규칙이 사라졌다(#138) — 덜 붙인 돈은 선수금으로 남아 3카드에 보이고, 옛 선수금을
+   * 끌어 쓰면 합계가 입금액을 넘는 게 정상이다. 합계 0은 `입금만 진행`과 같은 뜻이라 그쪽 버튼만 연다
+   */
   const canSettle =
     canSubmit &&
     orders !== null &&
     targets.length > 0 &&
     !hasIssue &&
-    total === amount;
+    total > 0;
 
   const submit = (mode: DepositMode) => {
     if (amount === null || !canSubmit) return;
@@ -297,7 +310,20 @@ export function DepositFormPanel({
 
         <hr className="border-border mt-1 mb-6" />
 
-        <Panel.Section title="주문별 배분" className="mt-0">
+        <Panel.Section className="mt-0">
+          {/* 제목 오른쪽에 총 사용 가능(Figma 개정, #138). `Panel.Section`의 `title`은 문자열만 받아 제목 줄을
+              직접 그린다(같은 `mb-1 text-sm`). 입금액을 안 적었으면 아직 셀 수 없어 숫자를 안 보인다 */}
+          <div className="mb-1 flex items-baseline justify-between gap-3">
+            <h3 className="text-sm">주문별 배분</h3>
+            {available !== null ? (
+              <span className="text-muted-foreground text-xs">
+                총 사용 가능{" "}
+                <span className="text-primary text-sm font-medium tabular-nums">
+                  {formatNumber(available)}
+                </span>
+              </span>
+            ) : null}
+          </div>
           {orders === null ? (
             <p className="text-muted-foreground py-8 text-center text-sm">
               좌측에서 거래처를 펼치면 배분할 주문이 보여요
@@ -312,8 +338,8 @@ export function DepositFormPanel({
             />
           )}
 
-          {/* 요약 줄. 합계가 입금액과 어긋나면 그 아래 한 줄로 방향과 크기를 말한다 —
-              미달은 허용(`입금만 진행`), 초과·상한 위반은 `입금 및 정산`이 잠긴다 */}
+          {/* 요약 줄 — 사용 가능액이 어디서 왔는지(입금액 + 선수금)와 이번 배분 합계. 합계가 사용 가능액과 어긋나면
+              그 아래 한 줄로 방향과 크기를 말한다 — 미달은 허용(선수금으로 남는다), 초과·상한 위반은 `입금 및 정산`이 잠긴다 */}
           {targets.length > 0 ? (
             <>
               <div className="mt-3 flex items-baseline justify-end gap-3 text-sm">
@@ -321,8 +347,12 @@ export function DepositFormPanel({
                 <span className="text-primary font-medium tabular-nums">
                   {formatNumber(amount ?? 0)}
                 </span>
+                <span className="text-muted-foreground">+ 선수금</span>
+                <span className="text-primary font-medium tabular-nums">
+                  {formatNumber(prepaid)}
+                </span>
                 <span className="text-border-strong">|</span>
-                <span className="text-muted-foreground">배분 합계</span>
+                <span className="text-muted-foreground">이번 배분</span>
                 <span
                   className={`text-base font-medium tabular-nums ${
                     overAllocated ? "text-destructive-strong" : ""

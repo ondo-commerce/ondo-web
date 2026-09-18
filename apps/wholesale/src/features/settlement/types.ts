@@ -170,8 +170,11 @@ export type DepositField = keyof PaymentCreateRequest;
 export interface SettlementNotice {
   retailerName: string;
   amount: number;
-  /** 어느 주문에도 안 붙은 금액(서버 `unallocatedAmount`). 선수금 칸이 화면에 없어 문구로만 */
-  unallocated: number;
+  /**
+   * 등록 뒤 거래처 선수금 전체(서버 `prepaidRemaining`). `unallocatedAmount`(이번 입금에서 안 쓴 돈)가 아니다 —
+   * 이번 배분이 옛 선수금을 끌어 썼으면 둘이 다르고, 사장이 알아야 할 건 지금 남은 돈이다
+   */
+  prepaidRemaining: number;
   refreshed: boolean;
 }
 
