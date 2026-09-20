@@ -1,0 +1,31 @@
+/**
+ * 소매 서버가 내려주는 에러 코드.
+ *
+ * 스펙(OpenAPI)에는 안 담기는 값이라 손으로 옮긴다 — 원본은 `retail-api`의
+ * `ErrorCode.java`. 코드젠이 대신 만들어 줄 수 없고, 여기가 유일한 목록이다.
+ *
+ * **도매와 어휘가 다르다** — 로그인 실패가 도매는 `LOGIN_FAILED`, 소매는
+ * `INVALID_CREDENTIALS`. 그래서 `@ondo/api`가 아니라 이 앱 안에 둔다.
+ */
+export const RETAIL_ERROR_CODE = {
+  VALIDATION_FAILED: "VALIDATION_FAILED",
+  UNAUTHORIZED: "UNAUTHORIZED",
+  FORBIDDEN: "FORBIDDEN",
+  RESOURCE_NOT_FOUND: "RESOURCE_NOT_FOUND",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+
+  // 계정
+  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  ACCOUNT_NOT_APPROVED: "ACCOUNT_NOT_APPROVED",
+  DUPLICATE_EMAIL: "DUPLICATE_EMAIL",
+  FILE_TOO_LARGE: "FILE_TOO_LARGE",
+  UNSUPPORTED_FILE_TYPE: "UNSUPPORTED_FILE_TYPE",
+
+  // 주문
+  ORDER_LIMIT_EXCEEDED: "ORDER_LIMIT_EXCEEDED",
+  UNORDERABLE_ITEM_INCLUDED: "UNORDERABLE_ITEM_INCLUDED",
+  LISTING_CLOSED: "LISTING_CLOSED",
+} as const;
+
+export type RetailErrorCode =
+  (typeof RETAIL_ERROR_CODE)[keyof typeof RETAIL_ERROR_CODE];

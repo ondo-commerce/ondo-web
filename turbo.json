@@ -2,14 +2,23 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": ["NODE_ENV", "VERCEL_ENV"],
   "tasks": {
-    "codegen": { "cache": false },
+    "codegen": {
+      "cache": false
+    },
     "build": {
       "dependsOn": ["^build", "codegen"],
-      "env": ["NEXT_PUBLIC_*", "API_SECRET"],
+      "env": ["API_ORIGIN", "NEXT_PUBLIC_*", "API_SECRET"],
       "outputs": [".next/**", "!.next/cache/**"]
     },
-    "typecheck": { "dependsOn": ["^build", "codegen"] },
-    "lint": { "dependsOn": ["^lint"] },
-    "dev": { "cache": false, "persistent": true }
+    "typecheck": {
+      "dependsOn": ["^build", "codegen"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
   }
 }

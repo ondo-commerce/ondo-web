@@ -1,0 +1,10 @@
+apps/wholesale/.next/     
+apps/retail/.next/
+pnpm-lock.yaml             
+*.tsbuildinfo        
+.turbo/                  
+.claude/
+*.md
+# 생성물·스냅샷. prettier가 손대면 CI의 codegen drift 체크가 실패한다
+packages/api/src/generated/
+packages/api/openapi/

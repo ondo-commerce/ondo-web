@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  transpilePackages: ["@ondo/ui"],
+  transpilePackages: ["@ondo/ui", "@ondo/api"],
 };
 
 export default nextConfig;

@@ -1,0 +1,6153 @@
+{
+  "components": {
+    "schemas": {
+      "Allocation": {
+        "properties": {
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "paymentId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationBatchResponse": {
+        "properties": {
+          "allocationBatchId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "packings": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationPackingResponse"
+            },
+            "type": "array"
+          },
+          "resolvedBackorderIds": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationCancelledResponse": {
+        "properties": {
+          "allocationId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "paymentId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "prepaidRemaining": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationCreateRequest": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentAllocationRequest"
+            },
+            "type": "array"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationCreatedResponse": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/Allocation"
+            },
+            "type": "array"
+          },
+          "prepaidRemaining": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationItemRequest": {
+        "properties": {
+          "allocateQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderItemId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationPackingResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isCancellable": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PackingItemResponse"
+            },
+            "type": "array"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outboundId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "PACKED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListBackorderSkuResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BackorderSkuResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListOrderSummaryResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListOutboundRetailerResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundRetailerResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListOutboundSummaryResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListProductSummaryResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ProductSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListReceivableRetailerResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ReceivableRetailerResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListRetailBackorderResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RetailBackorderResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListRetailListingSummaryResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RetailListingSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListStockMovementResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/StockMovementResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "type": "object"
+      },
+      "Backorder": {
+        "properties": {
+          "noDateSkuCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "overdueSkuCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "skuCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderAllocationItem": {
+        "properties": {
+          "allocateQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "backorderId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderAllocationRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackorderAllocationItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BackorderResponse"
+            },
+            "type": "array"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/BackorderStatsResponse"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "elapsedDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderItemId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "remainingQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderSkuResponse": {
+        "properties": {
+          "availableQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "backorderQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "color": {
+            "type": "string"
+          },
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "latestBackorderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "productId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderStatsResponse": {
+        "properties": {
+          "availableQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "backorderAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "backorderQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedInboundReason": {
+            "type": "string"
+          },
+          "firstOrderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lastOrderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BankAccountCreateRequest": {
+        "properties": {
+          "accountHolder": {
+            "type": "string"
+          },
+          "accountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "memo": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BankAccountResponse": {
+        "properties": {
+          "accountHolder": {
+            "type": "string"
+          },
+          "accountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "memo": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BankAccountUpdateRequest": {
+        "properties": {
+          "accountHolder": {
+            "type": "string"
+          },
+          "accountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "memo": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CategoryNodeResponse": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryNodeResponse"
+            },
+            "type": "array"
+          },
+          "depth": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CategoryPathItem": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ColorGroupResponse": {
+        "properties": {
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/ColorItem"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ColorItem": {
+        "properties": {
+          "hex": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ColorOptionRequest": {
+        "properties": {
+          "colorId": {
+            "description": "팔레트(GET /colors)의 색상 id",
+            "example": 1,
+            "format": "int64",
+            "type": "integer"
+          },
+          "sizes": {
+            "example": [
+              "S",
+              "M"
+            ],
+            "items": {
+              "enum": [
+                "XS",
+                "S",
+                "M",
+                "L",
+                "XL",
+                "2XL",
+                "FREE"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "colorId"
+        ],
+        "type": "object"
+      },
+      "ColorOptionResponse": {
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/ColorResponse"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/VariantResponse"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ColorResponse": {
+        "properties": {
+          "groupName": {
+            "type": "string"
+          },
+          "hex": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConsentRequest": {
+        "properties": {
+          "agreed": {
+            "example": true,
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "TERMS",
+              "PRIVACY",
+              "INFO_CONFIRM",
+              "MARKETING_SMS",
+              "MARKETING_EMAIL",
+              "MARKETING_PUSH"
+            ],
+            "example": "TERMS",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agreed",
+          "type"
+        ],
+        "type": "object"
+      },
+      "DashboardSummaryResponse": {
+        "properties": {
+          "backorder": {
+            "$ref": "#/components/schemas/Backorder"
+          },
+          "newOrders": {
+            "$ref": "#/components/schemas/NewOrders"
+          },
+          "now": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outbound": {
+            "$ref": "#/components/schemas/Outbound"
+          },
+          "packing": {
+            "$ref": "#/components/schemas/Packing"
+          },
+          "today": {
+            "$ref": "#/components/schemas/Today"
+          }
+        },
+        "type": "object"
+      },
+      "DocumentRequest": {
+        "properties": {
+          "fileKey": {
+            "example": "uploads/2026/09/ab12cd34.jpg",
+            "maxLength": 500,
+            "minLength": 0,
+            "pattern": "^uploads/[A-Za-z0-9][A-Za-z0-9/_.-]*$",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "BIZ_REG",
+              "CEO_ID",
+              "STORE_PHOTO"
+            ],
+            "example": "BIZ_REG",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey",
+          "type"
+        ],
+        "type": "object"
+      },
+      "ExpectedInboundRequest": {
+        "properties": {
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedInboundReason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExpectedInboundResponse": {
+        "properties": {
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedInboundReason": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "InboundCreateRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboundItemRequest"
+            },
+            "type": "array"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "InboundCreatedResponse": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboundItemResponse"
+            },
+            "type": "array"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "InboundItemRequest": {
+        "properties": {
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unitCost": {
+            "type": "number"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "InboundItemResponse": {
+        "properties": {
+          "avgCostAfter": {
+            "type": "number"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qtyAfter": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "remainingQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unitCost": {
+            "type": "number"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Item": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LedgerEntryResponse": {
+        "properties": {
+          "balanceAfter": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "balanceChange": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "entryType": {
+            "enum": [
+              "SALE",
+              "PAYMENT",
+              "PAYMENT_VOID",
+              "ADJUST"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "paymentId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LedgerMeta": {
+        "properties": {
+          "ledgerBalance": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ListingImageResponse": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ListingResponse": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ListingImageResponse"
+            },
+            "type": "array"
+          },
+          "isSinglePieceAllowed": {
+            "type": "boolean"
+          },
+          "seasonEndedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "seasonStartedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ON_SALE",
+              "SEASON_ENDED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ListingUpsertRequest": {
+        "properties": {
+          "description": {
+            "example": "넉넉한 오버핏 실루엣의 데일리 셔츠예요.",
+            "type": "string"
+          },
+          "images": {
+            "description": "인덱스가 곧 정렬 순서, 0번이 대표",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isSinglePieceAllowed": {
+            "description": "낱장 판매 허용",
+            "example": true,
+            "type": "boolean"
+          },
+          "title": {
+            "example": "[신상] 오버핏 코튼 티셔츠 데일리 남방",
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "variantPrices": {
+            "items": {
+              "$ref": "#/components/schemas/VariantPriceRequest"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "example": "dev@ondo.test",
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "example": "Ondo!2345",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "LoginResponse": {
+        "properties": {
+          "approvalStatus": {
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "APPROVED",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NewOrders": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "oldestOrderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "oldestRetailerName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrderConfirmRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationItemRequest"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OrderDetailResponse": {
+        "properties": {
+          "confirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedPaymentMethod": {
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isCancellable": {
+            "type": "boolean"
+          },
+          "isConfirmable": {
+            "type": "boolean"
+          },
+          "isPackable": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItemResponse"
+            },
+            "type": "array"
+          },
+          "orderAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "receiveBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "retailerPhone": {
+            "type": "string"
+          },
+          "settlementStatus": {
+            "enum": [
+              "UNPAID",
+              "PARTIALLY_SETTLED",
+              "SETTLED"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatusResponse"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OrderFilterResponse": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "key": {
+            "enum": [
+              "ALL",
+              "NEW",
+              "CONFIRMED",
+              "PARTIALLY_SHIPPED",
+              "SHIPPED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrderItemResponse": {
+        "properties": {
+          "allocatedQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "backorderQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "color": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "shippedQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "unallocatedQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unitPrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantAvailableQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OrderStatusResponse": {
+        "properties": {
+          "key": {
+            "enum": [
+              "NEW",
+              "CONFIRMED",
+              "PARTIALLY_SHIPPED",
+              "SHIPPED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrderSummaryResponse": {
+        "properties": {
+          "additionalItemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isCancellable": {
+            "type": "boolean"
+          },
+          "isConfirmable": {
+            "type": "boolean"
+          },
+          "isPackable": {
+            "type": "boolean"
+          },
+          "orderAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outstandingAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "settlementStatus": {
+            "enum": [
+              "UNPAID",
+              "PARTIALLY_SETTLED",
+              "SETTLED"
+            ],
+            "type": "string"
+          },
+          "shippedAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatusResponse"
+          },
+          "summaryProductName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Orders": {
+        "properties": {
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Outbound": {
+        "properties": {
+          "notShippedCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "staleCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundCreateRequest": {
+        "properties": {
+          "packingItemIds": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundCreatedResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outboundNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "packings": {
+            "items": {
+              "$ref": "#/components/schemas/Packing"
+            },
+            "type": "array"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "shippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundDetailResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isShippable": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItemResponse"
+            },
+            "type": "array"
+          },
+          "outboundNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "packings": {
+            "items": {
+              "$ref": "#/components/schemas/PackingRef"
+            },
+            "type": "array"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "shippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundItemResponse": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundRetailerResponse": {
+        "properties": {
+          "lastCreatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lastShippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outboundCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundSummaryResponse": {
+        "properties": {
+          "additionalItemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outboundNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "receiveBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "shippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "summaryProductName": {
+            "type": "string"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Overdue": {
+        "properties": {
+          "amount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "maxDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Packing": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PackingItemResponse"
+            },
+            "type": "array"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "PACKED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PackingCreateRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationItemRequest"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PackingCreatedResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PackingItemResponse"
+            },
+            "type": "array"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outboundId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "PACKED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PackingItemResponse": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderItemId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PackingItemRowResponse": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "packingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "receiveBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PackingQueueItemResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isCancellable": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PackingItemResponse"
+            },
+            "type": "array"
+          },
+          "outboundId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "PACKED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PackingRef": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PackingRetailerResponse": {
+        "properties": {
+          "itemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PageMeta": {
+        "properties": {
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentAllocationRequest": {
+        "properties": {
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentCreateRequest": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentAllocationRequest"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "memo": {
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "paidAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "paidBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentCreatedResponse": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/Allocation"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ledgerBalance": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "memo": {
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "paidAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "paidBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "prepaidRemaining": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "unallocatedAmount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentVoidRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentVoidedResponse": {
+        "properties": {
+          "ledgerBalance": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "paymentId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "prepaidRemaining": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "voidReason": {
+            "type": "string"
+          },
+          "voidedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrepaidSummaryResponse": {
+        "properties": {
+          "prepaid": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalAllocated": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalPaid": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ProductCreateRequest": {
+        "properties": {
+          "categoryId": {
+            "description": "소분류(리프) 카테고리 id",
+            "example": 121,
+            "format": "int64",
+            "type": "integer"
+          },
+          "colorOptions": {
+            "items": {
+              "$ref": "#/components/schemas/ColorOptionRequest"
+            },
+            "type": "array"
+          },
+          "listing": {
+            "$ref": "#/components/schemas/ListingUpsertRequest"
+          },
+          "name": {
+            "example": "오버핏 코튼 티셔츠",
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "categoryId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProductDetailResponse": {
+        "properties": {
+          "categoryPath": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryPathItem"
+            },
+            "type": "array"
+          },
+          "colorOptions": {
+            "items": {
+              "$ref": "#/components/schemas/ColorOptionResponse"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "listing": {
+            "$ref": "#/components/schemas/ListingResponse"
+          },
+          "name": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ProductSummaryResponse": {
+        "properties": {
+          "categoryPath": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryPathItem"
+            },
+            "type": "array"
+          },
+          "colorCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "listingStatus": {
+            "enum": [
+              "ON_SALE",
+              "SEASON_ENDED"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ProductUpdateRequest": {
+        "properties": {
+          "categoryId": {
+            "format": "int64",
+            "type": "integer",
+            "writeOnly": true
+          },
+          "colorOptions": {
+            "items": {
+              "$ref": "#/components/schemas/ColorOptionRequest"
+            },
+            "type": "array",
+            "writeOnly": true
+          },
+          "listing": {
+            "$ref": "#/components/schemas/ListingUpsertRequest",
+            "writeOnly": true
+          },
+          "name": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "type": "object"
+      },
+      "ReceivableLedgerResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/LedgerMeta"
+          }
+        },
+        "type": "object"
+      },
+      "ReceivableRetailerResponse": {
+        "properties": {
+          "lastOccurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ledgerBalance": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailerCode": {
+            "type": "string"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailBackorderResponse": {
+        "properties": {
+          "backorderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "colorName": {
+            "type": "string"
+          },
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedInboundReason": {
+            "type": "string"
+          },
+          "listingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retailOrderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "size": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/RetailGatewayBackorderWholesaler"
+          }
+        },
+        "type": "object"
+      },
+      "RetailCategoryResponse": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/RetailCategoryResponse"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailFilterOptionsResponse": {
+        "properties": {
+          "colorGroups": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayColorGroup"
+            },
+            "type": "array"
+          },
+          "priceRange": {
+            "$ref": "#/components/schemas/RetailGatewayPriceRange"
+          },
+          "sizes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayBackorderWholesaler": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayCategoryNode": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayColorGroup": {
+        "properties": {
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayFilterColor"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayColorOption": {
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/RetailGatewayListingColor"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayVariant"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayFilterColor": {
+        "properties": {
+          "hex": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayListingColor": {
+        "properties": {
+          "groupName": {
+            "type": "string"
+          },
+          "hex": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayListingImage": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayListingWholesaler": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "storeBuilding": {
+            "type": "string"
+          },
+          "storeUnit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayPriceRange": {
+        "properties": {
+          "max": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "min": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayVariant": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "salePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailGatewayWholesalerBrief": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailListingDetailResponse": {
+        "properties": {
+          "categoryPath": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayCategoryNode"
+            },
+            "type": "array"
+          },
+          "colorOptions": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayColorOption"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/RetailGatewayListingImage"
+            },
+            "type": "array"
+          },
+          "isSinglePieceAllowed": {
+            "type": "boolean"
+          },
+          "listedVariantCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "listingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "maxSalePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "minSalePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "productNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalVariantCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/RetailGatewayListingWholesaler"
+          }
+        },
+        "type": "object"
+      },
+      "RetailListingSummaryResponse": {
+        "properties": {
+          "colorCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "isSinglePieceAllowed": {
+            "type": "boolean"
+          },
+          "listingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minSalePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sizeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "thumbnailUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/RetailGatewayWholesalerBrief"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderCreateRequest": {
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "agentPhone": {
+            "type": "string"
+          },
+          "expectedPaymentMethod": {
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RetailOrderItemRequest"
+            },
+            "type": "array"
+          },
+          "receiveBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "retailOrderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "retailerPhone": {
+            "type": "string"
+          },
+          "wholesalerId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderCreatedResponse": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RetailOrderItemResponse"
+            },
+            "type": "array"
+          },
+          "orderAmount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "retailOrderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "NEW",
+              "CONFIRMED",
+              "PARTIALLY_SHIPPED",
+              "SHIPPED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderItem": {
+        "properties": {
+          "backorderQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "colorName": {
+            "type": "string"
+          },
+          "expectedInboundDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "listingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderItemId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "receivedQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderItemRequest": {
+        "properties": {
+          "expectedUnitPrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderItemResponse": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unitPrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderViewResponse": {
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "agentPhone": {
+            "type": "string"
+          },
+          "amount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "cancellable": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RetailOrderItem"
+            },
+            "type": "array"
+          },
+          "orderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "paymentTerm": {
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "receiveMethod": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "retailOrderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "statusKey": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/RetailOrderWholesaler"
+          }
+        },
+        "type": "object"
+      },
+      "RetailOrderWholesaler": {
+        "properties": {
+          "bankAccountHolder": {
+            "type": "string"
+          },
+          "bankAccountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "storeBuilding": {
+            "type": "string"
+          },
+          "storeUnit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailSettlementLedgerResponse": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/Allocation"
+            },
+            "type": "array"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "delta": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "retailOrderId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unallocated": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RetailSettlementSummaryResponse": {
+        "properties": {
+          "balance": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bankAccountHolder": {
+            "type": "string"
+          },
+          "bankAccountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "lastPaidAt": {
+            "format": "date",
+            "type": "string"
+          },
+          "overdue": {
+            "$ref": "#/components/schemas/Overdue"
+          },
+          "paidLast7Days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailVariantInfoResponse": {
+        "properties": {
+          "colorName": {
+            "type": "string"
+          },
+          "listingId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderable": {
+            "type": "boolean"
+          },
+          "salePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailWholesalerResponse": {
+        "properties": {
+          "bankAccountHolder": {
+            "type": "string"
+          },
+          "bankAccountNo": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "storeBuilding": {
+            "type": "string"
+          },
+          "storeUnit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Shipped": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SignupRequest": {
+        "properties": {
+          "bizCategory": {
+            "example": "여성의류",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          },
+          "bizName": {
+            "example": "도도도매",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          },
+          "bizOwnerName": {
+            "example": "김도매",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          },
+          "bizRegNo": {
+            "example": "1234567890",
+            "minLength": 1,
+            "pattern": "\\d{10}",
+            "type": "string"
+          },
+          "consents": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentRequest"
+            },
+            "type": "array"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentRequest"
+            },
+            "type": "array"
+          },
+          "email": {
+            "example": "owner@dodo.example",
+            "format": "email",
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "password": {
+            "example": "Ondo!2345",
+            "minLength": 1,
+            "type": "string"
+          },
+          "phone": {
+            "example": "01012345678",
+            "pattern": "\\d{10,11}",
+            "type": "string"
+          },
+          "storeBuilding": {
+            "example": "디오트",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          },
+          "storePhone": {
+            "example": "025551234",
+            "pattern": "\\d{9,11}",
+            "type": "string"
+          },
+          "storeUnit": {
+            "example": "B1 123호",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bizName",
+          "bizOwnerName",
+          "bizRegNo",
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "SignupResponse": {
+        "properties": {
+          "appliedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "approvalStatus": {
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "PENDING",
+            "type": "string"
+          },
+          "bizName": {
+            "example": "도도도매",
+            "type": "string"
+          },
+          "bizRegNo": {
+            "example": "1234567890",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatementResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array"
+          },
+          "outboundNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "receiveBy": {
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "retailerName": {
+            "type": "string"
+          },
+          "sellerName": {
+            "type": "string"
+          },
+          "shippedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "StockAdjustmentRequest": {
+        "properties": {
+          "qtyChange": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "StockMovementResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "qtyAfter": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qtyBefore": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "qtyChange": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "refId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refType": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "IN",
+              "OUT",
+              "ADJUST"
+            ],
+            "type": "string"
+          },
+          "variantId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Today": {
+        "properties": {
+          "cancelled": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "orders": {
+            "$ref": "#/components/schemas/Orders"
+          },
+          "shipped": {
+            "$ref": "#/components/schemas/Shipped"
+          }
+        },
+        "type": "object"
+      },
+      "VariantPriceRequest": {
+        "properties": {
+          "colorId": {
+            "example": 1,
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "description": "1회 주문당 최대 장수. 0 = 무제한",
+            "example": 0,
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "salePrice": {
+            "example": 29000,
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "example": "S",
+            "type": "string"
+          },
+          "variantId": {
+            "description": "기존 variant 지정용 (PATCH)",
+            "example": null,
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "salePrice"
+        ],
+        "type": "object"
+      },
+      "VariantResponse": {
+        "properties": {
+          "allocatedQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "availableQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "avgCost": {
+            "type": "number"
+          },
+          "backorderQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "salePrice": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL",
+              "2XL",
+              "FREE"
+            ],
+            "type": "string"
+          },
+          "stockQty": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "variantNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "도매처용 ERP API. 계약 원본은 설계 저장소(mulbora v2)의 api-lite 문서다.\n\n**전역 규약** — 성공 응답은 항상 `data` 봉투로 감싼다(204 제외). 페이징 있는 목록만 `meta`(0-base `page`)를 함께 담는다. 에러는 봉투 없이 `code`·`message`·`errors[]`·`traceId` 를 내려주며, 프론트 분기는 `code` 로만 한다. 인증은 로그인(`POST /api/wholesale/auth/login`) 세션 쿠키다.",
+    "title": "On도 도매 API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/retail-gateway/backorders": {
+      "get": {
+        "description": "그 소매처가 아직 못 받은 것만. `OPEN` 인 것만 나오고 **오래된 순**이다 —\n미송은 FIFO 로 풀린다.\n\n주문번호(`orderNo`)는 안 온다. 그건 소매 통합 주문서의 번호라 도매에 없다.\n대신 `retailOrderId` 를 주니 소매가 자기 DB 에서 채운다.\n\n도매가 자기 화면에서 직접 넣은 주문의 미송은 안 나온다 — 소매를 안 거쳐서\n소매 DB 에 주문서가 없다.\n\n에러: 400 `VALIDATION_FAILED` (`size > 100`)",
+        "operationId": "backorders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListRetailBackorderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "미송 대기 목록 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/categories": {
+      "get": {
+        "description": "소매 좌측 네비의 3단 트리. 고정 마스터라 소매가 캐시해도 된다.\n도매 화면용 `GET /api/wholesale/categories` 와 달리 `depth` 를 안 싣는다.",
+        "operationId": "categories_1",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailCategoryResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "카테고리 트리 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/filter-options": {
+      "get": {
+        "description": "색상·사이즈는 마스터 전체다 — 지금 파는 상품에 없는 색도 들어간다. 선택지가\n필터 결과에 따라 흔들리면 화면이 튄다. 가격만 게시 중인 상품의 실제 최저·최고가다.",
+        "operationId": "filterOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RetailFilterOptionsResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "필터 항목 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/listings": {
+      "get": {
+        "description": "게시 중(`ON_SALE`)인 상품만. 도매처를 가리지 않는다 — 소매 쇼핑몰은 여러 도매처를\n한 화면에 섞어 보여준다. 정렬은 시즌 시작 최신순 고정.\n\n`colorIds`·`sizes`·`priceFrom`·`priceTo` 는 옵션에 걸리는 조건이다. 하나라도 맞으면\n그 상품이 나온다. 카드의 `minSalePrice`·`colorCount`·`sizeCount` 는 필터와 무관하게\n그 상품의 전체 옵션 기준이다.\n\n에러: 400 `VALIDATION_FAILED` (`size > 100` / `priceFrom > priceTo`)",
+        "operationId": "listings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoryId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "colorIds",
+            "required": false,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sizes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priceFrom",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priceTo",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListRetailListingSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상품 목록 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/listings/{listingId}": {
+      "get": {
+        "description": "색상 × 사이즈 조합과 사진이 함께 온다. 정렬은 서버 보장 — 색상은 그룹 → 색상,\n사이즈는 XS~FREE, 이미지는 `sortOrder` ASC.\n\n게시 중이 아니면 404 다. 없는 것 · 시즌이 끝난 것 · 지워진 것을 구분하지 않는다.\n\n에러: 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "listing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listingId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RetailListingDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상품 상세 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/orders": {
+      "get": {
+        "description": "소매 주문서 id 로 그 주문서에 딸린 도매처 주문을 전부 내린다. 소매는 주문서\n하나로 받고 도매처별로 잘라 넣으므로, 주문서 하나에 응답이 여럿이다.\n\n여러 주문서를 한 번에 받는다 — 내역 화면 한 장에 주문서가 스무 개면\n하나씩 부를 때 왕복이 스무 번이 된다.\n\n**상태를 도매가 만들어 내린다.** DB 는 NEW·CONFIRMED·CANCELLED 셋뿐이고\n출고 진행도를 합쳐 다섯이 된다. 그 규칙을 소매가 또 짜면 두 화면이 같은\n주문을 다르게 부른다. `statusLabel` 도 같은 이유로 같이 준다.\n\n`retailerId` 로 한 번 더 거른다 — 주문서 id 는 소매가 보낸 값이라\n그것만 믿으면 남의 주문을 읽을 수 있다.\n\n에러: 400 `VALIDATION_FAILED` (`retailOrderIds` 가 비었거나 100개 초과)",
+        "operationId": "orders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "retailOrderIds",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailOrderViewResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "주문 조회 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      },
+      "post": {
+        "description": "단일 도매처 주문만 받는다 — 원자성 단위 = 도매처별 주문. 재고는 검증하지 않는다(D-062,\n재고 반영은 확정 시점의 수동 배분). `expectedUnitPrice`는 현재 판매가와 대조해\n어긋나면 409 로 되돌린다. 중복 주문은 UNIQUE(retailOrderId, wholesalerId)가 막는다.\n\n`retailerName`·`retailerPhone`·`agentName`·`agentPhone` 은 도매가 소매 DB 를 못 읽어서\n받는 스냅샷이다. 그중 `retailerName` 은 첫 거래에서 거래처를 만들 때 쓰므로 필수다.\n\n에러: 400 `VARIANT_WHOLESALER_MISMATCH` · `VALIDATION_FAILED` · `DUPLICATE_ORDER_ITEM` /\n409 `LISTING_NOT_ON_SALE` · `PRICE_NOT_SET` · `ORDER_LIMIT_EXCEEDED` ·\n`PRICE_CHANGED` · `ORDER_ALREADY_CREATED`",
+        "operationId": "create_2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetailOrderCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RetailOrderCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "주문 생성 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/settlements": {
+      "get": {
+        "description": "그 소매처와 거래 관계가 있는 도매처 전부 — 거래 관계는 주문이 들어와야 생긴다. 빚이 큰 순.\n\n부호는 소매 화면 기준: `balance` 플러스 = 갚을 돈, 마이너스 = 선수금.\n연체는 출고마다 기한(출고일 + 외상기간, 당일은 연체 아님)으로 센다. 외상기간은 거래처 설정(MUL-128)\n전까지 모든 주문 1일이다. `paidLast7Days`는 오늘 포함 최근 7일 입금 합. 취소된 입금은 어디에도 안 센다.",
+        "operationId": "summaries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailSettlementSummaryResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "도매처별 정산 요약 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/settlements/ledger": {
+      "get": {
+        "description": "출고(`SHIPMENT`, +)와 입금(`PAYMENT`, −)을 오래된 순으로. 취소된 입금은 그 줄과 취소 줄을 둘 다 뺀다.\n\n주문번호는 안 온다 — `retailOrderId`로 소매가 채운다. 장끼 표시 코드도 `shippedAt` · `statementNumber`로\n소매가 조립한다. 입금 줄의 `allocations`는 한 입금이 붙은 주문들이고 `unallocated`는 안 붙은 돈이다.\n거래 관계가 없는 도매처면 빈 목록.",
+        "operationId": "ledger_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wholesalerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailSettlementLedgerResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "도매처 하나와의 거래 원장 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/variants": {
+      "get": {
+        "description": "소매 장바구니가 쓴다. 담긴 개수만큼 한 건씩 부르지 않게 묶어서 받는다.\n\n게시가 내려간 옵션도 돌려주되 `orderable: false` 로 온다 — 담아둔 사이 도매가\n시즌을 닫아도 소매 장바구니 행은 남아 있어서, 안 주면 소매가 그 줄을 못 그린다.\n게시 자체가 없는 옵션은 응답에 안 들어간다.\n\n에러: 400 `VALIDATION_FAILED` (`ids` 가 비었거나 200개 초과)",
+        "operationId": "variants",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailVariantInfoResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "옵션 배치 조회 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/retail-gateway/wholesalers": {
+      "get": {
+        "description": "소매 주문서가 쓴다. 상품 목록이 주는 도매처는 id·상호뿐인데 주문서에는\n**입금 계좌**가 더 필요하다 — 도매처마다 따로 입금한다.\n\n계좌가 비어 있으면 아직 등록을 안 한 도매처다. 소매 화면이 계좌이체를\n못 고르게 막는 근거로 쓴다.\n\n지워진 도매처도 돌려준다. 지난 주문의 주문서를 다시 열 수 있어야 한다.\n\n에러: 400 `VALIDATION_FAILED` (`ids` 가 비었거나 100개 초과)",
+        "operationId": "wholesalers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RetailWholesalerResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "도매처 정보 (소매 백엔드 → 도매)",
+        "tags": [
+          "08 소매접점"
+        ]
+      }
+    },
+    "/api/wholesale/allocations": {
+      "post": {
+        "description": "새 입금 없이 받아 둔 선수금을 출고된 주문에 붙인다 — 원장은 안 바뀐다.\n미송 선결제처럼 돈이 먼저 오고 물건이 나중에 나간 주문을 출고 뒤 정산하는 길이다.\n\n돈은 **오래된 입금부터** 꺼낸다. 한 주문이 입금 여럿에 걸치면 `allocations`에 줄이 여럿이고\n줄마다 `paymentId`가 다르다. 주문별 상한은 입금 등록과 같다(출고로 생긴 미수 − 이미 붙은 배분).\n같은 키 재요청은 200 + 동일 본문(멱등).\n\n에러: 400 `VALIDATION_FAILED` · `DUPLICATE_ORDER` · `ORDER_RETAILER_MISMATCH` /\n404 `RESOURCE_NOT_FOUND` / 409 `IDEMPOTENCY_KEY_REUSED` · `ORDER_NOT_CONFIRMED` ·\n`ALLOCATION_EXCEEDS_PREPAID` · `ALLOCATION_EXCEEDS_OUTSTANDING`",
+        "operationId": "createAllocation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllocationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AllocationCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "같은 키 재요청(replay) — 첫 응답과 동일 본문"
+          },
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AllocationCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "정산됨"
+          }
+        },
+        "summary": "선수금으로 정산 (Idempotency-Key 필수)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/allocations/{allocationId}/cancel": {
+      "post": {
+        "description": "주문에 붙인 돈을 떼어낸다 (MUL-127). 줄은 지우지 않고 취소 표시만 한다. 원장은 안 바뀐다 —\n돈은 그대로 받은 상태이고, 그 금액은 **선수금으로 돌아간다**. 주문의 남은 미수가 다시 늘어난다.\n금액을 고치려면 취소하고 입금 등록 · 선수금 정산으로 다시 붙인다.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `STATE_CONFLICT`(이미 취소된 배분 · 취소된 입금의 배분)",
+        "operationId": "cancelAllocation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "allocationId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AllocationCancelledResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "배분 취소",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/auth/login": {
+      "post": {
+        "description": "성공하면 세션이 생기고 `SESSION_WHOLESALE` 쿠키가 붙는다 — 토큰 필드는 없다.\n미승인 계정도 200이다: 프론트는 `approvalStatus`(PENDING/APPROVED/REJECTED)를 보고\n진입 화면을 고른다. 실패는 단일 코드 — 이메일 없음과 비밀번호 틀림을 구분하지 않는다(계정 열거 방지).\n\n에러: 400 `VALIDATION_FAILED`(빈 값) / 401 `LOGIN_FAILED`",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "로그인 (세션 발급)",
+        "tags": [
+          "01 회원가입"
+        ]
+      }
+    },
+    "/api/wholesale/auth/logout": {
+      "post": {
+        "description": "항상 204, 본문 없음. 세션이 없거나 만료된 쿠키로 눌러도 204 — 프론트가 따로 처리할 게 없다.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "로그아웃 (세션 무효화)",
+        "tags": [
+          "01 회원가입"
+        ]
+      }
+    },
+    "/api/wholesale/auth/signup": {
+      "post": {
+        "description": "계정·사업자 정보·증빙 서류·동의를 한 번에 받아 심사 대기(PENDING)로 만든다.\n중간 저장 없음. 세션도 주지 않는다 — 다시 들어올 때는 로그인 → 상태 조회 경로.\n필수 서류: BIZ_REG·CEO_ID / 필수 동의: TERMS·PRIVACY·INFO_CONFIRM.\n\n에러: 400 `VALIDATION_FAILED`(형식) · `EMAIL_DUPLICATED` · `BIZ_REG_NO_DUPLICATED` ·\n`PASSWORD_POLICY_VIOLATED`(8~20자·영문·숫자·특수문자) · `REQUIRED_CONSENT_MISSING` ·\n`REQUIRED_DOCUMENT_MISSING`",
+        "operationId": "signup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SignupResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "가입 신청 (심사 대기 생성)",
+        "tags": [
+          "01 회원가입"
+        ]
+      }
+    },
+    "/api/wholesale/backorders/allocations": {
+      "post": {
+        "description": "여러 주문의 미송에 재고를 나눠 준다 — 주문마다 포장 카드가 한 장씩 생긴다.\n부분 성공 없음: 한 건이라도 걸리면 전체 롤백, `errors[]`에 걸린 항목 전부.\n`resolvedBackorderIds`로 해소된 미송을 알려준다(프론트가 잔여 계산으로 판정하지 않게).\n\n에러: 400 `INVARIANT_VIOLATED` · `DUPLICATE_BACKORDER` / 404 `RESOURCE_NOT_FOUND` /\n409 `BACKORDER_NOT_OPEN` · `ALLOCATION_EXCEEDS_REMAINING` · `ALLOCATION_EXCEEDS_ORDER` ·\n`INSUFFICIENT_STOCK`(합계 초과라 field 가 `items`)",
+        "operationId": "allocate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackorderAllocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AllocationBatchResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "미송 배분 (배분 확정)",
+        "tags": [
+          "05 미송"
+        ]
+      }
+    },
+    "/api/wholesale/backorders/variants": {
+      "get": {
+        "description": "미송이 남은 SKU 만 나온다 — 전부 해소된 SKU 는 빠진다. 기본 정렬\n`latestBackorderedAt,desc`(가장 최근에 미송이 쌓인 SKU 먼저).\n정렬 키는 `latestBackorderedAt`·`backorderQty` 둘이다.\n\n에러: 400 `VALIDATION_FAILED` (`size > 100` / 모르는 정렬 키)",
+        "operationId": "backorderSkus",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListBackorderSkuResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "미송 SKU 목록 (아코디언 헤더)",
+        "tags": [
+          "05 미송"
+        ]
+      }
+    },
+    "/api/wholesale/bank-accounts": {
+      "get": {
+        "description": "페이징 없음(계좌는 소수). 정렬은 주계좌 먼저 → 등록순 고정(sort 미지원).\n주계좌는 최대 1개, 계좌 0건도 정상 상태.",
+        "operationId": "accounts",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/BankAccountResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "정산 계좌 목록",
+        "tags": [
+          "07 정산"
+        ]
+      },
+      "post": {
+        "description": "첫 계좌는 `isPrimary` 값과 무관하게 주계좌가 된다. `isPrimary: true`면 기존 주계좌가\n한 트랜잭션에서 내려간다 — 응답에는 새 계좌만 담기므로 목록을 재조회한다.\n계좌번호 형식은 검증하지 않는다(은행마다 달라 자유 입력).\n\n에러: 400 `VALIDATION_FAILED` · `DUPLICATE_BANK_ACCOUNT`(data 에 기존 계좌 id)",
+        "operationId": "create_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankAccountCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BankAccountResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "정산 계좌 등록",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/bank-accounts/{bankAccountId}": {
+      "delete": {
+        "description": "완전 삭제(복구 없음) — 입금 이력이 계좌를 참조하지 않아 남길 이유가 없다.\n주계좌를 지우면 가장 먼저 등록된 계좌가 조용히 승격되므로 목록을 재조회한다.\n\n에러: 404 `RESOURCE_NOT_FOUND`(이미 삭제 포함)",
+        "operationId": "delete_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bankAccountId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "정산 계좌 삭제",
+        "tags": [
+          "07 정산"
+        ]
+      },
+      "patch": {
+        "description": "보낸 필드만 바뀐다(공통 §6). `memo`만 null 로 지울 수 있다.\n주계좌를 `isPrimary: false`로 직접 해제할 수 없다 — 다른 계좌를 승격하면 부수 효과로 내려간다.\n\n에러: 400 `VALIDATION_FAILED` · `PRIMARY_ACCOUNT_CANNOT_BE_UNSET` ·\n`DUPLICATE_BANK_ACCOUNT` / 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "update_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bankAccountId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankAccountUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BankAccountResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "정산 계좌 수정",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/categories": {
+      "get": {
+        "description": "depth 1~3 전체를 한 번에 내린다. 고정 마스터라 프론트 캐시 가능.\n상품 지정은 `depth: 3` 리프만(위반 시 400 `CATEGORY_NOT_LEAF`),\n목록 필터의 `categoryId`는 반대로 상위 노드를 받는다.",
+        "operationId": "categories",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/CategoryNodeResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "카테고리 트리",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/colors": {
+      "get": {
+        "description": "그룹 → 색상 2단 구조, 고정 시드라 프론트 캐시 가능. 페이징 없음(`meta` 없이 `data`만).\n상품에 넣을 수 있는 색은 이 목록이 전부다.",
+        "operationId": "colors",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/ColorGroupResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "색상 팔레트",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/dashboard/summary": {
+      "get": {
+        "description": "로그인한 도매처 기준 대시보드 1차 화면의 숫자를 한 번에 내린다 — 파라미터 없음.\n30초 polling 용이라 목록 API 여러 개를 합산하지 않아도 된다.\n\n`now`는 서버 시각 — 경과 시간은 이 값 기준으로 계산한다.\n\"오늘\"(`today`)의 경계는 자정이 아니라 영업일 시작(KST 낮 12시)이다.\n`outbound.staleCount`는 이번 영업일 시작 전에 포장했는데 아직 출고\n확정하지 않은 봉투 수, `today.cancelled`는 오늘 접수분 중 취소 건수다.",
+        "operationId": "summary",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DashboardSummaryResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "대시보드 summary (집계 한 방)",
+        "tags": [
+          "09 대시보드"
+        ]
+      }
+    },
+    "/api/wholesale/inbounds": {
+      "post": {
+        "description": "입고 헤더 1건 + 라인(로트) N건을 등록하고 재고를 올린다. 단가가 다르면 다른 로트 —\n같은 `variantId`를 여러 줄에 넣을 수 있다. 같은 키 재요청은 200 + 동일 본문(멱등),\n같은 키에 다른 body 는 409 `IDEMPOTENCY_KEY_REUSED`.\n\n에러: 400 `DUPLICATE_LOT` · `INVARIANT_VIOLATED` / 404 `RESOURCE_NOT_FOUND` /\n409 `IDEMPOTENCY_KEY_REUSED` · `STATE_CONFLICT`",
+        "operationId": "createInbound",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboundCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InboundCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "같은 키 재요청(replay) — 첫 응답과 동일 본문"
+          },
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InboundCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "첫 등록"
+          }
+        },
+        "summary": "입고 등록 (Idempotency-Key 필수)",
+        "tags": [
+          "03 재고"
+        ]
+      }
+    },
+    "/api/wholesale/listings/{listingId}/reopen": {
+      "post": {
+        "description": "판매가·이미지가 그대로 살아난다. `seasonStartedAt`은 재개 시각으로 갱신된다.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` (이미 ON_SALE)",
+        "operationId": "reopen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listingId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ListingResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "시즌 재개 (SEASON_ENDED → ON_SALE)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/listings/{listingId}/season-end": {
+      "post": {
+        "description": "게시글을 마켓에서 내리는 유일한 수단. 상품·재고·주문·판매가는 전부 유지되고 재개로 되돌릴 수 있다.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` (이미 SEASON_ENDED)",
+        "operationId": "seasonEnd",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listingId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ListingResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "시즌 종료 (ON_SALE → SEASON_ENDED)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/orders": {
+      "get": {
+        "description": "주문 탭 리스트와 정산 탭 [정산 상태] 세그먼트가 같은 스키마를 쓴다 — 거는 필터만 다르다.\n`filter`는 상태 칩의 key(주문 탭 전용), `retailerId`를 넣으면 확정 주문만 내려온다(정산 탭 전용).\n버튼 노출은 `isConfirmable`·`isCancellable`·`isPackable` boolean 으로만 판단한다.\n`meta.totalElements`는 페이지네이션 전용 — 칩 건수로 쓰지 않는다.\n\n에러: 400 `VALIDATION_FAILED` (`from > to` / 정의되지 않은 `filter`·`settlementStatus` / `size > 100`)",
+        "operationId": "list_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "enum": [
+                "ALL",
+                "NEW",
+                "CONFIRMED",
+                "PARTIALLY_SHIPPED",
+                "SHIPPED",
+                "CANCELLED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "settlementStatus",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListOrderSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "주문 목록",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/orders/filters": {
+      "get": {
+        "description": "칩 목록·라벨·건수를 함께 내린다. 배열 순서가 곧 칩 표시 순서.\n`filter`는 받지 않는다 — 목록의 필터를 여기에 걸면 칩 건수가 자기 필터에 갇힌다.\n`q`·`from`/`to`는 목록과 같은 값으로 함께 보낸다.\n\n에러: 400 `VALIDATION_FAILED` (`from > to`)",
+        "operationId": "filters",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/OrderFilterResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상태 칩 (필터 리스트)",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/orders/{orderId}": {
+      "get": {
+        "description": "라인·배분·미송 현황. `items[].variantAvailableQty`만 SKU 스코프이고 나머지 수량은 라인 스코프.\n미송 상세·포장 대기 카드는 이 응답에 없다.\n\n에러: 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "detail_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OrderDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "주문 상세",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/orders/{orderId}/cancel": {
+      "post": {
+        "description": "확정된 주문은 취소할 수 없다 — 이미 미수·배분·미송이 달려 있다.\n응답은 주문 상세와 동일한 스키마, `status`만 CANCELLED.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED`",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OrderDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "주문 취소 (NEW 전용)",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/orders/{orderId}/confirm": {
+      "post": {
+        "description": "한 트랜잭션에 확정·배분·미송 생성을 처리한다. `items`는 주문의 전 라인 필수,\n`allocateQty: 0`은 정상값(그 라인 전량 미송). 배분되지 않은 잔량은 전부 미송이 된다.\n응답은 주문 상세와 동일한 스키마 — 재조회 없이 화면을 갱신한다.\n\n에러: 400 `ORDER_ITEM_MISSING` · `ORDER_ITEM_NOT_IN_ORDER` · `DUPLICATE_ORDER_ITEM` ·\n`INVARIANT_VIOLATED` · `ALLOCATION_EXCEEDS_ORDER` / 404 `RESOURCE_NOT_FOUND` /\n409 `TRANSITION_NOT_ALLOWED` · `INSUFFICIENT_STOCK`",
+        "operationId": "confirm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OrderDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "주문 확정 (확정 + 배분 + 미송 생성)",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/orders/{orderId}/packings": {
+      "get": {
+        "description": "카드 하나 = 포장 하나. 취소된 카드는 나오지 않는다. 페이징 없음.\n삭제 버튼 활성 조건은 `isCancellable` 그대로 쓴다.",
+        "operationId": "packingQueue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/PackingQueueItemResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "포장 대기열",
+        "tags": [
+          "04 주문"
+        ]
+      },
+      "post": {
+        "description": "한 요청 = 포장 대기 카드 1장. 배분할 라인만 담고 `allocateQty >= 1`.\n미송 id 는 담지 않는다 — 라인당 OPEN 미송이 최대 1건이라 서버가 찾아 연결한다.\n배분은 재고를 줄이지 않는다 — 실물이 나가는 것은 출고다.\n\n에러: 400 `ORDER_ITEM_NOT_IN_ORDER` · `DUPLICATE_ORDER_ITEM` · `INVARIANT_VIOLATED` ·\n`ALLOCATION_EXCEEDS_ORDER` / 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` ·\n`INSUFFICIENT_STOCK` · `ALLOCATION_EXCEEDS_REMAINING`",
+        "operationId": "createPacking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PackingCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "포장 준비 (추가 배분)",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/outbounds": {
+      "get": {
+        "description": "헤더에 걸었던 필터를 그대로 함께 보낸다 — 그래야 헤더의 `outboundCount`와 맞는다.\n\"출고 완료\" 뱃지는 `shippedAt != null`로 판정(응답에 status 필드 없음).\n거래 이력 없는 `retailerId`는 404, 필터에 안 걸리면 200 + `[]`.\n\n에러: 400 `VALIDATION_FAILED` / 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "outbounds",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "NOT_SHIPPED",
+                "SHIPPED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListOutboundSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "출고 — 봉투 목록 (아코디언 펼침)",
+        "tags": [
+          "06 출고"
+        ]
+      },
+      "post": {
+        "description": "체크한 SKU 행들을 한 봉투로 묶는다 — 재고는 아직 줄지 않는다(차감은 출고 확정).\n전부 같은 소매처·같은 수령 방식이어야 하며, 한 포장의 일부만 담기면 포장이 분할된다\n(대기열에 남는 쪽 id 유지, 나가는 쪽이 새 포장).\n\n에러: 400 `INVARIANT_VIOLATED` · `DUPLICATE_PACKING_ITEM` · `RETAILER_MIXED` ·\n`RECEIVE_BY_MIXED` / 404 `RESOURCE_NOT_FOUND` / 409 `PACKING_NOT_READY`",
+        "operationId": "createOutbound",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboundCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OutboundCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "포장 완료 (봉투 생성)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/outbounds/retailers": {
+      "get": {
+        "description": "포장 완료 탭(`status=NOT_SHIPPED`)과 출고 완료 탭(`SHIPPED`)이 같은 경로를 쓴다.\n기간 필터 축은 `SHIPPED`면 출고 일시, 그 외에는 포장 일시. 페이징 단위는 소매처.\n\n에러: 400 `VALIDATION_FAILED`",
+        "operationId": "outboundRetailers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "NOT_SHIPPED",
+                "SHIPPED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListOutboundRetailerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "출고 — 소매처 목록 (아코디언 헤더)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/outbounds/{outboundId}": {
+      "get": {
+        "description": "`items`는 SKU 단위로 합친 목록, `packings`는 주문 역추적용.\n`isShippable`은 버튼 활성 판정용이지 성공 보장이 아니다 — 재고 검증이 안 들어 있다.\n\n에러: 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "outboundDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "outboundId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OutboundDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "출고 상세 (포장 상세 패널)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/outbounds/{outboundId}/ship": {
+      "post": {
+        "description": "`shippedAt`과 장끼 번호(`statementNumber`, 날짜별 1부터)가 이 호출로 채워진다.\n이후 봉투는 영구 동결 — 포장 해제도 안 된다. 응답은 출고 상세와 동일 스키마.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` · `OUTBOUND_EMPTY` ·\n`INSUFFICIENT_STOCK` · `INVARIANT_VIOLATED`",
+        "operationId": "ship",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "outboundId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OutboundDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "출고 확정 — 재고가 실제로 줄어드는 유일한 지점",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/outbounds/{outboundId}/statement": {
+      "get": {
+        "description": "다운로드·인쇄의 원본 데이터 — 렌더·인쇄는 프론트(서버 PDF 없음). 금액 컬럼 없음.\n장끼 번호는 날짜별 1부터라 `shippedAt`과 항상 함께 내려온다(표시 코드 조립용).\n\n에러: 404 `RESOURCE_NOT_FOUND` (아직 출고 확정 전 포함)",
+        "operationId": "statement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "outboundId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StatementResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "장끼 (거래명세서)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/packing-items": {
+      "get": {
+        "description": "체크한 행들을 포장 완료로 보낸다 — `id`가 그 요청의 `packingItemIds`.\n페이징 없음: 체크박스로 고른 뒤 한 번에 보내는 화면이라 페이지를 나누면 체크가 날아간다.\n거래 이력 없는 `retailerId`는 404, 필터에 안 걸리면 200 + `[]`.\n\n에러: 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "packingItems",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "receiveBy",
+            "required": false,
+            "schema": {
+              "enum": [
+                "RETAILER",
+                "AGENT"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/PackingItemRowResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "포장 대기 — 항목 목록 (아코디언 펼침)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/packing-items/retailers": {
+      "get": {
+        "description": "한 행 = 소매처 하나. 페이징 없음(지금 대기 중인 소매처만이라 수가 제한적).\n소매처명은 검색 대상이 아니다(외부 시스템). 집계는 현재 필터를 반영하니\n펼칠 때 같은 `q`·`receiveBy`를 넘긴다.",
+        "operationId": "packingRetailers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "receiveBy",
+            "required": false,
+            "schema": {
+              "enum": [
+                "RETAILER",
+                "AGENT"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/PackingRetailerResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "포장 대기 — 소매처 목록 (아코디언 헤더)",
+        "tags": [
+          "06 출고"
+        ]
+      }
+    },
+    "/api/wholesale/packings/{packingId}": {
+      "delete": {
+        "description": "배분이 풀린다 — `allocatedQty`가 줄고 가용재고가 돌아오며, 해소했던 미송이 되살아난다.\n부분 취소는 없다. PACKED 는 출고 묶음 해제(unpack) 후에만 취소할 수 있다.\n\n에러: 404 `RESOURCE_NOT_FOUND` (이미 취소 포함) / 409 `DOCUMENT_FINALIZED`",
+        "operationId": "cancelPacking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "packingId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "배분 취소 (카드 통째)",
+        "tags": [
+          "04 주문"
+        ]
+      }
+    },
+    "/api/wholesale/payments": {
+      "post": {
+        "description": "\"입금만 진행\"과 \"입금 및 정산\"이 같은 엔드포인트 — `allocations`가 비면 선수금.\n`paidBy`(누구 손)와 `method`(무슨 수단)는 다른 축이다. 같은 키 재요청은 200 + 동일 본문(멱등).\n응답의 `ledgerBalance`로 헤더를 재조회 없이 갱신한다 — 음수 = 소매처 채무, 양수 = 선수금.\n\n배분은 **출고된 금액에만** 붙는다. 주문별 상한 = 출고로 생긴 미수 − 이미 붙은 배분이라\n출고 전 주문은 0 이다(`ALLOCATION_EXCEEDS_OUTSTANDING`). 먼저 받은 돈은 선수금으로 남는다.\n배분 합계 상한은 **이번 입금액 + 남은 선수금**이다 — 이번 입금을 먼저 쓰고 모자라면 오래된 입금부터\n끌어 쓴다. 그래서 `unallocatedAmount`는 이번 입금에서 안 쓴 돈이고, `allocations[].paymentId`가\n이번 입금이 아닐 수 있다. `prepaidRemaining`은 등록 후 거래처 선수금 전체.\n\n에러: 400 `VALIDATION_FAILED` · `PAID_AT_IN_FUTURE` · `DUPLICATE_ORDER` ·\n`ORDER_RETAILER_MISMATCH` / 404 `RESOURCE_NOT_FOUND` / 409 `IDEMPOTENCY_KEY_REUSED` ·\n`ORDER_NOT_CONFIRMED` · `ALLOCATION_EXCEEDS_PAYMENT` · `ALLOCATION_EXCEEDS_OUTSTANDING`",
+        "operationId": "createPayment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PaymentCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "같은 키 재요청(replay) — 첫 응답과 동일 본문"
+          },
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PaymentCreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "등록됨"
+          }
+        },
+        "summary": "입금 등록 (배분 겸함, Idempotency-Key 필수)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/payments/{paymentId}/void": {
+      "post": {
+        "description": "잘못 넣은 입금을 되돌린다 (MUL-127). 입금은 지우지 않고 무효 표시만 하고, 원장에 **입금 취소** 줄\n(`entryType` `PAYMENT_VOID`, 화면 부호 음수)을 쌓는다 — 거래처 미수가 입금 전으로 돌아간다.\n그 입금에서 나간 배분은 전부 효력을 잃어 주문 미수가 다시 생기고, 남았던 선수금도 사라진다.\n\n응답의 `ledgerBalance`(음수 = 채무) · `prepaidRemaining`으로 헤더와 선수금 카드를 갱신한다.\n취소는 되돌릴 수 없다 — 필요하면 입금을 새로 등록한다.\n\n에러: 400 `VALIDATION_FAILED`(사유 없음 · 200자 초과) / 404 `RESOURCE_NOT_FOUND` /\n409 `STATE_CONFLICT`(이미 취소된 입금)",
+        "operationId": "voidPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paymentId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentVoidRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PaymentVoidedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "입금 취소 (사유 필수)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/products": {
+      "get": {
+        "description": "상품탭·재고탭 공용. 기간 필터 축은 상품 등록일(`createdAt`) 하나다.\n`categoryId`는 하위 카테고리 포함. 기본 정렬 `createdAt,desc`.\n\n에러: 400 `VALIDATION_FAILED` (`from > to` / `size > 100`)",
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoryId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListProductSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상품 목록 (아코디언 헤더)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      },
+      "post": {
+        "description": "`listing`을 함께 보내면 게시글까지 한 트랜잭션에 만든다. `listing: null` = 상품만 등록.\n`variantPrices`는 전 variant 를 빠짐없이 채운다.\n\n에러: 400 `CATEGORY_NOT_FOUND` · `CATEGORY_NOT_LEAF` · `COLOR_DUPLICATED` ·\n`SIZE_DUPLICATED` · `OPTION_REQUIRED` · `PRICE_REQUIRED` · `INVARIANT_VIOLATED` · `VALIDATION_FAILED`",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProductDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "상품 등록 (게시글 동시 생성)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/products/{productId}": {
+      "delete": {
+        "description": "게시글을 먼저 지우고 상품을 지운다. 되살리는 경로는 없고 품번은 영구 결번.\n화면의 \"게시글 삭제\" 버튼도 이 호출이다 — 상품까지 지워진다.\n\n에러: 404 `RESOURCE_NOT_FOUND` / 409 `VARIANT_HAS_STOCK` · `VARIANT_ALLOCATED` ·\n`VARIANT_HAS_BACKORDER` · `VARIANT_IN_PENDING_ORDER`",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "productId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "상품 삭제 (게시글 동반)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      },
+      "get": {
+        "description": "아코디언 펼침 / 상세 패널 / 수정 화면 초기값 / 재고탭 SKU 표가 모두 이 응답을 쓴다.\n정렬은 서버 보장 — 색상은 그룹 → 색상, variant 는 사이즈, 이미지는 `sortOrder` ASC.\n\n에러: 404 `RESOURCE_NOT_FOUND` (없거나 타 도매처 자원)",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "productId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProductDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상품 상세 (색상·SKU·재고·게시글)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      },
+      "patch": {
+        "description": "PATCH 의미론 — 생략 = 무변경, `colorOptions`·`images`·`variantPrices`는 전체 교체.\n게시글이 없으면 `listing`은 생성 분기(응답은 200). `listing.status`는 받지 않는다.\n\n에러: 400 `VALIDATION_FAILED` · `CATEGORY_NOT_FOUND` · `CATEGORY_NOT_LEAF` ·\n`COLOR_DUPLICATED` · `SIZE_DUPLICATED` · `OPTION_REQUIRED` · `PRICE_REQUIRED` /\n404 `RESOURCE_NOT_FOUND` / 409 `VARIANT_HAS_STOCK` · `VARIANT_ALLOCATED` ·\n`VARIANT_HAS_BACKORDER` · `VARIANT_IN_PENDING_ORDER`",
+        "operationId": "update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "productId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProductDetailResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "상품 수정 (게시글 생성·수정 흡수)",
+        "tags": [
+          "02 상품·게시"
+        ]
+      }
+    },
+    "/api/wholesale/receivables": {
+      "get": {
+        "description": "판매·입금을 시간순으로(기본 최신순, `sort=occurredAt,asc`로 오래된 순). 화면 하단 \"현재 잔액\"은\n`meta.ledgerBalance`(전체 기준 최신값)를 쓴다 — `data[0].balanceAfter`는 페이지·필터에 따라\n과거 시점 값이라 틀린다. `balanceAfter`는 그 줄을 등록한 순간의 잔액이다.\n404 없음 — 거래 이력 없는 `retailerId`도 200 + `[]` + 잔액 0.\n\n`orderId`·`orderNumber`는 SALE 줄만, `paymentId`는 PAYMENT·PAYMENT_VOID 줄만 값이 있고 나머지는 null.\n\n에러: 400 `VALIDATION_FAILED`(`retailerId` 없음 · 모르는 `entryType` · `size > 100` · 모르는 정렬)",
+        "operationId": "ledger",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "retailerId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entryType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceivableLedgerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "미수원장 (아코디언 펼침)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/receivables/retailers": {
+      "get": {
+        "description": "`ledgerBalance`는 부호 그대로 — 음수 = 소매처 채무, 양수 = 선수금(표기를 뒤집으면 안 된다).\n`orderCount`는 확정 주문 수. 확정 주문도 오간 돈도 없는 소매처는 목록에 없다.\n검색(q) 파라미터 없음 — 소매처 상호는 도매 DB 밖, 미수엔 품명이 없다.\n`retailerCode`는 출처가 아직 없어 null 이다. `lastOccurredAt`은 거래가 없으면 null.\n\n정렬: `ledgerBalance`(기본 `ledgerBalance,asc` = 빚이 큰 순) · `lastOccurredAt` · `retailerName`.\n\n에러: 400 `VALIDATION_FAILED`(`size > 100` · 모르는 정렬 키)",
+        "operationId": "receivableRetailers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListReceivableRetailerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "미수 — 소매처 목록 (아코디언 헤더)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/receivables/retailers/{retailerId}/prepaid": {
+      "get": {
+        "description": "총 입금액 · 배분 완료액 · 남은 선수금. 취소된 입금과 취소된 배분은 뺀다.\n`prepaid = totalPaid − totalAllocated`. 입금 등록 폼의 사용 가능액은 이번 입금액 + `prepaid`다.\n\n에러: 404 `RESOURCE_NOT_FOUND`(거래 관계가 없는 소매처)",
+        "operationId": "prepaidSummary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retailerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PrepaidSummaryResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "선수금 요약 (정산 탭 3카드)",
+        "tags": [
+          "07 정산"
+        ]
+      }
+    },
+    "/api/wholesale/variants/{variantId}/backorders": {
+      "get": {
+        "description": "그 SKU 를 기다리는 주문들을 FIFO(`createdAt,asc`)로 내린다 — 제안일 뿐 강제가 아니다.\n페이징 없음: 배분 입력칸을 전부 그린 뒤 한 번에 확정하는 화면이라서다.\n응답은 `meta` 대신 `data + stats` — 좌측 표와 우측 요약 패널을 호출 한 번으로 채운다.\n\n에러: 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "backordersOfSku",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "variantId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackorderListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "SKU별 미송 목록 + 요약 (아코디언 펼침)",
+        "tags": [
+          "05 미송"
+        ]
+      }
+    },
+    "/api/wholesale/variants/{variantId}/expected-inbound": {
+      "put": {
+        "description": "SKU 에 붙는 값이라 미송과 독립. `expectedInboundDate: null` = 해제(사유도 함께 null).\nPUT 인 이유 — 날짜를 바꿨는데 예전 사유가 남는 건 틀린 상태라 부분 갱신을 계약에 안 넣었다.\n이력은 남지 않는다(최신값 하나).\n\n에러: 400 `VALIDATION_FAILED` / 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "registerExpectedInbound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "variantId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedInboundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ExpectedInboundResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "예상 입고일 등록 (전체 대체)",
+        "tags": [
+          "05 미송"
+        ]
+      }
+    },
+    "/api/wholesale/variants/{variantId}/stock-adjustments": {
+      "post": {
+        "description": "부호 포함 증감(`qtyChange`)을 받는다 — 절대값은 남의 변동을 덮어쓴다. `0`은 거절.\n변동 이력에 ADJUST 한 줄이 남고, 응답이 그 이력 항목이다.\n\n에러: 400 `INVARIANT_VIOLATED` / 404 `RESOURCE_NOT_FOUND` /\n409 `STOCK_BELOW_ZERO` · `STOCK_BELOW_ALLOCATED`(errors[].data 에 취소 후보 포장 목록)",
+        "operationId": "adjustStock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "variantId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockAdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StockMovementResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "재고 조정 (실사 반영)",
+        "tags": [
+          "03 재고"
+        ]
+      }
+    },
+    "/api/wholesale/variants/{variantId}/stock-movements": {
+      "get": {
+        "description": "SKU 하나의 재고 변동 원장, 시간 역순. 원장은 append-only — 수정·삭제 경로가 없고\n정정은 반대부호 조정으로 한다.\n\n에러: 400 `VALIDATION_FAILED` / 404 `RESOURCE_NOT_FOUND`",
+        "operationId": "stockMovements",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "variantId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListStockMovementResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "재고 변동 이력",
+        "tags": [
+          "03 재고"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Generated server url",
+      "url": "https://api-dev.ddmondo.co.kr"
+    }
+  ]
+}

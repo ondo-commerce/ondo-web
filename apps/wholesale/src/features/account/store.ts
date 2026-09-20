@@ -1,0 +1,385 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+import { SESSION_STORAGE_KEY } from "./constants";
+import { findAccount, normalizeEmail } from "./derive";
+import type { Account, AccountStatus, BankAccount } from "./types";
+
+/**
+ * 로그인 세션 흉내. **서버도 쿠키도 없다** — API가 붙으면 이 파일만 갈아 끼운다.
+ *
+ * 소매처럼 모듈 최상위 변수만 쓰면 새로 고칠 때마다 로그아웃된다. 소매는 라우트
+ * 가드가 없어 견뎠지만 도매는 가드를 만들고, ERP는 표를 보다가 새로 고치는
+ * 화면이라 그 조합은 앱을 못 쓰게 만든다. `localStorage`가 아닌 이유는
+ * `constants.ts`의 키 주석에 있다(공용 단말).
+ */
+
+/**
+ * 더미(`fixtures.ts`)와 달라진 계정 정보. 원본을 덮어쓰지 않고 옆에 쌓는다 —
+ * 더미는 읽기 전용 상수이고, 무엇이 이번 세션에 바뀐 것인지가 자료 구조에 남아야
+ * 한다.
+ */
+export interface AccountOverride {
+  storeName?: string;
+  bizNo?: string;
+  status?: Account["status"];
+  /**
+   * 신청 시각. **서버가 없어 브라우저가 찍는다** — 더미 상수로 두면 방금 신청한
+   * 사장이 남의 날짜를 본다. 클라이언트에서만 만드니 서버 렌더와 어긋날 자리도
+   * 없다.
+   */
+  appliedAt?: string;
+  bankAccount?: BankAccount | null;
+  /**
+   * 계좌 온보딩을 이미 한 번 지나갔나. 로그아웃해도 지우지 않는다 — 같은 탭에서
+   * 다시 로그인했을 때 방금 거절한 안내가 또 뜨면 안내가 아니라 방해다.
+   */
+  bankPromptSeen?: boolean;
+}
+
+interface SessionState {
+  /**
+   * `sessionStorage`를 아직 안 읽었으면 `false`. **"로그아웃"과 구분되어야 한다** —
+   * 서버 렌더와 하이드레이션 첫 프레임은 저장소를 볼 수 없는데, 그 순간을
+   * 로그아웃으로 읽으면 가드가 정상 세션을 `/login`으로 튕긴다.
+   */
+  loaded: boolean;
+  /** 로그인한 계정의 이메일. `null`이면 로그아웃. **비밀번호는 담지 않는다** */
+  email: string | null;
+  /** 이메일별 덮어쓰기. 로그아웃해도 남는다 */
+  overrides: Record<string, AccountOverride>;
+}
+
+/* 서버 스냅샷 = 판정 전. 객체를 새로 만들면 매 렌더마다 다른 참조가 되어
+   useSyncExternalStore가 무한 루프로 본다 — 모듈 상수 하나를 돌려준다 */
+const PENDING_STATE: SessionState = {
+  loaded: false,
+  email: null,
+  overrides: {},
+};
+
+let state: SessionState = PENDING_STATE;
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  for (const listener of listeners) listener();
+}
+
+/* 객체를 새로 만들어 넣는다 — 같은 객체를 고치면 스냅샷이 안 바뀐 것으로 보여
+   화면이 다시 그려지지 않는다 */
+function commit(next: SessionState): void {
+  state = next;
+  notify();
+}
+
+interface StoredSession {
+  email: string | null;
+  overrides: Record<string, AccountOverride>;
+}
+
+/**
+ * 남이 손댈 수 있는 문자열이라 모양을 믿지 않는다 — 파싱이 깨지거나 형태가 다르면
+ * **로그아웃 상태로 시작한다.** 여기서 예외를 던지면 앱 전체가 안 뜬다.
+ */
+function readStorage(): StoredSession {
+  const empty: StoredSession = { email: null, overrides: {} };
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return empty;
+
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return empty;
+
+    const { email, overrides } = parsed as Partial<StoredSession>;
+    return {
+      email: typeof email === "string" ? email : null,
+      overrides:
+        typeof overrides === "object" && overrides !== null ? overrides : {},
+    };
+  } catch {
+    /* 사파리 사생활 보호 모드처럼 저장소 자체가 막힌 경우도 여기로 온다.
+       그때는 세션이 화면 수명만큼만 살고, 새로 고치면 로그인부터다 */
+    return empty;
+  }
+}
+
+function writeStorage(next: SessionState): void {
+  try {
+    window.sessionStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ email: next.email, overrides: next.overrides }),
+    );
+  } catch {
+    /* 저장이 막혀도 화면은 계속 돌아야 한다 — 이번 탭에서만 세션이 짧아진다 */
+  }
+}
+
+/**
+ * 저장소를 아직 안 읽었으면 **지금 읽는다.** 세션을 건드리는 모든 길목이 여기를
+ * 먼저 지난다.
+ *
+ * ⚠️ 읽기를 구독 시점에만 두면 안 된다. `/login`에는 세션을 읽는 컴포넌트가
+ *    하나도 없어서 `subscribe`가 돌지 않고, 모듈 `state`가 `PENDING_STATE`
+ *    (`overrides:{}`)인 채로 남는다. 그 상태에서 `signIn`이 `{...state, email}`을
+ *    저장하면 **저장소에 있던 덮어쓰기를 빈 객체로 덮어쓴다** — 등록한 정산 계좌,
+ *    건너뛴 온보딩 표시, 재신청으로 바꾼 상태가 로그인 한 번에 사라졌다
+ *    (`wholesale-account` F1). 화면이 무엇을 읽는지에 저장 안전이 매달려 있으면
+ *    안 된다.
+ *
+ * 렌더 중에는 부르지 않는다 — 하이드레이션 렌더는 서버 스냅샷을 써야 하고,
+ * 거기서 실제 값이 튀어나오면 서버 HTML과 어긋난다.
+ */
+function ensureLoaded(): SessionState {
+  if (!state.loaded) state = { loaded: true, ...readStorage() };
+  return state;
+}
+
+/** 구독은 커밋 뒤(effect)에 일어나므로 여기서 읽으면 한 번 더 그리는 것으로 끝난다 */
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+
+  if (!state.loaded) {
+    ensureLoaded();
+    notify();
+  }
+
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot(): SessionState {
+  return state;
+}
+
+function getServerSnapshot(): SessionState {
+  return PENDING_STATE;
+}
+
+/**
+ * 판정 전 / 로그아웃 / 로그인을 **값으로 가른다** — 셋을 `null` 하나로 뭉치면
+ * 가드가 "판정 전"을 "로그아웃"으로 읽고 정상 세션을 튕긴다.
+ */
+export type SessionView =
+  | { state: "unknown" }
+  | { state: "signedOut" }
+  | {
+      state: "signedIn";
+      account: Account;
+      bankPromptSeen: boolean;
+      /** 이번 세션에 신청한 시각. 더미 계정으로 로그인만 했으면 `null`이다 */
+      appliedAt: string | null;
+    };
+
+/**
+ * 합치는 규칙을 **한 자리에만** 둔다 — 로그인 대조(`lookupAccount`)와 화면이 보는
+ * 세션(`resolve`)이 각자 합치면 같은 이메일이 두 얼굴을 갖는다.
+ */
+function mergeAccount(
+  email: string,
+  base: Account | null,
+  override: AccountOverride | undefined,
+): Account {
+  return {
+    email,
+    storeName: override?.storeName ?? base?.storeName ?? "",
+    bizNo: override?.bizNo ?? base?.bizNo ?? "000-00-00000",
+    status: override?.status ?? base?.status ?? "PENDING",
+    bankAccount:
+      override?.bankAccount !== undefined
+        ? override.bankAccount
+        : (base?.bankAccount ?? null),
+  };
+}
+
+/**
+ * 로그인할 수 있는 계정인지 본다. **더미 4건 + 이번 세션에 신청한 계정**이다 —
+ * `derive.findAccount`만 보면 방금 가입 신청을 마친 사장이 다시 로그인하지 못한다
+ * (`wholesale-account` F7).
+ */
+export function lookupAccount(email: string): Account | null {
+  const current = ensureLoaded();
+  const normalized = normalizeEmail(email);
+
+  const base = findAccount(normalized);
+  const override = current.overrides[normalized];
+  if (!base && !override) return null;
+
+  return mergeAccount(normalized, base, override);
+}
+
+function resolve(snapshot: SessionState): SessionView {
+  if (!snapshot.loaded) return { state: "unknown" };
+  if (!snapshot.email) return { state: "signedOut" };
+
+  const base = findAccount(snapshot.email);
+  const override = snapshot.overrides[snapshot.email];
+
+  /* 더미에 없는 이메일 = 이번 세션에 가입한 계정. 덮어쓰기가 곧 그 계정이다 */
+  if (!base && !override) return { state: "signedOut" };
+
+  const account = mergeAccount(snapshot.email, base, override);
+
+  return {
+    state: "signedIn",
+    account,
+    bankPromptSeen: override?.bankPromptSeen ?? account.bankAccount !== null,
+    appliedAt: override?.appliedAt ?? null,
+  };
+}
+
+/**
+ * 이메일 하나의 덮어쓰기를 합쳐 넣는다. **저장소를 먼저 읽는다**(`ensureLoaded`) —
+ * 읽지 않은 채 합치면 이 탭에 이미 있던 다른 변경이 사라진다.
+ */
+function patchOverride(email: string, patch: AccountOverride): SessionState {
+  const current = ensureLoaded();
+  const next: SessionState = {
+    ...current,
+    loaded: true,
+    overrides: {
+      ...current.overrides,
+      [email]: { ...current.overrides[email], ...patch },
+    },
+  };
+  writeStorage(next);
+  commit(next);
+  return next;
+}
+
+/**
+ * 화면이 읽는 세션. `useMemo`로 감싸지 않는다 — `resolve`는 순수 함수라 매 렌더의
+ * 비용이 객체 하나뿐이고, 상태로 들지 않으니 덮어쓰기가 바로 따라온다.
+ */
+export function useSession(): SessionView {
+  return resolve(
+    useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot),
+  );
+}
+
+/**
+ * 로그인. 비밀번호는 받지도 담지도 않는다 — 대조할 서버가 없다.
+ *
+ * **로그인한 계정을 그대로 돌려준다** — 부르는 쪽이 도착지를 정하려면 덮어쓰기까지
+ * 합친 값이 필요한데, 훅으로 읽으면 다음 렌더에나 온다. 그리고 **저장소를 먼저
+ * 읽는다**(`ensureLoaded`) — 그러지 않으면 이 탭의 덮어쓰기를 전부 지운다
+ * (`wholesale-account` F1).
+ */
+export function signIn(email: string): SessionView {
+  const current = ensureLoaded();
+  const next: SessionState = {
+    ...current,
+    loaded: true,
+    email: normalizeEmail(email),
+  };
+  writeStorage(next);
+  commit(next);
+  return resolve(next);
+}
+
+/**
+ * 서버가 알려준 승인 상태로 세션을 연다. 실제 인증을 마친 뒤 부른다.
+ *
+ * `signIn`과 나눈 이유: 더미에 없는 이메일(= 진짜 서버 계정)로 `signIn`만 하면
+ * `resolve`가 계정을 못 찾아 `signedOut`으로 읽는다. 상태를 덮어쓰기로 함께
+ * 넣어야 화면들이 그 계정을 본다.
+ *
+ * ⚠️ 이건 **서버 답을 적어 두는 캐시**지 판정이 아니다. 서버에 `GET /me` 가
+ * 생기면 이 함수와 저장소를 지우고 그때마다 물어본다.
+ */
+export function signInWithStatus(
+  email: string,
+  status: AccountStatus,
+): SessionView {
+  const normalized = normalizeEmail(email);
+  const current = ensureLoaded();
+  const next: SessionState = {
+    ...current,
+    loaded: true,
+    email: normalized,
+    overrides: {
+      ...current.overrides,
+      [normalized]: { ...current.overrides[normalized], status },
+    },
+  };
+  writeStorage(next);
+  commit(next);
+  return resolve(next);
+}
+
+/**
+ * 로그아웃. **덮어쓰기는 지우지 않는다** — 같은 탭에서 다시 로그인했을 때 방금
+ * 등록한 계좌가 사라지면 사장은 자기가 한 일이 남지 않는 앱이라고 배운다.
+ */
+export function signOut(): void {
+  const current = ensureLoaded();
+  const next: SessionState = { ...current, loaded: true, email: null };
+  writeStorage(next);
+  commit(next);
+}
+
+/**
+ * 가입 신청을 접수하고 그 계정으로 로그인한다. 승인이 앱 밖에서 일어나므로 여기서
+ * 하는 일은 "심사 중 계정 하나가 생겼다"까지다.
+ *
+ * 방금 적은 상호명·사업자 등록번호를 세션에 얹는 이유: 승인 대기 화면이 이 값을
+ * 읽어야 **상수 하나가 늘 같은 이름을 말하는 일**이 없다(`retail-account` F1).
+ */
+export function applySignup(input: {
+  email: string;
+  storeName: string;
+  bizNo: string;
+}): void {
+  /* 덮어쓰기의 **키**가 곧 로그인 대조 값이다(`wholesale-account` F7) */
+  const email = normalizeEmail(input.email);
+  const next = patchOverride(email, {
+    storeName: input.storeName,
+    bizNo: input.bizNo,
+    status: "PENDING",
+    appliedAt: formatAppliedAt(new Date()),
+  });
+  const signedIn: SessionState = { ...next, email };
+  writeStorage(signedIn);
+  commit(signedIn);
+}
+
+/**
+ * 서류를 다시 내고 재심사를 신청한다. 무엇을 다시 올렸는지는 담지 않는다 — 보낼
+ * 서버가 없어 파일은 화면에 이름을 남기는 데서 끝난다.
+ */
+export function applyReapply(email: string): void {
+  patchOverride(email, {
+    status: "PENDING",
+    appliedAt: formatAppliedAt(new Date()),
+  });
+}
+
+/**
+ * 확정 와이어프레임 형식 그대로. `toLocaleString`을 쓰지 않는 이유: 브라우저
+ * 로케일에 따라 갈려서 같은 화면이 단말마다 다른 모양의 날짜를 말한다.
+ */
+function formatAppliedAt(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${at.getFullYear()}.${pad(at.getMonth() + 1)}.${pad(at.getDate())} ` +
+    `${pad(at.getHours())}:${pad(at.getMinutes())}`
+  );
+}
+
+/**
+ * 정산 계좌를 등록한다. **첫 계좌는 자동으로 주 계좌다** — `isPrimary`를 두지 않는
+ * 이유는 계좌가 하나뿐인 순간에 구분할 대상이 없어서다. 체크박스를 보여 주면
+ * "안 켜면 어떻게 되나"라는 질문만 생긴다. 다계좌 이슈가 열릴 때 타입까지 연다.
+ */
+export function saveBankAccount(email: string, account: BankAccount): void {
+  patchOverride(email, { bankAccount: account, bankPromptSeen: true });
+}
+
+/**
+ * 계좌 입력을 건너뛴다. **다음 로그인부터 온보딩이 다시 뜨지 않는다** — 한 번
+ * 거절한 안내를 반복하는 것은 안내가 아니라 방해다. 대신 안 넣은 사실이
+ * **계정 메뉴에 상시로 남아** 찾아갈 곳이 하나로 고정된다.
+ */
+export function skipBankPrompt(email: string): void {
+  patchOverride(email, { bankPromptSeen: true });
+}

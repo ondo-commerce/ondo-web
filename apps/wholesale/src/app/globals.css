@@ -3,7 +3,15 @@
 
 @source "../../../../packages/ui/src";
 
-@theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* 2열 폼을 1열로 접는 지점. 값(60rem)은 확정 와이어프레임
+   `15_retail-hallmark/_base.css`의 `@media (max-width: 960px)` 그대로다.
+
+   Tailwind 기본 `max-*` 변형을 쓰지 않는 이유: 그건 `width < 60rem`이라
+   **경계값 960px에서 규칙이 안 걸린다.** 원본 CSS는 `max-width`(= `<=`)라
+   960px에서 이미 접혀 있다. 여기서 `<=`로 한 번만 정의해 두면 화면마다 다시
+   틀릴 일이 없다. 소매 `globals.css`와 같은 이름·같은 값이다.
+
+   ⚠️ ERP 업무 화면(`(erp)`)은 최소 1280px 유동이라 이 변형을 쓰지 않는다.
+      계정 화면(`(account)`)만 좁은 폭까지 내려간다 — 표가 없고 카드 하나뿐이라
+      1280px 하한을 걸 대상이 없고, 걸면 좁은 화면에서 로그인조차 못 한다. */
+@custom-variant tablet (@media (width <= 60rem));

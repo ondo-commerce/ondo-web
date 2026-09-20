@@ -1,0 +1,3579 @@
+{
+  "components": {
+    "schemas": {
+      "AddCartItemRequest": {
+        "description": "장바구니 담기.",
+        "properties": {
+          "qty": {
+            "description": "담을 수량. 1 이상",
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "variantId": {
+            "description": "상품 상세의 <code>colorOptions[].variants[].id</code>",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qty",
+          "variantId"
+        ],
+        "type": "object"
+      },
+      "AddCartItemResponse": {
+        "properties": {
+          "cartItemId": {
+            "description": "생성되었거나 수량이 더해진 행의 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "count": {
+            "description": "장바구니 종류 수. 헤더 뱃지를 다시 안 부르게 같이 준다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "qty": {
+            "description": "더해진 뒤의 최종 수량",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAddCartItemResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AddCartItemResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseCancelOrderResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CancelOrderResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseCartCountResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CartCountResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseCartResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CartResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseChangeQtyResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChangeQtyResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseCheckoutResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CheckoutResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseEmailAvailabilityResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EmailAvailabilityResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseFilterOptionsResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FilterOptionsResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListCategoryResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다",
+            "items": {
+              "$ref": "#/components/schemas/CategoryResponse"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListingDetailResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ListingDetailResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseOrderDetailResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrderDetailResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePlaceOrderResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlaceOrderResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseRetailerResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RetailerResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseSignUpResponse": {
+        "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SignUpResponse",
+            "description": "실제 내용. 성공은 항상 이 안에 들어온다"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderResponse": {
+        "description": "미송 대기 한 줄. 주문했는데 물건이 모자라서 아직 못 받은 것이다.\n\n <p><code>qty</code> 는 <b>원래 미송량이고 안 변한다.</b> 배분이 돼서 잔여가 줄어도 이 값은 그대로다.\n 잔여를 보려면 주문 상세를 봐야 한다.",
+        "properties": {
+          "backorderId": {
+            "description": "미송 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "colorName": {
+            "description": "색상",
+            "type": "string"
+          },
+          "expectedInboundDate": {
+            "description": "도매가 적어둔 예상 입고일. 아직 안 적었으면 null",
+            "format": "date",
+            "type": "string"
+          },
+          "expectedInboundReason": {
+            "description": "사유. 없으면 null",
+            "type": "string"
+          },
+          "listingId": {
+            "description": "상품 상세로 넘어갈 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "description": "어느 주문에서 나왔는지. 주문 상세로 넘어갈 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "화면에 보여주는 주문번호",
+            "type": "string"
+          },
+          "orderedAt": {
+            "description": "주문 시각. 목록의 정렬 기준이다 — 오래된 순으로 풀린다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "qty": {
+            "description": "미송 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/BackorderWholesaler",
+            "description": "이 미송이 걸린 도매처"
+          }
+        },
+        "type": "object"
+      },
+      "BackorderWholesaler": {
+        "properties": {
+          "id": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CancelOrderRequest": {
+        "description": "주문 취소.\n\n <p><b>도매처별로 취소한다.</b> 통합 주문서를 통째 취소하는 건 없다 —\n 한쪽은 이미 확정됐을 수 있다.",
+        "properties": {
+          "wholesaleOrderIds": {
+            "description": "취소할 도매처 건. 생략하면 취소 가능한 것 전부",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CancelOrderResponse": {
+        "description": "취소 결과. <b>일부만 취소돼도 200 이다</b> — 접수와 같은 모양이다.\n\n <p>NEW 인 것만 취소된다. 확정되면 못 한다 — 이미 미수가 발생했고 배분·미송이 달려 있다.",
+        "properties": {
+          "results": {
+            "description": "도매처별 결과. 성공과 실패가 섞여 온다",
+            "items": {
+              "$ref": "#/components/schemas/CancelOrderResult"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CancelOrderResult": {
+        "properties": {
+          "isCancelled": {
+            "description": "취소됐는지",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "화면에 그대로 쓸 문구. 성공이면 null",
+            "type": "string"
+          },
+          "reason": {
+            "description": "안 된 이유 코드. 성공이면 null",
+            "type": "string"
+          },
+          "wholesaleOrderId": {
+            "description": "어느 도매처 건인지",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CartCountResponse": {
+        "description": "헤더 뱃지용. 담은 수량이 아니라 종류 수다.",
+        "properties": {
+          "count": {
+            "description": "담은 종류 수. 같은 상품이라도 색상·사이즈가 다르면 따로 센다",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CartGroup": {
+        "properties": {
+          "items": {
+            "description": "이 도매처에 담아둔 것들",
+            "items": {
+              "$ref": "#/components/schemas/CartItem"
+            },
+            "type": "array"
+          },
+          "subtotal": {
+            "description": "이 도매처 소계",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/CartWholesaler",
+            "description": "이 묶음의 도매처"
+          }
+        },
+        "type": "object"
+      },
+      "CartItem": {
+        "properties": {
+          "cartItemId": {
+            "description": "수량을 바꾸거나 뺄 때 보내는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "colorName": {
+            "description": "색상",
+            "type": "string"
+          },
+          "isOrderable": {
+            "description": "담아둔 사이에 시즌이 끝나거나 옵션이 지워졌으면 false. 행은 남으니 회색으로 그리고 주문에서 뺀다",
+            "type": "boolean"
+          },
+          "lineAmount": {
+            "description": "<code>qty × salePrice</code>",
+            "format": "int32",
+            "type": "integer"
+          },
+          "listingId": {
+            "description": "상품 상세로 넘어갈 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "description": "1회 주문당 최대. <code>0</code> 이면 무제한",
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "description": "담아둔 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "salePrice": {
+            "description": "매번 도매에서 다시 가져온다. 주문 불가면 마지막 값이거나 null",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "description": "대표 이미지",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "variantId": {
+            "description": "색상·사이즈 조합(SKU) id",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CartResponse": {
+        "description": "장바구니 전체. <b>도매처별로 묶어서 내린다</b> — 화면이 그렇게 생겼고 주문도 도매처 단위로 쪼개진다.",
+        "properties": {
+          "groups": {
+            "description": "도매처별 묶음",
+            "items": {
+              "$ref": "#/components/schemas/CartGroup"
+            },
+            "type": "array"
+          },
+          "totalAmount": {
+            "description": "전체 금액 합",
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "description": "전체 수량 합",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CartWholesaler": {
+        "properties": {
+          "id": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CategoryNode": {
+        "description": "루트 → 리프. 항상 3단이다.",
+        "properties": {
+          "id": {
+            "description": "카테고리 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CategoryResponse": {
+        "description": "쇼핑몰 좌측 네비의 3단 트리.\n\n <p>고정 마스터라 자주 안 변한다. 프론트에서 캐시해도 된다.\n 도매의 응답에는 <code>depth</code> 가 있지만 여기엔 없다 — 소매는 중첩 구조만 쓴다.",
+        "properties": {
+          "id": {
+            "description": "목록의 categoryId 에 넣는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChangeQtyRequest": {
+        "description": "수량 변경. 더하는 게 아니라 그 값으로 교체한다.",
+        "properties": {
+          "qty": {
+            "description": "바꿀 수량. 더하는 게 아니라 이 값으로 교체한다",
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qty"
+        ],
+        "type": "object"
+      },
+      "ChangeQtyResponse": {
+        "description": "수량 변경 결과.\n\n <p>바뀐 줄 금액을 같이 준다. 안 주면 프론트가 숫자 하나 바꾸자고 장바구니를 통째로\n 다시 불러야 한다.",
+        "properties": {
+          "cartItemId": {
+            "description": "바뀐 항목 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "lineAmount": {
+            "description": "qty × salePrice. 도매가 옵션을 내렸으면 단가가 없어서 null 이다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "description": "바뀐 뒤의 수량",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CheckoutGroup": {
+        "properties": {
+          "items": {
+            "description": "이 도매처에 주문할 것들",
+            "items": {
+              "$ref": "#/components/schemas/CheckoutItem"
+            },
+            "type": "array"
+          },
+          "subtotal": {
+            "description": "도매처별 소계. 도매처마다 따로 입금한다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/WholesalerWithBank",
+            "description": "도매처와 입금 계좌"
+          }
+        },
+        "type": "object"
+      },
+      "CheckoutItem": {
+        "properties": {
+          "cartItemId": {
+            "description": "주문 접수에 그대로 넘긴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "colorName": {
+            "description": "색상",
+            "type": "string"
+          },
+          "lineAmount": {
+            "description": "qty × salePrice",
+            "format": "int32",
+            "type": "integer"
+          },
+          "qty": {
+            "description": "주문 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "salePrice": {
+            "description": "지금 단가. 장바구니에 담을 때와 다를 수 있다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "variantId": {
+            "description": "색상·사이즈 조합(SKU) id",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CheckoutResponse": {
+        "description": "주문서. 장바구니에서 고른 것만 넘겨 화면 하나를 그리는 데 필요한 걸 한 번에 받는다.\n\n <p>장바구니 조회와 모양이 거의 같고 계좌가 더 붙는다.\n\n <p><b>단가를 여기서 다시 받는다.</b> 담아둔 사이에 도매가 가격을 올렸으면 주문서에\n 그게 반영돼야 한다. 장바구니 화면 금액과 다를 수 있다.",
+        "properties": {
+          "groups": {
+            "description": "도매처별 묶음. 도매처마다 결제·수령을 따로 고른다",
+            "items": {
+              "$ref": "#/components/schemas/CheckoutGroup"
+            },
+            "type": "array"
+          },
+          "totalAmount": {
+            "description": "전체 금액 합",
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "description": "전체 수량 합",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ColorGroup": {
+        "properties": {
+          "colors": {
+            "description": "이 그룹에 속한 색상들",
+            "items": {
+              "$ref": "#/components/schemas/FilterColor"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "색상 그룹 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "그룹 이름. 빨강 계열 · 파랑 계열 같은 것",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ColorOption": {
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/ListingColor",
+            "description": "색상 정보"
+          },
+          "variants": {
+            "description": "이 색상으로 고를 수 있는 사이즈들",
+            "items": {
+              "$ref": "#/components/schemas/Variant"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "EmailAvailabilityResponse": {
+        "description": "이메일을 쓸 수 있는지.\n\n <p>Map 대신 record 로 두는 건 문서 때문이다. Map 이면 스웨거에 \"문자열 → 불리언\" 이라고만\n 나와서 프론트가 키 이름을 알 수 없다.",
+        "properties": {
+          "isAvailable": {
+            "description": "true 면 아직 아무도 안 쓰는 이메일이다",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "실패 응답. 성공과 달리 data 봉투가 없다 — 성공·실패는 HTTP status 로 가른다.",
+        "properties": {
+          "code": {
+            "description": "이걸로 분기한다. 대문자_스네이크",
+            "example": "ACCOUNT_NOT_APPROVED",
+            "type": "string"
+          },
+          "errors": {
+            "description": "필드 단위 검증 에러. 없으면 빈 배열이다 — null 로 내리지 않는다",
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "화면에 그대로 써도 되는 문구",
+            "example": "승인 후 이용할 수 있어요",
+            "type": "string"
+          },
+          "traceId": {
+            "description": "문의가 들어왔을 때 로그를 찾는 값. 지금은 항상 null",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "traceId",
+          "errors"
+        ]
+      },
+      "FieldError": {
+        "description": "입력칸 하나에 대한 에러. 그 칸 아래에 message 를 그대로 붙이면 된다.",
+        "properties": {
+          "code": {
+            "description": "필드 단위 코드. 칸마다 분기할 수 있게",
+            "example": "NOT_BLANK",
+            "type": "string"
+          },
+          "field": {
+            "description": "JS 경로 표기. 중첩이면 items[2].quantity",
+            "example": "email",
+            "type": "string"
+          },
+          "message": {
+            "description": "그 칸 아래에 그대로 붙는 문구",
+            "example": "이메일을 입력해주세요",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ]
+      },
+      "FilterColor": {
+        "properties": {
+          "hex": {
+            "description": "#RRGGBB",
+            "type": "string"
+          },
+          "id": {
+            "description": "목록의 <code>colorIds</code> 에 넣는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "색상 이름",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FilterOptionsResponse": {
+        "description": "필터 사이드바를 그리는 값 전부.\n\n <p>목록과 따로 부른다 — 필터를 바꿔도 선택지 자체는 안 바뀐다.\n 목록 응답에 실으면 매번 같은 걸 다시 받는다.",
+        "properties": {
+          "colorGroups": {
+            "description": "색상 그룹별로 묶인 색상들",
+            "items": {
+              "$ref": "#/components/schemas/ColorGroup"
+            },
+            "type": "array"
+          },
+          "priceRange": {
+            "$ref": "#/components/schemas/PriceRange",
+            "description": "가격 슬라이더의 양 끝"
+          },
+          "sizes": {
+            "description": "고를 수 있는 사이즈 전부",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Image": {
+        "properties": {
+          "id": {
+            "description": "이미지 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sortOrder": {
+            "description": "서버가 이미 이 순서로 정렬해서 준다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "url": {
+            "description": "이미지 주소",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ListingColor": {
+        "properties": {
+          "groupName": {
+            "description": "필터의 색상 그룹 이름",
+            "type": "string"
+          },
+          "hex": {
+            "description": "#RRGGBB. 색 동그라미를 그리는 값",
+            "type": "string"
+          },
+          "id": {
+            "description": "필터의 colorIds 에 넣는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "색상 이름",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ListingDetailResponse": {
+        "description": "상품 상세. 색상 · 사이즈 · 판매가를 한 번에 내린다.\n\n <p>게시 내린 옵션은 아예 안 나온다. <code>colorOptions</code> 와 <code>variants</code> 는\n 둘 다 게시된 것만이고, <code>totalVariantCount</code> 로 \"전체 15개 중 5개\" 를 보여준다.\n\n <p>정렬은 서버가 보장한다 — 색상은 그룹 → 색상 순, 사이즈 순, 이미지는 sortOrder ASC.",
+        "properties": {
+          "categoryPath": {
+            "description": "루트에서 리프까지. 항상 3단이다",
+            "items": {
+              "$ref": "#/components/schemas/CategoryNode"
+            },
+            "type": "array"
+          },
+          "colorOptions": {
+            "description": "색상별 묶음. 각 색상 아래에 사이즈가 온다",
+            "items": {
+              "$ref": "#/components/schemas/ColorOption"
+            },
+            "type": "array"
+          },
+          "description": {
+            "description": "도매가 적은 상품 설명",
+            "type": "string"
+          },
+          "images": {
+            "description": "sortOrder 오름차순으로 정렬돼 온다. 다시 정렬할 필요 없다",
+            "items": {
+              "$ref": "#/components/schemas/Image"
+            },
+            "type": "array"
+          },
+          "isSinglePieceAllowed": {
+            "description": "낱장으로 살 수 있는지",
+            "type": "boolean"
+          },
+          "listedVariantCount": {
+            "description": "지금 살 수 있는 옵션 수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "listingId": {
+            "description": "상품 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "maxSalePrice": {
+            "description": "옵션 중 최고가",
+            "format": "int32",
+            "type": "integer"
+          },
+          "minSalePrice": {
+            "description": "옵션 중 최저가",
+            "format": "int32",
+            "type": "integer"
+          },
+          "productNumber": {
+            "description": "도매처가 매기는 품번. 매장에서 이걸로 찾는다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "totalVariantCount": {
+            "description": "원래 옵션 수. \\\"전체 15개 중 5개\\\" 로 그린다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/ListingWholesaler",
+            "description": "파는 도매처"
+          }
+        },
+        "type": "object"
+      },
+      "ListingSummaryResponse": {
+        "description": "상품 목록의 카드 하나.\n\n <p><b>깊이 2로 끊는다.</b> 색상·사이즈 목록도 재고도 안 내린다 — 카드가 안 쓴다.\n 재고를 안 내리는 건 의도다. 접수는 재고를 보지 않고 모자라면 미송으로 잡혀서\n 목록에 \"품절\" 이라는 상태가 없다.",
+        "properties": {
+          "colorCount": {
+            "description": "고를 수 있는 색상 가짓수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "isSinglePieceAllowed": {
+            "description": "낱장으로 살 수 있는지. false 면 묶음 단위로만 산다",
+            "type": "boolean"
+          },
+          "listingId": {
+            "description": "상품 상세를 부를 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "minSalePrice": {
+            "description": "옵션 중 제일 싼 값. 카드에 \\\"12,500원~\\\" 으로 그린다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "sizeCount": {
+            "description": "고를 수 있는 사이즈 가짓수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "thumbnailUrl": {
+            "description": "대표 이미지",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/WholesalerBrief",
+            "description": "파는 도매처"
+          }
+        },
+        "type": "object"
+      },
+      "ListingWholesaler": {
+        "description": "매장 위치를 같이 준다 — 방문 수령을 고를 수 있어서다.",
+        "properties": {
+          "id": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          },
+          "storeBuilding": {
+            "description": "매장 건물. 청평화패션몰 같은 것",
+            "type": "string"
+          },
+          "storeUnit": {
+            "description": "매장 호수. 2층 24호 같은 것",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "description": "로그인 요청.\n\n <p>이메일 형식까지는 보지 않는다. 형식이 틀렸다는 건 곧 없는 계정이라는 뜻인데,\n 그걸 400 으로 알려주면 \"이 이메일은 형식이 맞다/틀리다\" 를 밖에서 떠보게 된다.\n 값이 있는지만 보고 나머지는 401 로 묶는다.",
+        "properties": {
+          "email": {
+            "description": "가입할 때 쓴 이메일",
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "비밀번호",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "Meta": {
+        "properties": {
+          "hasNext": {
+            "description": "다음 장이 있는지. 무한 스크롤은 이것만 보면 된다",
+            "type": "boolean"
+          },
+          "page": {
+            "description": "0-base. 첫 장이 0 이다",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "한 장에 몇 개",
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "description": "전체 개수",
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "description": "전체 장 수",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OrderDetailResponse": {
+        "description": "통합 주문서 하나를 펼친다. 상태를 세 층으로 보여준다.\n\n <pre>\n 층 1  통합 주문서    할 일 뱃지 + 장 수      주문 내역 화면\n 층 2  도매처별 주문   도매가 쓰는 상태 이름     여기\n 층 3  품목 줄        수량으로 말한다          주문 5 · 받음 3 · 미송 2\n </pre>",
+        "properties": {
+          "agentName": {
+            "description": "사입삼촌. 도매처가 여럿이어도 사람은 하나다",
+            "type": "string"
+          },
+          "agentPhone": {
+            "description": "사입삼촌 연락처",
+            "type": "string"
+          },
+          "orderId": {
+            "description": "통합 주문서 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "화면에 보여주는 주문번호",
+            "type": "string"
+          },
+          "orderedAt": {
+            "description": "주문 시각",
+            "format": "date-time",
+            "type": "string"
+          },
+          "totalAmount": {
+            "description": "이 주문 전체 금액",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesalerOrders": {
+            "description": "도매처별 주문. 상태도 취소도 여기 단위로 움직인다",
+            "items": {
+              "$ref": "#/components/schemas/WholesalerOrder"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OrderItem": {
+        "properties": {
+          "backorderQty": {
+            "description": "아직 못 받은 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "colorName": {
+            "description": "색상",
+            "type": "string"
+          },
+          "expectedInboundDate": {
+            "description": "미송 예상 입고일. SKU 단위라 같은 옵션을 기다리는 소매처들은 같은 날짜를 본다",
+            "format": "date",
+            "type": "string"
+          },
+          "lineAmount": {
+            "description": "qty × unitPrice",
+            "format": "int32",
+            "type": "integer"
+          },
+          "listingId": {
+            "description": "상품 상세로 넘어갈 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "qty": {
+            "description": "주문한 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "receivedQty": {
+            "description": "받은 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          },
+          "unitPrice": {
+            "description": "주문 시점 스냅샷. 현재 판매가와 다를 수 있다",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OrderSummaryResponse": {
+        "description": "주문 내역의 한 줄. 통합 주문서 하나가 한 줄이다.",
+        "properties": {
+          "actionBadge": {
+            "description": "상태 이름 대신 지금 할 일을 준다",
+            "enum": [
+              "PENDING_ACCEPT",
+              "WAITING_SHIPMENT",
+              "READY_TO_PICK_UP",
+              "DONE",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "backorderQty": {
+            "description": "아직 못 받은 장 수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "orderId": {
+            "description": "주문 상세를 부를 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "화면에 보여주는 주문번호",
+            "type": "string"
+          },
+          "orderedAt": {
+            "description": "주문 시각. 목록의 정렬 기준이다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "receivedQty": {
+            "description": "그중 받은 장 수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalAmount": {
+            "description": "이 주문 전체 금액",
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalQty": {
+            "description": "주문한 총 장 수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesalerCount": {
+            "description": "도매처 수",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wholesalerNames": {
+            "description": "화면에 \"무드온 외 1곳\" 으로 그린다",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Outbound": {
+        "description": "출고 기록. <b>장끼 단위</b>라 주문 하나가 여러 장끼로 나뉠 수 있다.\n\n <p>장끼 한 장에 다른 주문이 섞일 수도 있다 — 출고가 거래처 단위라서다.\n 그래서 여기엔 이 주문 몫만 적는다.",
+        "properties": {
+          "items": {
+            "description": "이 장끼에 실린 이 주문 몫",
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": "array"
+          },
+          "outboundId": {
+            "description": "출고 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "shippedAt": {
+            "description": "null 이면 포장만 끝난 상태다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "statementNumber": {
+            "description": "장끼 번호. 매장에서 이걸로 찾는다",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OutboundItem": {
+        "properties": {
+          "colorName": {
+            "description": "색상",
+            "type": "string"
+          },
+          "qty": {
+            "description": "이 장끼에 실린 수량",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          },
+          "title": {
+            "description": "상품명",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseBackorderResponse": {
+        "description": "목록 응답. data 옆에 meta 가 붙는다.\n\n <pre>{ \"data\": [...], \"meta\": { page, size, totalElements, totalPages, hasNext } }</pre>",
+        "properties": {
+          "data": {
+            "description": "이 장에 담긴 것들. 없으면 빈 배열이다",
+            "items": {
+              "$ref": "#/components/schemas/BackorderResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "페이지 정보"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseListingSummaryResponse": {
+        "description": "목록 응답. data 옆에 meta 가 붙는다.\n\n <pre>{ \"data\": [...], \"meta\": { page, size, totalElements, totalPages, hasNext } }</pre>",
+        "properties": {
+          "data": {
+            "description": "이 장에 담긴 것들. 없으면 빈 배열이다",
+            "items": {
+              "$ref": "#/components/schemas/ListingSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "페이지 정보"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseOrderSummaryResponse": {
+        "description": "목록 응답. data 옆에 meta 가 붙는다.\n\n <pre>{ \"data\": [...], \"meta\": { page, size, totalElements, totalPages, hasNext } }</pre>",
+        "properties": {
+          "data": {
+            "description": "이 장에 담긴 것들. 없으면 빈 배열이다",
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryResponse"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "페이지 정보"
+          }
+        },
+        "type": "object"
+      },
+      "PlaceOrderRequest": {
+        "description": "주문 접수.",
+        "properties": {
+          "agentName": {
+            "description": "사입삼촌. <b>도매처가 여럿이어도 사람은 하나다</b>",
+            "type": "string"
+          },
+          "agentPhone": {
+            "description": "사입삼촌 연락처",
+            "type": "string"
+          },
+          "cartItemIds": {
+            "description": "주문할 장바구니 줄. 주문서에서 받은 cartItemId 를 그대로 넘긴다",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "wholesalerOptions": {
+            "description": "도매처별 결제 조건과 수령 방법",
+            "items": {
+              "$ref": "#/components/schemas/WholesalerOption"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "cartItemIds",
+          "wholesalerOptions"
+        ],
+        "type": "object"
+      },
+      "PlaceOrderResponse": {
+        "description": "주문 접수 결과.\n\n <p><b>일부만 접수돼도 201 이다. 에러가 아니라 결과다.</b> 도매처 넷 중 셋만 받아졌으면\n 그건 정상적인 결과이지 실패가 아니다. 접수된 항목만 장바구니에서 빠진다.\n\n <p>전부 안 되면 통합 주문을 만들지 않는다 — 그때는 502 다.",
+        "properties": {
+          "orderId": {
+            "description": "통합 주문서 id. 주문 상세를 부를 때 쓴다",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "화면에 보여주는 주문번호. 20260902-1420-0088 모양이다",
+            "type": "string"
+          },
+          "orderedAt": {
+            "description": "주문 시각",
+            "format": "date-time",
+            "type": "string"
+          },
+          "results": {
+            "description": "도매처별 결과. 성공과 실패가 섞여 온다",
+            "items": {
+              "$ref": "#/components/schemas/PlaceOrderResult"
+            },
+            "type": "array"
+          },
+          "totalAmount": {
+            "description": "접수된 것만 합한 금액. 실패한 도매처는 빠진다",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PlaceOrderResult": {
+        "properties": {
+          "amount": {
+            "description": "이 도매처 금액. 실패면 null",
+            "format": "int32",
+            "type": "integer"
+          },
+          "isAccepted": {
+            "description": "이 도매처가 받았는지",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "화면에 그대로 쓸 문구",
+            "type": "string"
+          },
+          "orderNumber": {
+            "description": "도매처별 연번. 실패면 null",
+            "format": "int32",
+            "type": "integer"
+          },
+          "reason": {
+            "description": "실패 코드. 성공이면 null",
+            "type": "string"
+          },
+          "wholesaleOrderId": {
+            "description": "도매쪽 주문 id. 실패면 null",
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerId": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerName": {
+            "description": "도매처 상호",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriceRange": {
+        "description": "게시 중인 상품 전체의 실제 최저·최고가. 가격 슬라이더의 양 끝이다.",
+        "properties": {
+          "max": {
+            "description": "실제 최고가",
+            "format": "int32",
+            "type": "integer"
+          },
+          "min": {
+            "description": "실제 최저가",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Rejection": {
+        "description": "왜 거절됐는지. 승인 거절 화면이 그대로 그린다.",
+        "properties": {
+          "actor": {
+            "description": "<b>항상 \"운영자\" 다.</b> 컬럼에는 운영자 이메일이 들어가는데\n                   소매처가 알 이유가 없어서 고정 문자열로 바꿔 내린다",
+            "type": "string"
+          },
+          "reason": {
+            "description": "거절 사유",
+            "type": "string"
+          },
+          "rejectedAt": {
+            "description": "거절 시각",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetailerResponse": {
+        "description": "로그인 · 내 정보 조회의 응답 본문. 명세상 두 API 가 같은 모양을 쓴다.\n\n <p>헤더의 계정명뿐 아니라 <b>승인 대기 화면과 승인 거절 화면</b>도 이 응답으로 그린다.\n 그래서 상태만 있으면 안 되고 신청 시각과 거절 사유가 같이 있어야 한다.\n\n <p>비밀번호 해시는 절대 담지 않는다. 개인정보(대표자명 · 연락처 · 사업자번호)도\n 이 화면들에서 쓸 일이 없어 뺐다.",
+        "properties": {
+          "appliedAt": {
+            "description": "가입 신청 시각. 세 상태 모두 값이 있다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "approvalStatus": {
+            "description": "PENDING · APPROVED · REJECTED. 규약상 Enum 은 코드만 내린다",
+            "type": "string"
+          },
+          "approvedAt": {
+            "description": "승인된 시각. 승인 전이거나 거절됐으면 null",
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "description": "로그인 계정",
+            "type": "string"
+          },
+          "rejection": {
+            "$ref": "#/components/schemas/Rejection",
+            "description": "거절 사유. REJECTED 일 때만 있고 나머지는 null"
+          },
+          "retailerId": {
+            "description": "소매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "shopName": {
+            "description": "상호. 화면에 보이는 이름이다",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SignUpRequest": {
+        "description": "가입 신청의 payload 파트. 사업자등록증 파일은 별도 파트로 온다.\n\n <p>로그인과 달리 이메일 형식을 검사한다. 가입은 값을 저장하는 자리라\n 틀린 형식을 알려주는 게 맞고, 계정 존재 여부가 새지도 않는다.",
+        "properties": {
+          "agreedTerms": {
+            "description": "동의한 약관. 필수 약관이 빠지면 400 이다",
+            "items": {
+              "enum": [
+                "SERVICE",
+                "PRIVACY"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "bizRegNo": {
+            "description": "사업자등록번호. 하이픈 없이 숫자 10자리",
+            "minLength": 1,
+            "pattern": "\\d{10}",
+            "type": "string"
+          },
+          "email": {
+            "description": "로그인 계정. 이미 가입돼 있으면 409 다",
+            "format": "email",
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "mobile": {
+            "description": "하이픈 없이 숫자만 10~11자리",
+            "minLength": 1,
+            "pattern": "\\d{10,11}",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "대표자명. 사업자등록증과 같아야 승인된다",
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "8자 이상 64자까지",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string"
+          },
+          "shopName": {
+            "description": "상호. 화면에 보이는 이름이다",
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "agreedTerms",
+          "bizRegNo",
+          "email",
+          "mobile",
+          "ownerName",
+          "password",
+          "shopName"
+        ],
+        "type": "object"
+      },
+      "SignUpResponse": {
+        "description": "가입 완료 응답. 세션을 주지 않는다 — 가입은 늘 PENDING 이라 그 세션으로 할 게 없다.\n 프론트는 이 값으로 완료 화면을 그리고 로그인 화면으로 보낸다.",
+        "properties": {
+          "appliedAt": {
+            "description": "신청 시각. 승인 대기 화면에 쓴다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "approvalStatus": {
+            "description": "가입 직후는 항상 PENDING 이다",
+            "type": "string"
+          },
+          "retailerId": {
+            "description": "소매처 id",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Status": {
+        "description": "도매처별 주문 상태.\n\n <p><code>key</code> 는 NEW / CONFIRMED / PARTIALLY_SHIPPED / SHIPPED / CANCELLED 다.\n <b>저장값이 아니라 파생값이다</b> — DB 엔 NEW · CONFIRMED · CANCELLED 세 값뿐이고\n 출고 진행도를 합쳐 다섯이 된다.\n\n <p><code>label</code> 도 도매가 주는 걸 그대로 쓴다. 같은 주문을 두 화면이 다르게 부르면 안 된다.",
+        "properties": {
+          "key": {
+            "description": "분기에 쓰는 코드",
+            "type": "string"
+          },
+          "label": {
+            "description": "화면에 그대로 쓰는 한글 이름",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Variant": {
+        "properties": {
+          "id": {
+            "description": "장바구니에 담을 때 보내는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderLimit": {
+            "description": "1회 주문당 최대. <code>0</code> 이면 무제한",
+            "format": "int32",
+            "type": "integer"
+          },
+          "salePrice": {
+            "description": "이 옵션의 판매가",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "사이즈",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WholesalerBrief": {
+        "description": "목록에서는 도매처 id·상호만 쓴다. 매장 위치는 상세에서 준다.",
+        "properties": {
+          "id": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WholesalerOption": {
+        "description": "결제 조건과 수령 방법은 도매처마다 고른다.",
+        "properties": {
+          "paymentTerm": {
+            "description": "CASH(현금) · BANK_TRANSFER(계좌이체). 계좌 미등록 도매처는 현금만 된다",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "receiveMethod": {
+            "description": "RETAILER(직접 수령) · AGENT(사입삼촌)",
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "wholesalerId": {
+            "description": "어느 도매처에 대한 설정인지",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "paymentTerm",
+          "receiveMethod",
+          "wholesalerId"
+        ],
+        "type": "object"
+      },
+      "WholesalerOrder": {
+        "properties": {
+          "amount": {
+            "description": "이 도매처 금액",
+            "format": "int32",
+            "type": "integer"
+          },
+          "isCancellable": {
+            "description": "status.key 가 NEW 일 때만 true",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "품목 줄",
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            },
+            "type": "array"
+          },
+          "orderNumber": {
+            "description": "도매처별 연번",
+            "format": "int32",
+            "type": "integer"
+          },
+          "outbounds": {
+            "description": "출고 기록. 아직 없으면 빈 배열",
+            "items": {
+              "$ref": "#/components/schemas/Outbound"
+            },
+            "type": "array"
+          },
+          "paymentTerm": {
+            "description": "고른 결제 조건",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "type": "string"
+          },
+          "receiveMethod": {
+            "description": "고른 수령 방법",
+            "enum": [
+              "RETAILER",
+              "AGENT"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "description": "도매처별 주문 상태"
+          },
+          "wholesaleOrderId": {
+            "description": "취소할 때 보내는 값",
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesaler": {
+            "$ref": "#/components/schemas/WholesalerWithBank",
+            "description": "도매처와 입금 계좌"
+          }
+        },
+        "type": "object"
+      },
+      "WholesalerWithBank": {
+        "description": "도매처 + 입금 계좌.\n\n <p>장바구니에선 계좌를 안 쓴다. 주문서에서 계좌 이체를 골랐을 때 처음 필요해서\n 주문서 · 주문 상세에서만 내린다.\n\n <p>계좌 셋이 전부 null 이면 미등록이다. 그 도매처는 계좌 이체를 못 고른다 —\n 프론트가 현금만 남긴다.",
+        "properties": {
+          "bankAccountHolder": {
+            "description": "예금주. 미등록이면 null",
+            "type": "string"
+          },
+          "bankAccountNo": {
+            "description": "계좌번호. 미등록이면 null",
+            "type": "string"
+          },
+          "bankName": {
+            "description": "입금 은행. 미등록이면 null",
+            "type": "string"
+          },
+          "id": {
+            "description": "도매처 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          },
+          "storeBuilding": {
+            "description": "매장 건물. 청평화패션몰 같은 것",
+            "type": "string"
+          },
+          "storeUnit": {
+            "description": "매장 호수. 2층 24호 같은 것",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "SESSION_RETAIL": {
+        "description": "로그인하면 자동으로 붙는다. 직접 넣을 일은 없다.",
+        "in": "cookie",
+        "name": "SESSION_RETAIL",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "동대문 소매처가 여러 도매처에 한 번에 주문하는 서비스의 소매 API.\n\n### 인증\n`POST /api/retail/auth/login` 으로 로그인하면 `SESSION_RETAIL` 쿠키가 붙는다.\n브라우저가 이후 요청에 자동으로 실어 보낸다.\n\n승인되지 않은 계정도 **로그인은 된다.** 승인 대기 화면을 봐야 하기 때문이다.\n다만 `/auth/me` 와 `/auth/logout` 을 뺀 나머지는 `403 ACCOUNT_NOT_APPROVED` 다.\n\n### 응답 규약\n성공은 `data` 로 감싼다. 목록은 `meta` 가 붙는다.\n```\n{ \"data\": { ... } }\n{ \"data\": [ ... ], \"meta\": { \"page\": 0, \"size\": 20, \"totalElements\": 137, \"totalPages\": 7, \"hasNext\": true } }\n```\n실패는 봉투 없이 4xx/5xx 와 함께 온다. 배열은 `null` 이 아니라 `[]` 다.\n```\n{ \"code\": \"ACCOUNT_NOT_APPROVED\", \"message\": \"승인 후 이용할 수 있어요\", \"traceId\": null, \"errors\": [] }\n```\n`code` 로 분기하고 `message` 는 화면에 그대로 써도 된다.\n입력값 검증이 걸리면 `errors` 에 필드별로 담긴다.\n\n### 아직 목 데이터인 것\n상품과 미송은 도매 데이터라 지금은 가짜 값을 돌려준다.\n**응답 모양은 확정이라** 나중에 진짜로 바뀌어도 프론트는 고칠 게 없다.\n",
+    "title": "On도마켓 소매 API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/retail/auth/email-availability": {
+      "get": {
+        "description": "가입 폼에서 이메일 칸을 벗어날 때 부른다.",
+        "operationId": "emailAvailability",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "email",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEmailAvailabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "이메일 중복 확인",
+        "tags": [
+          "인증 · 가입"
+        ]
+      }
+    },
+    "/api/retail/auth/login": {
+      "post": {
+        "description": "승인 안 된 계정도 200 이다. 승인 대기 화면을 봐야 하기 때문이다.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRetailerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "로그인",
+        "tags": [
+          "인증 · 가입"
+        ]
+      }
+    },
+    "/api/retail/auth/logout": {
+      "post": {
+        "description": "세션을 지우고 쿠키를 만료시킨다. 본문 없이 204 다.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "로그아웃",
+        "tags": [
+          "인증 · 가입"
+        ]
+      }
+    },
+    "/api/retail/auth/me": {
+      "get": {
+        "description": "승인 대기·반려 상태도 여기서 본다. 미승인 계정도 부를 수 있다.",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRetailerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "내 정보",
+        "tags": [
+          "인증 · 가입"
+        ]
+      }
+    },
+    "/api/retail/auth/sign-up": {
+      "post": {
+        "description": "멀티파트다. payload(JSON) 와 bizLicense(파일) 두 파트를 보낸다.",
+        "operationId": "signUp",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "bizLicense": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/SignUpRequest"
+                  }
+                },
+                "required": [
+                  "bizLicense",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSignUpResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "회원가입",
+        "tags": [
+          "인증 · 가입"
+        ]
+      }
+    },
+    "/api/retail/backorders": {
+      "get": {
+        "description": "OPEN 인 것만 오래된 순으로. FIFO 로 풀린다.",
+        "operationId": "backorders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseBackorderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "미송 대기 현황",
+        "tags": [
+          "미송"
+        ]
+      }
+    },
+    "/api/retail/cart-items": {
+      "get": {
+        "description": "도매처별로 묶어서 내린다. 주문서와 같은 모양이다.",
+        "operationId": "find",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "장바구니 조회",
+        "tags": [
+          "장바구니"
+        ]
+      },
+      "post": {
+        "description": "같은 SKU 를 다시 담으면 수량이 더해진다.",
+        "operationId": "add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCartItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAddCartItemResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "장바구니 담기",
+        "tags": [
+          "장바구니"
+        ]
+      }
+    },
+    "/api/retail/cart-items/count": {
+      "get": {
+        "description": "헤더의 뱃지 숫자. 자주 부르는 자리라 따로 뒀다.",
+        "operationId": "count",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCartCountResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "담긴 개수",
+        "tags": [
+          "장바구니"
+        ]
+      }
+    },
+    "/api/retail/cart-items/{cartItemId}": {
+      "delete": {
+        "description": "본문 없이 204 다. 없는 id 여도 204 — 결과가 같으면 같은 응답을 낸다.",
+        "operationId": "remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cartItemId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "장바구니 빼기",
+        "tags": [
+          "장바구니"
+        ]
+      },
+      "patch": {
+        "description": "더하는 게 아니라 그 값으로 교체한다. 바뀐 줄 금액이 같이 온다.",
+        "operationId": "changeQty",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cartItemId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeQtyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseChangeQtyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "수량 변경",
+        "tags": [
+          "장바구니"
+        ]
+      }
+    },
+    "/api/retail/categories": {
+      "get": {
+        "description": "필터 화면의 카테고리 트리.",
+        "operationId": "categories",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListCategoryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "카테고리",
+        "tags": [
+          "상품"
+        ]
+      }
+    },
+    "/api/retail/checkout": {
+      "get": {
+        "description": "장바구니에서 고른 것만 넘긴다. 단가를 여기서 다시 받는다.",
+        "operationId": "checkout",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cartItemIds",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCheckoutResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "주문서",
+        "tags": [
+          "주문"
+        ]
+      }
+    },
+    "/api/retail/filter-options": {
+      "get": {
+        "description": "색상·사이즈·가격대 등 고를 수 있는 값 전부.",
+        "operationId": "filterOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFilterOptionsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "필터 항목",
+        "tags": [
+          "상품"
+        ]
+      }
+    },
+    "/api/retail/listings": {
+      "get": {
+        "description": "검색 · 필터 · 정렬. 목록은 meta 가 붙는다.",
+        "operationId": "listings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoryId",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "colorIds",
+            "required": false,
+            "schema": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sizes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priceFrom",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priceTo",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseListingSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "상품 목록",
+        "tags": [
+          "상품"
+        ]
+      }
+    },
+    "/api/retail/listings/{listingId}": {
+      "get": {
+        "description": "색상·사이즈 조합(SKU)과 사진이 함께 온다.",
+        "operationId": "listing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listingId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListingDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "상품 상세",
+        "tags": [
+          "상품"
+        ]
+      }
+    },
+    "/api/retail/orders": {
+      "get": {
+        "description": "통합 주문서 하나가 한 줄이다.",
+        "operationId": "orders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseOrderSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "주문 내역",
+        "tags": [
+          "주문"
+        ]
+      },
+      "post": {
+        "description": "일부만 접수돼도 201 이다. 부분 성공은 에러가 아니라 결과다.",
+        "operationId": "place",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePlaceOrderResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "주문 접수",
+        "tags": [
+          "주문"
+        ]
+      }
+    },
+    "/api/retail/orders/{orderId}": {
+      "get": {
+        "description": "도매처별 주문 · 품목 줄 · 출고 기록.",
+        "operationId": "order",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "주문 상세",
+        "tags": [
+          "주문"
+        ]
+      }
+    },
+    "/api/retail/orders/{orderId}/cancel": {
+      "post": {
+        "description": "도매처별로 취소한다. NEW 인 것만 된다.",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCancelOrderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [
+                    {
+                      "code": "NOT_BLANK",
+                      "field": "email",
+                      "message": "이메일을 입력해주세요"
+                    }
+                  ],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력값이 규칙에 맞지 않는다. 필드 단위 검증이면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다. 승인 대기 화면으로 보낸다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제. 사용자에게 원인을 알려주지 않는다"
+          }
+        },
+        "summary": "주문 취소",
+        "tags": [
+          "주문"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "SESSION_RETAIL": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Generated server url",
+      "url": "http://localhost:8080"
+    }
+  ],
+  "tags": [
+    {
+      "description": "회원가입 · 로그인 · 내 정보. 로그인하면 SESSION_RETAIL 쿠키가 붙는다.",
+      "name": "인증 · 가입"
+    },
+    {
+      "description": "도매 상품을 둘러본다.",
+      "name": "상품"
+    },
+    {
+      "description": "여러 도매처 상품을 한 바구니에 담는다. 주문할 때 도매처별로 쪼개진다.",
+      "name": "장바구니"
+    },
+    {
+      "description": "주문서 · 접수 · 내역 · 상세 · 취소. 지금은 껍데기다 — 응답 모양만 낸다.",
+      "name": "주문"
+    },
+    {
+      "description": "주문했는데 아직 못 받은 것. 도매가 풀고 소매는 읽기만 한다.",
+      "name": "미송"
+    }
+  ]
+}

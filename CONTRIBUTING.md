@@ -42,5 +42,5 @@ app → features → shared → packages
 
 ## 되돌리기 비싼 결정을 바꿀 때
 
-폴더 구조 / 상태관리 / 라우팅 규칙 / 의존성 추가는 **ADR을 먼저 쓴다.**
+폴더 구조 / 상태관리 / 라우팅 규칙 / `dependencies` 추가는 **ADR을 먼저 쓴다.** (`devDependencies`는 PR 본문에 사유만)
 [docs/adr/0000-template.md](docs/adr/0000-template.md) 복사 → PR에 링크.

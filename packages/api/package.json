@@ -1,0 +1,27 @@
+{
+  "name": "@ondo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mocks/browser": "./src/mocks/browser.ts"
+  },
+  "scripts": {
+    "codegen": "pnpm run codegen:wholesale && pnpm run codegen:retail",
+    "codegen:wholesale": "openapi-typescript ./openapi/wholesale.json -o ./src/generated/wholesale.d.ts --properties-required-by-default",
+    "codegen:retail": "openapi-typescript ./openapi/retail.json -o ./src/generated/retail.d.ts --properties-required-by-default",
+    "sync-spec": "node scripts/sync-spec.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts"
+  },
+  "devDependencies": {
+    "@ondo/config": "workspace:*",
+    "eslint": "^9.39.5",
+    "openapi-typescript": "^7.10.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "msw": "^2.15.0"
+  }
+}

@@ -36,3 +36,10 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# claude code — 개인 도구. 레포에 올리지 않는다.
+# harness/CONTEXT.md 가 ~/feature-spec, ~/.claude/skills 같은 홈 절대경로를
+# 가리켜서, 클론한 쪽에서는 어차피 동작하지 않는다.
+# 나중에 팀과 공유할 설정이 생기면 아래처럼 예외를 뚫는다:
+#   !.claude/settings.json
+.claude/
