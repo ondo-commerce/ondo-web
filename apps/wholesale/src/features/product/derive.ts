@@ -247,6 +247,16 @@ export function requeueForRetry<
 }
 
 /**
+ * 업로드 401/403 중 세션이 끊긴 쪽인가(S4-3). 401이면 화면이 저장을 잠그고, 403(승인 안 됨)은
+ * 세션은 살아 있어 서버 문구만 보여 주고 저장은 기존 경로에 맡긴다.
+ */
+export function isSessionLostError(error: unknown): boolean {
+  return (
+    isApiError(error) && error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED
+  );
+}
+
+/**
  * 업로드 칸을 거둘 때 할 일(S4-2). 격자가 사라지거나(언마운트) 세션이 끊겨 큐를 멈출 때 쓴다.
  *
  * - `abort`: 진행 칸만. 대기 칸은 요청이 아직 없고, 보류·실패 칸은 요청이 이미 끝났다.

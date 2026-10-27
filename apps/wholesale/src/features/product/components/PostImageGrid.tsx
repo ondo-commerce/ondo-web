@@ -90,6 +90,8 @@ export function PostImageGrid({
   onAdd,
   onRemove,
   onUploadStateChange,
+  onAuthFailure,
+  addDisabled = false,
   disabled = false,
 }: {
   /**
@@ -124,6 +126,16 @@ export function PostImageGrid({
    * 남으면 저장할 길이 없다.
    */
   onUploadStateChange?: (state: UploadState) => void;
+  /**
+   * 업로드가 401/403을 받았다(S4-3). 격자는 큐를 멈추고 칸을 정리한 **뒤에** 부른다.
+   * 문구와 저장 잠금은 화면(View)이 정한다 — 401과 403의 처리가 다르다.
+   */
+  onAuthFailure?: (error: unknown) => void;
+  /**
+   * `+`만 잠근다(S4-7, 세션이 끊긴 뒤). 올려도 401이라서다. 등록 칸 순서 바꾸기·빼기는
+   * 그대로 — 저장 전엔 서버에 안 실리는 일이다. `disabled`(시즌 종료)는 격자 전체를 잠근다.
+   */
+  addDisabled?: boolean;
   disabled?: boolean;
 }) {
   const shown = images.slice(0, MAX_IMAGE_COUNT);
@@ -149,9 +161,11 @@ export function PostImageGrid({
    */
   const onAddRef = useRef(onAdd);
   const onUploadStateChangeRef = useRef(onUploadStateChange);
+  const onAuthFailureRef = useRef(onAuthFailure);
   useEffect(() => {
     onAddRef.current = onAdd;
     onUploadStateChangeRef.current = onUploadStateChange;
+    onAuthFailureRef.current = onAuthFailure;
   });
   /* 같은 요약을 두 번 올리지 않는다 — 부모가 렌더마다 setState 를 받을 이유가 없다 */
   const reportedRef = useRef<UploadState>({ uploading: false, failedCount: 0 });
@@ -238,6 +252,7 @@ export function PostImageGrid({
     const controller = new AbortController();
     controllersRef.current.set(slot.slotId, controller);
     let settled: Pick<UploadSlot, "status" | "url" | "failure">;
+    let authError: unknown = null;
     try {
       const { url } = await upload.mutateAsync({
         file: slot.file,
@@ -249,17 +264,9 @@ export function PostImageGrid({
       const failure = uploadFailure(
         isApiError(error) ? error.code : TRANSPORT_ERROR_CODE.NETWORK,
       );
-      if (failure.kind === "auth") {
-        // 파일 탓이 아니라 실패 칸을 만들지 않는다. 큐 정지·완료분 보존·`_form` 안내는 S4-3(loop-02)
-        if (cancelledRef.current) return;
-        URL.revokeObjectURL(slot.previewUrl);
-        slotsRef.current = slotsRef.current.filter(
-          (s) => s.slotId !== slot.slotId,
-        );
-        process();
-        return;
-      }
+      // 파일 탓이 아니라 실패 칸을 만들지 않는다. 아래 늦은 응답 검사를 지난 뒤 큐를 멈춘다
       settled = { status: "failed", url: null, failure };
+      authError = failure.kind === "auth" ? error : null;
     } finally {
       controllersRef.current.delete(slot.slotId);
     }
@@ -269,10 +276,37 @@ export function PostImageGrid({
       !slotsRef.current.some((s) => s.slotId === slot.slotId)
     )
       return;
+    if (authError !== null) {
+      stopForAuth(authError);
+      return;
+    }
     slotsRef.current = slotsRef.current.map((s) =>
       s.slotId === slot.slotId ? { ...s, ...settled } : s,
     );
     process();
+  }
+
+  /**
+   * 401/403(S4-3). 같은 세션으로 보내는 나머지도 같은 답을 받으니 큐를 멈춘다 —
+   * 대기·진행 칸은 조용히 거두고(진행은 abort) 미리보기를 놓는다. 실패 칸은 아니다.
+   *
+   * 끝났지만 앞 칸을 기다리던 보류 칸은 **등록 칸으로 올려 남긴다**(§4-3-4). 서버엔 이미
+   * 올라간 사진이고, 앞의 진행 칸을 거두면 `process()`의 `orderCompleted`가 자연히 넘긴다.
+   * 이미 있던 실패 칸도 그대로 둔다 — 사장이 본 칸을 말없이 지우지 않는다.
+   * 그다음 화면(View)에 알린다. 401이면 화면이 저장과 `+`를 잠근다.
+   */
+  function stopForAuth(error: unknown) {
+    const removed = slotsRef.current.filter(
+      (s) => s.status === "queued" || s.status === "uploading",
+    );
+    const plan = cancelUploads(removed);
+    // 칸을 먼저 뺀다 — abort가 부르는 catch는 칸이 없으니 아무것도 안 한다
+    slotsRef.current = slotsRef.current.filter((s) => !removed.includes(s));
+    for (const slotId of plan.abort)
+      controllersRef.current.get(slotId)?.abort();
+    for (const url of plan.revoke) URL.revokeObjectURL(url);
+    process();
+    onAuthFailureRef.current?.(error);
   }
 
   /**
@@ -422,11 +456,17 @@ export function PostImageGrid({
             ))}
             {remaining > 0 ? (
               <AddSlot
-                disabled={disabled}
+                disabled={disabled || addDisabled}
                 aria-label={`이미지 추가, ${remaining}장 더 올릴 수 있어요`}
                 aria-describedby={describedBy}
                 aria-invalid={describedBy !== undefined || undefined}
-                data-ac={disabled ? "S2-1 S2-8 S2-10" : "S2-1 S2-8"}
+                data-ac={
+                  disabled
+                    ? "S2-1 S2-8 S2-10"
+                    : addDisabled
+                      ? "S2-1 S2-8 S4-7"
+                      : "S2-1 S2-8"
+                }
                 onClick={() => inputRef.current?.click()}
                 /* `+`는 muted-foreground(4.9:1) — AddSlot 기본 border-strong 은 2.5:1 로 AA 미달(DD9) */
                 className="text-muted-foreground content-center text-xl leading-6 disabled:opacity-50"
@@ -447,7 +487,7 @@ export function PostImageGrid({
         type="file"
         multiple
         accept={IMAGE_ACCEPT}
-        disabled={disabled}
+        disabled={disabled || addDisabled}
         tabIndex={-1}
         aria-hidden
         className="sr-only"

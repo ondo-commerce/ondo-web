@@ -13,13 +13,18 @@ import {
   useUpdateProductMutation,
 } from "../api/mutations";
 import { useProductDetailQuery } from "../api/queries";
-import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
+import {
+  IDLE_UPLOAD_STATE,
+  SESSION_LOST_MESSAGE,
+  LIST_PARAM,
+} from "../constants";
 import {
   clearImagesError,
   clearPostErrors,
   clearProductErrors,
   firstInvalidField,
   isProductFormDirty,
+  isSessionLostError,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   shouldSendListing,
   toPostForm,
@@ -121,12 +126,39 @@ function ProductEditForm({ product }: { product: ProductView }) {
     useState<UploadState>(IDLE_UPLOAD_STATE);
   const note = uploadNote(uploadState);
   const noteId = useId();
+  /*
+   * 업로드가 401을 받았다(S4-3). 화면은 그대로 두고 저장과 `+`만 잠근다 — 지금 저장하면 저장도
+   * 401이라 전역 핸들러가 `/login`으로 보내 폼이 날아간다. `errors._form`에 넣지 않는 이유:
+   * 칸을 고칠 때마다 `_form`이 지워지는데 잠금은 남으면 버튼이 왜 잠겼는지 사라진다.
+   */
+  const [sessionLost, setSessionLost] = useState(false);
+  const formAlertId = useId();
+  const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  const handleUploadAuthFailure = (error: unknown) => {
+    if (isSessionLostError(error)) {
+      setSessionLost(true);
+      return;
+    }
+    // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다
+    const described = describeError(error);
+    setErrors((prev) => ({
+      ...prev,
+      _form: described.detail ?? described.title,
+    }));
+  };
+  const saveDescribedBy =
+    [sessionLost ? formAlertId : null, note ? noteId : null]
+      .filter((id) => id !== null)
+      .join(" ") || undefined;
 
   const update = useUpdateProductMutation(product.id);
   const listingStatus = useListingStatusMutation();
   const remove = useDeleteProductMutation();
   const saving =
-    update.isPending || listingStatus.isPending || uploadState.uploading;
+    update.isPending ||
+    listingStatus.isPending ||
+    uploadState.uploading ||
+    sessionLost;
 
   /** 저장과 취소가 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채 */
   const detailPath = `/products?${LIST_PARAM.productId}=${product.id}`;
@@ -272,13 +304,20 @@ function ProductEditForm({ product }: { product: ProductView }) {
           errors={errors}
           requireImages={requireImages}
           onUploadStateChange={setUploadState}
+          onUploadAuthFailure={handleUploadAuthFailure}
+          uploadLocked={sessionLost}
         />
       }
       actions={
         <>
-          {errors._form ? (
-            <p role="alert" className="text-destructive-strong mr-auto text-sm">
-              {errors._form}
+          {formMessage ? (
+            <p
+              id={formAlertId}
+              role="alert"
+              data-ac={sessionLost ? "S4-3 S4-7" : undefined}
+              className="text-destructive-strong mr-auto text-sm"
+            >
+              {formMessage}
             </p>
           ) : null}
           {note ? (
@@ -323,7 +362,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
             size="lg"
             onClick={submit}
             disabled={saving}
-            aria-describedby={note ? noteId : undefined}
+            aria-describedby={saveDescribedBy}
             data-ac="S2-3 S2-4"
           >
             저장하기

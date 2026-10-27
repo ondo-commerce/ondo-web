@@ -86,9 +86,14 @@ export function useDeleteProductMutation() {
  * 브라우저가 붙여야 해서 `apiFetch`가 `FormData`를 그대로 넘긴다.
  * `idempotencyKey`는 슬롯당 하나로 재시도에도 같은 값(D23). 동시에 여러 번 불러도 된다 —
  * `mutateAsync`마다 요청이 따로 나가고, 동시 수는 격자의 큐가 정한다.
+ *
+ * `meta.sessionLoss: "inline"` — 401이어도 전역 핸들러가 `/login`으로 보내지 않는다
+ * (`app/sessionLoss.ts`). 격자가 받아 큐를 멈추고 화면이 저장을 잠근다. 전체 이동이 먼저
+ * 터지면 이미 올라간 사진과 입력이 같이 사라진다(#252 S4-3).
  */
 export function useUploadListingImageMutation() {
   return useMutation({
+    meta: { sessionLoss: "inline" },
     mutationFn: (input: {
       file: File;
       idempotencyKey: string;

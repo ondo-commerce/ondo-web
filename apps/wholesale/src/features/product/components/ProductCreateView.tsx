@@ -7,7 +7,11 @@ import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
-import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
+import {
+  IDLE_UPLOAD_STATE,
+  SESSION_LOST_MESSAGE,
+  LIST_PARAM,
+} from "../constants";
 import {
   clearImagesError,
   clearPostErrors,
@@ -16,6 +20,7 @@ import {
   EMPTY_PRODUCT_FORM,
   firstInvalidField,
   isProductFormDirty,
+  isSessionLostError,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
@@ -47,6 +52,30 @@ export function ProductCreateView() {
     useState<UploadState>(IDLE_UPLOAD_STATE);
   const note = uploadNote(uploadState);
   const noteId = useId();
+  /*
+   * 업로드가 401을 받았다(S4-3). 화면은 그대로 두고 저장과 `+`만 잠근다 — 지금 저장하면 저장도
+   * 401이라 전역 핸들러가 `/login`으로 보내 폼이 날아간다. `errors._form`에 넣지 않는 이유:
+   * 칸을 고칠 때마다 `_form`이 지워지는데 잠금은 남으면 버튼이 왜 잠겼는지 사라진다.
+   */
+  const [sessionLost, setSessionLost] = useState(false);
+  const formAlertId = useId();
+  const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  const handleUploadAuthFailure = (error: unknown) => {
+    if (isSessionLostError(error)) {
+      setSessionLost(true);
+      return;
+    }
+    // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다
+    const described = describeError(error);
+    setErrors((prev) => ({
+      ...prev,
+      _form: described.detail ?? described.title,
+    }));
+  };
+  const saveDescribedBy =
+    [sessionLost ? formAlertId : null, note ? noteId : null]
+      .filter((id) => id !== null)
+      .join(" ") || undefined;
 
   /*
    * 이탈 확인(D22). 입력이 있거나 사진이 올라가는 중이면 `취소`는 모달로 되묻고 새로고침·탭
@@ -152,6 +181,8 @@ export function ProductCreateView() {
             /* 체크된 게시글은 판매 중으로 만들어진다 — 항상 필수(D21) */
             requireImages
             onUploadStateChange={setUploadState}
+            onUploadAuthFailure={handleUploadAuthFailure}
+            uploadLocked={sessionLost}
           />
         ) : (
           /*
@@ -177,9 +208,14 @@ export function ProductCreateView() {
       actions={
         <>
           {/* 칸에 못 붙인 실패. 버튼 왼쪽에 둬서 누른 결과가 누른 자리에서 읽힌다 */}
-          {errors._form ? (
-            <p role="alert" className="text-destructive-strong mr-auto text-sm">
-              {errors._form}
+          {formMessage ? (
+            <p
+              id={formAlertId}
+              role="alert"
+              data-ac={sessionLost ? "S4-3 S4-7" : undefined}
+              className="text-destructive-strong mr-auto text-sm"
+            >
+              {formMessage}
             </p>
           ) : null}
           {/* 저장이 왜 잠겼는지 / 뭐가 안 실리는지. 버튼이 `aria-describedby`로 가리킨다(DD10) */}
@@ -222,8 +258,8 @@ export function ProductCreateView() {
           <Button
             size="lg"
             onClick={submit}
-            disabled={create.isPending || uploadState.uploading}
-            aria-describedby={note ? noteId : undefined}
+            disabled={create.isPending || uploadState.uploading || sessionLost}
+            aria-describedby={saveDescribedBy}
             data-ac="S2-3 S2-4"
           >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
