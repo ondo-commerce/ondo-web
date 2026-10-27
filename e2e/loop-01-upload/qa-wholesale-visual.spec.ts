@@ -383,7 +383,7 @@ test("QA-V10 취소 모달(D22, 와이어프레임 섹션 없음) — 제목·�
   page,
 }) => {
   await openCreateWithPost(page);
-  await page.getByLabel("품명").fill("a");
+  await page.getByLabel("품명", { exact: true }).fill("a");
   await cancelButton(page).click();
   const dialog = leaveDialog(page);
   await expect(dialog).toBeVisible();

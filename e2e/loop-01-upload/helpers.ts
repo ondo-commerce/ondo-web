@@ -133,7 +133,7 @@ export async function fillProductForm(page: Page): Promise<void> {
 
 /** 좌측 상품 패널. 카테고리·색상·사이즈는 시드 값(여성 > 상의 > 티셔츠, 블랙 M) */
 export async function fillProductPanel(page: Page): Promise<void> {
-  await page.getByLabel("품명").fill("e2e 업로드 상품");
+  await page.getByLabel("품명", { exact: true }).fill("e2e 업로드 상품");
 
   await page.getByRole("combobox", { name: "카테고리 대분류" }).click();
   await page.getByRole("option", { name: "여성" }).click();
