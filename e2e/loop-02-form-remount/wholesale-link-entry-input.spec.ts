@@ -49,7 +49,88 @@ test.describe("링크 진입 직후 품명 입력이 남는다", () => {
     expect(new URL(page.url()).pathname).toBe("/products/new");
     await expect(name).toHaveValue("즉시 입력");
   });
+
+  test("S1-1b 링크 진입 후 폼이 보이고 1.5초 뒤 입력해도 2.5초 시점까지 남는다", async ({
+    page,
+  }) => {
+    // S1-1 은 입력 직후 2초만 본다. 진입 2초 남짓에 폼이 초기화되는 회귀는 늦게 친 값에서만 드러난다
+    await page.goto("/products");
+    await createLink(page).click();
+    const name = nameInput(page);
+    await expect(name).toBeVisible();
+    await page.waitForTimeout(1_500);
+    await name.fill("늦게 입력");
+    await page.waitForTimeout(1_000);
+    expect(new URL(page.url()).pathname).toBe("/products/new");
+    await expect(name).toHaveValue("늦게 입력");
+  });
 });
+
+interface RemountWatch {
+  guardAdded: number;
+  /** 붙은 품명 input 수. 재마운트가 없으면 1 */
+  inputAdded: number;
+  inputRemoved: number;
+  first: Element | null;
+}
+
+/**
+ * 품명 input 재마운트 감시. 기록을 **순서대로** 보며 addedNodes 하위에서 처음 붙은 input 을
+ * 잡고, 그 뒤의 제거와 새 input 추가를 센다. 콜백 끝에 `getElementById`로 잡으면 한 태스크
+ * 안의 "A 추가 → A 제거 → B 추가"가 B 를 처음 것으로 착각해 거짓 통과한다(#253 리뷰 F1).
+ */
+async function installRemountWatch(page: Page): Promise<void> {
+  await page.evaluate((guardText) => {
+    const rec: RemountWatch = {
+      guardAdded: 0,
+      inputAdded: 0,
+      inputRemoved: 0,
+      first: null,
+    };
+    (window as unknown as { __remount: RemountWatch }).__remount = rec;
+    const inputsIn = (n: Node): Element[] => {
+      if (!(n instanceof Element)) return [];
+      if (n.id === "product-name") return [n];
+      return Array.from(n.querySelectorAll("#product-name"));
+    };
+    new MutationObserver((records) => {
+      for (const r of records) {
+        for (const n of r.removedNodes) {
+          if (rec.first && (n === rec.first || n.contains(rec.first)))
+            rec.inputRemoved += 1;
+        }
+        for (const n of r.addedNodes) {
+          if (n.textContent?.includes(guardText)) rec.guardAdded += 1;
+          for (const input of inputsIn(n)) {
+            rec.inputAdded += 1;
+            rec.first ??= input;
+          }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  }, GUARD_TEXT);
+}
+
+async function readRemountWatch(page: Page) {
+  return page.evaluate(() => {
+    const rec = (window as unknown as { __remount: RemountWatch }).__remount;
+    return {
+      guardAdded: rec.guardAdded,
+      inputAdded: rec.inputAdded,
+      inputRemoved: rec.inputRemoved,
+      same:
+        rec.first !== null &&
+        rec.first === document.getElementById("product-name"),
+    };
+  });
+}
+
+const NO_REMOUNT = {
+  guardAdded: 0,
+  inputAdded: 1,
+  inputRemoved: 0,
+  same: true,
+};
 
 test("S1-3 링크 진입 2초 동안 가드 자리표시가 안 끼고 품명 칸이 같은 노드로 남는다", async ({
   page,
@@ -58,57 +139,12 @@ test("S1-3 링크 진입 2초 동안 가드 자리표시가 안 끼고 품명 �
   await expect(createLink(page)).toBeVisible();
 
   // 클릭 **전에** 단다. 클라이언트 이동이라 window 가 유지돼 기록이 이어진다
-  await page.evaluate((guardText) => {
-    const w = window as unknown as {
-      __remount: {
-        guardAdded: number;
-        inputRemoved: number;
-        first: Element | null;
-      };
-    };
-    w.__remount = { guardAdded: 0, inputRemoved: 0, first: null };
-    const rec = w.__remount;
-    new MutationObserver((records) => {
-      for (const r of records) {
-        for (const n of r.addedNodes) {
-          if (n.textContent?.includes(guardText)) rec.guardAdded += 1;
-        }
-        for (const n of r.removedNodes) {
-          if (rec.first && (n === rec.first || n.contains(rec.first)))
-            rec.inputRemoved += 1;
-        }
-      }
-      rec.first ??= document.getElementById("product-name");
-    }).observe(document.body, { childList: true, subtree: true });
-  }, GUARD_TEXT);
-
+  await installRemountWatch(page);
   await createLink(page).click();
   await expect(nameInput(page)).toBeVisible();
   await page.waitForTimeout(2_000);
 
-  const result = await page.evaluate(() => {
-    const rec = (
-      window as unknown as {
-        __remount: {
-          guardAdded: number;
-          inputRemoved: number;
-          first: Element | null;
-        };
-      }
-    ).__remount;
-    return {
-      guardAdded: rec.guardAdded,
-      inputRemoved: rec.inputRemoved,
-      seen: rec.first !== null,
-      same: rec.first === document.getElementById("product-name"),
-    };
-  });
-  expect(result).toEqual({
-    guardAdded: 0,
-    inputRemoved: 0,
-    seen: true,
-    same: true,
-  });
+  expect(await readRemountWatch(page)).toEqual(NO_REMOUNT);
 });
 
 test("S1-4 세션을 지우고 /products/new 를 전체 로드하면 /login 으로 가고 폼은 안 보인다", async ({
