@@ -20,6 +20,15 @@ springdoc이 코드에서 만들어 **런타임에만** 존재한다 — `GET :8
 **BE가 스펙을 바꿨다고 알려오면 `sync-spec`을 돌린다.** 스냅샷과 생성물을 한 커밋에 올린다.
 CI가 잡아주는 건 "스냅샷 ↔ 생성물"까지다 — **서버와 스냅샷이 어긋나는 건 사람만 막을 수 있다.**
 
+### 초안 op — `openapi/drafts/<app>.json`
+
+BE가 아직 없는 op를 FE가 먼저 쓸 때(FE-only 모드)는 스냅샷에 손으로 넣되 op에
+`"x-ondo-draft": true`를 붙이고, 같은 조각(`paths` · `components.schemas`)을 `openapi/drafts/<app>.json`에
+둔다. `sync-spec`은 받은 스펙으로 스냅샷을 **통째로 덮은 뒤** drafts에 있고 받은 스펙에 없는 초안 op와
+그 op가 참조하는 스키마만 다시 합친다. 받은 스펙에 같은 경로·메서드가 있으면 받은 쪽이 이긴다 —
+BE가 구현했다는 뜻이니 그 커밋에서 drafts 조각을 지운다(스크립트가 `초안 폐기:`로 알려 준다).
+초안 표시가 없는 op가 drafts에 있으면 스크립트가 멈춘다.
+
 ## 타입 규칙
 
 - `src/generated/`는 **손으로 고치지 않는다.**
