@@ -43,3 +43,8 @@ pnpm-debug.log*
 # 나중에 팀과 공유할 설정이 생기면 아래처럼 예외를 뚫는다:
 #   !.claude/settings.json
 .claude/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
