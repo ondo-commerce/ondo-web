@@ -68,16 +68,26 @@ test.describe("링크 진입 직후 품명 입력이 남는다", () => {
 
 interface RemountWatch {
   guardAdded: number;
-  /** 붙은 품명 input 수. 재마운트가 없으면 1 */
+  /** 감시 중 한 번이라도 DOM 에 있었던 품명 input 의 **서로 다른** 노드 수. 재마운트가 없으면 1 */
   inputAdded: number;
+  /** 빠진 품명 input 수. `first`와 무관하게 센다 */
   inputRemoved: number;
+  /** 기록 순서상 가장 먼저 DOM 에 있었던 품명 input */
   first: Element | null;
 }
 
 /**
- * 품명 input 재마운트 감시. 기록을 **순서대로** 보며 addedNodes 하위에서 처음 붙은 input 을
- * 잡고, 그 뒤의 제거와 새 input 추가를 센다. 콜백 끝에 `getElementById`로 잡으면 한 태스크
- * 안의 "A 추가 → A 제거 → B 추가"가 B 를 처음 것으로 착각해 거짓 통과한다(#253 리뷰 F1).
+ * 품명 input 재마운트 감시. MutationRecord 를 **순서대로** 보며 두 방향으로 센다.
+ *
+ * 1. addedNodes: 하위를 `querySelectorAll`로 본다. React 는 폼을 통째로 붙여서 input 자신은
+ *    addedNodes 에 안 나온다. 단 이 조회는 **콜백 시점**의 하위라, 첫 콜백 전에 A 가 B 로
+ *    교체됐으면 여기서는 B 만 보인다.
+ * 2. removedNodes: 빠진 노드 자신과 하위의 품명 input 을 전부 센다(빠진 노드의 하위는 그대로
+ *    남아 있어 콜백 시점에 봐도 정확하다). 한 번도 못 본 input 이 빠졌다면 그건 위 1에서 놓친,
+ *    더 먼저 붙어 있던 노드다 — `first`를 그쪽으로 옮겨 `same`도 false 가 되게 한다.
+ *
+ * 그래서 첫 콜백 전 교체(#253 QA F3 M3)와 같은 태스크 "A 추가 → 제거 → B 추가"(리뷰 F1, M4)가
+ * `inputAdded`, `inputRemoved`, `same` 세 값 모두에서 따로 잡힌다.
  */
 async function installRemountWatch(page: Page): Promise<void> {
   await page.evaluate((guardText) => {
@@ -88,22 +98,31 @@ async function installRemountWatch(page: Page): Promise<void> {
       first: null,
     };
     (window as unknown as { __remount: RemountWatch }).__remount = rec;
+    const seen = new WeakSet<Element>();
     const inputsIn = (n: Node): Element[] => {
       if (!(n instanceof Element)) return [];
       if (n.id === "product-name") return [n];
       return Array.from(n.querySelectorAll("#product-name"));
     };
+    /** 처음 보는 노드면 센다. 돌려주는 값은 "처음 봤는가" */
+    const note = (input: Element): boolean => {
+      if (seen.has(input)) return false;
+      seen.add(input);
+      rec.inputAdded += 1;
+      return true;
+    };
     new MutationObserver((records) => {
       for (const r of records) {
         for (const n of r.removedNodes) {
-          if (rec.first && (n === rec.first || n.contains(rec.first)))
+          for (const input of inputsIn(n)) {
             rec.inputRemoved += 1;
+            if (note(input)) rec.first = input;
+          }
         }
         for (const n of r.addedNodes) {
           if (n.textContent?.includes(guardText)) rec.guardAdded += 1;
           for (const input of inputsIn(n)) {
-            rec.inputAdded += 1;
-            rec.first ??= input;
+            if (note(input)) rec.first ??= input;
           }
         }
       }
