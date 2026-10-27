@@ -166,8 +166,11 @@ test("S5-3 ⌘/Ctrl+클릭은 가드하지 않는다 — 새 탭, 원래 탭은 
     context.waitForEvent("page"),
     menuLink(page, "재고").click({ modifiers: ["ControlOrMeta"] }),
   ]);
-  await popup.waitForLoadState("domcontentloaded");
-  expect(new URL(popup.url()).pathname).toBe("/inventory");
+  // 새 탭은 about:blank 로 먼저 열린다 — 로드 상태가 아니라 실제 이동을 기다린다(F4).
+  // 세션은 탭별 sessionStorage 라 새 탭이 ErpGuard 에 걸려 /login 으로 갈 수도 있다. 둘 다 "열렸다"다
+  await popup.waitForURL(
+    (url) => url.pathname === "/inventory" || url.pathname === "/login",
+  );
 
   expect(pathname(page)).toBe("/products/new");
   await expect(nameInput(page)).toHaveValue("가");
