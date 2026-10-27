@@ -1,5 +1,10 @@
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import {
+  IMAGE_MAGIC_LENGTH,
+  IMAGE_MAX_BYTES,
+  isJpegOrPng,
+} from "./listingImage";
 
 /**
  * 상품 목 — BE `V900__seed_dev.sql`(MUL-110, dev 배포 시드)의 `product`·`color_option`·`variant`·
@@ -460,6 +465,73 @@ let nextProductId = 1007;
 let nextVariantId = 3021;
 let nextListingId = 2007;
 
+/* --- 실패 손잡이 (#249) --------------------------------------------------- */
+
+/**
+ * "한 번만 실패" 손잡이가 이미 실패시킨 키. e2e가 `다시 시도`·재저장 성공 경로를 잡는 데 쓴다.
+ *
+ * - `imageFailedOnce`: 파일명에 `fail500once`가 있는 업로드. 키는 파일명
+ * - `titleFailedOnce`: 제목에 `[fail400once]`가 있는 POST/PATCH `/products`. 키는 제목
+ * - `statusFailedOnce`: 제목에 `[status-fail-once]`가 있는 게시글의 시즌 종료/재개. 키는 listing id
+ *
+ * 새로고침하면 비워진다 — 목 전체가 그렇다.
+ */
+const imageFailedOnce = new Set<string>();
+const titleFailedOnce = new Set<string>();
+const statusFailedOnce = new Set<number>();
+
+/** 파일명 손잡이. `fail500once`가 `fail500`을 포함하므로 **once를 먼저** 본다 */
+const IMAGE_FILENAME_HOOK = {
+  AUTH_401: "auth401",
+  AUTH_403: "auth403",
+  FAIL_500_ONCE: "fail500once",
+  FAIL_500: "fail500",
+  SLOW_5S: "slow5s",
+} as const;
+
+/** 제목 손잡이. 저장 실패 뒤 사진 보존(S3-5)·상태 변경 실패(S3-10)를 UI로 만들 다른 길이 없다(§9-12) */
+const TITLE_HOOK = {
+  FAIL_400_ONCE: "[fail400once]",
+  STATUS_FAIL_ONCE: "[status-fail-once]",
+} as const;
+
+/** 성공 응답까지 걸리는 시간. 진행 중 슬롯이 눈에 보일 만큼, 테스트가 지루하지 않을 만큼 */
+const IMAGE_UPLOAD_DELAY_MS = 600;
+/** `slow5s` 손잡이. e2e가 "진행 중" 상태를 고정 시간 단언 없이 잡는 창 */
+const IMAGE_UPLOAD_SLOW_MS = 5000;
+
+declare global {
+  interface Window {
+    /**
+     * 마지막 POST/PATCH `/products` 요청 본문. e2e(S2-4)가 `listing.images[]`에 서버가 준
+     * URL이 그대로 실렸는지 확인하는 유일한 창이다 — 브라우저 MSW라 `page.request`로는 못 본다.
+     */
+    __lastProductRequest?: unknown;
+  }
+}
+
+function recordLastProductRequest(body: unknown) {
+  // 핸들러는 브라우저 메인 스레드에서 돈다. 서버(RSC)에서 목을 쓰게 되면 `window`가 없다
+  if (typeof window !== "undefined") window.__lastProductRequest = body;
+}
+
+/** `[fail400once]` — 그 제목의 첫 저장만 400. 두 번째부터는 통과 */
+function titleFailsOnce(title: string | undefined): boolean {
+  if (title === undefined || !title.includes(TITLE_HOOK.FAIL_400_ONCE))
+    return false;
+  if (titleFailedOnce.has(title)) return false;
+  titleFailedOnce.add(title);
+  return true;
+}
+
+/** `[status-fail-once]` — 그 게시글의 첫 시즌 종료/재개만 500 */
+function statusFailsOnce(listing: MockListing): boolean {
+  if (!listing.title.includes(TITLE_HOOK.STATUS_FAIL_ONCE)) return false;
+  if (statusFailedOnce.has(listing.id)) return false;
+  statusFailedOnce.add(listing.id);
+  return true;
+}
+
 /** 재고 목(`./inventory`)이 입고·조정으로 수량을 바꿀 때 쓴다. 없으면 null */
 export function findMockVariant(variantId: number): MockVariant | null {
   return variants.find((v) => v.id === variantId) ?? null;
@@ -733,9 +805,14 @@ export const productHandlers = [
   http.post("*/api/wholesale/products", async ({ request }) => {
     const body =
       (await request.json()) as WholesaleSchema<"ProductCreateRequest">;
+    recordLastProductRequest(body);
     // dev와 같은 400 — variantId 와 (colorId, size)를 같이 실으면 거절 (#156)
     const targetErrors = variantPriceTargetErrors(body.listing);
     if (targetErrors.length > 0) return validationFailed(targetErrors);
+    if (titleFailsOnce(body.listing?.title))
+      return validationFailed([
+        { field: "listing.title", reason: "must not be blank" },
+      ]);
     // 소유 도매처는 101로 본다 — 세션이 없는 목이라 시드 첫 도매처를 쓴다
     const wholesalerId = 101;
     const product: MockProduct = {
@@ -783,9 +860,14 @@ export const productHandlers = [
         );
       const body =
         (await request.json()) as WholesaleSchema<"ProductUpdateRequest">;
+      recordLastProductRequest(body);
       // 생략 = 무변경(스펙)이라 키가 없을 수 있다. 있으면 dev와 같은 400 검사 (#156)
       const targetErrors = variantPriceTargetErrors(body.listing);
       if (targetErrors.length > 0) return validationFailed(targetErrors);
+      if (titleFailsOnce(body.listing?.title))
+        return validationFailed([
+          { field: "listing.title", reason: "must not be blank" },
+        ]);
       product.name = body.name;
       product.categoryId = body.categoryId;
       upsertVariants(
@@ -802,6 +884,8 @@ export const productHandlers = [
   http.post("*/api/wholesale/listings/:listingId/season-end", ({ params }) => {
     const listing = listings.find((l) => l.id === Number(params.listingId));
     if (!listing) return fail(404, "RESOURCE_NOT_FOUND", "게시글이 없습니다.");
+    if (statusFailsOnce(listing))
+      return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
     listing.status = "SEASON_ENDED";
     listing.seasonEndedAt = new Date().toISOString();
     return HttpResponse.json({ data: listingResponse(listing) });
@@ -810,9 +894,80 @@ export const productHandlers = [
   http.post("*/api/wholesale/listings/:listingId/reopen", ({ params }) => {
     const listing = listings.find((l) => l.id === Number(params.listingId));
     if (!listing) return fail(404, "RESOURCE_NOT_FOUND", "게시글이 없습니다.");
+    if (statusFailsOnce(listing))
+      return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
     listing.status = "ON_SALE";
     listing.seasonEndedAt = null;
     return HttpResponse.json({ data: listingResponse(listing) });
+  }),
+
+  /**
+   * 게시글 이미지 업로드 — 초안 op(#249, 스냅샷 `x-ondo-draft`). 표는 `01-plan.md` §5-4.
+   *
+   * 검사 순서는 실서버가 할 순서다: 파트 경계(400) → 용량(413) → 형식(415). 0바이트는
+   * 형식을 읽을 수 없으니 400에서 끝난다. 인증 손잡이(`auth401`·`auth403`)는 실서버라면
+   * 본문보다 먼저 보겠지만 목은 파일명을 알아야 해서 파트 검사 뒤에 온다.
+   *
+   * 응답 `url`은 `URL.createObjectURL(file)` — **목이 만들고 목이 소유한다.** 해제하지 않고
+   * 페이지 수명 동안 유지한다. 격자가 미리보기로 만드는 blob과는 별개 객체라, 격자가 자기
+   * 것을 revoke 해도 이 URL은 살아 있다(실서버 URL이 그런 것처럼).
+   */
+  http.post("*/api/wholesale/listing-images", async ({ request }) => {
+    const parts = (await request.formData()).getAll("file");
+    if (parts.length === 0)
+      return validationFailed([
+        { field: "file", reason: "file 파트가 없습니다." },
+      ]);
+    if (parts.length > 1)
+      return validationFailed([
+        { field: "file", reason: "file 파트는 하나여야 합니다." },
+      ]);
+    const file = parts[0];
+    if (typeof file === "string" || file === undefined)
+      return validationFailed([
+        { field: "file", reason: "file 파트는 파일이어야 합니다." },
+      ]);
+    if (file.size === 0)
+      return validationFailed([
+        { field: "file", reason: "빈 파일은 올릴 수 없습니다." },
+      ]);
+
+    const name = file.name;
+    if (name.includes(IMAGE_FILENAME_HOOK.AUTH_401))
+      return fail(401, "UNAUTHENTICATED", "로그인이 필요합니다.");
+    if (name.includes(IMAGE_FILENAME_HOOK.AUTH_403))
+      return fail(403, "NOT_APPROVED", "승인된 계정만 사용할 수 있습니다.");
+
+    if (file.size > IMAGE_MAX_BYTES)
+      return fail(413, "FILE_TOO_LARGE", "파일은 4MB까지 올릴 수 있어요");
+    const head = new Uint8Array(
+      await file.slice(0, IMAGE_MAGIC_LENGTH).arrayBuffer(),
+    );
+    if (!isJpegOrPng(head))
+      return fail(
+        415,
+        "UNSUPPORTED_FILE_TYPE",
+        "jpg, png 파일만 올릴 수 있어요",
+      );
+
+    if (name.includes(IMAGE_FILENAME_HOOK.FAIL_500_ONCE)) {
+      if (!imageFailedOnce.has(name)) {
+        imageFailedOnce.add(name);
+        return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
+      }
+    } else if (name.includes(IMAGE_FILENAME_HOOK.FAIL_500)) {
+      return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
+    }
+
+    await delay(
+      name.includes(IMAGE_FILENAME_HOOK.SLOW_5S)
+        ? IMAGE_UPLOAD_SLOW_MS
+        : IMAGE_UPLOAD_DELAY_MS,
+    );
+    const data: WholesaleSchema<"ListingImageUploadResponse"> = {
+      url: URL.createObjectURL(file),
+    };
+    return HttpResponse.json({ data }, { status: 201 });
   }),
 
   http.delete("*/api/wholesale/products/:productId", ({ params }) => {
@@ -839,4 +994,7 @@ export function resetProductMock() {
   nextProductId = 1007;
   nextVariantId = 3021;
   nextListingId = 2007;
+  imageFailedOnce.clear();
+  titleFailedOnce.clear();
+  statusFailedOnce.clear();
 }

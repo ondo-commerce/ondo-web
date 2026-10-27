@@ -602,6 +602,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wholesale/listing-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 게시글 이미지 업로드 (1장)
+         * @description 파일 1장을 저장하고 공개 URL을 돌려준다. 이 URL을 POST/PATCH /products 의 listing.images[] 에 그대로 싣는다. 업로드마다 새 URL(uuid 키)이라 같은 파일을 두 번 올려도 URL은 다르다. 게시글에 붙지 않은 파일은 서버가 정리한다(정책 미정).
+         *
+         *     요청 경계: multipart 파트는 `file` 하나, binary 하나. `file` 파트가 없거나 문자열이거나 2개 이상이면 400 VALIDATION_FAILED errors=[{field:'file', reason}]. 다른 이름의 파트는 무시.
+         *
+         *     제한: jpg·png(파일 앞머리 매직 넘버로 판정, Content-Type 불신) · 최대 IMAGE_MAX_BYTES(D18, 4 MiB = 4,194,304) · 0바이트 거절.
+         *
+         *     에러: 400 VALIDATION_FAILED / 401 UNAUTHENTICATED / 403 NOT_APPROVED / 413 FILE_TOO_LARGE / 415 UNSUPPORTED_FILE_TYPE / 500 INTERNAL_ERROR(저장소 실패)
+         */
+        post: operations["uploadListingImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wholesale/listings/{listingId}/reopen": {
         parameters: {
             query?: never;
@@ -1701,6 +1727,13 @@ export interface components {
             id: number;
             /** Format: int32 */
             sortOrder: number;
+            url: string;
+        };
+        ListingImageUploadResponse: {
+            /**
+             * @description 공개 읽기 가능한 절대 https URL. 소매 마켓이 <img src>로 그대로 쓰고, 도매 isImageUrl 이 https?:// 만 받는다(ListingImage 는 unoptimized 라 remotePatterns 무관). S3 키가 아니라 URL 이어야 한다. 만료되는 서명 URL 이면 안 된다 — 마켓 사진이 깨진다
+             * @example https://img.ddmondo.co.kr/wholesaler/101/listing/3f2a9c1e-….jpg
+             */
             url: string;
         };
         ListingResponse: {
@@ -3290,6 +3323,41 @@ export interface operations {
                 content: {
                     "*/*": {
                         data: components["schemas"]["InboundCreatedResponse"];
+                    };
+                };
+            };
+        };
+    };
+    uploadListingImage: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 슬롯당 1개, 재시도에도 같은 값. 같은 키 재요청은 같은 url (D23). 구현 전엔 무시 */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description jpg 또는 png 1장
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ListingImageUploadResponse"];
                     };
                 };
             };
