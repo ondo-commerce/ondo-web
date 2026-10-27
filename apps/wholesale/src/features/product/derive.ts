@@ -37,6 +37,7 @@ import type {
   SkuSize,
   SkuView,
   UploadFailure,
+  UploadSlot,
   UploadSlotStatus,
 } from "./types";
 import { formatNumber } from "@/shared/lib/format";
@@ -243,6 +244,25 @@ export function requeueForRetry<
     ...slots.filter((s) => s.slotId !== slotId),
     { ...target, status: "queued", failure: null },
   ];
+}
+
+/**
+ * 업로드 칸을 거둘 때 할 일(S4-2). 격자가 사라지거나(언마운트) 세션이 끊겨 큐를 멈출 때 쓴다.
+ *
+ * - `abort`: 진행 칸만. 대기 칸은 요청이 아직 없고, 보류·실패 칸은 요청이 이미 끝났다.
+ * - `revoke`: 넘겨받은 칸의 미리보기 **전부**. 격자가 `createObjectURL`로 만든 것만 여기 있다 —
+ *   서버(목)가 준 `url`은 등록 칸이 그리는 중일 수 있어 절대 넣지 않는다(S4-5).
+ *
+ * 순수 함수라 실제 abort·revoke는 부르는 쪽이 한다. 늦게 온 응답은 칸이 이미 없어서
+ * 아무것도 바꾸지 않는다 — 그건 격자의 몫이다.
+ */
+export function cancelUploads(
+  slots: readonly Pick<UploadSlot, "slotId" | "status" | "previewUrl">[],
+): { abort: string[]; revoke: string[] } {
+  return {
+    abort: slots.filter((s) => s.status === "uploading").map((s) => s.slotId),
+    revoke: slots.map((s) => s.previewUrl),
+  };
 }
 
 /**

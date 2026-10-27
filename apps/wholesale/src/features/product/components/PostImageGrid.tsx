@@ -37,6 +37,7 @@ import {
   MAX_IMAGE_COUNT,
 } from "../constants";
 import {
+  cancelUploads,
   orderCompleted,
   rejectImageFile,
   remainingImageSlots,
@@ -74,9 +75,12 @@ interface RejectedLine {
  * "고장"으로 읽혔다(wire-product F3). 실패 칸의 복구 행동은 종류별로 다르다(DD2): 서버·망
  * 문제면 `다시 시도`, 파일 문제면 `×`뿐이다.
  *
- * 취소·언마운트 수명주기(요청 abort·미리보기 blob 전부 해제·401/403 큐 정지)는
- * loop-02(S4-1·S4-2·S4-3·S4-5)다. 여기선 언마운트 뒤 늦은 응답이 `setState`를 치지
- * 않게 `cancelled` 플래그만 둔다. TODO(#252): S4-1 abort · S4-2 늦은 응답 unit.
+ * 수명주기(#252). 격자가 사라지면(`함께 게시` 해제, 화면 이탈) 진행 중 요청을 abort하고
+ * 남은 칸의 미리보기를 전부 놓는다(`cancelUploads`). 의도한 취소는 실패 칸을 만들지 않는다 —
+ * `apiFetch`가 abort도 `NETWORK`로 바꿔 던지므로 에러 종류가 아니라 `cancelledRef`와
+ * "그 칸이 아직 있나"로 가른다. 응답 헤더 뒤 본문 읽기 중 abort는 다른 에러로 올 수 있어서다.
+ * 서버 쪽 업로드는 취소되지 않는다 — 프록시가 upstream에 signal을 넘기지 않아 고아 파일이
+ * 남을 수 있다(이슈 #252 제외 범위).
  */
 export function PostImageGrid({
   id,
@@ -135,8 +139,10 @@ export function PostImageGrid({
   const inputRef = useRef<HTMLInputElement>(null);
   const upload = useUploadListingImageMutation();
 
-  /* 언마운트 뒤 도착한 응답이 사라진 격자의 상태를 치지 않게. S4-2(loop-02)가 abort까지 더한다 */
+  /* 언마운트 뒤 도착한 응답이 사라진 격자의 상태를 치지 않게. 진행 중 요청은 cleanup이 abort한다 */
   const cancelledRef = useRef(false);
+  /* 진행 칸마다 하나. 끝나면 지운다 — 남아 있는 것이 곧 "지금 나가 있는 요청"이다 */
+  const controllersRef = useRef(new Map<string, AbortController>());
   /*
    * 부모 콜백은 응답 콜백에서도 **최신 것**을 불러야 한다 — 요청을 띄운 렌더의 `onAdd`는
    * 그때의 `images`를 닫고 있어서 그걸 부르면 그 사이 올라간 장이 사라진다.
@@ -152,8 +158,15 @@ export function PostImageGrid({
 
   useEffect(() => {
     cancelledRef.current = false;
+    const controllers = controllersRef.current;
     return () => {
       cancelledRef.current = true;
+      // 플래그를 먼저 세운다 — abort가 부르는 catch가 이걸 보고 아무것도 안 한다
+      const plan = cancelUploads(slotsRef.current);
+      for (const slotId of plan.abort) controllers.get(slotId)?.abort();
+      controllers.clear();
+      for (const url of plan.revoke) URL.revokeObjectURL(url);
+      slotsRef.current = [];
       // 격자가 사라졌는데 잠금이 남으면 저장할 길이 없다(등록 화면의 `함께 게시` 해제)
       onUploadStateChangeRef.current?.({ uploading: false, failedCount: 0 });
     };
@@ -222,11 +235,14 @@ export function PostImageGrid({
 
   /** 요청 하나. 끝나면 그 칸만 바꾼다 — 다른 칸은 그 사이 몇 번이고 바뀌었을 수 있다 */
   async function startUpload(slot: UploadSlot) {
+    const controller = new AbortController();
+    controllersRef.current.set(slot.slotId, controller);
     let settled: Pick<UploadSlot, "status" | "url" | "failure">;
     try {
       const { url } = await upload.mutateAsync({
         file: slot.file,
         idempotencyKey: slot.idempotencyKey,
+        signal: controller.signal,
       });
       settled = { status: "done", url, failure: null };
     } catch (error) {
@@ -244,8 +260,15 @@ export function PostImageGrid({
         return;
       }
       settled = { status: "failed", url: null, failure };
+    } finally {
+      controllersRef.current.delete(slot.slotId);
     }
-    if (cancelledRef.current) return;
+    // 늦은 응답: 격자가 사라졌거나 그 칸을 이미 거뒀다. 실패 칸도, 등록 칸도 만들지 않는다
+    if (
+      cancelledRef.current ||
+      !slotsRef.current.some((s) => s.slotId === slot.slotId)
+    )
+      return;
     slotsRef.current = slotsRef.current.map((s) =>
       s.slotId === slot.slotId ? { ...s, ...settled } : s,
     );

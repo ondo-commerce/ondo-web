@@ -6,6 +6,7 @@ import {
   PRICE_INPUT_MAX_DIGITS,
 } from "./constants";
 import {
+  cancelUploads,
   clearImagesError,
   EMPTY_POST_FORM,
   EMPTY_PRODUCT_FORM,
@@ -288,6 +289,64 @@ describe("requeueForRetry — F1: 재시도 칸은 큐 끝으로, 성공분은 �
   it("없는 칸이면 그대로", () => {
     const before = [slot("A", "done")];
     expect(requeueForRetry(before, "Z")).toEqual(before);
+  });
+});
+
+describe("cancelUploads — S4-2·S4-5: 거둘 때 abort 는 진행 칸만, revoke 는 격자 미리보기 전부", () => {
+  const slot = (
+    slotId: string,
+    status: UploadSlotStatus,
+    url: string | null = null,
+  ) => ({ slotId, status, previewUrl: `blob:preview-${slotId}`, url });
+
+  it("대기·진행·보류·실패가 섞여 있으면 진행만 abort, 넷 다 revoke", () => {
+    expect(
+      cancelUploads([
+        slot("Q", "queued"),
+        slot("U", "uploading"),
+        slot("H", "done", "blob:server-H"),
+        slot("F", "failed"),
+      ]),
+    ).toEqual({
+      abort: ["U"],
+      revoke: [
+        "blob:preview-Q",
+        "blob:preview-U",
+        "blob:preview-H",
+        "blob:preview-F",
+      ],
+    });
+  });
+
+  it("S4-5 서버가 준 url(등록 칸이 그리는 것)은 revoke 에 없다", () => {
+    const { revoke } = cancelUploads([
+      slot("H1", "done", "blob:server-H1"),
+      slot("H2", "done", "blob:server-H2"),
+    ]);
+    expect(revoke).not.toContain("blob:server-H1");
+    expect(revoke).not.toContain("blob:server-H2");
+    expect(revoke.every((u) => u.startsWith("blob:preview-"))).toBe(true);
+  });
+
+  it("빈 큐면 할 일 없음", () => {
+    expect(cancelUploads([])).toEqual({ abort: [], revoke: [] });
+  });
+
+  it("F1 회귀: 재시도로 끝에 간 칸이 진행 중이면 그 칸도 abort, 순서는 큐 그대로", () => {
+    const queue = requeueForRetry(
+      [
+        { ...slot("A", "failed"), failure: { kind: "retry" } },
+        { ...slot("B", "done", "blob:server-B"), failure: null },
+      ],
+      "A",
+    ).map((s) =>
+      s.slotId === "A" ? { ...s, status: "uploading" as const } : s,
+    );
+    expect(queue.map((s) => s.slotId)).toEqual(["B", "A"]);
+    expect(cancelUploads(queue)).toEqual({
+      abort: ["A"],
+      revoke: ["blob:preview-B", "blob:preview-A"],
+    });
   });
 });
 
