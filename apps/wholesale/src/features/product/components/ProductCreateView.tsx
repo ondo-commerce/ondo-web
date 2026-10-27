@@ -1,19 +1,21 @@
 "use client";
 
 import { Button, Checkbox, cn, Panel } from "@ondo/ui";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
+import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
 import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
 import {
+  clearImagesError,
   clearPostErrors,
   clearProductErrors,
   EMPTY_POST_FORM,
   EMPTY_PRODUCT_FORM,
   firstInvalidField,
+  isProductFormDirty,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
@@ -21,9 +23,13 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostFormValue, ProductFormValue, UploadState } from "../types";
+import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
+
+/** 취소·등록 뒤 돌아가는 곳 */
+const LIST_PATH = "/products";
 
 export function ProductCreateView() {
   const router = useRouter();
@@ -42,19 +48,47 @@ export function ProductCreateView() {
   const note = uploadNote(uploadState);
   const noteId = useId();
 
+  /*
+   * 이탈 확인(D22). 입력이 있거나 사진이 올라가는 중이면 `취소`는 모달로 되묻고 새로고침·탭
+   * 닫기는 브라우저가 경고한다. `leaving`은 등록 성공과 `나가기` 뒤 — 떠나기로 한 이동에
+   * 경고가 뜨면 안 된다.
+   */
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const dirty =
+    isProductFormDirty(
+      {
+        product: EMPTY_PRODUCT_FORM,
+        post: EMPTY_POST_FORM,
+        publishToMarket: false,
+      },
+      { product, post, publishToMarket },
+    ) || uploadState.uploading;
+  useBeforeUnloadGuard(dirty && !leaving);
+
+  const leave = () => {
+    setLeaving(true);
+    router.push(LIST_PATH);
+  };
+
   /**
    * `POST /products`. 체크를 안 했으면 `listing: null`로 상품만 만든다(스펙).
    * 성공하면 목록으로 가되 새 상품을 우측 상세에 열어 둔다 — "등록됐다"를 화면이 말한다.
+   * 새 게시글은 판매 중으로 만들어지므로 `함께 게시`면 이미지가 필수다(D21).
    */
   const submit = () => {
     const postToSend = publishToMarket ? post : null;
-    const found = validateProductForm(product, postToSend);
+    const found = validateProductForm(product, postToSend, {
+      requireImages: publishToMarket,
+    });
     showErrors(found);
     if (firstInvalidField(found)) return;
 
     create.mutate(toCreateRequest(product, postToSend), {
-      onSuccess: (created) =>
-        router.push(`/products?${LIST_PARAM.productId}=${created.id}`),
+      onSuccess: (created) => {
+        setLeaving(true);
+        router.push(`${LIST_PATH}?${LIST_PARAM.productId}=${created.id}`);
+      },
       onError: (error) => {
         const mapped = toProductFormErrors(error, product);
         if (mapped) {
@@ -105,11 +139,18 @@ export function ProductCreateView() {
               setErrors((prev) => clearPostErrors(prev, post, next));
               setPost(next);
             }}
+            /* 갱신 함수로 — 업로드 응답은 이 렌더의 `post`를 믿으면 안 된다(`PostFormPanel` 주석) */
+            onImagesChange={(update) => {
+              setErrors(clearImagesError);
+              setPost((prev) => ({ ...prev, images: update(prev.images) }));
+            }}
             priceRows={priceRowsFromOptions(product.options)}
             // 등록 시점엔 입고가 없다 → 평균원가가 존재하지 않는다.
             // 현재고는 게시글과 별개로 등록되므로 열 자체는 늘 둔다
             showAvgCost={false}
             errors={errors}
+            /* 체크된 게시글은 판매 중으로 만들어진다 — 항상 필수(D21) */
+            requireImages
             onUploadStateChange={setUploadState}
           />
         ) : (
@@ -157,11 +198,27 @@ export function ProductCreateView() {
               {note.text}
             </p>
           ) : null}
-          {/* 목적지가 고정이라 실제 <a>로 둔다 — onClick+push면 새 탭·주소 복사가 죽는다
-              (Button의 asChild 주석 참고) */}
-          <Button asChild variant="line" size="lg">
-            <Link href="/products">취소</Link>
-          </Button>
+          {/*
+           * `<a>`가 아니라 버튼이다(D22). 입력이 있을 때 되물어야 하는데 링크는 누르는 순간
+           * 떠난다 — 새 탭·주소 복사를 잃는 대신 쓰다 만 폼을 지킨다. 입력이 없으면 바로 간다.
+           */}
+          <LeaveConfirmDialog
+            open={leaveOpen}
+            /* 트리거(취소)가 열자고 할 때 더티가 아니면 열지 않고 바로 떠난다 */
+            onOpenChange={(open) =>
+              open && !dirty ? leave() : setLeaveOpen(open)
+            }
+            onLeave={leave}
+          >
+            <Button
+              type="button"
+              variant="line"
+              size="lg"
+              data-ac="S3-11 S3-12"
+            >
+              취소
+            </Button>
+          </LeaveConfirmDialog>
           <Button
             size="lg"
             onClick={submit}

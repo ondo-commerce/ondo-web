@@ -214,6 +214,10 @@ test("S2-10 시즌 종료 수정 화면 — + 와 드래그가 비활성", async
     "true",
   );
   await expect(page.locator('input[type="file"]')).toBeDisabled();
+  // 등록 칸의 × (S3-1, #251) 도 잠긴다
+  await expect(
+    page.getByRole("button", { name: "이미지 1 빼기" }),
+  ).toBeDisabled();
 });
 
 test("S2-12 순서 — slow5s A, 보통 B: B 가 먼저 끝나도 보류, A 끝나면 [A, B] 와 대표 A", async ({

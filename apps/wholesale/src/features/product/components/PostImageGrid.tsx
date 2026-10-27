@@ -28,7 +28,6 @@ import {
 } from "@ondo/ui";
 import { CircleAlert, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { ListingImage } from "./ListingImage";
 import { useUploadListingImageMutation } from "../api/mutations";
 import {
@@ -79,12 +78,19 @@ interface RejectedLine {
  * 않게 `cancelled` 플래그만 둔다. TODO(#252): S4-1 abort · S4-2 늦은 응답 unit.
  */
 export function PostImageGrid({
+  id,
+  describedBy,
   images,
   onReorder,
   onAdd,
+  onRemove,
   onUploadStateChange,
   disabled = false,
 }: {
+  /** `+` 슬롯의 DOM id. 필수 오류의 첫 오류 포커스(`revealInvalidField`)가 이걸로 찾는다(S3-7) */
+  id?: string;
+  /** `+` 슬롯이 가리킬 오류 문구의 id. 오류가 있을 때만 — 없을 땐 `aria-describedby`도 없다(S2-1) */
+  describedBy?: string;
   /** 이미지 URL. 인덱스가 곧 순서 */
   images: string[];
   /**
@@ -93,8 +99,16 @@ export function PostImageGrid({
    * 이 경계를 지켜두면 나중에 dnd-kit을 걷어내도 위층은 그대로 간다.
    */
   onReorder: (from: number, to: number) => void;
-  /** 업로드가 끝난 URL을 **선택 순서대로** 끝에 붙여 달라는 요청. 같은 이유로 위층이 배열을 만든다 */
+  /**
+   * 업로드가 끝난 URL을 **선택 순서대로** 끝에 붙여 달라는 요청. 같은 이유로 위층이 배열을 만든다.
+   *
+   * 응답 콜백에서 불린다 — 위층은 **갱신 함수**로 적용해야 한다(`setPost(prev => …)`).
+   * 호출 시점의 `images`를 닫은 값으로 만들면 응답 둘이 React가 다시 그리기 전에 연달아 올 때
+   * 둘째가 첫째를 덮어쓴다(5장 올리면 2장만 남았다, #250). 전엔 `flushSync`로 막았다.
+   */
   onAdd: (urls: string[]) => void;
+  /** index 번째 등록 슬롯을 빼 달라는 요청(S3-1). 되묻지 않는다 — 저장 전엔 서버에 안 실린다 */
+  onRemove: (index: number) => void;
   /**
    * 대기·진행 칸이 있는지, 실패 칸이 몇인지. 저장 버튼 잠금과 그 옆 문구는 화면(View)이
    * 그리므로 올려 보낸다. 언마운트 때는 "없음"으로 한 번 더 — 격자가 사라졌는데 잠금이
@@ -177,13 +191,9 @@ export function PostImageGrid({
 
     const ready = orderCompleted(current);
     if (ready.length > 0) {
-      /*
-       * `flushSync`인 이유: 응답 둘이 React 가 다시 그리기 전에 연달아 오면 둘째 `onAdd`가
-       * 첫째가 반영되기 전의 `images`를 닫은 클로저를 불러 앞 장을 덮어쓴다(5장 올리면 2장만
-       * 남았다). 부모 갱신을 여기서 동기로 커밋해 다음 콜백이 최신 폼 값을 보게 한다.
-       */
+      // 위층이 갱신 함수로 받으므로(`onAdd` 주석) 연달아 와도 앞 장을 덮지 않는다
       const urls = ready.flatMap((s) => (s.url === null ? [] : [s.url]));
-      flushSync(() => onAddRef.current(urls));
+      onAddRef.current(urls);
       // 등록 칸은 서버 URL을 그리므로 격자가 만든 미리보기는 여기서 놓는다
       for (const s of ready) URL.revokeObjectURL(s.previewUrl);
       current = current.filter(
@@ -356,6 +366,7 @@ export function PostImageGrid({
                 index={i + 1}
                 isCover={i === 0}
                 disabled={disabled}
+                onRemove={() => onRemove(i)}
               >
                 <ListingImage src={img} alt={`이미지 ${i + 1}`} />
               </SortableImageSlot>
@@ -372,8 +383,11 @@ export function PostImageGrid({
             ))}
             {remaining > 0 ? (
               <AddSlot
+                id={id}
                 disabled={disabled}
                 aria-label={`이미지 추가, ${remaining}장 더 올릴 수 있어요`}
+                aria-describedby={describedBy}
+                aria-invalid={describedBy !== undefined || undefined}
                 data-ac={disabled ? "S2-1 S2-8 S2-10" : "S2-1 S2-8"}
                 onClick={() => inputRef.current?.click()}
                 /* `+`는 muted-foreground(4.9:1) — AddSlot 기본 border-strong 은 2.5:1 로 AA 미달(DD9) */
@@ -444,6 +458,7 @@ function SortableImageSlot({
   index,
   isCover,
   disabled,
+  onRemove,
   children,
 }: {
   id: string;
@@ -451,6 +466,7 @@ function SortableImageSlot({
   index: number;
   isCover: boolean;
   disabled: boolean;
+  onRemove: () => void;
   children: React.ReactNode;
 }) {
   const {
@@ -477,15 +493,33 @@ function SortableImageSlot({
     >
       <ImageSlot
         overlay={
-          isCover ? (
-            <Chip
-              tone="accent"
-              data-ac="S2-4"
-              className="absolute top-2 right-0.5 h-5 px-2 text-xs"
+          <>
+            {/*
+             * `×`는 드래그 껍데기 **안**에 있다. 8px 문턱(`PointerSensor`) 덕에 누르는 동안의
+             * 손떨림은 드래그가 안 되고 click 이 그대로 버튼에 닿는다. 키보드는 dnd-kit 이
+             * 껍데기 자신이 대상일 때만 집으므로(`activatorNode`) 버튼의 Enter 는 안 가로챈다.
+             */}
+            <IconButton
+              variant="line"
+              size="sm"
+              aria-label={`이미지 ${index} 빼기`}
+              data-ac="S3-1"
+              className="absolute top-1 left-1 size-6"
+              onClick={onRemove}
+              disabled={disabled}
             >
-              대표
-            </Chip>
-          ) : null
+              <X />
+            </IconButton>
+            {isCover ? (
+              <Chip
+                tone="accent"
+                data-ac="S2-4"
+                className="absolute top-2 right-0.5 h-5 px-2 text-xs"
+              >
+                대표
+              </Chip>
+            ) : null}
+          </>
         }
       >
         {children}

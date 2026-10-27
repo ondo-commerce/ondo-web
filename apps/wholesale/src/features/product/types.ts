@@ -175,6 +175,18 @@ export interface PostFormValue {
   prices: Record<string, PriceValue>;
 }
 
+/**
+ * `isProductFormDirty`가 비교하는 한 벌 — 폼 값 둘 + **저장되지 않는 화면 모드.**
+ * `publishToMarket`은 등록 화면만, `status`(상태 토글)는 게시글이 있는 수정 화면만 든다.
+ * 둘 다 폼 값은 아니지만 바꿔 놓고 나가면 잃는 것이라 더티 판정에 들어간다(D22).
+ */
+export interface ProductFormSnapshot {
+  product: ProductFormValue;
+  post: PostFormValue;
+  publishToMarket?: boolean;
+  status?: PostStatus;
+}
+
 /** 가격표 한 행. 옵션 매트릭스(색상 × 사이즈)에서 나온다 */
 export interface PriceRow {
   id: string;

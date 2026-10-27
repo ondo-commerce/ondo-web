@@ -28,6 +28,7 @@ import type {
   ProductCreateRequest,
   ProductDetail,
   ProductField,
+  ProductFormSnapshot,
   ProductFormValue,
   ProductRowView,
   ProductSummary,
@@ -691,10 +692,16 @@ export type ProductFormErrors = FormErrors<ProductField> & {
  *
  * 가격표 오류는 한 번에 하나만 말한다. 정수 아님 → 자릿수 → 판매가 없음 순서다 —
  * 앞의 것을 못 고치면 뒤의 판정이 의미가 없다.
+ *
+ * `requireImages`(D21): **판매 중 상태로 저장되는 게시글**은 사진이 1장 이상이어야 한다 —
+ * 마켓에 오르는 순간 썸네일이 있어야 해서다. 등록 화면은 `함께 게시`면 항상(새 게시글은
+ * `ON_SALE`로 만들어진다), 수정 화면은 저장 시점 상태 토글이 정한다. 시즌 종료로 저장되면
+ * 면제 — 옛 0장 게시글이 격자가 잠긴 채 막다른 길에 갇히지 않게(§9-11).
  */
 export function validateProductForm(
   product: ProductFormValue,
   post: PostFormValue | null,
+  { requireImages = false }: { requireImages?: boolean } = {},
 ): ProductFormErrors {
   const errors: ProductFormErrors = {};
   if (product.name.trim() === "") errors.name = "품명을 입력해 주세요.";
@@ -706,11 +713,69 @@ export function validateProductForm(
       "사이즈를 켜지 않은 색상이 있어요. 사이즈를 켜거나 그 색상을 빼 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
+  if (post && requireImages && post.images.length === 0)
+    errors["listing.images"] = LISTING_IMAGES_REQUIRED_MESSAGE;
   if (post) {
     const priceError = priceTableError(product, post);
     if (priceError) errors["listing.variantPrices"] = priceError;
   }
   return errors;
+}
+
+/** `validateProductForm`의 이미지 필수 문구. 수정 화면이 게시글을 안 보내는 저장에서도 같은 말을 쓴다 */
+export const LISTING_IMAGES_REQUIRED_MESSAGE =
+  "대표 이미지를 1장 이상 올려 주세요.";
+
+/**
+ * 폼이 초기값에서 벗어났는가(S3-15, D22). `취소` 확인 모달과 `beforeunload` 경고의 조건이다.
+ *
+ * **값으로 비교한다.** 참조 비교면 같은 값을 다시 친 뒤(품명 한 글자 넣고 지움) "바뀌었다"가
+ * 되어 아무것도 안 바꾼 사장에게 되묻는다. 가격표는 키 순서가 달라도 같은 값이면 같다 —
+ * `toPostForm`이 만든 순서와 사장이 고친 순서가 다를 수 있다.
+ *
+ * 업로드 슬롯은 격자가 드는 상태라 인자가 아니다 — 호출부가 `isProductFormDirty(...) || uploading`
+ * 으로 합친다. `publishToMarket`(등록)·`status`(수정)는 화면마다 한쪽만 있다.
+ */
+export function isProductFormDirty(
+  initial: ProductFormSnapshot,
+  current: ProductFormSnapshot,
+): boolean {
+  if (initial.publishToMarket !== current.publishToMarket) return true;
+  if (initial.status !== current.status) return true;
+  const a = initial.product;
+  const b = current.product;
+  if (
+    a.name !== b.name ||
+    a.category.join("\n") !== b.category.join("\n") ||
+    a.options.length !== b.options.length ||
+    a.options.some((o, i) => {
+      const p = b.options[i];
+      return (
+        p === undefined ||
+        o.id !== p.id ||
+        o.color.id !== p.color.id ||
+        o.sizes.join(",") !== p.sizes.join(",")
+      );
+    })
+  )
+    return true;
+  const x = initial.post;
+  const y = current.post;
+  if (
+    x.name !== y.name ||
+    x.description !== y.description ||
+    x.allowSinglePiece !== y.allowSinglePiece ||
+    x.images.join("\n") !== y.images.join("\n")
+  )
+    return true;
+  const xKeys = Object.keys(x.prices).sort();
+  const yKeys = Object.keys(y.prices).sort();
+  if (xKeys.join("\n") !== yKeys.join("\n")) return true;
+  return xKeys.some((key) => {
+    const p = x.prices[key];
+    const q = y.prices[key];
+    return p?.price !== q?.price || p?.orderLimit !== q?.orderLimit;
+  });
 }
 
 /**
@@ -768,6 +833,18 @@ export function clearPostErrors(
     delete rest["listing.variantPrices"];
     delete rest.priceRowIds;
   }
+  return rest;
+}
+
+/**
+ * 이미지 채널(`onImagesChange`)은 값을 받지 않고 **갱신 함수**를 받는다 — 업로드 응답은
+ * 사장의 입력이 아니라 뒤늦게 오는 콜백이라 그 시점의 `images`를 닫은 값으로 만들면 앞 장을
+ * 덮어쓴다(#250 §4-2). 값이 없으니 `clearPostErrors`의 참조 비교를 못 하고, 그 칸 오류만 지운다.
+ */
+export function clearImagesError(errors: ProductFormErrors): ProductFormErrors {
+  const rest: ProductFormErrors = { ...errors };
+  delete rest._form;
+  delete rest["listing.images"];
   return rest;
 }
 

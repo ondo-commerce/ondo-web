@@ -6,19 +6,31 @@ import {
   PRICE_INPUT_MAX_DIGITS,
 } from "./constants";
 import {
+  clearImagesError,
+  EMPTY_POST_FORM,
+  EMPTY_PRODUCT_FORM,
   integerText,
   isImageUrl,
   isIntegerInput,
   isIntegerText,
   isPriceMissing,
+  isProductFormDirty,
+  LISTING_IMAGES_REQUIRED_MESSAGE,
   orderCompleted,
   parseIntegerText,
+  priceRowId,
   rejectImageFile,
   remainingImageSlots,
   uploadFailure,
   uploadNote,
+  validateProductForm,
 } from "./derive";
-import type { UploadSlotStatus } from "./types";
+import type {
+  PostFormValue,
+  ProductFormSnapshot,
+  ProductFormValue,
+  UploadSlotStatus,
+} from "./types";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -237,5 +249,198 @@ describe("uploadNote — 저장 버튼 옆 한 줄", () => {
 
   it("둘 다 없으면 문구 없음", () => {
     expect(uploadNote({ uploading: false, failedCount: 0 })).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------------
+ * S3 — 필수 이미지(D21) · 더티 판정(D22)
+ * ------------------------------------------------------------------------ */
+
+/** 다른 칸은 전부 통과하는 폼. 이미지 검사만 남긴다 */
+const BLACK_M = priceRowId(1, "M");
+const validProduct: ProductFormValue = {
+  name: "셔츠",
+  category: ["1", "12", "121"],
+  options: [
+    { id: "opt-1", color: { id: 1, name: "블랙", hex: "#000" }, sizes: ["M"] },
+  ],
+};
+const validPost: PostFormValue = {
+  name: "게시글",
+  description: "",
+  images: [],
+  allowSinglePiece: false,
+  prices: { [BLACK_M]: { orderLimit: "", price: "12000" } },
+};
+
+describe("validateProductForm — S3-6: 판매 중으로 저장되는 게시글은 사진 1장 이상", () => {
+  it("requireImages 인데 0장 → listing.images 오류", () => {
+    const errors = validateProductForm(validProduct, validPost, {
+      requireImages: true,
+    });
+    expect(errors["listing.images"]).toBe(LISTING_IMAGES_REQUIRED_MESSAGE);
+    expect(errors["listing.images"]).toBe(
+      "대표 이미지를 1장 이상 올려 주세요.",
+    );
+  });
+
+  it("requireImages 인데 1장 → 오류 없음", () => {
+    const errors = validateProductForm(
+      validProduct,
+      { ...validPost, images: ["https://cdn.ondo.test/1.jpg"] },
+      { requireImages: true },
+    );
+    expect(errors).toEqual({});
+  });
+
+  it("requireImages 가 거짓(시즌 종료 저장)이면 0장이어도 검사 안 함", () => {
+    expect(
+      validateProductForm(validProduct, validPost, { requireImages: false }),
+    ).toEqual({});
+    // 옵션을 안 주면 거짓 — 기존 호출부가 그대로 돈다
+    expect(validateProductForm(validProduct, validPost)).toEqual({});
+  });
+
+  it("post 가 null(게시글 안 보냄)이면 requireImages 여도 검사 안 함", () => {
+    expect(
+      validateProductForm(validProduct, null, { requireImages: true }),
+    ).toEqual({});
+  });
+
+  it("다른 칸 오류와 같이 나온다 — 이미지가 다른 오류를 가리지 않는다", () => {
+    const errors = validateProductForm(
+      validProduct,
+      { ...validPost, name: "" },
+      { requireImages: true },
+    );
+    expect(errors["listing.title"]).toBeDefined();
+    expect(errors["listing.images"]).toBeDefined();
+  });
+});
+
+describe("clearImagesError — 이미지 채널은 그 칸 오류와 _form 만 지운다", () => {
+  it("listing.images 와 _form 을 지우고 나머지는 둔다", () => {
+    expect(
+      clearImagesError({
+        "listing.images": "x",
+        "listing.title": "y",
+        _form: "z",
+      }),
+    ).toEqual({ "listing.title": "y" });
+  });
+});
+
+describe("isProductFormDirty — S3-15: 값으로 비교한다", () => {
+  const initial: ProductFormSnapshot = {
+    product: EMPTY_PRODUCT_FORM,
+    post: EMPTY_POST_FORM,
+    publishToMarket: false,
+  };
+
+  it("초기값 그대로면 거짓 — 같은 값의 새 객체도 거짓", () => {
+    expect(isProductFormDirty(initial, initial)).toBe(false);
+    expect(
+      isProductFormDirty(initial, {
+        product: { name: "", category: ["", "", ""], options: [] },
+        post: { ...EMPTY_POST_FORM, images: [], prices: {} },
+        publishToMarket: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("품명 한 글자 → 참, 지우면 거짓", () => {
+    const typed = { ...initial, product: { ...EMPTY_PRODUCT_FORM, name: "a" } };
+    expect(isProductFormDirty(initial, typed)).toBe(true);
+    expect(
+      isProductFormDirty(initial, {
+        ...typed,
+        product: { ...typed.product, name: "" },
+      }),
+    ).toBe(false);
+  });
+
+  it("이미지 1장 추가 → 참", () => {
+    expect(
+      isProductFormDirty(initial, {
+        ...initial,
+        post: { ...EMPTY_POST_FORM, images: ["blob:a"] },
+      }),
+    ).toBe(true);
+  });
+
+  it("함께 게시 체크만 → 참 (등록 화면)", () => {
+    expect(
+      isProductFormDirty(initial, { ...initial, publishToMarket: true }),
+    ).toBe(true);
+  });
+
+  it("상태 토글만 → 참 (수정 화면). 양쪽 다 없으면 거짓", () => {
+    const edit: ProductFormSnapshot = {
+      product: validProduct,
+      post: validPost,
+      status: "ON_SALE",
+    };
+    expect(isProductFormDirty(edit, { ...edit, status: "SEASON_ENDED" })).toBe(
+      true,
+    );
+    expect(isProductFormDirty(edit, { ...edit })).toBe(false);
+    const noPost = { product: validProduct, post: validPost };
+    expect(isProductFormDirty(noPost, { ...noPost })).toBe(false);
+  });
+
+  it("가격표는 키 순서가 달라도 값이 같으면 거짓, 칸 하나가 다르면 참", () => {
+    const base: ProductFormSnapshot = {
+      product: validProduct,
+      post: {
+        ...validPost,
+        prices: {
+          [priceRowId(1, "M")]: { orderLimit: "", price: "12000" },
+          [priceRowId(1, "L")]: { orderLimit: "3", price: "13000" },
+        },
+      },
+    };
+    expect(
+      isProductFormDirty(base, {
+        ...base,
+        post: {
+          ...base.post,
+          prices: {
+            [priceRowId(1, "L")]: { orderLimit: "3", price: "13000" },
+            [priceRowId(1, "M")]: { orderLimit: "", price: "12000" },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isProductFormDirty(base, {
+        ...base,
+        post: {
+          ...base.post,
+          prices: {
+            ...base.post.prices,
+            [priceRowId(1, "L")]: { orderLimit: "3", price: "13001" },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("옵션의 사이즈 하나 켬 → 참", () => {
+    const edit: ProductFormSnapshot = {
+      product: validProduct,
+      post: validPost,
+    };
+    expect(
+      isProductFormDirty(edit, {
+        ...edit,
+        product: {
+          ...validProduct,
+          options: validProduct.options.map((o) => ({
+            ...o,
+            sizes: ["M", "L"],
+          })),
+        },
+      }),
+    ).toBe(true);
   });
 });

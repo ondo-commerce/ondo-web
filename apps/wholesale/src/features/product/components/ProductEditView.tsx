@@ -4,6 +4,7 @@ import { Button, cn, Dialog, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
+import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import {
@@ -14,9 +15,12 @@ import {
 import { useProductDetailQuery } from "../api/queries";
 import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
 import {
+  clearImagesError,
   clearPostErrors,
   clearProductErrors,
   firstInvalidField,
+  isProductFormDirty,
+  LISTING_IMAGES_REQUIRED_MESSAGE,
   shouldSendListing,
   toPostForm,
   toProductForm,
@@ -27,6 +31,7 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView, UploadState } from "../types";
+import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import {
@@ -123,6 +128,41 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const saving =
     update.isPending || listingStatus.isPending || uploadState.uploading;
 
+  /** 저장과 취소가 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채 */
+  const detailPath = `/products?${LIST_PARAM.productId}=${product.id}`;
+
+  /*
+   * 이미지 필수(D21)는 **저장 시점 상태**가 정한다. 판매 중이면 필수, 시즌 종료면 면제 —
+   * 게시글이 없는 상품도 게시글을 만들면 판매 중으로 만들어지니 같은 기준이다.
+   */
+  const requireImages = status === "ON_SALE";
+
+  /*
+   * 이탈 확인(D22). 서버 값으로 만든 폼과 지금 폼을 값으로 비교한다 — 저장 뒤 refetch 로
+   * `product`가 바뀌면 그게 새 기준이다. `leaving`은 저장 성공과 `나가기` 뒤.
+   */
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const dirty =
+    isProductFormDirty(
+      {
+        product: toProductForm(product),
+        post: toPostForm(product),
+        status: product.post?.status,
+      },
+      {
+        product: productForm,
+        post: postForm,
+        status: product.post ? status : undefined,
+      },
+    ) || uploadState.uploading;
+  useBeforeUnloadGuard(dirty && !leaving);
+
+  const leave = () => {
+    setLeaving(true);
+    router.push(detailPath);
+  };
+
   /**
    * 저장 = `PATCH /products/{id}` + (상태가 바뀌었으면) 시즌 종료/재개 호출.
    * PATCH는 `listing.status`를 받지 않아서(스펙) 상태만 따로 간다. 순서는 PATCH가 먼저 —
@@ -134,7 +174,20 @@ function ProductEditForm({ product }: { product: ProductView }) {
     const found = validateProductForm(
       productForm,
       sendListing ? postForm : null,
+      { requireImages },
     );
+    /*
+     * 게시글을 안 보내는 저장(`시즌 종료 → 판매 중` 토글만)도 판매 중으로 오르는 순간이라
+     * 이미지는 본다(D21). `post: null`은 "게시글 칸은 검사 안 함"이라 이 한 칸만 따로 —
+     * 제목·가격표는 서버가 이미 받아 준 값이다.
+     */
+    if (
+      !sendListing &&
+      product.post &&
+      requireImages &&
+      postForm.images.length === 0
+    )
+      found["listing.images"] = LISTING_IMAGES_REQUIRED_MESSAGE;
     showErrors(found);
     if (firstInvalidField(found)) return;
 
@@ -147,7 +200,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
           next: status,
         });
       }
-      router.push(`/products?${LIST_PARAM.productId}=${product.id}`);
+      setLeaving(true);
+      router.push(detailPath);
     } catch (error) {
       const mapped = toProductFormErrors(error, productForm);
       if (mapped) {
@@ -205,12 +259,18 @@ function ProductEditForm({ product }: { product: ProductView }) {
             setErrors((prev) => clearPostErrors(prev, postForm, next));
             setPostForm(next);
           }}
+          /* 갱신 함수로 — 업로드 응답은 이 렌더의 `postForm`을 믿으면 안 된다(`PostFormPanel` 주석) */
+          onImagesChange={(update) => {
+            setErrors(clearImagesError);
+            setPostForm((prev) => ({ ...prev, images: update(prev.images) }));
+          }}
           /* 현재고·평균원가는 서버가 준 SKU에서. 새로 켠 색×사이즈는 아직 0이다 */
           priceRows={priceRowsFromOptions(productForm.options, product.skus)}
           /* 게시글이 없으면 끝낼 것도 없다 — 세그먼트 자체가 안 나온다 */
           status={product.post ? status : undefined}
           onStatusChange={product.post ? setStatus : undefined}
           errors={errors}
+          requireImages={requireImages}
           onUploadStateChange={setUploadState}
         />
       }
@@ -236,13 +296,29 @@ function ProductEditForm({ product }: { product: ProductView }) {
               {note.text}
             </p>
           ) : null}
-          {/* 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
-              100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7) */}
-          <Button asChild variant="line" size="lg">
-            <Link href={`/products?${LIST_PARAM.productId}=${product.id}`}>
+          {/*
+           * 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
+           * 100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7).
+           * `<a>`가 아니라 버튼인 이유(D22): 값을 바꿨으면 되물어야 하는데 링크는 누르는 순간
+           * 떠난다. 안 바꿨으면 바로 간다.
+           */}
+          <LeaveConfirmDialog
+            open={leaveOpen}
+            /* 트리거(취소)가 열자고 할 때 더티가 아니면 열지 않고 바로 떠난다 */
+            onOpenChange={(open) =>
+              open && !dirty ? leave() : setLeaveOpen(open)
+            }
+            onLeave={leave}
+          >
+            <Button
+              type="button"
+              variant="line"
+              size="lg"
+              data-ac="S3-11 S3-12"
+            >
               취소
-            </Link>
-          </Button>
+            </Button>
+          </LeaveConfirmDialog>
           <Button
             size="lg"
             onClick={submit}
