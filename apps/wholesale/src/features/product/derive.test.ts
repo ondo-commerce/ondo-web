@@ -21,6 +21,7 @@ import {
   priceRowId,
   rejectImageFile,
   remainingImageSlots,
+  requeueForRetry,
   uploadFailure,
   uploadNote,
   validateProductForm,
@@ -229,6 +230,64 @@ describe("orderCompleted — S2-12: 선택 순서를 지키는 앞쪽 연속 구
   it("빈 목록·전부 진행 중이면 빈 배열", () => {
     expect(orderCompleted([])).toEqual([]);
     expect(orderCompleted([slot("A", "uploading")])).toEqual([]);
+  });
+});
+
+describe("requeueForRetry — F1: 재시도 칸은 큐 끝으로, 성공분은 그때의 끝에", () => {
+  const slot = (
+    slotId: string,
+    status: UploadSlotStatus,
+    failure: { kind: "retry" } | null = null,
+  ) => ({ slotId, status, failure, idempotencyKey: `key-${slotId}` });
+
+  it("A 실패 → B 완료 → A 재시도: B 가 보류되지 않고 먼저 올라간다", () => {
+    const queue = requeueForRetry(
+      [slot("A", "failed", { kind: "retry" }), slot("B", "done")],
+      "A",
+    );
+    expect(queue.map((s) => `${s.slotId}:${s.status}`)).toEqual([
+      "B:done",
+      "A:queued",
+    ]);
+    expect(orderCompleted(queue).map((s) => s.slotId)).toEqual(["B"]);
+  });
+
+  it("A 재시도 성공 → [B, A] — 대표는 B 그대로", () => {
+    const queue = requeueForRetry(
+      [slot("A", "failed", { kind: "retry" }), slot("B", "done")],
+      "A",
+    ).map((s) => (s.slotId === "A" ? { ...s, status: "done" as const } : s));
+    expect(orderCompleted(queue).map((s) => s.slotId)).toEqual(["B", "A"]);
+  });
+
+  it("같은 파일·같은 멱등키 — 자리와 상태만 바뀐다", () => {
+    const [requeued] = requeueForRetry(
+      [slot("A", "failed", { kind: "retry" })],
+      "A",
+    );
+    expect(requeued).toEqual({
+      slotId: "A",
+      status: "queued",
+      failure: null,
+      idempotencyKey: "key-A",
+    });
+  });
+
+  it("뒤에 대기 칸이 있어도 재시도 칸이 그 뒤로 간다 — 원래 순서의 뒤가 먼저 올라간다", () => {
+    const queue = requeueForRetry(
+      [
+        slot("A", "failed", { kind: "retry" }),
+        slot("B", "uploading"),
+        slot("C", "queued"),
+      ],
+      "A",
+    );
+    expect(queue.map((s) => s.slotId)).toEqual(["B", "C", "A"]);
+  });
+
+  it("없는 칸이면 그대로", () => {
+    const before = [slot("A", "done")];
+    expect(requeueForRetry(before, "Z")).toEqual(before);
   });
 });
 

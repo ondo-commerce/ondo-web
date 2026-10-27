@@ -40,6 +40,7 @@ import {
   orderCompleted,
   rejectImageFile,
   remainingImageSlots,
+  requeueForRetry,
   uploadFailure,
 } from "../derive";
 import type { UploadSlot, UploadState } from "../types";
@@ -87,7 +88,11 @@ export function PostImageGrid({
   onUploadStateChange,
   disabled = false,
 }: {
-  /** `+` 슬롯의 DOM id. 필수 오류의 첫 오류 포커스(`revealInvalidField`)가 이걸로 찾는다(S3-7) */
+  /**
+   * 격자의 DOM id. 필수 오류의 첫 오류 포커스(`revealInvalidField`)가 이걸로 찾아
+   * 안의 `+`(aria-invalid)로 가고, `+`가 없으면(실패 칸으로 9칸이 찼을 때, F3) 격자 자신이
+   * 받는다 — 그래서 격자에 `tabIndex={-1}`이 있다(S3-7)
+   */
   id?: string;
   /** `+` 슬롯이 가리킬 오류 문구의 id. 오류가 있을 때만 — 없을 땐 `aria-describedby`도 없다(S2-1) */
   describedBy?: string;
@@ -295,11 +300,13 @@ export function PostImageGrid({
     process();
   }
 
-  /** 같은 파일, 같은 칸, 같은 멱등키. 대기로 돌려놓으면 큐가 동시 수 안에서 다시 띄운다 */
+  /**
+   * 같은 파일, 같은 멱등키. 대기로 돌려놓으면 큐가 동시 수 안에서 다시 띄운다.
+   * 칸은 **큐 끝으로 옮긴다**(`requeueForRetry`, §4-4) — 원래 자리에 두면 실패로
+   * 건너뛰었던 뒤쪽 완료분이 다시 보류된다(F1). 그래서 재시도 뒤 칸 번호가 바뀐다.
+   */
   function retry(slotId: string) {
-    slotsRef.current = slotsRef.current.map((s) =>
-      s.slotId === slotId ? { ...s, status: "queued", failure: null } : s,
-    );
+    slotsRef.current = requeueForRetry(slotsRef.current, slotId);
     process();
   }
 
@@ -358,7 +365,16 @@ export function PostImageGrid({
       >
         {/* 정렬 대상은 등록 슬롯(`shown`)뿐이다. 뒤에 붙는 업로드 슬롯은 items 에 없다 */}
         <SortableContext items={shown} strategy={rectSortingStrategy}>
-          <SlotGrid data-ac="S2-8" aria-disabled={disabled || undefined}>
+          <SlotGrid
+            id={id}
+            /* 프로그램 포커스만 받는다(F3). Tab 순서엔 안 들어간다 — 칸들이 각자 받는다 */
+            tabIndex={-1}
+            role="group"
+            aria-label="게시글 이미지"
+            aria-describedby={describedBy}
+            data-ac="S2-8"
+            aria-disabled={disabled || undefined}
+          >
             {shown.map((img, i) => (
               <SortableImageSlot
                 key={img}
@@ -383,7 +399,6 @@ export function PostImageGrid({
             ))}
             {remaining > 0 ? (
               <AddSlot
-                id={id}
                 disabled={disabled}
                 aria-label={`이미지 추가, ${remaining}장 더 올릴 수 있어요`}
                 aria-describedby={describedBy}
@@ -473,6 +488,7 @@ function SortableImageSlot({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -480,7 +496,16 @@ function SortableImageSlot({
 
   return (
     <div
-      ref={setNodeRef}
+      /*
+       * 껍데기 자신을 집기 손잡이(activatorNode)로 등록한다. 이게 없으면 dnd-kit 6.3.1의
+       * KeyboardSensor 는 event.target 을 안 보고 안에서 올라온 Enter·Space 까지
+       * preventDefault 해서 `×` 버튼이 키보드로 안 눌린다(F4). 등록하면 target 이 껍데기일
+       * 때만 집고, 버튼에서 난 키는 버튼 몫으로 남긴다. 마우스는 8px 문턱이 그대로 가른다.
+       */
+      ref={(node) => {
+        setNodeRef(node);
+        setActivatorNodeRef(node);
+      }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       // touch-none: 터치에서 드래그가 페이지 스크롤에 먹히지 않게 한다
       // isDragging 동안 반투명 + 위로 띄우기 — 밀려나는 칸들과 구분된다
@@ -496,8 +521,8 @@ function SortableImageSlot({
           <>
             {/*
              * `×`는 드래그 껍데기 **안**에 있다. 8px 문턱(`PointerSensor`) 덕에 누르는 동안의
-             * 손떨림은 드래그가 안 되고 click 이 그대로 버튼에 닿는다. 키보드는 dnd-kit 이
-             * 껍데기 자신이 대상일 때만 집으므로(`activatorNode`) 버튼의 Enter 는 안 가로챈다.
+             * 손떨림은 드래그가 안 되고 click 이 그대로 버튼에 닿는다. 키보드는 껍데기가
+             * `activatorNode`로 등록돼 있어야 버튼의 Enter·Space 를 안 가로챈다(위 ref 주석, F4).
              */}
             <IconButton
               variant="line"

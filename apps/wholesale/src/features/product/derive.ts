@@ -227,6 +227,25 @@ export function orderCompleted<T extends { status: UploadSlotStatus }>(
 }
 
 /**
+ * 실패 칸 재시도. 대기로 되돌리면서 **큐 끝으로 옮긴다**(§4-4 "그때의 끝에 붙는다").
+ *
+ * 원래 자리에서 대기로만 바꾸면 `orderCompleted`가 그 칸 앞에서 멈춰, 실패로 이미
+ * 건너뛰었던 뒤쪽 완료분이 다시 보류되고 대표 순서까지 바뀐다(F1). 실패한 칸은
+ * 선택 순서에서 빠진 것이고, 재시도는 "지금 다시 고른 것"과 같은 순서다.
+ * 같은 파일·같은 멱등키는 그대로다 — 자리만 바뀐다. 못 찾으면 그대로 돌려준다.
+ */
+export function requeueForRetry<
+  T extends { slotId: string; status: UploadSlotStatus; failure: unknown },
+>(slots: readonly T[], slotId: string): T[] {
+  const target = slots.find((s) => s.slotId === slotId);
+  if (target === undefined) return [...slots];
+  return [
+    ...slots.filter((s) => s.slotId !== slotId),
+    { ...target, status: "queued", failure: null },
+  ];
+}
+
+/**
  * 저장 버튼 옆 한 줄. 대기·진행 칸이 있으면 잠금 안내가 실패 안내보다 앞선다 —
  * 잠긴 이유를 먼저 말해야 한다. `null`이면 문구 없음.
  */

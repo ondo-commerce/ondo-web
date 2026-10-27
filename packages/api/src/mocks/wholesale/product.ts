@@ -924,7 +924,16 @@ export const productHandlers = [
    */
   http.post("*/api/wholesale/listing-images", async ({ request }) => {
     countListingImageRequest();
-    const parts = (await request.formData()).getAll("file");
+    // multipart 가 아니거나 boundary 가 없으면 formData() 가 던진다. 그것도 "파일 파트를 읽을
+    // 수 없는 요청"이라 계약의 400 이지, MSW 가 대신 내는 500 이 아니다(F2)
+    let parts: FormDataEntryValue[];
+    try {
+      parts = (await request.formData()).getAll("file");
+    } catch {
+      return validationFailed([
+        { field: "file", reason: "multipart/form-data 본문이 아닙니다." },
+      ]);
+    }
     if (parts.length === 0)
       return validationFailed([
         { field: "file", reason: "file 파트가 없습니다." },
