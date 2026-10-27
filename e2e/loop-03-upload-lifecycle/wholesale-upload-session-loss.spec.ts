@@ -11,6 +11,7 @@ import {
   addSlot,
   cells,
   chooseFiles,
+  fillProductForm,
   jpg,
   login,
   openCreateWithPost,
@@ -46,11 +47,10 @@ test.beforeEach(async ({ page }) => {
 /** 등록 칸 1장 → `slow5s` 진행 시작 → `auth*` 선택. 나간 업로드 요청 수를 돌려준다 */
 async function uploadThenFail(page: Page, hook: "auth401" | "auth403") {
   const before = (await requests(page, { path: /\/listing-images$/ })).length;
+  // 고르기 **전에** 센다. 고른 뒤 세면 응답이 먼저 반영됐을 때 없는 개수를 기다린다(F2)
+  const registeredCount = (await registered(page).count()) + 1;
   await chooseFiles(page, [jpg("a.jpg")]);
-  await expect(registered(page)).toHaveCount(
-    (await registered(page).count()) + 1,
-  );
-  const registeredCount = await registered(page).count();
+  await expect(registered(page)).toHaveCount(registeredCount);
   await chooseFiles(page, [jpg("slow5s-auth.jpg")]);
   await waitUploadsStarted(page, before + 2);
   await expect(slotsIn(page, "uploading")).toHaveCount(1);
@@ -149,7 +149,9 @@ test.describe("S4-7 401 뒤 저장과 + 잠금", () => {
   test("등록 — 저장 disabled, 이유 문구를 가리킴, 눌러도 POST 0회, 이동 0회", async ({
     page,
   }) => {
+    // 폼이 유효하고 등록 칸 1장이 있다 — 잠금이 없으면 이 클릭은 POST 를 보낸다(F3)
     await openCreateWithPost(page);
+    await fillProductForm(page);
     await uploadThenFail(page, "auth401");
     await expect(sessionAlert(page)).toBeVisible();
 
@@ -175,6 +177,31 @@ test.describe("S4-7 401 뒤 저장과 + 잠금", () => {
     ).toHaveLength(0);
     expect(new URL(page.url()).pathname).toBe("/products/1001/edit");
   });
+});
+
+test("F1 401 정지 뒤 기존 실패 칸 — 다시 시도는 잠기고 새 요청 0, 빼기는 된다", async ({
+  page,
+}) => {
+  await openCreateWithPost(page);
+  await chooseFiles(page, [jpg("fail500.jpg")]);
+  const failed = slotsIn(page, "failed");
+  await expect(failed).toHaveCount(1);
+  await chooseFiles(page, [jpg("auth401.jpg")]);
+  await expect(sessionAlert(page)).toBeVisible();
+
+  const sent = (await requests(page, { path: /\/listing-images$/ })).length;
+  const retry = failed.getByRole("button", { name: /다시 시도$/ });
+  await expect(retry).toBeDisabled();
+  await retry.click({ force: true });
+  await page.waitForTimeout(1_000);
+  expect((await requests(page, { path: /\/listing-images$/ })).length).toBe(
+    sent,
+  );
+  await expect(slotsIn(page, "uploading")).toHaveCount(0);
+  await expect(slotsIn(page, "queued")).toHaveCount(0);
+
+  await failed.getByRole("button", { name: /빼기$/ }).click();
+  await expect(failed).toHaveCount(0);
 });
 
 async function expectLocked(page: Page) {

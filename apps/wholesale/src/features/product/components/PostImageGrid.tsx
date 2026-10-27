@@ -153,6 +153,13 @@ export function PostImageGrid({
 
   /* 언마운트 뒤 도착한 응답이 사라진 격자의 상태를 치지 않게. 진행 중 요청은 cleanup이 abort한다 */
   const cancelledRef = useRef(false);
+  /*
+   * 401/403으로 큐가 멈췄다(§4-3-3). 멈춘 동안엔 어떤 길로도 새 요청을 띄우지 않는다 —
+   * 같은 세션으로 보내면 같은 답이다. 로직은 ref를, `다시 시도` 잠금은 거울 state를 본다.
+   * 새로 고른 파일(403일 때만 `+`가 열려 있다)은 사장이 다시 해 보겠다는 뜻이라 정지를 푼다.
+   */
+  const authStoppedRef = useRef(false);
+  const [authStopped, setAuthStopped] = useState(false);
   /* 진행 칸마다 하나. 끝나면 지운다 — 남아 있는 것이 곧 "지금 나가 있는 요청"이다 */
   const controllersRef = useRef(new Map<string, AbortController>());
   /*
@@ -235,7 +242,7 @@ export function PostImageGrid({
 
     const running = current.filter((s) => s.status === "uploading").length;
     const next = current
-      .filter((s) => s.status === "queued")
+      .filter((s) => s.status === "queued" && !authStoppedRef.current)
       .slice(0, Math.max(0, IMAGE_UPLOAD_CONCURRENCY - running));
     commit(
       current.map((s) =>
@@ -292,10 +299,13 @@ export function PostImageGrid({
    *
    * 끝났지만 앞 칸을 기다리던 보류 칸은 **등록 칸으로 올려 남긴다**(§4-3-4). 서버엔 이미
    * 올라간 사진이고, 앞의 진행 칸을 거두면 `process()`의 `orderCompleted`가 자연히 넘긴다.
-   * 이미 있던 실패 칸도 그대로 둔다 — 사장이 본 칸을 말없이 지우지 않는다.
+   * 이미 있던 실패 칸도 그대로 둔다 — 사장이 본 칸을 말없이 지우지 않는다. 다만 그 칸의
+   * `다시 시도`는 멈춘 동안 잠긴다(빼기는 된다). 재시도가 큐를 다시 돌리면 정지가 아니다.
    * 그다음 화면(View)에 알린다. 401이면 화면이 저장과 `+`를 잠근다.
    */
   function stopForAuth(error: unknown) {
+    authStoppedRef.current = true;
+    setAuthStopped(true);
     const removed = slotsRef.current.filter(
       (s) => s.status === "queued" || s.status === "uploading",
     );
@@ -342,6 +352,8 @@ export function PostImageGrid({
     setRejected(lines);
 
     if (taken.length === 0) return;
+    authStoppedRef.current = false;
+    setAuthStopped(false);
     slotsRef.current = [
       ...slotsRef.current,
       ...taken.map((file): UploadSlot => ({
@@ -363,6 +375,7 @@ export function PostImageGrid({
    * 건너뛰었던 뒤쪽 완료분이 다시 보류된다(F1). 그래서 재시도 뒤 칸 번호가 바뀐다.
    */
   function retry(slotId: string) {
+    if (authStoppedRef.current) return;
     slotsRef.current = requeueForRetry(slotsRef.current, slotId);
     process();
   }
@@ -450,6 +463,7 @@ export function PostImageGrid({
                 slot={slot}
                 index={shown.length + i + 1}
                 disabled={disabled}
+                retryDisabled={authStopped}
                 onRetry={() => retry(slot.slotId)}
                 onRemove={() => remove(slot.slotId)}
               />
@@ -628,12 +642,15 @@ function UploadSlotCell({
   slot,
   index,
   disabled,
+  retryDisabled,
   onRetry,
   onRemove,
 }: {
   slot: UploadSlot;
   index: number;
   disabled: boolean;
+  /** 401/403으로 큐가 멈춘 동안. `다시 시도`만 잠그고 `×`는 둔다 */
+  retryDisabled: boolean;
   onRetry: () => void;
   onRemove: () => void;
 }) {
@@ -672,7 +689,7 @@ function UploadSlotCell({
                   className="text-destructive-strong text-xs underline"
                   aria-label={`${label} 다시 시도`}
                   onClick={onRetry}
-                  disabled={disabled}
+                  disabled={disabled || retryDisabled}
                 >
                   다시 시도
                 </Button>

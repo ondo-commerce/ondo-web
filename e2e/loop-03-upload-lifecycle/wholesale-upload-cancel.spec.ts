@@ -13,6 +13,7 @@ import {
   cells,
   chooseFiles,
   expectDecoded,
+  fillProductForm,
   jpg,
   leaveDialog,
   login,
@@ -150,9 +151,14 @@ test("S4-6 수정 화면 업로드 중 시즌 종료 → 사진 1장 추가, PAT
 
 test.describe("S4-8 대기·진행 칸이 있으면 저장 잠금, 저장 요청 0회", () => {
   test("등록", async ({ page }) => {
+    // 폼이 유효하고 등록 칸 1장이 있다 — 잠금이 없으면 이 클릭은 POST 를 보낸다(F3)
     await openCreateWithPost(page);
+    await fillProductForm(page);
+    await chooseFiles(page, [jpg("a.jpg")]);
+    await expect(registered(page)).toHaveCount(1);
     await chooseFiles(page, [jpg("slow5s-lock.jpg")]);
-    await waitUploadsStarted(page, 1);
+    await waitUploadsStarted(page, 2);
+    await expect(slotsIn(page, "uploading")).toHaveCount(1);
 
     await expect(saveButton(page)).toBeDisabled();
     await saveButton(page).click({ force: true });
