@@ -16,6 +16,7 @@ import {
   isIntegerText,
   isPriceMissing,
   isProductFormDirty,
+  linkLeaveTarget,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   orderCompleted,
   parseIntegerText,
@@ -347,6 +348,83 @@ describe("cancelUploads — S4-2·S4-5: 거둘 때 abort 는 진행 칸만, revo
       abort: ["A"],
       revoke: ["blob:preview-B", "blob:preview-A"],
     });
+  });
+});
+
+describe("linkLeaveTarget — S5: 가드가 붙잡을 Link 클릭만 고른다", () => {
+  const here = {
+    origin: "http://localhost:3100",
+    pathname: "/products/new",
+    search: "",
+  };
+  const click = (
+    over: Partial<Parameters<typeof linkLeaveTarget>[0]> = {},
+  ) => ({
+    defaultPrevented: false,
+    button: 0,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    target: "",
+    download: false,
+    href: "http://localhost:3100/inventory",
+    ...over,
+  });
+
+  it("같은 origin 의 다른 경로 → 그 경로", () => {
+    expect(linkLeaveTarget(click(), here)).toBe("/inventory");
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products?productId=1#x" }),
+        here,
+      ),
+    ).toBe("/products?productId=1#x");
+  });
+
+  it("S5-3 수정키·가운데 버튼은 건드리지 않는다", () => {
+    for (const key of ["metaKey", "ctrlKey", "shiftKey", "altKey"] as const)
+      expect(linkLeaveTarget(click({ [key]: true }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ button: 1 }), here)).toBeNull();
+  });
+
+  it("이미 막힌 클릭, _blank, download 는 건드리지 않는다", () => {
+    expect(linkLeaveTarget(click({ defaultPrevented: true }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ target: "_blank" }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ target: "_self" }), here)).toBe(
+      "/inventory",
+    );
+    expect(linkLeaveTarget(click({ download: true }), here)).toBeNull();
+  });
+
+  it("외부 origin·비 http 스킴은 beforeunload 몫이다", () => {
+    expect(
+      linkLeaveTarget(click({ href: "https://example.com/a" }), here),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(click({ href: "mailto:a@ondo.test" }), here),
+    ).toBeNull();
+  });
+
+  it("pathname 과 search 가 같으면 떠나는 게 아니다. query 만 달라도 떠난다", () => {
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new" }),
+        here,
+      ),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new#top" }),
+        here,
+      ),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new?x=1" }),
+        here,
+      ),
+    ).toBe("/products/new?x=1");
   });
 });
 

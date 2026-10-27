@@ -276,6 +276,52 @@ export function cancelUploads(
 }
 
 /**
+ * 앱 안 Link 클릭을 이탈 가드가 붙잡을지(S5). 붙잡으면 이동할 경로(`pathname+search+hash`),
+ * 아니면 `null`. 브라우저·Next가 원래 하던 일을 그대로 둬야 하는 클릭은 전부 `null`이다:
+ *
+ * - 이미 누가 막은 클릭, 왼쪽 버튼이 아닌 클릭, ⌘·Ctrl·Shift·Alt 클릭 — 새 탭·새 창·다운로드다.
+ *   원래 탭의 폼은 그대로 남는다(S5-3).
+ * - `_self`가 아닌 `target`, `download` 링크.
+ * - http(s)가 아닌 스킴(`mailto:` 등), 다른 origin — 문서 전체 이동이라 beforeunload가 받는다.
+ *   여기서도 잡으면 경고가 두 번 뜬다.
+ * - pathname과 search가 지금과 같은 링크 — 떠나는 게 아니다. pathname만 비교하면 query만
+ *   바뀌는 이동을 놓친다.
+ */
+export function linkLeaveTarget(
+  click: {
+    defaultPrevented: boolean;
+    button: number;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    /** `<a target>`. 없으면 빈 문자열 */
+    target: string;
+    download: boolean;
+    /** `<a>.href` — 브라우저가 절대 URL로 풀어 준 값 */
+    href: string;
+  },
+  current: { origin: string; pathname: string; search: string },
+): string | null {
+  if (click.defaultPrevented || click.button !== 0) return null;
+  if (click.metaKey || click.ctrlKey || click.shiftKey || click.altKey)
+    return null;
+  if (click.target !== "" && click.target !== "_self") return null;
+  if (click.download) return null;
+  let url: URL;
+  try {
+    url = new URL(click.href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.origin !== current.origin) return null;
+  if (url.pathname === current.pathname && url.search === current.search)
+    return null;
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
  * 저장 버튼 옆 한 줄. 대기·진행 칸이 있으면 잠금 안내가 실패 안내보다 앞선다 —
  * 잠긴 이유를 먼저 말해야 한다. `null`이면 문구 없음.
  */
