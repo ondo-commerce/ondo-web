@@ -1,5 +1,10 @@
 import type { BadgeProps } from "@ondo/ui";
-import type { PostStatusKey, ProductField, SkuSize } from "./types";
+import type {
+  PostStatusKey,
+  ProductField,
+  SkuSize,
+  UploadState,
+} from "./types";
 
 /** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
@@ -151,3 +156,44 @@ export function errorId(field: ProductField): string {
 
 /** `aria-invalid`가 켜진 칸의 테두리. 색은 토큰이 정한다 */
 export const INVALID_INPUT_CLASS = "aria-[invalid=true]:border-destructive";
+
+/* ------------------------------------------------------------------------
+ * 게시글 이미지 업로드 (#250)
+ * ------------------------------------------------------------------------ */
+
+/** 게시글 이미지 칸 수. 등록·대기·진행·실패 슬롯을 다 합쳐 이 수를 넘지 않는다 */
+export const MAX_IMAGE_COUNT = 9;
+
+/**
+ * 1장 상한. 4 MiB = 4,194,304 (D18). 상한과 **같은** 크기는 통과한다.
+ *
+ * 목(`packages/api/src/mocks/wholesale/listingImage.ts`)에도 같은 값이 있다 — 역방향
+ * import가 금지라 두 곳에 산다. 어긋나면 사전 검사를 통과한 파일이 413으로 돌아와
+ * "다시 고르기형" 실패 슬롯으로 드러난다.
+ */
+export const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+/** 파일 선택 다이얼로그의 `accept`와 사전 검사의 형식 목록이 같은 값을 본다(D19) */
+export const IMAGE_ACCEPT = "image/jpeg,image/png";
+
+/**
+ * 동시에 나가는 업로드 수(D20). 프록시가 본문을 통째로 읽어 함수 메모리가 동시 수에
+ * 비례한다 — 3 × 4 MiB는 상한 추정이지 보장치가 아니라 상수 하나로 둔다.
+ */
+export const IMAGE_UPLOAD_CONCURRENCY = 3;
+
+/**
+ * 사전 검사 거절 사유별 문구. 격자 아래 목록 한 줄의 파일명 뒤에 붙는다.
+ * HEIC 안내는 괄호 한 토막만 — 긴 문장은 다른 파일의 이유를 묻는다(DD8).
+ */
+export const IMAGE_REJECT_MESSAGE = {
+  TYPE: "jpg·png만 올릴 수 있어요 — 아이폰은 사진 앱 공유 › 'JPEG로 보내기'",
+  EMPTY: "비어 있는 파일이에요 (0바이트)",
+  SIZE: "4MB까지 올릴 수 있어요 — 사진 앱에서 크기를 줄여 주세요",
+} as const;
+
+/** 격자가 없거나 비었을 때의 업로드 요약. 등록 화면이 `함께 게시`를 끄면 여기로 돌아온다 */
+export const IDLE_UPLOAD_STATE: UploadState = {
+  uploading: false,
+  failedCount: 0,
+};

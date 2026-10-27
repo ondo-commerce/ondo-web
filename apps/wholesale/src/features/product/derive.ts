@@ -3,7 +3,10 @@ import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import { toFieldErrors, type FormErrors } from "@/shared/api/fieldErrors";
 import type { ProductListQuery } from "@/shared/api/product";
 import {
+  IMAGE_ACCEPT,
+  IMAGE_MAX_BYTES,
   LIST_PARAM,
+  MAX_IMAGE_COUNT,
   PAGE_SIZE,
   POST_FILTER_ALL,
   POST_FILTER_VALUES,
@@ -16,6 +19,7 @@ import type {
   CategoryNode,
   ColorGroup,
   ColorItem,
+  ImageRejectReason,
   ListingUpsertRequest,
   PostFormValue,
   PostStatus,
@@ -31,6 +35,8 @@ import type {
   ProductView,
   SkuSize,
   SkuView,
+  UploadFailure,
+  UploadSlotStatus,
 } from "./types";
 import { formatNumber } from "@/shared/lib/format";
 
@@ -118,9 +124,122 @@ export function toProductView(detail: ProductDetail): ProductView {
   };
 }
 
-/** 이미지 칸에 든 문자열이 `next/image`에 넘길 수 있는 절대 URL인가. 아니면 `ListingImage`가 아이콘으로 대신한다 */
+/**
+ * 이미지 칸에 든 문자열이 `next/image`에 넘길 수 있는 주소인가. 아니면 `ListingImage`가
+ * 아이콘으로 대신한다. `blob:`을 받는 이유: 업로드 중 미리보기가 로컬 blob인데 이걸
+ * 막으면 올리는 사진이 아이콘으로 떨어진다(wire-product F8의 연장, S2-2).
+ * `next/image`는 `blob:`·`data:`를 알아서 unoptimized로 다룬다.
+ */
 export function isImageUrl(value: string): boolean {
-  return /^https?:\/\//.test(value);
+  return /^(https?:\/\/|blob:)/.test(value);
+}
+
+/* ------------------------------------------------------------------------
+ * 게시글 이미지 업로드 (#250)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 서버 앞의 사전 검사(S2-6). 순서가 곧 우선순위다 — 형식이 아니면 크기를 볼 이유가 없다.
+ * 상한과 같은 크기는 통과한다. `type`은 브라우저가 확장자로 추정한 값이라 "확장자는 jpg인데
+ * 내용은 HEIC"는 여기서 못 잡고 서버(목은 매직 넘버)가 415로 돌려보낸다.
+ */
+export function rejectImageFile(file: {
+  name: string;
+  size: number;
+  type: string;
+}): ImageRejectReason | null {
+  if (!IMAGE_ACCEPT.split(",").includes(file.type)) return "TYPE";
+  if (file.size === 0) return "EMPTY";
+  if (file.size > IMAGE_MAX_BYTES) return "SIZE";
+  return null;
+}
+
+/**
+ * 남은 칸(S2-8). 대기·진행·보류·실패 칸도 칸을 차지한다 — 실패 칸을 빼야 칸이 돌아온다.
+ * `pending`은 등록 전 슬롯 전부(대기·진행·보류), `failed`는 실패 칸이다.
+ */
+export function remainingImageSlots(count: {
+  registered: number;
+  pending: number;
+  failed: number;
+}): number {
+  return Math.max(
+    0,
+    MAX_IMAGE_COUNT - count.registered - count.pending - count.failed,
+  );
+}
+
+/**
+ * 실패 코드 → 복구 종류와 문구(S1-4). `describeError`를 쓰지 않는 이유: 그건 화면 전체용이라
+ * 413을 "재시도 가능"으로 보지만 파일 오류는 재전송으로 안 풀린다(§9-8).
+ * 모르는 코드는 재시도형 — 다시 보내 보는 게 빼기보다 싸다.
+ */
+export function uploadFailure(code: string): UploadFailure {
+  switch (code) {
+    case WHOLESALE_ERROR_CODE.UNSUPPORTED_FILE_TYPE:
+      return {
+        kind: "repick",
+        short: "jpg·png만 돼요",
+        message: "jpg·png만 올릴 수 있어요. 다시 골라 주세요",
+      };
+    case WHOLESALE_ERROR_CODE.FILE_TOO_LARGE:
+      return {
+        kind: "repick",
+        short: "4MB를 넘어요",
+        message:
+          "4MB까지 올릴 수 있어요. 사진 앱에서 크기를 줄여 다시 골라 주세요",
+      };
+    case WHOLESALE_ERROR_CODE.VALIDATION_FAILED:
+      // 사전 검사를 지난 파일이 400이면 서버가 본 몸통이 비어 있는 경우뿐이다(§5-4)
+      return {
+        kind: "repick",
+        short: "빈 파일이에요",
+        message: "비어 있는 파일이에요. 다시 골라 주세요",
+      };
+    case WHOLESALE_ERROR_CODE.UNAUTHENTICATED:
+    case WHOLESALE_ERROR_CODE.NOT_APPROVED:
+      return { kind: "auth" };
+    default:
+      return {
+        kind: "retry",
+        short: "올리지 못했어요",
+        message: "올리지 못했어요",
+      };
+  }
+}
+
+/**
+ * 선택 순서를 지켜 `images[]`에 넘길 수 있는 **앞쪽 연속 구간**(S2-12). 앞 칸이 아직
+ * 대기·진행 중이면 뒤에 끝난 칸은 보류한다 — B가 A보다 먼저 끝나도 `대표`는 A다.
+ * 실패 칸은 건너뛴다(나중에 재시도해 성공하면 그때의 끝에 붙는다).
+ */
+export function orderCompleted<T extends { status: UploadSlotStatus }>(
+  slots: readonly T[],
+): T[] {
+  const ready: T[] = [];
+  for (const slot of slots) {
+    if (slot.status === "failed") continue;
+    if (slot.status !== "done") break;
+    ready.push(slot);
+  }
+  return ready;
+}
+
+/**
+ * 저장 버튼 옆 한 줄. 대기·진행 칸이 있으면 잠금 안내가 실패 안내보다 앞선다 —
+ * 잠긴 이유를 먼저 말해야 한다. `null`이면 문구 없음.
+ */
+export function uploadNote(state: {
+  uploading: boolean;
+  failedCount: number;
+}): { text: string; danger: boolean } | null {
+  if (state.uploading) return { text: "사진 올리는 중…", danger: false };
+  if (state.failedCount > 0)
+    return {
+      text: `실패한 사진 ${state.failedCount}장은 저장되지 않아요`,
+      danger: true,
+    };
+  return null;
 }
 
 /* ------------------------------------------------------------------------
@@ -259,7 +378,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormValue = {
 export const EMPTY_POST_FORM: PostFormValue = {
   name: "",
   description: "",
-  // 업로드 API가 없어 채울 길이 없다. 더미를 두면 그대로 요청에 실린다
+  // 서버가 준 URL만 들어온다(`PostImageGrid` → `onAdd`). 더미를 두면 그대로 요청에 실린다
   images: [],
   allowSinglePiece: false,
   prices: {},

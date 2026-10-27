@@ -507,12 +507,22 @@ declare global {
      * URL이 그대로 실렸는지 확인하는 유일한 창이다 — 브라우저 MSW라 `page.request`로는 못 본다.
      */
     __lastProductRequest?: unknown;
+    /**
+     * `POST /listing-images`가 불린 횟수. e2e(S2-7 "요청 0건"·S2-13·S2-14 "요청 수 2")가
+     * 세는 창 — 서비스 워커가 삼킨 요청은 Playwright의 request 이벤트로 못 센다.
+     */
+    __listingImageRequests?: number;
   }
 }
 
 function recordLastProductRequest(body: unknown) {
   // 핸들러는 브라우저 메인 스레드에서 돈다. 서버(RSC)에서 목을 쓰게 되면 `window`가 없다
   if (typeof window !== "undefined") window.__lastProductRequest = body;
+}
+
+function countListingImageRequest() {
+  if (typeof window !== "undefined")
+    window.__listingImageRequests = (window.__listingImageRequests ?? 0) + 1;
 }
 
 /** `[fail400once]` — 그 제목의 첫 저장만 400. 두 번째부터는 통과 */
@@ -913,6 +923,7 @@ export const productHandlers = [
    * 것을 revoke 해도 이 URL은 살아 있다(실서버 URL이 그런 것처럼).
    */
   http.post("*/api/wholesale/listing-images", async ({ request }) => {
+    countListingImageRequest();
     const parts = (await request.formData()).getAll("file");
     if (parts.length === 0)
       return validationFailed([

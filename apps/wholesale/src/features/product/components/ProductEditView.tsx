@@ -1,9 +1,9 @@
 "use client";
 
-import { Button, Dialog, Panel } from "@ondo/ui";
+import { Button, cn, Dialog, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import {
@@ -12,7 +12,7 @@ import {
   useUpdateProductMutation,
 } from "../api/mutations";
 import { useProductDetailQuery } from "../api/queries";
-import { LIST_PARAM } from "../constants";
+import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
 import {
   clearPostErrors,
   clearProductErrors,
@@ -22,10 +22,11 @@ import {
   toProductForm,
   toProductFormErrors,
   toUpdateRequest,
+  uploadNote,
   validateProductForm,
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
-import type { PostStatus, ProductView } from "../types";
+import type { PostStatus, ProductView, UploadState } from "../types";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import {
@@ -110,11 +111,17 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const { errors, setErrors, showErrors } = useProductFormErrors();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  /* 격자의 업로드 요약. 대기·진행 칸이 있으면 저장을 잠근다(`ProductCreateView`와 같은 이유) */
+  const [uploadState, setUploadState] =
+    useState<UploadState>(IDLE_UPLOAD_STATE);
+  const note = uploadNote(uploadState);
+  const noteId = useId();
 
   const update = useUpdateProductMutation(product.id);
   const listingStatus = useListingStatusMutation();
   const remove = useDeleteProductMutation();
-  const saving = update.isPending || listingStatus.isPending;
+  const saving =
+    update.isPending || listingStatus.isPending || uploadState.uploading;
 
   /**
    * 저장 = `PATCH /products/{id}` + (상태가 바뀌었으면) 시즌 종료/재개 호출.
@@ -204,6 +211,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
           status={product.post ? status : undefined}
           onStatusChange={product.post ? setStatus : undefined}
           errors={errors}
+          onUploadStateChange={setUploadState}
         />
       }
       actions={
@@ -213,6 +221,21 @@ function ProductEditForm({ product }: { product: ProductView }) {
               {errors._form}
             </p>
           ) : null}
+          {note ? (
+            <p
+              id={noteId}
+              role="status"
+              data-ac="S2-3 S2-5"
+              className={cn(
+                "mr-auto text-sm",
+                note.danger
+                  ? "text-destructive-strong"
+                  : "text-muted-foreground",
+              )}
+            >
+              {note.text}
+            </p>
+          ) : null}
           {/* 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
               100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7) */}
           <Button asChild variant="line" size="lg">
@@ -220,7 +243,13 @@ function ProductEditForm({ product }: { product: ProductView }) {
               취소
             </Link>
           </Button>
-          <Button size="lg" onClick={submit} disabled={saving}>
+          <Button
+            size="lg"
+            onClick={submit}
+            disabled={saving}
+            aria-describedby={note ? noteId : undefined}
+            data-ac="S2-3 S2-4"
+          >
             저장하기
           </Button>
 

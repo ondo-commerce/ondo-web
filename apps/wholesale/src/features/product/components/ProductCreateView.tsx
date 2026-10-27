@@ -1,13 +1,13 @@
 "use client";
 
-import { Button, Checkbox, Panel } from "@ondo/ui";
+import { Button, Checkbox, cn, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
-import { LIST_PARAM } from "../constants";
+import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
 import {
   clearPostErrors,
   clearProductErrors,
@@ -16,10 +16,11 @@ import {
   firstInvalidField,
   toCreateRequest,
   toProductFormErrors,
+  uploadNote,
   validateProductForm,
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
-import type { PostFormValue, ProductFormValue } from "../types";
+import type { PostFormValue, ProductFormValue, UploadState } from "../types";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
@@ -32,6 +33,14 @@ export function ProductCreateView() {
   const [publishToMarket, setPublishToMarket] = useState(false);
   const { errors, setErrors, showErrors } = useProductFormErrors();
   const create = useCreateProductMutation();
+  /*
+   * 격자의 업로드 요약. 대기·진행 칸이 있으면 저장을 잠근다 — 지금 저장하면 올라가는 중인
+   * 사진이 빠진 게시글이 된다. `함께 게시`를 끄면 격자가 사라지며 요약도 "없음"으로 돌아온다.
+   */
+  const [uploadState, setUploadState] =
+    useState<UploadState>(IDLE_UPLOAD_STATE);
+  const note = uploadNote(uploadState);
+  const noteId = useId();
 
   /**
    * `POST /products`. 체크를 안 했으면 `listing: null`로 상품만 만든다(스펙).
@@ -101,6 +110,7 @@ export function ProductCreateView() {
             // 현재고는 게시글과 별개로 등록되므로 열 자체는 늘 둔다
             showAvgCost={false}
             errors={errors}
+            onUploadStateChange={setUploadState}
           />
         ) : (
           /*
@@ -131,12 +141,34 @@ export function ProductCreateView() {
               {errors._form}
             </p>
           ) : null}
+          {/* 저장이 왜 잠겼는지 / 뭐가 안 실리는지. 버튼이 `aria-describedby`로 가리킨다(DD10) */}
+          {note ? (
+            <p
+              id={noteId}
+              role="status"
+              data-ac="S2-3 S2-5"
+              className={cn(
+                "mr-auto text-sm",
+                note.danger
+                  ? "text-destructive-strong"
+                  : "text-muted-foreground",
+              )}
+            >
+              {note.text}
+            </p>
+          ) : null}
           {/* 목적지가 고정이라 실제 <a>로 둔다 — onClick+push면 새 탭·주소 복사가 죽는다
               (Button의 asChild 주석 참고) */}
           <Button asChild variant="line" size="lg">
             <Link href="/products">취소</Link>
           </Button>
-          <Button size="lg" onClick={submit} disabled={create.isPending}>
+          <Button
+            size="lg"
+            onClick={submit}
+            disabled={create.isPending || uploadState.uploading}
+            aria-describedby={note ? noteId : undefined}
+            data-ac="S2-3 S2-4"
+          >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
           </Button>
         </>

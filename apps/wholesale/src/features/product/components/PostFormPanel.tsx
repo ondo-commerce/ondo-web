@@ -14,7 +14,12 @@ import { PostImageGrid } from "./PostImageGrid";
 import { PostPriceTable } from "./PostPriceTable";
 import { errorId, fieldId, INVALID_INPUT_CLASS } from "../constants";
 import { EMPTY_PRICE_VALUE, type ProductFormErrors } from "../derive";
-import type { PostFormValue, PostStatus, PriceRow } from "../types";
+import type {
+  PostFormValue,
+  PostStatus,
+  PriceRow,
+  UploadState,
+} from "../types";
 import { FieldError } from "@/shared/components/FieldError";
 
 /**
@@ -31,6 +36,7 @@ export function PostFormPanel({
   onStatusChange,
   action,
   errors = {},
+  onUploadStateChange,
 }: {
   title: string;
   value: PostFormValue;
@@ -56,6 +62,11 @@ export function PostFormPanel({
    */
   action?: ReactNode;
   errors?: ProductFormErrors;
+  /**
+   * 이미지 격자의 업로드 요약(대기·진행 있음 / 실패 수). 저장 버튼은 패널 밖 하단 바에
+   * 있어서 화면(View)이 받아야 한다 — 패널은 그대로 올려 보내기만 한다.
+   */
+  onUploadStateChange?: (state: UploadState) => void;
 }) {
   const disabled = status === "SEASON_ENDED";
 
@@ -76,6 +87,14 @@ export function PostFormPanel({
     next.splice(to, 0, moved);
 
     onChange({ ...value, images: next });
+  }
+
+  /**
+   * 업로드가 끝난 URL을 끝에 붙인다. 격자가 선택 순서를 지켜 넘기므로(`orderCompleted`)
+   * 여기선 순서를 다시 보지 않는다. 새 배열이라 `clearPostErrors`가 images 오류를 지운다.
+   */
+  function handleImageAdd(urls: string[]) {
+    onChange({ ...value, images: [...value.images, ...urls] });
   }
 
   return (
@@ -183,13 +202,22 @@ export function PostFormPanel({
             </FormField>
 
             {/*
-             * 필수(*) 표시를 붙이지 않는다 — 업로드 API가 없어 지금은 채울 수 없는 칸이다.
-             * 필수라고 써 두고 채울 길이 없으면 사장은 자기가 뭘 빠뜨렸는지 찾는다.
-             * TODO(#156): 업로드 API가 오면 `required`를 되살린다(PostImageGrid 주석 참고).
+             * 필수(*) 복원은 #251(S3-7) — 판매 중으로 저장될 때만 필수라 저장 시점 상태를
+             * 같이 봐야 한다.
+             * 제한 한 줄은 hint **끝에** 붙인다(DD7) — 고르기 전에 보여야 하고, 줄을 따로
+             * 만들면 다른 필드와 무게가 달라진다.
              */}
             <FormField
               label="게시글 이미지"
-              hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하거나, 슬롯을 선택한 뒤 스페이스바로 집어 방향키로 순서를 바꿀 수 있어요."
+              hint={
+                <span data-ac="S2-1 S3-8">
+                  첫 번째가 대표 이미지예요. 드래그하거나 슬롯을 고른 뒤
+                  스페이스바로 집어 방향키로 순서를 바꿀 수 있어요.{" "}
+                  <b className="text-secondary-foreground font-medium">
+                    jpg, png · 한 장 4MB까지 · 최대 9장
+                  </b>
+                </span>
+              }
             >
               {/*
                * disabled 를 손으로 내려보내는 유일한 필드다. 위 fieldset 이
@@ -202,6 +230,8 @@ export function PostFormPanel({
                 images={value.images}
                 disabled={disabled}
                 onReorder={handleImageReorder}
+                onAdd={handleImageAdd}
+                onUploadStateChange={onUploadStateChange}
               />
               {errors["listing.images"] ? (
                 <FieldError id={errorId("listing.images")}>
