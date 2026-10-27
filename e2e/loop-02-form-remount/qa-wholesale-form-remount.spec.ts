@@ -131,8 +131,9 @@ test("사장 3 — 로그아웃된 탭에서 /products/new 주소로 들어온�
   );
   await page.goto("/products/new");
   await page.waitForURL(/\/login/);
+  // getByText 는 h1 과 Next route announcer(role=alert, 같은 문구)를 둘 다 잡아 strict 위반이 난다
   await expect(
-    page.getByText("도매 사장님 로그인", { exact: true }),
+    page.getByRole("heading", { name: "도매 사장님 로그인", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: QA_SHOT("owner3-no-session-login") });
 });
