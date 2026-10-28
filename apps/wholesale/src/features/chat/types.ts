@@ -83,6 +83,42 @@ export type ThreadItem =
   | { type: "divider"; key: string; label: string }
   | { type: "message"; key: string; message: ChatMessage };
 
+export type ChatSendResult = WholesaleSchema<"ChatSendResult">;
+
+/**
+ * 왜 못 보냈나. 화면이 다르게 반응해야 하는 셋뿐이다.
+ * - `server` 500 등 — `다시 보내기`(같은 키) `지우기`
+ * - `offline` 보낼 때 오프라인이었거나 서버까지 못 갔다 — 같은 버튼, 문구만 다르다. 자동 재전송은 없다
+ * - `session` 401 — `지우기`만. 다시 보내도 401이다
+ */
+export type SendFailure = "server" | "offline" | "session";
+
+/**
+ * 아직 서버 sequence가 없는 내 말풍선. 방 아래에 붙어 있다가(디자인 결정 14) 서버 메시지 중
+ * 같은 `clientMessageId`가 나타나면 그쪽으로 합쳐진다(S4-6).
+ */
+export interface PendingMessage {
+  /** 말풍선 하나에 uuid 하나. 그대로 `Idempotency-Key`다 — 다시 보내도 같은 키 */
+  clientMessageId: string;
+  body: string;
+  status: "sending" | "failed";
+  failure: SendFailure | null;
+}
+
+/** 입력창 글자 수 판정(S4-4) */
+export interface ComposerCheck {
+  /** 앞뒤 공백을 뺀 코드 포인트 수 */
+  length: number;
+  /** 공백만 — 보내기 잠김, 문구 없음 */
+  blank: boolean;
+  /** 상한 초과 — 보내기 잠김, 자르지 않고 안내 */
+  over: boolean;
+  /** `950/1,000`. 900자 전엔 null */
+  counter: string | null;
+  /** `1,000자까지 보낼 수 있어요 (1,001/1,000)`. 넘지 않으면 null */
+  overMessage: string | null;
+}
+
 /** 자동 답변 아래 근거 칸. 도매에만 정확 수량이 온다 */
 export interface FactPart {
   text: string;

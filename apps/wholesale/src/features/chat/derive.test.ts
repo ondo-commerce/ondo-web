@@ -1,27 +1,37 @@
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
   applyReadMark,
+  bodyLength,
   bubbleKindOf,
+  checkComposer,
   factLineText,
+  failureText,
   formatClock,
   formatDateDivider,
   formatListTime,
   formatUnread,
+  insertSent,
   liveAnnouncement,
   mergeMessages,
   mergeReadMark,
   parseRoomParam,
   pollDelayMs,
+  sendFailureOf,
   toFactsView,
   toRoomRows,
   toThreadItems,
+  upsertPending,
+  visiblePending,
 } from "./derive";
 import type {
   ChatAutoReply,
   ChatMessage,
   ChatRoomPage,
   ChatRoomSummary,
+  ChatThread,
+  PendingMessage,
 } from "./types";
 
 /** 서울 2026-10-28(수) 10:30 */
@@ -325,5 +335,129 @@ describe("S2-5 ?room= 값", () => {
     expect(parseRoomParam("-1")).toBe("invalid");
     expect(parseRoomParam("abc")).toBe("invalid");
     expect(parseRoomParam("1.5")).toBe("invalid");
+  });
+});
+
+describe("S4-4 글자 수", () => {
+  it("S4-4 앞뒤 공백을 빼고 코드 포인트로 센다 — 이모지 하나가 1자", () => {
+    expect(bodyLength("  👍가 ")).toBe(2);
+    expect("👍".length).toBe(2); // JS length 와 다르다
+    expect(bodyLength("   \n ")).toBe(0);
+  });
+
+  it("S4-4 공백만이면 잠김, 문구 없음", () => {
+    expect(checkComposer("   ")).toMatchObject({
+      blank: true,
+      over: false,
+      overMessage: null,
+      counter: null,
+    });
+  });
+
+  it("S4-4 이모지 포함 정확히 1000자는 보낼 수 있고 900자부터 카운터", () => {
+    const exact = "👍".repeat(10) + "가".repeat(990);
+    expect(checkComposer(exact)).toMatchObject({
+      length: 1000,
+      blank: false,
+      over: false,
+      counter: "1,000/1,000",
+      overMessage: null,
+    });
+    expect(checkComposer("가".repeat(899)).counter).toBeNull();
+    expect(checkComposer("가".repeat(900)).counter).toBe("900/1,000");
+  });
+
+  it("S4-4 1001자는 자르지 않고 안내, 잠김", () => {
+    const over = "👍".repeat(10) + "가".repeat(991);
+    expect(checkComposer(over)).toMatchObject({
+      length: 1001,
+      over: true,
+      counter: null,
+      overMessage: "1,000자까지 보낼 수 있어요 (1,001/1,000)",
+    });
+  });
+});
+
+describe("S4-5 S4-7 S4-8 보내기 실패 종류", () => {
+  it("S4-7 401 → session, S4-8 서버까지 못 감 → offline, 그 밖 → server", () => {
+    const err = (status: number, code: string) =>
+      new ApiError({ status, code, message: "x" });
+    expect(sendFailureOf(err(401, "UNAUTHENTICATED"))).toBe("session");
+    expect(sendFailureOf(err(0, TRANSPORT_ERROR_CODE.NETWORK))).toBe("offline");
+    expect(sendFailureOf(err(500, "INTERNAL_ERROR"))).toBe("server");
+    expect(sendFailureOf(err(409, "IDEMPOTENCY_KEY_REUSED"))).toBe("server");
+    expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+
+  it("S4-8 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {
+    expect(failureText("offline")).toBe("연결이 끊겨 못 보냈어요");
+    expect(failureText("server")).toBe("못 보냈어요");
+    expect(failureText("session")).toBe("못 보냈어요");
+  });
+});
+
+describe("S4-6 보류 말풍선 합치기", () => {
+  const pending: PendingMessage[] = [
+    {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "failed",
+      failure: "server",
+    },
+    { clientMessageId: "k-2", body: "또", status: "sending", failure: null },
+  ];
+
+  it("S4-6 polling 이 같은 clientMessageId 를 가져오면 보류 말풍선을 뺀다 — 1개로 합쳐진다", () => {
+    const delivered = message(8, {
+      sender: "WHOLESALER",
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+    });
+    expect(
+      visiblePending(pending, [message(7), delivered]).map(
+        (p) => p.clientMessageId,
+      ),
+    ).toEqual(["k-2"]);
+    expect(visiblePending(pending, [message(7)])).toHaveLength(2);
+  });
+
+  it("S4-5 다시 보내기는 제자리에서 상태만 바뀌고, 새 말풍선은 맨 아래", () => {
+    const retried = upsertPending(pending, {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "sending",
+      failure: null,
+    });
+    expect(retried.map((p) => [p.clientMessageId, p.status])).toEqual([
+      ["k-1", "sending"],
+      ["k-2", "sending"],
+    ]);
+    const added = upsertPending(pending, {
+      clientMessageId: "k-3",
+      body: "새",
+      status: "sending",
+      failure: null,
+    });
+    expect(added.at(-1)?.clientMessageId).toBe("k-3");
+  });
+
+  it("S4-6 보내기 응답은 메시지에만 넣고 cursor 는 올리지 않는다 — 그 앞 소매 메시지를 놓치지 않게", () => {
+    const thread: ChatThread = {
+      messages: [message(5)],
+      cursor: 5,
+      failures: 0,
+      nextPollMs: 3000,
+    };
+    const next = insertSent(thread, [
+      message(7, { sender: "WHOLESALER", clientMessageId: "k-1" }),
+    ]);
+    expect(next.cursor).toBe(5);
+    expect(next.messages.map((m) => m.sequence)).toEqual([5, 7]);
+    // 다음 polling 이 6, 7 을 가져와도 7 은 한 번
+    expect(
+      mergeMessages(next.messages, [message(6), message(7)]).map(
+        (m) => m.sequence,
+      ),
+    ).toEqual([5, 6, 7]);
   });
 });

@@ -1,5 +1,9 @@
+import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import {
+  BODY_COUNTER_FROM,
+  BODY_MAX,
   CHAT_TIME_ZONE,
+  PENDING_TEXT,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
   ROOM_POLL_MS,
@@ -16,12 +20,17 @@ import type {
   ChatRoomPage,
   ChatRoomRowView,
   ChatRoomSummary,
+  ChatThread,
+  ComposerCheck,
   FactLine,
   FactPart,
   FactsView,
+  PendingMessage,
   ReadMarks,
+  SendFailure,
   ThreadItem,
 } from "./types";
+import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import { formatNumber } from "@/shared/lib/format";
 
 /* ------------------------------------------------------------------------
@@ -389,4 +398,89 @@ export function pollDelayMs(failures: number, random: number): number {
   );
   const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
   return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
+}
+
+/* ------------------------------------------------------------------------
+ * 보내기 (#265)
+ * ------------------------------------------------------------------------ */
+
+/** 서버와 같은 셈 — 앞뒤 공백을 빼고 코드 포인트로. 이모지 하나가 1자다 */
+export function bodyLength(text: string): number {
+  return [...text.trim()].length;
+}
+
+/**
+ * 입력창 판정(S4-4). 넘어도 **자르지 않는다** — 붙여 넣은 긴 글을 사장이 직접 줄이게 둔다.
+ * 판정과 안내만 하고 보내기를 잠근다.
+ */
+export function checkComposer(text: string): ComposerCheck {
+  const length = bodyLength(text);
+  const over = length > BODY_MAX;
+  const shown = `${formatNumber(length)}/${formatNumber(BODY_MAX)}`;
+  return {
+    length,
+    blank: length === 0,
+    over,
+    counter: !over && length >= BODY_COUNTER_FROM ? shown : null,
+    overMessage: over
+      ? `${formatNumber(BODY_MAX)}자까지 보낼 수 있어요 (${shown})`
+      : null,
+  };
+}
+
+/**
+ * 보내기 실패를 화면 반응 셋으로. **`code`로만 가른다.** 서버까지 못 간 것(`NETWORK_ERROR`)은
+ * 오프라인과 같은 안내다 — 사장이 할 일(연결 확인 뒤 다시 보내기)이 같다.
+ */
+export function sendFailureOf(error: unknown): SendFailure {
+  if (isApiError(error)) {
+    if (error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED) return "session";
+    if (error.code === TRANSPORT_ERROR_CODE.NETWORK) return "offline";
+  }
+  return "server";
+}
+
+/** 실패 말풍선 아래 문구 */
+export function failureText(failure: SendFailure | null): string {
+  return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
+}
+
+/**
+ * 보내기 응답을 방 캐시에 넣는다. **cursor는 그대로 둔다** — 내가 보낸 7번 앞에 소매처의 6번이 같이
+ * 커밋됐을 수 있다. cursor를 7로 올리면 다음 polling이 6번을 건너뛴다(`ChatThread` 주석).
+ * 다음 polling이 7번을 다시 가져와도 `mergeMessages`가 한 번만 남긴다.
+ */
+export function insertSent(
+  thread: ChatThread,
+  sent: readonly ChatMessage[],
+): ChatThread {
+  return { ...thread, messages: mergeMessages(thread.messages, sent) };
+}
+
+/**
+ * 화면에 남길 보류 말풍선(S4-6). 서버 메시지 중 같은 `clientMessageId`가 있으면 뺀다 — 응답은 유실됐는데
+ * polling이 먼저 가져온 경우다. 그러면 실패 말풍선 대신 서버 말풍선 하나만 남는다.
+ */
+export function visiblePending(
+  pending: readonly PendingMessage[],
+  messages: readonly ChatMessage[],
+): PendingMessage[] {
+  const delivered = new Set(
+    messages.flatMap((m) =>
+      m.clientMessageId === null ? [] : [m.clientMessageId],
+    ),
+  );
+  return pending.filter((p) => !delivered.has(p.clientMessageId));
+}
+
+/** 같은 키의 보류 말풍선을 바꾼다. 없으면 맨 아래에 붙인다(다시 보내기는 제자리) */
+export function upsertPending(
+  pending: readonly PendingMessage[],
+  next: PendingMessage,
+): PendingMessage[] {
+  const index = pending.findIndex(
+    (p) => p.clientMessageId === next.clientMessageId,
+  );
+  if (index < 0) return [...pending, next];
+  return pending.map((p, i) => (i === index ? next : p));
 }

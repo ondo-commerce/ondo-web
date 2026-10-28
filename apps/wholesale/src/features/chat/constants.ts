@@ -61,6 +61,29 @@ export const COMPOSER_TEXT = {
   placeholderSuffix: "에 보낼 메시지",
   send: "보내기",
   hint: "Enter로 보내기, Shift+Enter로 줄바꿈",
+  /** 상품 폼 `SESSION_LOST_MESSAGE`와 같은 꼴("저장" → "보낼"). 로그인 링크는 아직 없다(#252와 같다) */
+  sessionLost: "로그인이 끊겼어요. 다시 로그인하기 전엔 보낼 수 없어요",
+  /** 오류가 아니라 안내라 빨강을 쓰지 않는다(디자인 결정 12) */
+  photo: "사진은 아직 보낼 수 없어요",
+} as const;
+
+/**
+ * 글자 수 상한. 서버와 같은 셈(앞뒤 공백을 뺀 유니코드 코드 포인트, `[...text].length`) — JS `length`는
+ * UTF-16이라 이모지 하나를 2로 센다.
+ */
+export const BODY_MAX = 1000;
+/** 이 글자 수부터 오른쪽에 `N/1,000`을 띄운다. 평소엔 그 자리에 키 안내 */
+export const BODY_COUNTER_FROM = 900;
+
+/** 보낸 말풍선 상태 글 */
+export const PENDING_TEXT = {
+  sending: "보내는 중",
+  failed: "못 보냈어요",
+  offline: "연결이 끊겨 못 보냈어요",
+  retry: "다시 보내기",
+  remove: "지우기",
+  srSending: "보내는 중",
+  srFailed: "보내지 못함",
 } as const;
 
 /**

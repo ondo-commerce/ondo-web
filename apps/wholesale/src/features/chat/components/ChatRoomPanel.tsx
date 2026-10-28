@@ -4,20 +4,28 @@ import { Badge, Panel } from "@ondo/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
-import { ChatMessageItem } from "./ChatMessageItem";
+import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { chatKeys } from "../api/keys";
 import { useMarkReadMutation } from "../api/mutations";
 import { useRoomNamePeek, useRoomQueries } from "../api/queries";
 import { isChatSessionLostError, useChatSessionLost } from "../api/session";
 import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
-import { liveAnnouncement, maxSequenceOf, toThreadItems } from "../derive";
+import {
+  liveAnnouncement,
+  maxSequenceOf,
+  toThreadItems,
+  visiblePending,
+} from "../derive";
 import type { ChatReadResult } from "../types";
+import { useChatSend } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
 
 interface RoomCallbacks {
   onRead: (result: ChatReadResult) => void;
   focusTick: number;
+  /** 입력창 Esc — 포커스를 목록의 선택 행으로(S4-11) */
+  onEscape: () => void;
 }
 
 /**
@@ -107,6 +115,7 @@ function ChatRoom({
   roomId,
   onRead,
   focusTick,
+  onEscape,
 }: { roomId: number } & RoomCallbacks) {
   const queryClient = useQueryClient();
   const { room, thread, threadUpdatedAt } = useRoomQueries(roomId);
@@ -168,12 +177,15 @@ function ChatRoom({
     roomId,
   ]);
 
-  /* 새 메시지가 오면 항상 바닥으로(알려진 한계 — 위치 보존과 `새 메시지 N개`는 loop-08) */
+  const { pending, send, retry, remove } = useChatSend(roomId);
+  const shownPending = visiblePending(pending, thread.messages);
+
+  /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존과 `새 메시지 N개`는 loop-08) */
   const logRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const log = logRef.current;
     if (log) log.scrollTop = log.scrollHeight;
-  }, [thread.messages.length]);
+  }, [thread.messages.length, shownPending.length]);
 
   const items = toThreadItems(thread.messages);
 
@@ -205,7 +217,7 @@ function ChatRoom({
         className="scroll-slim flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
       >
         <div aria-hidden className="mt-auto shrink-0" />
-        {items.length === 0 ? (
+        {items.length === 0 && shownPending.length === 0 ? (
           <p
             data-ac="S3-9"
             className="text-muted-foreground py-12 text-center text-sm"
@@ -230,12 +242,23 @@ function ChatRoom({
             ),
           )
         )}
+        {shownPending.map((item) => (
+          <PendingItem
+            key={item.clientMessageId}
+            item={item}
+            sessionLost={sessionLost}
+            onRetry={() => retry(item)}
+            onRemove={() => remove(item.clientMessageId)}
+          />
+        ))}
       </div>
 
       <ChatComposer
         counterpartName={name}
         focusTick={focusTick}
         sessionLost={sessionLost}
+        onSend={send}
+        onEscape={onEscape}
       />
 
       {/* 알림 통로는 이것 하나(디자인 결정 20). log는 off — 내 말, 자동 답변, 한 번에 받은 50개까지 읽지 않게.
