@@ -16,6 +16,7 @@ import {
   liveAnnouncement,
   mergeMessages,
   mergeReadMark,
+  messageAc,
   parseRoomParam,
   pollDelayMs,
   sendFailureOf,
@@ -459,5 +460,14 @@ describe("S4-6 보류 말풍선 합치기", () => {
         (m) => m.sequence,
       ),
     ).toEqual([5, 6, 7]);
+  });
+
+  it("S4-6 S3-3 data-ac: 연 뒤 붙은 말풍선은 S3-3 S3-4, 보류 말풍선을 대신한 것은 S4-6(QA F7)", () => {
+    const ids = new Set(["k-1"]);
+    expect(messageAc(message(5), 7, ids)).toBe("S3-1");
+    expect(messageAc(message(8), 7, ids)).toBe("S3-1 S3-3 S3-4");
+    expect(messageAc(message(9, { clientMessageId: "k-1" }), 7, ids)).toBe(
+      "S3-1 S3-3 S3-4 S4-6",
+    );
   });
 });

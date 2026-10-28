@@ -257,6 +257,8 @@ test("S4-6 응답 유실 → polling 이 같은 clientMessageId 를 가져오면
   const sent = sentBubble(page, "failAfterCommit 장당 500원 빼 드릴게요");
   await expect(sent).toHaveCount(1);
   await expect(sent).toHaveAttribute("data-client-id", key ?? "");
+  // 합쳐진 말풍선(QA F7)
+  await expect(sent).toHaveAttribute("data-ac", /S4-6/);
   await expect(pendingBubbles(page)).toHaveCount(0);
   await expect(
     log(page).getByText("failAfterCommit 장당 500원 빼 드릴게요", {

@@ -13,6 +13,7 @@ import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
 import {
   liveAnnouncement,
   maxSequenceOf,
+  messageAc,
   toThreadItems,
   visiblePending,
 } from "../derive";
@@ -179,6 +180,7 @@ function ChatRoom({
 
   const { pending, send, retry, remove } = useChatSend(roomId);
   const shownPending = visiblePending(pending, thread.messages);
+  const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
   /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존과 `새 메시지 N개`는 loop-08) */
   const logRef = useRef<HTMLDivElement>(null);
@@ -233,11 +235,7 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
-                ac={
-                  item.message.sequence > baseline
-                    ? "S3-1 S3-3 S3-4"
-                    : undefined
-                }
+                ac={messageAc(item.message, baseline, pendingIds)}
               />
             ),
           )

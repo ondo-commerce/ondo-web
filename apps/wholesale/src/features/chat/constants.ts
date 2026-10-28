@@ -61,8 +61,8 @@ export const COMPOSER_TEXT = {
   placeholderSuffix: "에 보낼 메시지",
   send: "보내기",
   hint: "Enter로 보내기, Shift+Enter로 줄바꿈",
-  /** 상품 폼 `SESSION_LOST_MESSAGE`와 같은 꼴("저장" → "보낼"). 로그인 링크는 아직 없다(#252와 같다) */
-  sessionLost: "로그인이 끊겼어요. 다시 로그인하기 전엔 보낼 수 없어요",
+  /** 목록, 방 패널과 같은 글(`SESSION_LOST_TEXT`) */
+  sessionLost: SESSION_LOST_TEXT,
   /** 오류가 아니라 안내라 빨강을 쓰지 않는다(디자인 결정 12) */
   photo: "사진은 아직 보낼 수 없어요",
 } as const;

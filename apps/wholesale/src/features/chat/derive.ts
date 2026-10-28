@@ -458,6 +458,25 @@ export function insertSent(
 }
 
 /**
+ * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
+ * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6.
+ */
+export function messageAc(
+  message: Pick<ChatMessage, "sequence" | "clientMessageId">,
+  baseline: number,
+  pendingIds: ReadonlySet<string>,
+): string {
+  const ac = ["S3-1"];
+  if (message.sequence > baseline) ac.push("S3-3", "S3-4");
+  if (
+    message.clientMessageId !== null &&
+    pendingIds.has(message.clientMessageId)
+  )
+    ac.push("S4-6");
+  return ac.join(" ");
+}
+
+/**
  * 화면에 남길 보류 말풍선(S4-6). 서버 메시지 중 같은 `clientMessageId`가 있으면 뺀다 — 응답은 유실됐는데
  * polling이 먼저 가져온 경우다. 그러면 실패 말풍선 대신 서버 말풍선 하나만 남는다.
  */
