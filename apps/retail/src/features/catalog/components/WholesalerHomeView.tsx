@@ -5,7 +5,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { CatalogSection } from "./CatalogSection";
-import { TRADE_STATS_PENDING, WHOLESALER_HOME_AXES } from "../constants";
+import { TRADE_STATS_UNAVAILABLE, WHOLESALER_HOME_AXES } from "../constants";
 import { formatUnpaid } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
@@ -117,15 +117,15 @@ export function WholesalerHomeView({
 }
 
 /**
- * 통계 2칸이 쓸 값. fixtures 시절의 `누적 주문`은 스펙에 없어 뺐다.
+ * 통계 칸이 쓸 값. fixtures 시절의 `누적 주문`은 스펙에 없어 뺐다.
  *
  * `미결제 잔액`은 `features/settlement`의 `GET /settlements`에서 온 값이라, 거래처
  * 관리 표·정산 표와 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서
  * 무드온이 두 화면에서 다르게 읽혔다(F1 · #128).
  *
- * `진행 중`은 **늘 `준비 중`이다** — 확정 대기·미송 건수를 도매처별로 주는 소매
- * API가 없다(#240). 0건으로 세우면 진행 중인 주문이 있는 도매처가 한가해 보인다.
- * 서버가 주면 이 카드만 실값으로 바꾼다.
+ * `진행 중` 카드는 없다 — 확정 대기·미송 건수를 도매처별로 주는 소매 API가 없어
+ * 늘 "준비 중"이었다(#240). 0건으로 세우면 진행 중인 주문이 있는 도매처가 한가해
+ * 보이므로 칸째 뺐다. 서버가 주면(B8) 이 배열 앞에 다시 단다.
  *
  * `stats`가 null이면 **거래한 적 없는 도매처**다. 0원으로 세우되 그건 계산
  * 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
@@ -134,16 +134,13 @@ export function WholesalerHomeView({
  * 아니다. 0으로 세우면 거래 없음으로 읽힌다(#183).
  */
 function statCardsOf(slot: TradeStatsSlot): StatCard[] {
-  const ongoing: StatCard = { label: "진행 중", ...TRADE_STATS_PENDING };
-
   if (slot.status === "unavailable") {
-    return [ongoing, { label: "미결제 잔액", ...TRADE_STATS_PENDING }];
+    return [{ label: "미결제 잔액", ...TRADE_STATS_UNAVAILABLE }];
   }
 
   const { stats: tradeStats } = slot;
 
   return [
-    ongoing,
     {
       label: "미결제 잔액",
       value: formatUnpaid(tradeStats?.balance ?? 0),
