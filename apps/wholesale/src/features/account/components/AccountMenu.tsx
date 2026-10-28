@@ -1,16 +1,11 @@
 "use client";
 
 import { IconButton, Popover } from "@ondo/ui";
-import { CircleUser, LogOut, Pencil, Wallet } from "lucide-react";
+import { CircleUser, LogOut, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  ACCOUNT_PATH,
-  BANK_MENU_LABEL,
-  SESSION_DISCLAIMER,
-} from "../constants";
-import { bankAccountSummary } from "../derive";
+import { ACCOUNT_PATH, BANK_MENU_LABEL } from "../constants";
 import { useLogoutMutation } from "../api/session";
 import { signOut, useSession } from "../store";
 
@@ -68,44 +63,16 @@ export function AccountMenu() {
 
             <div className="bg-border mx-1 my-1.5 h-px" />
 
-            {/* 정산 탭의 「내 정산 계좌」는 별건 이슈라(그쪽에 계좌 관리와 선수금이
-                동시에 들어오는 중이다) 계좌를 보고 고치는 자리를 여기 하나 둔다.
-                안 넣은 사실이 상시로 남아야 건너뛴 계좌가 잊히지 않는다 */}
-            {account.bankAccount ? (
-              <>
-                <p className="text-secondary-foreground text-body flex items-start gap-2 px-2.5 py-1.5">
-                  <Wallet aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="text-muted-foreground">
-                      {BANK_MENU_LABEL.registered}
-                    </span>{" "}
-                    <span className="tabular-nums">
-                      {bankAccountSummary(account.bankAccount)}
-                    </span>
-                  </span>
-                </p>
-                {/* 읽기 전용 한 줄 **옆에** 고치는 길을 둔다 — 이 줄만 남았을 때
-                    한 자 틀린 계좌번호를 고칠 방법이 없었고, 소매 사장이 그 번호로
-                    송금하는 값이라 되돌릴 수도 없다(`wholesale-account` F8) */}
-                <Link
-                  href={ACCOUNT_PATH.bankOnboarding}
-                  onClick={() => setOpen(false)}
-                  className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 items-center gap-2 rounded-md px-2.5"
-                >
-                  <Pencil aria-hidden className="size-3.5 shrink-0" />
-                  {BANK_MENU_LABEL.edit}
-                </Link>
-              </>
-            ) : (
-              <Link
-                href={ACCOUNT_PATH.bankOnboarding}
-                onClick={() => setOpen(false)}
-                className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 items-center gap-2 rounded-md px-2.5"
-              >
-                <Wallet aria-hidden className="size-3.5 shrink-0" />
-                {BANK_MENU_LABEL.empty}
-              </Link>
-            )}
+            {/* 계좌는 정산 탭의 「내 정산 계좌」가 서버로 다룬다. 여기서 세션에만
+                적던 계좌 줄은 서버에 없는 계좌를 "등록됨"으로 말했다(`side-02` N3) */}
+            <Link
+              href={ACCOUNT_PATH.settlements}
+              onClick={() => setOpen(false)}
+              className="text-secondary-foreground hover:bg-secondary hover:text-foreground text-body flex h-8.5 items-center gap-2 rounded-md px-2.5"
+            >
+              <Wallet aria-hidden className="size-3.5 shrink-0" />
+              {BANK_MENU_LABEL}
+            </Link>
 
             <div className="bg-border mx-1 my-1.5 h-px" />
 
@@ -127,11 +94,6 @@ export function AccountMenu() {
               <LogOut aria-hidden className="size-3.5 shrink-0" />
               로그아웃
             </button>
-
-            {/* 로그아웃 바로 아래가 "왜 갑자기 로그아웃됐지"를 묻는 자리다 */}
-            <p className="text-muted-foreground mt-1.5 px-2.5 pb-1 text-xs leading-4.5">
-              {SESSION_DISCLAIMER}
-            </p>
           </>
         ) : null}
       </Popover.Content>

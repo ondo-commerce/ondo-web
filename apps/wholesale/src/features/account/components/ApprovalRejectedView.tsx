@@ -2,26 +2,24 @@
 
 import { Button, cn, FormField, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { announceArrival } from "../arrival";
 import {
-  ACCOUNT_PATH,
   ACCOUNT_STATUS_LABEL,
-  ARRIVAL_MESSAGE,
+  CONTACT_LINE,
   DOCUMENT_LABEL,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
   labelId,
+  MASKING_HELP,
   SESSION_REQUIRED_LEAD,
+  SIGNUP_CLOSED_NOTICE,
 } from "../constants";
 import { approvalSteps, validateReapply } from "../derive";
 import { REJECTION } from "../fixtures";
-import { applyReapply } from "../store";
 import type { AttachedFile, DocumentField } from "../types";
 import { AccountGateNotice, useAccountGate } from "./AccountGate";
-import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
+import { AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { FieldError, FieldHelp } from "@/shared/components/FieldError";
@@ -50,7 +48,6 @@ const NO_DOCUMENTS: Documents = { license: null, idCard: null };
  *    `재신청하기`까지 눌러 신청 일시를 지금으로 덮었다(`wholesale-account` F11).
  */
 export function ApprovalRejectedView() {
-  const router = useRouter();
   const gate = useAccountGate("REJECTED");
   const [documents, setDocuments] = useState<Documents>(NO_DOCUMENTS);
   /** 한 번 걸린 뒤에는 파일을 고르는 즉시 문구가 풀린다 */
@@ -69,8 +66,6 @@ export function ApprovalRejectedView() {
     );
   }
 
-  const email = gate.session.account.email;
-
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -80,11 +75,9 @@ export function ApprovalRejectedView() {
       return;
     }
 
-    /* **저장이 먼저다.** 이동만 하고 저장을 건너뛰면 화면은 성공을 말하는데 상태는
-       그대로다(`wholesale-account` F3) */
-    applyReapply(email);
-    announceArrival(ACCOUNT_PATH.approval, ARRIVAL_MESSAGE.reapplied);
-    router.replace(ACCOUNT_PATH.approval);
+    /* 여기서 멈춘다. 재신청을 받을 서버 경로(서류 업로드)가 없다 — 예전에는 세션에만
+       "심사 중"을 적고 심사 화면으로 넘겼는데 서버엔 아무것도 가지 않았다
+       (`side-02` N3). 버튼이 잠겨 있어 화면에서는 여기까지 오지 않는다 */
   };
 
   /** 재첨부칸 한 벌. 등록증과 신분증이 같은 모양이다 */
@@ -116,11 +109,8 @@ export function ApprovalRejectedView() {
       {field === "license" && error ? (
         <FieldError id={errorId(field)}>{error}</FieldError>
       ) : null}
-      {/* 예고형이다. 아직 심사 중으로 바뀌지 않았다 */}
-      <FieldHelp id={`${fieldId(field)}-help`}>
-        다시 올리면 상태가 심사 중으로 바뀌고, 영업일 1~2일 안에 결과를
-        알려드려요.
-      </FieldHelp>
+      {/* "다시 올리면 심사 중으로 바뀌어요"는 지웠다 — 지금은 바뀌지 않는다 */}
+      <FieldHelp id={`${fieldId(field)}-help`}>{MASKING_HELP}</FieldHelp>
     </FormField>
   );
 
@@ -146,6 +136,16 @@ export function ApprovalRejectedView() {
         </AuthSection>
 
         <form onSubmit={submit} noValidate>
+          {/* 버튼을 잠근 이유를 폼 **위**에서 먼저 말한다 */}
+          <AuthSection>
+            <Notice data-ac="S1-2">
+              <span className="flex items-start gap-2">
+                <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span>{SIGNUP_CLOSED_NOTICE}</span>
+              </span>
+            </Notice>
+          </AuthSection>
+
           <AuthSection>
             {documentField("license")}
             {documentField("idCard")}
@@ -166,29 +166,22 @@ export function ApprovalRejectedView() {
           </AuthSection>
 
           <AuthSection className="flex gap-2">
-            {/* 잠그지 않는다. 파일이 없으면 눌러서 첨부칸으로 데려간다 */}
-            <Button type="submit">재신청하기</Button>
+            {/* 잠근다 — 이유는 폼 위 안내가 말한다(`SIGNUP_CLOSED_NOTICE`) */}
+            <Button type="submit" disabled>
+              재신청하기
+            </Button>
             <ComingSoonDialog
               trigger={
                 <Button type="button" variant="ghost">
                   문의하기
                 </Button>
               }
-              title="문의 창구는 준비 중이에요"
-              description="아직 만들지 않은 화면이에요. 거절 사유를 다시 확인하고 싶으면 신청하신 이메일로 보내드린 안내를 확인해 주세요."
+              title="문의하기"
+              description={CONTACT_LINE}
             />
           </AuthSection>
-
-          {/* 넘어간 뒤 되돌아와 또 누르는 걸 막는다 */}
-          <p className="text-muted-foreground mt-2 text-xs leading-4.5">
-            재신청은 한 번만 누르면 돼요. 접수되면 심사 현황 화면으로 넘어가요.
-          </p>
         </form>
       </AuthPanel>
-
-      <AuthFoot>
-        재신청하면 승인 이력에 새 줄이 쌓여요 · 거절 사유는 이력에만 저장돼요
-      </AuthFoot>
     </>
   );
 }

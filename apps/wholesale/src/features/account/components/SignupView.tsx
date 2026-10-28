@@ -3,12 +3,9 @@
 import { Button, cn, FormField, Input, Notice } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
-  ARRIVAL_MESSAGE,
   DOCUMENT_LABEL,
   errorId,
   fieldId,
@@ -19,6 +16,7 @@ import {
   MAX_LENGTH,
   maxLengthNote,
   separatorNote,
+  SIGNUP_CLOSED_NOTICE,
   SIGNUP_FIELD_ORDER,
 } from "../constants";
 import {
@@ -26,14 +24,12 @@ import {
   firstInvalidField,
   normalizeBusinessNo,
   normalizePhone,
-  normalizeStoreName,
   validateSignup,
   visibleErrors,
   type SignupValues,
 } from "../derive";
-import { applySignup } from "../store";
 import type { AttachedFile, DocumentField, SignupField } from "../types";
-import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
+import { AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import {
   FieldError,
   FieldHelp,
@@ -63,7 +59,6 @@ function describedBy(
  * 560px이면 2열이 각 252px로 라벨이 한 줄에 들어간다.
  */
 export function SignupView() {
-  const router = useRouter();
   const [values, setValues] = useState<SignupValues>(EMPTY_SIGNUP);
   /** 이미 한 번 걸린 칸. 여기 들어간 칸만 오류 문구를 띄운다 */
   const [revealed, setRevealed] = useState<SignupField[]>([]);
@@ -114,15 +109,10 @@ export function SignupView() {
       return;
     }
 
-    /* 방금 적은 상호명·사업자 등록번호를 세션에 얹어야 다음 화면이 남의 상호를
-       말하지 않는다(`retail-account` F1) */
-    applySignup({
-      email: values.email.trim().toLowerCase(),
-      storeName: normalizeStoreName(values.storeName) ?? values.storeName,
-      bizNo: normalizeBusinessNo(values.bizNo),
-    });
-    announceArrival(ACCOUNT_PATH.approval, ARRIVAL_MESSAGE.signedUp);
-    router.replace(ACCOUNT_PATH.approval);
+    /* 여기서 멈춘다. 서류를 올릴 도매 업로드 API가 없어 신청을 보낼 곳이 없다 —
+       예전에는 세션에만 "심사 중" 계정을 만들고 심사 화면으로 넘겼는데 서버엔
+       아무것도 없었다(`side-02` N3). 버튼이 잠겨 있어 화면에서는 여기까지 오지
+       않는다. 업로드 API가 생기면 서버 호출로 다시 연다(D32 Q1-C) */
   };
 
   /** 글자를 받는 칸 한 벌. 9개가 같은 모양이라 여기서 한 번만 그린다 */
@@ -238,6 +228,17 @@ export function SignupView() {
         </p>
 
         <form onSubmit={submit} noValidate>
+          {/* 버튼을 잠근 이유를 폼 **위**에서 먼저 말한다 — 다 채운 뒤에야 못 낸다는
+              걸 알면 칸을 채운 시간이 그대로 버려진다 */}
+          <AuthSection>
+            <Notice data-ac="S1-2">
+              <span className="flex items-start gap-2">
+                <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span>{SIGNUP_CLOSED_NOTICE}</span>
+              </span>
+            </Notice>
+          </AuthSection>
+
           <AuthSection>
             <TwoCol>
               {textField("storeName", <RequiredLabel>상호명</RequiredLabel>, {
@@ -368,8 +369,8 @@ export function SignupView() {
           </AuthSection>
 
           <AuthSection>
-            {/* 미동의여도 잠그지 않는다 — 잠긴 버튼은 왜 못 누르는지 말하지 않는다 */}
-            <Button type="submit" size="lg" className="w-full">
+            {/* 잠근다 — 이유는 폼 위 안내가 말한다(`SIGNUP_CLOSED_NOTICE`) */}
+            <Button type="submit" size="lg" className="w-full" disabled>
               가입하기
             </Button>
           </AuthSection>
@@ -385,11 +386,6 @@ export function SignupView() {
           로그인
         </Link>
       </AuthLinks>
-
-      <AuthFoot>
-        가입하기를 누르면 승인 대기 화면으로 넘어가고, 승인되면 이메일로
-        알려드려요
-      </AuthFoot>
     </>
   );
 }

@@ -9,6 +9,7 @@ import { announceArrival } from "../arrival";
 import {
   ACCOUNT_PATH,
   ARRIVAL_MESSAGE,
+  CONTACT_LINE,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
@@ -183,8 +184,8 @@ export function LoginView() {
       <AuthLinks>
         <ComingSoonDialog
           trigger={<LinkButton>비밀번호 찾기</LinkButton>}
-          title="비밀번호 찾기는 준비 중이에요"
-          description="아직 만들지 않은 화면이에요. 메일을 보낼 경로가 없어서, 지금은 운영자에게 연락하면 임시 비밀번호를 받을 수 있어요."
+          title="비밀번호를 잊으셨나요?"
+          description={CONTACT_LINE}
         />
         <span aria-hidden>·</span>
         <Link
