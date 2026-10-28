@@ -19,8 +19,8 @@ export const ROOM_LIST_POLL_MS = 15_000;
  * 열린 방 하나만 묻는다(Codex plan r1 10).
  */
 export const ROOM_POLL_MS = 3_000;
-/** 실패가 이어지면 3, 6, 12, 24 … 초. 서버가 아플 때 모든 탭이 3초마다 두드리지 않게 */
-export const ROOM_POLL_BACKOFF_MAX_MS = 60_000;
+/** 실패가 이어지면 3, 6, 12, 24, 30 … 초(흔들림 포함 상한, 기획 §4-1). 서버가 아플 때 모든 탭이 3초마다 두드리지 않게 */
+export const ROOM_POLL_BACKOFF_MAX_MS = 30_000;
 /** backoff에만 섞는 흔들림(±20%). 탭들이 같은 박자로 다시 몰려오지 않게 */
 export const ROOM_POLL_JITTER = 0.2;
 
@@ -48,6 +48,13 @@ export const ROOM_TEXT = {
   autoReply: "자동 답변",
   clarify: "되묻기",
 } as const;
+
+/**
+ * 채팅 세션이 끊겼을 때(`api/session.ts`). 상품 폼 `SESSION_LOST_MESSAGE`와 같은 꼴("저장" → "보낼").
+ * 로그인 링크는 아직 없다(#252와 같다)
+ */
+export const SESSION_LOST_TEXT =
+  "로그인이 끊겼어요. 다시 로그인하기 전엔 보낼 수 없어요";
 
 export const COMPOSER_TEXT = {
   label: "메시지",

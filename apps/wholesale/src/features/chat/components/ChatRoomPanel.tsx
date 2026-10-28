@@ -8,9 +8,11 @@ import { ChatMessageItem } from "./ChatMessageItem";
 import { chatKeys } from "../api/keys";
 import { useMarkReadMutation } from "../api/mutations";
 import { useRoomNamePeek, useRoomQueries } from "../api/queries";
-import { LIST_TEXT, ROOM_TEXT } from "../constants";
+import { isChatSessionLostError, useChatSessionLost } from "../api/session";
+import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
 import { liveAnnouncement, maxSequenceOf, toThreadItems } from "../derive";
 import type { ChatReadResult } from "../types";
+import { useDocumentVisible } from "../useDocumentVisible";
 import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
 
 interface RoomCallbacks {
@@ -58,15 +60,25 @@ export function ChatRoomPanel({
             {ROOM_TEXT.notFound}
           </p>
         }
-        errorFallback={({ described, retry }) => (
+        errorFallback={({ error, described, retry }) => (
           <>
             {hintName ? <Panel.Title>{hintName}</Panel.Title> : null}
-            {/* 입력창은 숨긴다 — 못 읽은 방에 보내지 않게(디자인 결정 13) */}
-            <QueryErrorView
-              described={described}
-              onRetry={retry}
-              className="my-auto"
-            />
+            {/* 입력창은 숨긴다 — 못 읽은 방에 보내지 않게(디자인 결정 13).
+                세션이 끊긴 뒤 연 방은 다시 시도해도 같다 — 버튼 없이 이유만 */}
+            {isChatSessionLostError(error) ? (
+              <p
+                role="alert"
+                className="text-destructive-strong my-auto text-center text-sm"
+              >
+                {SESSION_LOST_TEXT}
+              </p>
+            ) : (
+              <QueryErrorView
+                described={described}
+                onRetry={retry}
+                className="my-auto"
+              />
+            )}
           </>
         )}
       >
@@ -97,12 +109,14 @@ function ChatRoom({
   focusTick,
 }: { roomId: number } & RoomCallbacks) {
   const queryClient = useQueryClient();
-  const { room, thread } = useRoomQueries(roomId);
+  const { room, thread, threadUpdatedAt } = useRoomQueries(roomId);
+  const sessionLost = useChatSessionLost();
+  const visible = useDocumentVisible();
   const name = room.counterpart.name;
   const maxSequence = maxSequenceOf(thread.messages);
 
   /* 낭독 기준점 — 방을 연 순간의 마지막 sequence. 이 뒤에 온 소매 메시지만 알린다(S3-8).
-     state 초깃값이라 polling이 다시 그려도 바뀌지 않는다 */
+     state 초깃값이라 polling이 다시 그려도 바뀌지 않는다. 같은 값이 polling으로 새로 붙은 말풍선의 기준이다(F7) */
   const [baseline] = useState(maxSequence);
   const [openedCursor] = useState(thread.cursor);
   const live = liveAnnouncement(thread.messages, baseline, name);
@@ -115,16 +129,44 @@ function ChatRoom({
     void queryClient.invalidateQueries({ queryKey: chatKeys.room(roomId) });
   }, [thread.cursor, openedCursor, queryClient, roomId]);
 
-  /* 읽음(S3-7). 그린 가장 큰 sequence가 서버에 알린 값보다 크고 탭이 보일 때만. 보낸 값을 ref에 두어
-     같은 값을 두 번 보내지 않는다 — 응답이 오기 전에 다시 그려져도 1회 */
-  const { mutate: markRead } = useMarkReadMutation(onRead);
-  const sentRead = useRef(room.myLastReadSequence);
+  /* 읽음(S3-7). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고, 세션이 살아 있을 때.
+     - 확인된 위치(confirmed)와 날아가는 중인 위치(inFlight)를 나눈다(리뷰 F2). 응답 전 다시 그려져도 1회,
+       실패하면 inFlight만 풀려 다음 polling 응답(threadUpdatedAt) 때 다시 보낸다
+     - 숨김 중 쌓인 것은 다시 보이는 순간(visible) 평가한다(리뷰 F3) */
+  const { mutateAsync: markRead } = useMarkReadMutation();
+  const confirmedRead = useRef(room.myLastReadSequence);
+  const inFlightRead = useRef(0);
   useEffect(() => {
-    if (maxSequence <= sentRead.current) return;
-    if (document.visibilityState === "hidden") return;
-    sentRead.current = maxSequence;
-    markRead({ roomId, lastReadSequence: maxSequence });
-  }, [maxSequence, markRead, roomId]);
+    if (!visible || sessionLost) return;
+    if (
+      maxSequence <= confirmedRead.current ||
+      maxSequence <= inFlightRead.current
+    )
+      return;
+    const target = maxSequence;
+    inFlightRead.current = target;
+    markRead({ roomId, lastReadSequence: target }).then(
+      (result) => {
+        confirmedRead.current = Math.max(
+          confirmedRead.current,
+          result.lastReadSequence,
+        );
+        if (inFlightRead.current === target) inFlightRead.current = 0;
+        onRead(result);
+      },
+      () => {
+        if (inFlightRead.current === target) inFlightRead.current = 0;
+      },
+    );
+  }, [
+    maxSequence,
+    visible,
+    sessionLost,
+    threadUpdatedAt,
+    markRead,
+    onRead,
+    roomId,
+  ]);
 
   /* 새 메시지가 오면 항상 바닥으로(알려진 한계 — 위치 보존과 `새 메시지 N개`는 loop-08) */
   const logRef = useRef<HTMLDivElement>(null);
@@ -179,22 +221,32 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
+                ac={
+                  item.message.sequence > baseline
+                    ? "S3-1 S3-3 S3-4"
+                    : undefined
+                }
               />
             ),
           )
         )}
       </div>
 
-      <ChatComposer counterpartName={name} focusTick={focusTick} />
+      <ChatComposer
+        counterpartName={name}
+        focusTick={focusTick}
+        sessionLost={sessionLost}
+      />
 
-      {/* 알림 통로는 이것 하나(디자인 결정 20). log는 off — 내 말, 자동 답변, 한 번에 받은 50개까지 읽지 않게 */}
+      {/* 알림 통로는 이것 하나(디자인 결정 20). log는 off — 내 말, 자동 답변, 한 번에 받은 50개까지 읽지 않게.
+          글을 sequence를 key로 한 span에 넣는다 — 같은 본문이 연달아 와도 노드가 바뀌어 다시 읽힌다(QA F8) */}
       <div
         aria-live="polite"
         aria-atomic="true"
         className="sr-only"
         data-ac="S3-8"
       >
-        {live}
+        {live ? <span key={live.sequence}>{live.text}</span> : null}
       </div>
     </>
   );

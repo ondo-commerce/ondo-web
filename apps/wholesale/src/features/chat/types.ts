@@ -47,8 +47,6 @@ export interface ChatThread {
   failures: number;
   /** 다음 polling까지 기다릴 시간. 실패할 때 한 번 뽑아 둔다 — 렌더마다 다시 뽑으면 타이머가 매번 다시 걸린다 */
   nextPollMs: number;
-  /** polling이 401을 받았다. 이 방은 더 묻지 않는다(로그인 전엔 같은 답이다) */
-  sessionLost: boolean;
 }
 
 /** 읽음 요청 응답으로 알게 된 방별 읽음 위치. 늦게 온 목록 응답보다 이쪽이 이긴다 */
@@ -86,9 +84,17 @@ export type ThreadItem =
   | { type: "message"; key: string; message: ChatMessage };
 
 /** 자동 답변 아래 근거 칸. 도매에만 정확 수량이 온다 */
+export interface FactPart {
+  text: string;
+  /** 값 조각(수량, 금액, 날짜). 굵게 + foreground */
+  strong: boolean;
+}
+
+/** 근거 한 줄 — `판매가능 ` + **35장** + `, 주문 한도 ` + **500장** */
+export type FactLine = FactPart[];
+
 export interface FactsView {
-  /** `판매가능 35장, 주문 한도 500장` 같은 줄들 */
-  lines: string[];
+  lines: FactLine[];
   /** 소매처가 본 값(구간)과 조회 시각. 재고 답에만 있다 */
   seen: string | null;
 }

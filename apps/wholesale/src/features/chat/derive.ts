@@ -16,6 +16,8 @@ import type {
   ChatRoomPage,
   ChatRoomRowView,
   ChatRoomSummary,
+  FactLine,
+  FactPart,
   FactsView,
   ReadMarks,
   ThreadItem,
@@ -286,52 +288,83 @@ export function senderLabel(
 export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
   if (autoReply === null) return null;
   const { stock, backorder, receivable } = autoReply.facts;
-  const lines: string[] = [];
+  const lines: FactLine[] = [];
   let seen: string | null = null;
+  // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
+  const value = (text: string): FactPart => ({ text, strong: true });
+  const label = (text: string): FactPart => ({ text, strong: false });
   if (stock !== null) {
+    const available = [
+      label("판매가능 "),
+      value(`${formatNumber(stock.availableQty)}장`),
+    ];
     lines.push(
       stock.orderLimit === null
-        ? `판매가능 ${formatNumber(stock.availableQty)}장`
-        : `판매가능 ${formatNumber(stock.availableQty)}장, 주문 한도 ${formatNumber(stock.orderLimit)}장`,
+        ? available
+        : [
+            ...available,
+            label(", 주문 한도 "),
+            value(`${formatNumber(stock.orderLimit)}장`),
+          ],
     );
     seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${formatClock(autoReply.checkedAt)} 조회`;
   }
   if (backorder !== null) {
+    const qty = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
     lines.push(
       backorder.expectedInboundDate === null
-        ? `미송 ${formatNumber(backorder.qty)}장, 입고일 미정`
-        : `미송 ${formatNumber(backorder.qty)}장, 입고 예정 ${backorder.expectedInboundDate}`,
+        ? [...qty, label(", 입고일 미정")]
+        : [...qty, label(", 입고 예정 "), value(backorder.expectedInboundDate)],
     );
   }
   if (receivable !== null) {
+    lines.push([
+      label("미결제 "),
+      value(`${formatNumber(receivable.outstandingAmount)}원`),
+      label(", 선수금 "),
+      value(`${formatNumber(receivable.prepaidAmount)}원`),
+    ]);
+    const { count, amount, maxDaysOverdue } = receivable.overdue;
     lines.push(
-      `미결제 ${formatNumber(receivable.outstandingAmount)}원, 선수금 ${formatNumber(receivable.prepaidAmount)}원`,
-    );
-    lines.push(
-      receivable.overdue.count === 0
-        ? "연체 없음"
-        : `연체 ${receivable.overdue.count}건 ${formatNumber(receivable.overdue.amount)}원 (최대 ${receivable.overdue.maxDaysOverdue}일)`,
+      count === 0
+        ? [label("연체 없음")]
+        : [
+            label("연체 "),
+            value(`${count}건 ${formatNumber(amount)}원`),
+            label(` (최대 ${maxDaysOverdue}일)`),
+          ],
     );
   }
   return lines.length === 0 ? null : { lines, seen };
 }
 
+/** 근거 한 줄을 글자로. 테스트와 낭독용 */
+export function factLineText(line: FactLine): string {
+  return line.map((part) => part.text).join("");
+}
+
 /**
- * 낭독기 알림 한 줄(S3-8). 방을 연 뒤(`baseline` 이후) 도착한 **소매처** 메시지 중 마지막 것만.
- * 첫 로딩 때는 빈 글자 — 열자마자 50개를 읽어 주지 않는다. 내가 보낸 말, 자동 답변도 읽지 않는다.
+ * 낭독기 알림(S3-8). 방을 연 뒤(`baseline` 이후) 도착한 **소매처** 메시지 중 마지막 것만.
+ * 첫 로딩 때는 null — 열자마자 50개를 읽어 주지 않는다. 내가 보낸 말, 자동 답변도 읽지 않는다.
+ *
+ * sequence를 같이 주는 이유(QA F8): 같은 본문("네")이 연달아 오면 글자가 그대로라 live 영역에 변화가 없고
+ * 낭독기가 두 번째를 안 읽는다. 그리는 쪽이 sequence를 key로 써서 매번 새 노드로 바꾼다.
  */
 export function liveAnnouncement(
   messages: readonly ChatMessage[],
   baseline: number,
   counterpartName: string,
-): string {
+): { text: string; sequence: number } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message === undefined || message.sequence <= baseline) break;
     if (message.sender === "RETAILER")
-      return `${counterpartName}: ${message.body}`;
+      return {
+        text: `${counterpartName}: ${message.body}`,
+        sequence: message.sequence,
+      };
   }
-  return "";
+  return null;
 }
 
 /* ------------------------------------------------------------------------
@@ -339,8 +372,9 @@ export function liveAnnouncement(
  * ------------------------------------------------------------------------ */
 
 /**
- * 다음 polling까지 기다릴 시간(S3-6). 실패 0번이면 3초. n번 연속 실패면 3초 × 2^(n−1)에 ±20%를 섞고
- * 60초에서 멈춘다 — 1번째 실패 뒤 3초, 2번째 6초, 3번째 12초.
+ * 다음 polling까지 기다릴 시간(S3-6). 실패 0번이면 3초. n번 연속 실패면 3초 × 2^(n−1)에 ±20%를 섞는다
+ * — 1번째 실패 뒤 3초, 2번째 6초, 3번째 12초. **흔들림을 섞은 뒤에도** 30초를 넘지 않는다(기획 §4-1,
+ * 리뷰 F5) — 서버가 살아난 뒤 사장이 30초 넘게 새 말을 못 보는 일이 없게.
  *
  * 성공 간격에는 흔들림을 섞지 않는다. 평소엔 탭마다 여는 시각이 달라 저절로 흩어지고, 몰림은
  * 서버가 같이 아팠다가 같이 살아날 때 생긴다.
@@ -354,5 +388,5 @@ export function pollDelayMs(failures: number, random: number): number {
     ROOM_POLL_BACKOFF_MAX_MS,
   );
   const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
-  return Math.round(base * jitter);
+  return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
 }

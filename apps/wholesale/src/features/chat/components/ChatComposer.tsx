@@ -1,8 +1,8 @@
 "use client";
 
-import { Button, Textarea } from "@ondo/ui";
+import { Button, cn, Textarea } from "@ondo/ui";
 import { useEffect, useRef, useState } from "react";
-import { COMPOSER_TEXT } from "../constants";
+import { COMPOSER_TEXT, SESSION_LOST_TEXT } from "../constants";
 
 /**
  * 방 아래 입력창. 메시지 목록과 **다른 컴포넌트**인 이유: 3초 polling이 방을 다시 그려도 입력 글과
@@ -16,10 +16,13 @@ import { COMPOSER_TEXT } from "../constants";
 export function ChatComposer({
   counterpartName,
   focusTick,
+  sessionLost,
 }: {
   counterpartName: string;
   /** 목록에서 행을 열 때마다 1씩 오른다. 오르면 입력창으로 포커스(S2-6) */
   focusTick: number;
+  /** 채팅 세션 끊김(`api/session.ts`) — 쓴 글은 지키고 읽기 전용(D28) */
+  sessionLost: boolean;
 }) {
   const [draft, setDraft] = useState("");
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
@@ -41,17 +44,27 @@ export function ChatComposer({
           aria-label={COMPOSER_TEXT.label}
           placeholder={`${counterpartName}${COMPOSER_TEXT.placeholderSuffix}`}
           value={draft}
+          readOnly={sessionLost}
           onChange={(e) => setDraft(e.target.value)}
           data-ac="S4-1 S4-2 S4-10 S4-11"
-          className="field-sizing-content max-h-40 min-w-0 flex-1 resize-none"
+          className={cn(
+            "field-sizing-content max-h-40 min-w-0 flex-1 resize-none",
+            sessionLost && "bg-muted",
+          )}
         />
         <Button type="button" disabled data-ac="S4-4">
           {COMPOSER_TEXT.send}
         </Button>
       </div>
-      <p className="text-muted-foreground min-h-4 text-xs leading-4">
-        {COMPOSER_TEXT.hint}
-      </p>
+      {sessionLost ? (
+        <p role="alert" className="text-destructive-strong text-sm">
+          {SESSION_LOST_TEXT}
+        </p>
+      ) : (
+        <p className="text-muted-foreground min-h-4 text-xs leading-4">
+          {COMPOSER_TEXT.hint}
+        </p>
+      )}
     </div>
   );
 }

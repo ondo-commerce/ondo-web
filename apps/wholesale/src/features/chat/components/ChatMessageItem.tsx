@@ -1,7 +1,13 @@
 import { Chip, cn } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { ROOM_TEXT } from "../constants";
-import { bubbleKindOf, formatClock, senderLabel, toFactsView } from "../derive";
+import {
+  bubbleKindOf,
+  factLineText,
+  formatClock,
+  senderLabel,
+  toFactsView,
+} from "../derive";
 import type { ChatMessage } from "../types";
 
 /**
@@ -14,9 +20,12 @@ import type { ChatMessage } from "../types";
 export function ChatMessageItem({
   message,
   counterpartName,
+  ac = "S3-1",
 }: {
   message: ChatMessage;
   counterpartName: string;
+  /** 와이어프레임 `data-ac`. polling으로 새로 붙은 말풍선은 S3-3 S3-4가 더 붙는다(QA F7) */
+  ac?: string;
 }) {
   const kind = bubbleKindOf(message);
   const time = formatClock(message.sentAt);
@@ -27,7 +36,7 @@ export function ChatMessageItem({
       <div
         role="note"
         data-kind={message.kind}
-        data-ac="S3-1"
+        data-ac={ac}
         className="border-border-strong text-secondary-foreground text-body flex items-center gap-2 self-center rounded-full border px-3 py-1"
       >
         <span className="sr-only">{`${who}, ${time}: `}</span>
@@ -44,7 +53,7 @@ export function ChatMessageItem({
     <div
       data-kind={message.kind}
       data-sequence={message.sequence}
-      data-ac="S3-1"
+      data-ac={ac}
       className={cn(
         "flex max-w-7/10 min-w-0 flex-col gap-1",
         mine ? "items-end self-end" : "items-start self-start",
@@ -119,7 +128,20 @@ function AutoReplyBubble({
       {facts ? (
         <span className="border-border text-secondary-foreground text-body grid gap-0.5 border-t pt-2">
           {facts.lines.map((line) => (
-            <span key={line}>{line}</span>
+            <span key={factLineText(line)}>
+              {line.map((part, i) =>
+                part.strong ? (
+                  <b
+                    key={i}
+                    className="text-foreground font-medium tabular-nums"
+                  >
+                    {part.text}
+                  </b>
+                ) : (
+                  part.text
+                ),
+              )}
+            </span>
           ))}
           {facts.seen ? (
             <span className="text-muted-foreground text-xs">{facts.seen}</span>

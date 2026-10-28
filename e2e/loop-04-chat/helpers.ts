@@ -157,3 +157,71 @@ export async function setVisibility(
     document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
   }, state);
 }
+
+interface Hold {
+  pattern: string | null;
+  waiting: (() => void)[];
+}
+
+/**
+ * 응답 보류(리뷰 F6). `page.goto` 전에 부른다. `holdNext`로 고른 GET 하나는 **서버 응답을 받은 뒤**
+ * 화면에 넘기지 않고 붙잡아 둔다 — "읽기 전에 떠난 목록 요청이 읽음 뒤에 도착"하는 늦은 응답을 만든다.
+ * 목은 페이지 안(MSW)이라 Playwright route 로는 못 잡아 fetch 를 감싼다.
+ */
+export async function installHold(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const hold: Hold = { pattern: null, waiting: [] };
+    (window as unknown as { __hold: Hold }).__hold = hold;
+    const original = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      const response = await original(input, init);
+      if (
+        hold.pattern !== null &&
+        (init?.method ?? "GET").toUpperCase() === "GET" &&
+        new RegExp(hold.pattern).test(url)
+      ) {
+        hold.pattern = null;
+        await new Promise<void>((resolve) => hold.waiting.push(resolve));
+      }
+      return response;
+    };
+  });
+}
+
+export async function holdNext(page: Page, pattern: RegExp): Promise<void> {
+  await page.evaluate((p) => {
+    (window as unknown as { __hold: Hold }).__hold.pattern = p;
+  }, pattern.source);
+}
+
+export function heldCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (window as unknown as { __hold: Hold }).__hold.waiting.length,
+  );
+}
+
+export async function releaseHeld(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const hold = (window as unknown as { __hold: Hold }).__hold;
+    for (const resolve of hold.waiting.splice(0)) resolve();
+  });
+}
+
+/** 전체 이동으로 `/login` 에 간 횟수. 0 이어야 쓰던 글이 산다(D28) */
+export function countLoginNavigations(page: Page): () => number {
+  let n = 0;
+  page.on("framenavigated", (frame) => {
+    if (
+      frame === page.mainFrame() &&
+      new URL(frame.url()).pathname === "/login"
+    )
+      n += 1;
+  });
+  return () => n;
+}

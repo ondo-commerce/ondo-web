@@ -101,7 +101,8 @@ export function Topbar({
         <MessageCircle aria-hidden />
       </Link>
 
-      <IconButton variant="ghost" aria-label="알림" title="알림">
+      {/* 채팅 링크와 같은 32px(와이어프레임 .ibtn, QA F9). 기본 sm(28px)이면 나란히 놓였을 때 크기가 다르다 */}
+      <IconButton variant="ghost" size="md" aria-label="알림" title="알림">
         <Bell aria-hidden />
 
         {/* TODO: 안 읽은 알림이 있을 때만 점을 띄운다.

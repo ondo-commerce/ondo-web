@@ -15,6 +15,10 @@ import {
   settled,
   waitCount,
   watchRequests,
+  composer,
+  countLoginNavigations,
+  ROOMS_GET,
+  READ_POST,
 } from "./helpers";
 
 /**
@@ -31,9 +35,14 @@ test.beforeEach(async ({ page }) => {
   await login(page);
 });
 
+/**
+ * 시계를 멈춘다. 페이지 시계는 흐르고 있어 "지금"을 읽은 뒤 멈추기까지 시간이 지나므로 500ms 앞에서 멈춘다
+ * (과거로는 못 멈춘다). 그 사이 polling이 한 번 나갔을 수 있어 응답까지 받고 시작한다.
+ */
 async function pauseClock(page: Page): Promise<void> {
   const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(new Date(now + 1));
+  await page.clock.pauseAt(new Date(now + 500));
+  await settled(page, MESSAGES_GET);
 }
 
 /** 멈춘 시계를 1ms씩 밀어 화면이 `data-poll-failures = n`을 그릴 때까지 */
@@ -83,6 +92,9 @@ test("S3-3 주입 뒤 3초 → afterSequence 요청, 응답 뒤 말풍선이 생
     })
     .toBe(8);
   await expect(bubbles(page).last()).toContainText("아 그리고 차콜 L도 10장요");
+  // polling 으로 붙은 말풍선은 와이어프레임처럼 S3-3 S3-4 를 단다(QA F7). 열 때 있던 것은 S3-1 만
+  await expect(bubbles(page).last()).toHaveAttribute("data-ac", /S3-3 S3-4/);
+  await expect(bubbles(page).first()).toHaveAttribute("data-ac", "S3-1");
   // 바닥까지 내려가 있다
   const gap = await log(page).evaluate(
     (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
@@ -166,6 +178,40 @@ test.describe("S3-5 숨김, 오프라인, 401 동안 요청 0", () => {
     expect(await count(page, MESSAGES_GET)).toBe(before + 1);
     expect(page.url()).toContain("/chats?room=1");
     await expect(bubbles(page)).toHaveCount(7);
+  });
+
+  test("세션 만료가 목록 polling 에서 먼저 와도 /login 0, polling 전부 멈춤, 쓴 글 그대로(리뷰 F1)", async ({
+    page,
+  }) => {
+    const logins = countLoginNavigations(page);
+    await openChats(page, 1);
+    await expect(bubbles(page)).toHaveCount(7);
+    await composer(page).fill("그리고 차콜 L은 10장 남았어요");
+    // 실서버에서 세션이 끊기면 다음 요청부터 전부 401 이다. 목록 15초 polling 이 먼저 맞는 경우
+    await mock(page, "fail", { op: "rooms", status: 401, times: 5 });
+    await mock(page, "fail", { op: "messages", status: 401, times: 5 });
+    await mock(page, "fail", { op: "read", status: 401, times: 5 });
+    await page.clock.fastForward(15_000);
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: "로그인이 끊겼어요. 다시 로그인하기 전엔 보낼 수 없어요",
+      }),
+    ).toBeVisible();
+    await expect(composer(page)).toHaveAttribute("readonly", "");
+
+    const gets = await count(page, MESSAGES_GET);
+    const rooms = await count(page, ROOMS_GET);
+    const reads = await count(page, READ_POST);
+    await page.clock.fastForward(30_000);
+    await setVisibility(page, "hidden");
+    await setVisibility(page, "visible");
+    await page.clock.fastForward(30_000);
+    expect(await count(page, MESSAGES_GET)).toBe(gets);
+    expect(await count(page, ROOMS_GET)).toBe(rooms);
+    expect(await count(page, READ_POST)).toBe(reads);
+    expect(logins(), `url=${page.url()}`).toBe(0);
+    expect(page.url()).toContain("/chats?room=1");
+    await expect(composer(page)).toHaveValue("그리고 차콜 L은 10장 남았어요");
   });
 });
 

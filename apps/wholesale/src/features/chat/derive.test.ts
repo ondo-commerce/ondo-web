@@ -3,6 +3,7 @@ import {
   advanceCursor,
   applyReadMark,
   bubbleKindOf,
+  factLineText,
   formatClock,
   formatDateDivider,
   formatListTime,
@@ -204,10 +205,18 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
         receivable: null,
       },
     };
-    expect(toFactsView(autoReply)).toEqual({
-      lines: ["판매가능 1,200장, 주문 한도 500장"],
-      seen: '소매처에게는 "50장 이상"으로 보였어요. 09:22 조회',
-    });
+    const view = toFactsView(autoReply);
+    expect(view?.lines.map(factLineText)).toEqual([
+      "판매가능 1,200장, 주문 한도 500장",
+    ]);
+    expect(view?.seen).toBe(
+      '소매처에게는 "50장 이상"으로 보였어요. 09:22 조회',
+    );
+    // 수량만 굵게(QA F11)
+    expect(view?.lines[0]?.filter((p) => p.strong).map((p) => p.text)).toEqual([
+      "1,200장",
+      "500장",
+    ]);
     expect(
       toFactsView({
         ...autoReply,
@@ -227,7 +236,7 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
             overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
           },
         },
-      })?.lines,
+      })?.lines.map(factLineText),
     ).toEqual(["미결제 786,000원, 선수금 0원", "연체 없음"]);
   });
 });
@@ -256,14 +265,23 @@ describe("S3-8 낭독 알림", () => {
   ];
 
   it("S3-8 연 뒤 온 소매 메시지 중 마지막 것을 '이름: 본문'으로", () => {
-    expect(liveAnnouncement(messages, 7, "봄봄상회")).toBe(
-      "봄봄상회: 아 그리고 차콜 L도 10장요",
-    );
+    expect(liveAnnouncement(messages, 7, "봄봄상회")).toEqual({
+      text: "봄봄상회: 아 그리고 차콜 L도 10장요",
+      sequence: 8,
+    });
   });
 
-  it("S3-8 첫 로딩(기준점 = 마지막)이면 빈 글자, 내 말만 왔으면 빈 글자", () => {
-    expect(liveAnnouncement(messages, 9, "봄봄상회")).toBe("");
-    expect(liveAnnouncement(messages, 8, "봄봄상회")).toBe("");
+  it("S3-8 첫 로딩(기준점 = 마지막)이면 없음, 내 말만 왔으면 없음", () => {
+    expect(liveAnnouncement(messages, 9, "봄봄상회")).toBeNull();
+    expect(liveAnnouncement(messages, 8, "봄봄상회")).toBeNull();
+  });
+
+  it("S3-8 같은 본문이 연달아 와도 sequence가 달라 새 알림이다(QA F8)", () => {
+    const twice = [message(10, { body: "네" }), message(11, { body: "네" })];
+    const first = liveAnnouncement(twice.slice(0, 1), 9, "봄봄상회");
+    const second = liveAnnouncement(twice, 9, "봄봄상회");
+    expect(first?.text).toBe(second?.text);
+    expect(first?.sequence).not.toBe(second?.sequence);
   });
 });
 
@@ -285,8 +303,16 @@ describe("S3-6 polling 간격", () => {
     }
   });
 
-  it("S3-6 60초에서 멈춘다", () => {
-    expect(pollDelayMs(10, 0.5)).toBe(60_000);
+  it("S3-6 흔들림을 섞은 최종값도 30초를 넘지 않는다(리뷰 F5)", () => {
+    // 4번째 실패: 24초 +20% = 28.8초 — 상한 안
+    expect(pollDelayMs(4, 0.999_999)).toBeLessThanOrEqual(30_000);
+    expect(pollDelayMs(4, 0.999_999)).toBeGreaterThan(28_000);
+    // 5번째부터 기준 30초. +20%를 섞어도 30초에서 자르고, −20%는 24초
+    for (const failures of [5, 6, 10, 50]) {
+      expect(pollDelayMs(failures, 0.999_999)).toBe(30_000);
+      expect(pollDelayMs(failures, 0.5)).toBe(30_000);
+      expect(pollDelayMs(failures, 0)).toBe(24_000);
+    }
   });
 });
 

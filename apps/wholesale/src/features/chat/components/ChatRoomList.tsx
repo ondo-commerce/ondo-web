@@ -5,10 +5,11 @@ import Link from "next/link";
 import type { KeyboardEvent, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRoomListQuery } from "../api/queries";
-import { LIST_TEXT } from "../constants";
+import { isChatSessionLostError } from "../api/session";
+import { LIST_TEXT, SESSION_LOST_TEXT } from "../constants";
 import { toRoomRows } from "../derive";
 import type { ChatRoomRowView, ReadMarks } from "../types";
-import { QueryBoundary } from "@/shared/api/QueryBoundary";
+import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
 
 interface ListProps {
   selectedRoomId: number | null;
@@ -24,7 +25,22 @@ export function ChatRoomListPanel(props: ListProps) {
   return (
     <Panel role="region" aria-label={LIST_TEXT.label} className="w-90 shrink-0">
       <Panel.Title>{LIST_TEXT.title}</Panel.Title>
-      <QueryBoundary fallback={<ListSkeleton rows={6} />}>
+      <QueryBoundary
+        fallback={<ListSkeleton rows={6} />}
+        errorFallback={({ error, described, retry }) =>
+          // 세션이 끊긴 뒤라면 다시 시도해도 같다 — 버튼 없이 이유만(공용 `/login` 이동 대신, 리뷰 F1)
+          isChatSessionLostError(error) ? (
+            <p
+              role="alert"
+              className="text-destructive-strong py-12 text-center text-sm"
+            >
+              {SESSION_LOST_TEXT}
+            </p>
+          ) : (
+            <QueryErrorView described={described} onRetry={retry} />
+          )
+        }
+      >
         <ChatRoomList {...props} />
       </QueryBoundary>
     </Panel>

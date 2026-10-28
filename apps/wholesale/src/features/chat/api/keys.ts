@@ -10,4 +10,6 @@ export const chatKeys = {
   rooms: () => [...chatKeys.all, "rooms"] as const,
   room: (roomId: number) => [...chatKeys.all, "room", roomId] as const,
   thread: (roomId: number) => [...chatKeys.all, "thread", roomId] as const,
+  /** 요청이 아니라 "세션이 끊겼다" 표시 한 칸(`session.ts`) */
+  session: () => [...chatKeys.all, "session"] as const,
 };

@@ -3,14 +3,22 @@ import {
   bubbles,
   composer,
   count,
+  heldCount,
+  holdNext,
   incoming,
   installClock,
+  installHold,
   log,
   login,
+  MESSAGES_GET,
   mock,
   openChats,
   READ_POST,
+  releaseHeld,
+  ROOMS_GET,
   row,
+  setVisibility,
+  settled,
   waitCount,
   watchRequests,
 } from "./helpers";
@@ -125,6 +133,68 @@ test("S3-7 열면 읽음 1회, 배지가 사라지고 늦게 온 목록에도 �
   expect(await count(page, READ_POST)).toBe(1);
   // 답 필요는 그대로 — 읽었다고 답한 건 아니다
   await expect(row(page, "봄봄상회")).toContainText("답 필요");
+});
+
+test("S3-7 읽기 전에 떠난 목록 응답이 읽음 뒤에 도착해도 배지가 되살아나지 않는다(리뷰 F6)", async ({
+  page,
+}) => {
+  await installHold(page);
+  await openChats(page);
+  const unread = row(page, "봄봄상회").locator("[data-unread]");
+  await expect(unread).toHaveCount(1);
+
+  // 목록 재조회를 내보내고 그 응답(안 읽음 1, 읽기 전 값)을 붙잡는다
+  await holdNext(page, ROOMS_GET.path);
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => heldCount(page)).toBe(1);
+
+  await row(page, "봄봄상회").click();
+  await waitCount(page, READ_POST, 1);
+  await expect(unread).toHaveCount(0);
+
+  // 늦은 응답 도착 — 읽음 응답(위치 7)이 목록 값(위치 6)보다 새로워 배지는 그대로 없다
+  await releaseHeld(page);
+  await settled(page, ROOMS_GET);
+  await expect(row(page, "봄봄상회")).toContainText("감사합니다");
+  await page.clock.runFor(50);
+  await expect(unread).toHaveCount(0);
+});
+
+test.describe("S3-7 읽음 재시도와 복귀(리뷰 F2 F3)", () => {
+  test("읽음 500 → 다음 polling 때 같은 위치로 다시 보낸다", async ({
+    page,
+  }) => {
+    await openChats(page);
+    await mock(page, "fail", { op: "read", times: 1 });
+    await row(page, "봄봄상회").click();
+    await waitCount(page, READ_POST, 1);
+    await settled(page, READ_POST);
+    const unread = row(page, "봄봄상회").locator("[data-unread]");
+    await expect(unread).toHaveCount(1);
+    await page.clock.fastForward(3_000);
+    await waitCount(page, READ_POST, 2);
+    await expect(unread).toHaveCount(0);
+    await page.clock.fastForward(3_000);
+    await settled(page, MESSAGES_GET);
+    expect(await count(page, READ_POST)).toBe(2);
+  });
+
+  test("숨김 중 도착한 메시지는 다시 보이는 순간 읽음", async ({ page }) => {
+    await openChats(page, 1);
+    await waitCount(page, READ_POST, 1);
+    await setVisibility(page, "hidden");
+    await incoming(page, 1, "숨김 중 온 말");
+    // 숨김 중 polling 은 멈춘다 — 다시 보일 때 받아 그리고, 그 뒤 읽음
+    await page.clock.fastForward(10_000);
+    expect(await count(page, READ_POST)).toBe(1);
+    await setVisibility(page, "visible");
+    await expect(
+      bubbles(page).filter({
+        has: page.getByText("숨김 중 온 말", { exact: true }),
+      }),
+    ).toHaveCount(1);
+    await waitCount(page, READ_POST, 2);
+  });
 });
 
 test("S3-8 새 소매 메시지 → live 영역 '봄봄상회: 본문', 첫 로딩 땐 비어 있다", async ({

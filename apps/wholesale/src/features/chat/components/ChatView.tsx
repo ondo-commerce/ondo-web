@@ -6,6 +6,7 @@ import { useCallback, useRef, useState } from "react";
 import { ChatRoomListPanel } from "./ChatRoomList";
 import { ChatRoomPanel } from "./ChatRoomPanel";
 import { useRoomListEmptyPeek } from "../api/queries";
+import { useResetChatSessionOnLeave } from "../api/session";
 import { ROOM_TEXT } from "../constants";
 import { mergeReadMark, parseRoomParam } from "../derive";
 import type { ChatReadResult, ReadMarks } from "../types";
@@ -38,6 +39,7 @@ export function ChatView() {
 
   const listRef = useRef<HTMLUListElement>(null);
   const listEmpty = useRoomListEmptyPeek();
+  useResetChatSessionOnLeave();
 
   return (
     <div className="flex min-h-0 flex-1 gap-2">
