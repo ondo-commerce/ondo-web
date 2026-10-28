@@ -204,3 +204,12 @@ export const IDLE_UPLOAD_STATE: UploadState = {
   uploading: false,
   failedCount: 0,
 };
+
+/**
+ * 격자 칸·`+`·`×`에 붙이는 포커스 표시. `packages/ui`의 `Button`·`AddSlot`은 포커스 링이
+ * 꺼져 있고 그 파일은 읽기 전용이다(#254 F6). `account`에 같은 값이 있지만 feature끼리
+ * import 하지 않으므로 복제한다. **`outline-hidden`을 걸지 않는다** — 기본 링을 지운 채
+ * 아무것도 안 그리는 것이 `account` 앞 회차 결함이었다.
+ */
+export const FOCUS_RING_CLASS =
+  "focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-2";

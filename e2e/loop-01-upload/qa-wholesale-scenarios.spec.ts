@@ -242,19 +242,25 @@ test("키보드 — × 에 포커스를 두고 Enter·Space 를 누르면 빠진
   await expect(registered(page).first()).toHaveAccessibleName("이미지 1, 대표");
 });
 
-test("구조 — 등록 칸 껍데기(role=button, dnd-kit)가 × 버튼을 품는다: interactive 중첩 여부를 기록", async ({
+test("구조 — 등록 칸 손잡이(role=button, dnd-kit)는 × 버튼을 품지 않는다(#254 F5)", async ({
   page,
 }) => {
   await openCreateWithPost(page);
   await chooseFiles(page, [jpg("a.jpg")]);
   await expect(registered(page)).toHaveCount(1, DONE);
   const shell = registered(page).first();
-  const info = await shell.evaluate((e) => ({
-    role: e.getAttribute("role"),
-    tabindex: e.getAttribute("tabindex"),
-    roledescription: e.getAttribute("aria-roledescription"),
-    nestedButtons: e.querySelectorAll("button").length,
-  }));
+  const info = await shell.evaluate((e) => {
+    const handle = e.querySelector('[aria-roledescription="sortable"]');
+    return {
+      role: handle?.getAttribute("role") ?? null,
+      tabindex: handle?.getAttribute("tabindex") ?? null,
+      roledescription: handle?.getAttribute("aria-roledescription") ?? null,
+      nestedButtons: handle?.querySelectorAll("button").length ?? -1,
+      siblingButtons: e.querySelectorAll(":scope > button").length,
+    };
+  });
   observe("구조-등록칸-중첩", info);
-  expect(info.nestedButtons).toBe(1);
+  expect(info.role).toBe("button");
+  expect(info.nestedButtons).toBe(0);
+  expect(info.siblingButtons).toBe(1);
 });
