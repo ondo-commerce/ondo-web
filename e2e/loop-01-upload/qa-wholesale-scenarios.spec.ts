@@ -13,6 +13,7 @@ import {
   login,
   openCreateWithPost,
   png,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -239,7 +240,9 @@ test("키보드 — × 에 포커스를 두고 Enter·Space 를 누르면 빠진
     observe("키보드-×-Space", { afterSpace: await registered(page).count() });
   }
   await expect(registered(page)).toHaveCount(1);
-  await expect(registered(page).first()).toHaveAccessibleName("이미지 1, 대표");
+  await expect(handleOf(registered(page).first())).toHaveAccessibleName(
+    "이미지 1, 대표",
+  );
 });
 
 test("구조 — 등록 칸 손잡이(role=button, dnd-kit)는 × 버튼을 품지 않는다(#254 F5)", async ({

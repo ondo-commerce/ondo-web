@@ -13,6 +13,7 @@ import {
   openCreateWithPost,
   openEdit,
   png,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -372,7 +373,7 @@ test("QA-V9 #state-disabled — 시즌 종료 1006: * 없음, fieldset opacity .
     page.getByRole("button", { name: "이미지 1 빼기" }),
   ).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
-  await expect(registered(page).first()).toHaveAttribute(
+  await expect(handleOf(registered(page).first())).toHaveAttribute(
     "aria-disabled",
     "true",
   );

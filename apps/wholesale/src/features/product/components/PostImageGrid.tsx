@@ -438,6 +438,11 @@ export function PostImageGrid({
         <SortableContext items={shown} strategy={rectSortingStrategy}>
           <SlotGrid
             id={id}
+            /*
+             * p-1 = 포커스 링이 칸 밖으로 나가는 4px(offset 2 + 두께 2). 이게 없으면 첫 열 링의
+             * 왼쪽 변이 Panel.Body 스크롤 박스(overflow-y-auto 라 x 도 잘린다)에 잘린다(side-01 F2)
+             */
+            className="p-1"
             /* 프로그램 포커스만 받는다(F3). Tab 순서엔 안 들어간다 — 칸들이 각자 받는다 */
             tabIndex={-1}
             role="group"
@@ -550,8 +555,8 @@ export function PostImageGrid({
  * 키보드 Enter·Space 도 KeyboardSensor 에 안 닿는다(F4 가 구조로 막힌다).
  * 드래그 중엔 바깥이 움직이므로 `×`도 같이 따라간다.
  *
- * 바깥에 `role=group` + 이름을 다는 이유: 격자가 칸을 `> [data-state]`로 세고 e2e 가 그 칸의
- * 이름("이미지 N, 대표")과 잠김을 본다. 역할 없는 div 는 이름을 가질 수 없다(ARIA generic).
+ * 바깥엔 역할도 이름도 없다. 이름("이미지 N, 대표")과 잠김(aria-disabled)은 손잡이만 갖는다 —
+ * 바깥에도 같은 이름을 달면 낭독기가 칸마다 두 번 읽는다(side-01 F1).
  *
  * ImageSlot 을 감싸는 이유는 그대로다 — @ondo/ui 의 표시용 프리미티브라 ref 를 받지 않는다.
  */
@@ -588,10 +593,6 @@ function SortableImageSlot({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       // isDragging 동안 반투명 + 위로 띄우기 — 밀려나는 칸들과 구분된다
       className={cn("relative", isDragging && "z-10 opacity-50")}
-      role="group"
-      aria-label={name}
-      /* 손잡이도 dnd-kit 이 aria-disabled 를 단다. 칸 전체가 잠긴 것도 칸 이름과 같이 읽히게 둔다 */
-      aria-disabled={disabled || undefined}
       data-state="registered"
       data-ac={disabled ? "S2-4 S2-10 S3-3" : "S2-4"}
     >
