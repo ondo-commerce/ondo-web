@@ -62,7 +62,7 @@ test.describe("S1-1 서버가 없어요 문구 제거", () => {
     await page.goto("/dashboard");
     await page.getByRole("button", { name: /계정 메뉴/ }).click();
 
-    await expect(page.getByText(EMAIL)).toBeVisible();
+    await expect(page.locator('[data-ac="S1-1"]')).toHaveText(EMAIL);
     await expect(page.locator("body")).not.toContainText("서버가 없어요");
     /* 계좌 항목은 세션 흉내 대신 정산 탭으로 간다 */
     await expect(
@@ -80,6 +80,19 @@ test.describe("S1-1 서버가 없어요 문구 제거", () => {
 });
 
 test.describe("S1-2 가입, 재신청 제출 잠금", () => {
+  test("/signup: 잠긴 가입하기까지 내려와도 잠금 이유가 화면 안에 있다", async ({
+    page,
+  }) => {
+    await page.goto("/signup");
+    const button = page.getByRole("button", { name: "가입하기" });
+    await button.scrollIntoViewIfNeeded();
+    /* 맨 위 안내는 이때 화면 밖이다(04-qa F6). 버튼 옆 줄이 대신 보여야 한다 */
+    await expect(page.locator('[data-ac="S1-2-near"]')).toBeInViewport();
+    await expect(page.locator('[data-ac="S1-2-near"]')).toHaveText(
+      SIGNUP_CLOSED,
+    );
+  });
+
   test("/signup: 폼 위 안내가 뜨고 가입하기가 잠겨 있다", async ({ page }) => {
     await page.goto("/signup");
     const notice = page.locator('[data-ac="S1-2"]');
@@ -196,7 +209,7 @@ test.describe("S1-3 '준비 중' 대신 문의 한 줄", () => {
     await page.goto("/login");
     await page.getByRole("button", { name: "비밀번호 찾기" }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(CONTACT_LINE);
+    await expect(dialog.locator('[data-ac="S1-3"]')).toHaveText(CONTACT_LINE);
     await expect(dialog).not.toContainText("준비 중");
   });
 
@@ -205,7 +218,7 @@ test.describe("S1-3 '준비 중' 대신 문의 한 줄", () => {
     await page.goto("/approval");
     await page.getByRole("button", { name: "문의하기" }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(CONTACT_LINE);
+    await expect(dialog.locator('[data-ac="S1-3"]')).toHaveText(CONTACT_LINE);
     await expect(dialog).not.toContainText("준비 중");
   });
 
@@ -214,7 +227,7 @@ test.describe("S1-3 '준비 중' 대신 문의 한 줄", () => {
     await page.goto("/approval/rejected");
     await page.getByRole("button", { name: "문의하기" }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(CONTACT_LINE);
+    await expect(dialog.locator('[data-ac="S1-3"]')).toHaveText(CONTACT_LINE);
     await expect(dialog).not.toContainText("준비 중");
   });
 });

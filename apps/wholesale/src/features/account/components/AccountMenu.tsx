@@ -56,7 +56,10 @@ export function AccountMenu() {
                   {account.storeName}
                 </p>
               ) : null}
-              <p className="text-muted-foreground truncate text-xs">
+              <p
+                data-ac="S1-1"
+                className="text-muted-foreground truncate text-xs"
+              >
                 {account.email}
               </p>
             </div>

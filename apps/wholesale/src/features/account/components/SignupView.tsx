@@ -374,7 +374,17 @@ export function SignupView() {
           </AuthSection>
 
           <AuthSection>
-            {/* 잠근다 — 이유는 폼 위 안내가 말한다(`SIGNUP_CLOSED_NOTICE`) */}
+            {/* 잠근 이유를 버튼 **바로 위**에도 한 번 더 적는다. 폼이 길어 버튼까지
+                내려오면 맨 위 안내가 화면 밖이라 회색 버튼만 남았다(04-qa F6).
+                낭독기는 버튼 설명(`aria-describedby`)으로 위 안내를 이미 읽으므로
+                이 줄은 눈으로 보는 사람 몫이다 — 두 번 읽히지 않게 `aria-hidden` */}
+            <p
+              aria-hidden
+              data-ac="S1-2-near"
+              className="text-muted-foreground mb-2 text-center text-xs leading-4.5"
+            >
+              {SIGNUP_CLOSED_NOTICE}
+            </p>
             <Button
               type="submit"
               size="lg"

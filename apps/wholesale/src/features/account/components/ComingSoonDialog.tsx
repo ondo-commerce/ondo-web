@@ -27,7 +27,8 @@ export function ComingSoonDialog({
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
       <Dialog.Content>
         <Dialog.Title>{title}</Dialog.Title>
-        <Dialog.Description>{description}</Dialog.Description>
+        {/* 문의 한 줄(S1-3)이 서는 자리. e2e와 공개 스모크가 이 표시로 찾는다 */}
+        <Dialog.Description data-ac="S1-3">{description}</Dialog.Description>
         <Dialog.Footer>
           <Dialog.Close asChild>
             {/* `Button`에 type 기본값이 없다 — 폼 안에 들어가면 submit이 된다 */}
