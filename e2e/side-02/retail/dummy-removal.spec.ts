@@ -8,12 +8,12 @@ import {
 } from "./stub-api";
 
 /**
- * side-02 S2 — 소매 더미 제거(#277). project `retail-stub`이 돌린다:
+ * side-02 S2 — 소매 더미 제거(#277). 별도 설정 `playwright.stub.config.ts`가 돌린다:
  *
- *   pnpm e2e --project retail-stub
+ *   pnpm e2e:stub
  *
  * 소매는 Server Component가 `API_ORIGIN`으로 직접 부르므로 retail 서버가 가짜 API
- * (`stub-api.ts`, 3199)에 붙어 있어야 한다. `playwright.config.ts`의 webServer가
+ * (`stub-api.ts`, 3199)에 붙어 있어야 한다. `playwright.stub.config.ts`의 webServer가
  * 둘 다 띄운다. **연결이 안 맞으면 skip하지 않고 실패한다** — 예전엔 skip해서
  * 기본 실행이 검증 0건으로 성공했다(03-review F5).
  */
@@ -26,7 +26,7 @@ test.beforeAll(async ({ request, baseURL }) => {
   });
   expect(
     stub.status(),
-    `가짜 API(${STUB_ORIGIN})가 없다 — pnpm e2e --project retail-stub 으로 돌린다`,
+    `가짜 API(${STUB_ORIGIN})가 없다 — pnpm e2e:stub 으로 돌린다`,
   ).toBe(401);
 
   /* retail 서버가 그 가짜 API를 보고 있나. 3101에 다른 API_ORIGIN으로 뜬 서버를
