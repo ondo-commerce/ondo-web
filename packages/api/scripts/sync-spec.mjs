@@ -108,7 +108,7 @@ async function readSpec() {
  * `x-ondo-draft`가 없는 op는 받지 않고 멈춘다 — 표시 없이 섞이면 스냅샷에서 BE 것과 구분이
  * 안 된다.
  *
- * 스키마는 살아남은 초안 op가 참조하는 것만, 받은 쪽에 같은 이름이 없을 때 넣는다. 같은 이름이
+ * 스키마는 살아남은 초안 op가 (중첩까지 따라가) 참조하는 것만, 받은 쪽에 같은 이름이 없을 때 넣는다. 같은 이름이
  * 있으면 받은 쪽이 이긴다 — BE가 이름을 선점한 것이고, 모양이 다르면 codegen 뒤 typecheck가 잡는다.
  */
 function mergeDrafts(received, drafts) {
@@ -134,18 +134,35 @@ function mergeDrafts(received, drafts) {
   }
 
   const receivedSchemas = received.components?.schemas ?? {};
+  const draftSchemas = drafts.components?.schemas ?? {};
   const schemas = { ...receivedSchemas };
-  const keptJson = JSON.stringify(kept.map((k) => k.operation));
-  for (const [name, schema] of Object.entries(
-    drafts.components?.schemas ?? {},
-  )) {
+  // 참조를 **끝까지** 따라간다. op가 직접 부르는 스키마만 넣으면 그 안의 `$ref`
+  // (예: ChatSendResult → ChatMessage)가 빠져 codegen이 깨진다(#263, 채팅 계약이 처음으로 중첩 스키마를 들였다)
+  const pending = refsIn(kept.map((k) => k.operation));
+  const seen = new Set();
+  while (pending.length > 0) {
+    const name = pending.pop();
+    if (seen.has(name)) continue;
+    seen.add(name);
     if (name in receivedSchemas) continue;
-    if (!keptJson.includes(`"#/components/schemas/${name}"`)) continue;
+    const schema = draftSchemas[name];
+    if (schema === undefined) continue;
     schemas[name] = schema;
+    pending.push(...refsIn(schema));
   }
   merged.components = { ...received.components, schemas };
 
   return { merged, kept: kept.map((k) => k.label), dropped };
+}
+
+/** 값 안의 `#/components/schemas/<이름>` 참조를 전부 뽑는다 */
+function refsIn(value) {
+  const names = [];
+  const pattern = /"#\/components\/schemas\/([^"]+)"/g;
+  for (const match of JSON.stringify(value).matchAll(pattern)) {
+    names.push(match[1]);
+  }
+  return names;
 }
 
 function readDrafts() {

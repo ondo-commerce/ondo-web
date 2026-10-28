@@ -74,3 +74,31 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
   도매 서버 없이도 뜬다 — 상품·미송 호출은 요청 시점에만 도매로 나간다
 
 다음부터는 `sync-spec <app> <파일>`로 갱신한다. 소매 앱은 `RetailSchema<"…">`로 쓴다.
+
+## 채팅 목 (`src/mocks/wholesale/chat.ts`, #263)
+
+초안 op 11개(도매 5 `/api/wholesale/chat/*`, 소매 6 `/api/retail/chat/*`) 가운데 **도매 5개만 목이 있다.**
+소매 목은 loop-05(S5)에 만든다. 그때 지킬 것:
+
+- **방 id 체계는 하나다.** 방은 (도매처, 소매처) 사업체 쌍에 1개이고 도매와 소매가 같은 `roomId`를 본다.
+  소매 목은 도매 목의 방 저장소를 같이 써야 한다(따로 시드를 만들면 양쪽 roomId가 갈린다).
+  지금 시드: 도매처 101의 방 1~32(소매처 id = 방 번호, 1 봄봄상회, 2 대기상회는 주문, 미송 목과 같은 id),
+  도매처 102와 봄봄상회의 방 33(101에게는 404). 소매 세션의 "나"는 봄봄상회(1)로 두면 방 1과 33이 보인다.
+- `createChatRoom`(POST `/api/retail/chat/rooms`)은 쌍이 이미 있으면 그 방을 200으로, 없으면 다음 번호로 201.
+- `sequence`, 읽음(`max`), `Idempotency-Key` 규칙은 도매와 같다. 키 범위는 (방, 보낸 사업체)라
+  저장소 키에 보낸 쪽을 넣는다(`${roomId}:RETAILER:${key}`).
+
+손잡이(목 전용, 스펙에 없음):
+
+| 종류 | 이름 | 동작 |
+|---|---|---|
+| 본문 | `auth401` / `auth403` | 401 `UNAUTHENTICATED` / 403 `NOT_APPROVED`, 만들지 않음 |
+| 본문 | `fail500` | 늘 500, 만들지 않음 |
+| 본문 | `fail500once` | 그 키의 첫 요청만 500, 다시 보내면 201 |
+| 본문 | `failAfterCommit` | 만들고 응답만 500. 같은 키로 다시 보내면 200 replay |
+| 본문 | `slow5s` | 만든 뒤 5초 있다가 201 (기본은 300ms) |
+| HTTP | `POST /__mock/chat/rooms/{roomId}/incoming {body, count?, intent?}` | 소매 메시지 주입 |
+| HTTP | `POST /__mock/chat/fail {op, status = 500, times = 1}` | op(`rooms` `room` `messages` `send` `read`)의 다음 n회 실패 |
+| HTTP | `POST /__mock/chat/reset {rooms?}` | 시드로. `rooms: 0`이면 빈 목록, `n`이면 최근 n개만 |
+
+계약 테스트는 `chat.test.ts`(vitest + `msw/node`, `pnpm test`가 돈다).
