@@ -35,24 +35,9 @@ export default defineConfig({
     {
       name: "retail",
       testMatch: /retail[/-].*\.spec\.ts/,
-      /* 가짜 API가 있어야 도는 폴더는 아래 `retail-stub`이 맡는다 */
+      /* 가짜 API가 있어야 도는 폴더는 별도 설정(`playwright.stub.config.ts`,
+         `pnpm e2e:stub`)이 맡는다. 여기 넣으면 dev API를 보는 이 서버로 돌아 실패한다 */
       testIgnore: /side-02\/retail\//,
-      use: {
-        ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:3101",
-        viewport: { width: 1470, height: 900 },
-      },
-    },
-    {
-      /*
-       * 소매는 Server Component가 `API_ORIGIN`으로 직접 부른다 — 브라우저 MSW가 닿지
-       * 않아 서버 쪽 응답은 가짜 API(`e2e/side-02/retail/stub-api.ts`, 3199)가 준다.
-       * 예전엔 spec이 `API_ORIGIN`을 보고 스스로 skip해서 기본 `pnpm e2e`가 소매 검증
-       * 0건으로 성공 종료했다(03-review F5). 이제 아래 webServer가 둘 다 띄우고, 연결이
-       * 안 맞으면 spec이 **실패**한다.
-       */
-      name: "retail-stub",
-      testMatch: /side-02\/retail\/.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3101",
@@ -61,12 +46,6 @@ export default defineConfig({
     },
   ],
   webServer: [
-    {
-      command: "node --no-warnings e2e/side-02/retail/stub-server.ts",
-      url: "http://localhost:3199/api/retail/auth/me",
-      reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
-    },
     {
       command: "pnpm --filter wholesale exec next dev -p 3100",
       url: "http://localhost:3100/login",
@@ -78,9 +57,7 @@ export default defineConfig({
       command: "pnpm --filter retail exec next dev -p 3101",
       url: "http://localhost:3101/login",
       reuseExistingServer: !process.env.CI,
-      /* 서버 fetch는 가짜 API로, 브라우저 fetch는 MSW로. dev API(`.env.development`)를
-         보지 않는다 — 실서버 상태에 따라 e2e 결과가 바뀌면 안 된다 */
-      env: { NEXT_PUBLIC_API_MOCK: "1", API_ORIGIN: "http://localhost:3199" },
+      env: { NEXT_PUBLIC_API_MOCK: "1" },
       timeout: 120_000,
     },
   ],
