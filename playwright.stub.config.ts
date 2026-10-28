@@ -30,8 +30,9 @@ export default defineConfig({
   projects: [
     {
       name: "retail-stub",
+      /* loop-05a는 개발 spec(`retail-*`)과 QA spec(`qa-*`) 둘 다 여기서 돈다 — 따로 설정을 두면 한쪽이 안 돈다 */
       testMatch:
-        /(side-02\/retail\/|loop-05a-retail-chat\/retail-).*\.spec\.ts$/,
+        /(side-02\/retail\/|loop-05a-retail-chat\/(retail|qa)-).*\.spec\.ts$/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3101",
@@ -51,7 +52,11 @@ export default defineConfig({
       url: "http://localhost:3101/login",
       reuseExistingServer: false,
       /* 서버 fetch는 가짜 API로, 브라우저의 채팅 fetch는 MSW로(그 밖은 프록시 → 가짜 API) */
-      env: { NEXT_PUBLIC_API_MOCK: "1", API_ORIGIN: "http://localhost:3199" },
+      /* `QA_MOCK_OFF=1`이면 목 없이 띄운다 — S5-10 확인용(채팅 spec이 skip이 아니라 실패해야 한다) */
+      env: {
+        NEXT_PUBLIC_API_MOCK: process.env.QA_MOCK_OFF === "1" ? "0" : "1",
+        API_ORIGIN: "http://localhost:3199",
+      },
       timeout: 120_000,
     },
   ],

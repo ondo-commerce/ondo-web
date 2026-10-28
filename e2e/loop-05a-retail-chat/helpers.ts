@@ -110,6 +110,24 @@ export async function openProduct(page: Page, listingId = 11): Promise<void> {
   await resetMock(page);
 }
 
+/** 입구를 눌러 방으로. 클라이언트 이동이라 목 상태(걸어 둔 실패, 만든 방)가 남는다 */
+export async function enterRoom(page: Page, roomId: number, from: string) {
+  await inquiryButton(page).click();
+  await expect(page).toHaveURL(`/chats/${roomId}?from=${from}`);
+}
+
+/**
+ * 메시지 영역보다 긴 대화(시드 7 + 도매 답 60 = 67개)로 방 1에 들어간다(QA F6). 시드 방은 메시지 영역을
+ * 안 넘쳐서 "넘치는 대화에서 페이지 스크롤 0"(S5-9)을 못 잰다 — 숨긴 발신자가 문서를 늘린 F3를 놓쳤다.
+ * 주입은 들어가기 **전에** 한다 — polling 없이 첫 조회가 최신 50개를 받는다.
+ */
+export async function openLongRoom(page: Page): Promise<void> {
+  await openProduct(page, 11);
+  await incoming(page, 1, "새 답", { count: 60 });
+  await enterRoom(page, 1, "/products/11");
+  await expect(log(page).locator("[data-sequence]")).toHaveCount(50);
+}
+
 /** 방에 직접 들어간다(전체 이동 — 목은 시드). 메시지 영역이 뜰 때까지 */
 export async function openRoom(page: Page, path: string): Promise<void> {
   await page.goto(path);

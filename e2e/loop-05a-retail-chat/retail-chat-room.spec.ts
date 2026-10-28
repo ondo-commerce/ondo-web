@@ -16,6 +16,7 @@ import {
   mock,
   MESSAGES_GET,
   openProduct,
+  openLongRoom,
   openRoom,
   pageOverflow,
   requests,
@@ -227,6 +228,48 @@ test("S5-12 새 브라우저 context에서 상품 상세 직행 → 곧바로 �
   const after = (await stubRequests(page)).filter((r) => r.includes("/chat/"));
   expect(after).toEqual(before);
   await context.close();
+});
+
+test("S5-12 worker 시작이 한 번 실패해도 다시 누르면 새로 시작해 방이 열린다(리뷰 F2)", async ({
+  page,
+}) => {
+  /* 첫 등록만 1초 뒤 실패시킨다 — 그 사이 누른 문의하기는 같은(실패할) 준비 Promise를 기다린다.
+     실패한 Promise를 기억에 남기면 두 번째 누름도 즉시 실패한다 */
+  await page.addInitScript(() => {
+    const container = navigator.serviceWorker;
+    const register = container.register.bind(container);
+    let calls = 0;
+    (window as unknown as { __registerCalls: () => number }).__registerCalls =
+      () => calls;
+    container.register = (url, options) => {
+      calls += 1;
+      return calls === 1
+        ? new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("worker 파일 다운로드 실패")),
+              1000,
+            ),
+          )
+        : register(url, options);
+    };
+  });
+  await page.goto("/products/11");
+  await inquiryButton(page).click();
+  await expect(appAlert(page)).toHaveText(
+    "대화방을 열지 못했어요. 다시 눌러 주세요",
+  );
+  await inquiryButton(page).click();
+  await expect(page).toHaveURL("/chats/1?from=/products/11");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "무드온" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (
+        window as unknown as { __registerCalls: () => number }
+      ).__registerCalls(),
+    ),
+  ).toBe(2);
 });
 
 test.describe("S5-5 S5-6 방 화면", () => {
@@ -443,14 +486,18 @@ test.describe("S5-9 가려짐과 높이", () => {
     { width: 1470, height: 900 },
     { width: 390, height: 844 },
   ]) {
-    test(`S5-9 ${viewport.width}x${viewport.height}: 페이지 스크롤 0, 블록이 창 안, 마지막 말풍선이 입력창에 안 가림, 공백 없는 1000자도 폭 안`, async ({
+    test(`S5-9 ${viewport.width}x${viewport.height}: 넘치는 대화(50개)에서 페이지 스크롤 0, 블록이 창 안, 마지막 말풍선이 입력창에 안 가림, 공백 없는 1000자도 폭 안`, async ({
       page,
     }) => {
       await page.setViewportSize(viewport);
-      await openRoom(page, "/chats/1");
+      await openLongRoom(page);
+      // 메시지 영역이 실제로 넘친다 — 넘치지 않는 방으로는 페이지 스크롤 0이 거저 통과한다(F6)
+      expect(
+        await log(page).evaluate((el) => el.scrollHeight > el.clientHeight),
+      ).toBe(true);
       await composer(page).fill("가".repeat(1000));
       await sendButton(page).click();
-      await expect(bubbles(page)).toHaveCount(8);
+      await expect(bubbles(page)).toHaveCount(51);
       const overflow = await pageOverflow(page);
       expect(overflow.y).toBeLessThanOrEqual(1);
       expect(overflow.x).toBeLessThanOrEqual(0);
@@ -550,16 +597,26 @@ test.describe("S5-15 S5-16 390 블록 상태와 키보드", () => {
     }));
     expect(single).toEqual({ truncated: true, lines: 1 });
     const link = page.getByRole("link", { name: "상품으로 돌아가기" });
-    const linkLines = await link.evaluate(
-      (el) =>
-        el.getClientRects().length === 1 &&
-        el.getBoundingClientRect().height < 24,
-    );
-    expect(linkLines).toBe(true);
+    // 줄바꿈 없음(글 한 줄) + ≤40rem 손가락 높이 44(QA F4)
+    const linkShape = await link.evaluate((el) => {
+      // 글자 노드가 몇 줄로 그려졌나 — 줄마다 사각형이 하나씩 생긴다(아이콘은 빼고 글자만 잰다)
+      const text = [...el.childNodes].find(
+        (n) => n.nodeType === Node.TEXT_NODE,
+      );
+      const range = document.createRange();
+      if (text) range.selectNodeContents(text);
+      return {
+        boxes: el.getClientRects().length,
+        textLines: new Set(
+          [...range.getClientRects()].map((r) => Math.round(r.top)),
+        ).size,
+        height: Math.round(el.getBoundingClientRect().height),
+      };
+    });
+    expect(linkShape).toEqual({ boxes: 1, textLines: 1, height: 44 });
 
-    // 방 1로(말풍선이 있는 방) — 10줄 입력
-    await page.goto("/chats/1");
-    await expect(log(page)).toBeVisible();
+    // 넘치는 대화의 방 1로 — 10줄 입력(QA F6: 시드 방은 메시지 영역을 안 넘친다)
+    await openLongRoom(page);
     await composer(page).fill(
       Array.from({ length: 10 }, (_, i) => `줄 ${i + 1}`).join("\n"),
     );
@@ -583,14 +640,17 @@ test.describe("S5-15 S5-16 390 블록 상태와 키보드", () => {
     expect((await pageOverflow(page)).y).toBeLessThanOrEqual(1);
   });
 
-  test("S5-15 390x480: 블록이 하한 448을 지키고 그때만 페이지가 스크롤", async ({
+  test("S5-15 390x480: 넘치는 대화에서도 블록이 하한 448을 지키고 페이지는 하한 초과분만큼만 스크롤", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 480 });
-    await openRoom(page, "/chats/1");
+    await openLongRoom(page);
     const block = await box(page.getByRole("region", { name: "무드온 대화" }));
     expect(Math.round(block.height)).toBe(448);
-    expect((await pageOverflow(page)).y).toBeGreaterThan(0);
+    // 하한 448 + 헤더 57 + 여백 16 = 521 → 480 창에서 41px(와이어프레임 실측). "> 0"만 보면 250도 통과했다(F6)
+    const overflowY = (await pageOverflow(page)).y;
+    expect(overflowY).toBeGreaterThanOrEqual(40);
+    expect(overflowY).toBeLessThanOrEqual(42);
   });
 
   test("S5-16 390x480 키보드 근사: 입력창 포커스 → 입력창과 보내기가 창 안, 보내기 → POST 1회", async ({

@@ -63,7 +63,9 @@ export function InquiryEntry({
 
   /* 화면에 들어오자마자 worker를 깨운다. 누를 때 기다릴 시간이 줄어든다. 누를 때도 같은 Promise를 기다린다 */
   useEffect(() => {
-    void chatMockReady();
+    /* 여기서의 실패는 삼킨다(리뷰 F2) — 처리 안 된 rejection이 되지 않게. `ready`가 비워져 있어
+       누를 때 다시 시작하고, 그때 실패하면 실패 한 줄이 뜬다 */
+    chatMockReady().catch(() => undefined);
   }, []);
 
   const open = useCallback(() => {
@@ -121,7 +123,7 @@ export function InquiryError() {
     <p
       role="alert"
       data-ac="S5-4"
-      className="text-destructive-strong mt-1.5 flex items-center gap-1.5 text-xs"
+      className="text-destructive-strong text-body mt-1.5 flex items-center gap-1.5"
     >
       <CircleAlert aria-hidden className="size-3.5 shrink-0" />
       {error}

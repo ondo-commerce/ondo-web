@@ -29,7 +29,7 @@ import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
  * 하한 448(`min-h-112`, 디자인 결정 13). 이보다 낮은 창(390x480, 가로 모드)에선 블록이 하한을 지키고
  * 그때만 페이지가 스크롤한다(S5-15). `dvh`라 모바일 주소창이 접히고 펴질 때도 따라간다.
  */
-const BLOCK_HEIGHT = "h-[calc(100dvh-73px)] min-h-112";
+const BLOCK_HEIGHT = "relative h-[calc(100dvh-73px)] min-h-112";
 
 /**
  * 소매 채팅방 `/chats/{roomId}`. 목록 없이 방 하나다(01-plan §3 in 2). 방 머리와 메시지는 브라우저에서
@@ -190,7 +190,9 @@ function ChatRoom({
         aria-live="off"
         tabIndex={-1}
         data-cursor={thread.cursor}
-        className="scroll-slim flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
+        /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
+           없으면 기준이 문서라 스크롤에 안 잘리고 문서 높이를 늘려 페이지가 스크롤했다(QA F3) */
+        className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
       >
         <div aria-hidden className="mt-auto shrink-0" />
         {items.length === 0 && shownPending.length === 0 ? (
@@ -244,7 +246,8 @@ function RoomHead({ name, back }: { name: string; back: ReturnLink }) {
       <Link
         href={back.href}
         data-ac="S5-13"
-        className="text-muted-foreground hover:text-foreground text-body flex shrink-0 items-center gap-0.5 whitespace-nowrap"
+        /* ≤40rem 높이 44 — 손가락 기준, 문의하기 버튼과 같다(와이어프레임 .rtitle .home, QA F4) */
+        className="text-muted-foreground hover:text-foreground text-body flex shrink-0 items-center gap-0.5 whitespace-nowrap phone:min-h-11"
       >
         <ReturnLabel kind={back.kind} />
       </Link>
