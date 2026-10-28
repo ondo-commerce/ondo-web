@@ -1,54 +1,60 @@
-import type { Server } from "node:http";
 import { expect, test, type BrowserContext } from "@playwright/test";
 import {
   ORDER_ID,
   RETAILERS,
   STUB_ORIGIN,
   WHOLESALER,
-  startStubApi,
   type RetailerKey,
 } from "./stub-api";
 
 /**
- * side-02 S2 — 소매 더미 제거(#277).
+ * side-02 S2 — 소매 더미 제거(#277). project `retail-stub`이 돌린다:
  *
- * 소매는 Server Component가 `API_ORIGIN`으로 직접 부르므로 retail 서버를 가짜 API
- * (`stub-api.ts`)에 붙여 띄워야 돈다. 다른 주소로 떠 있으면 건너뛴다 — dev 서버로
- * 돌리면 로그인 뒤 화면이 지금 500이라 결과가 이 변경과 무관해진다.
+ *   pnpm e2e --project retail-stub
  *
- *   API_ORIGIN=http://localhost:3199 pnpm exec playwright test --project retail
+ * 소매는 Server Component가 `API_ORIGIN`으로 직접 부르므로 retail 서버가 가짜 API
+ * (`stub-api.ts`, 3199)에 붙어 있어야 한다. `playwright.config.ts`의 webServer가
+ * 둘 다 띄운다. **연결이 안 맞으면 skip하지 않고 실패한다** — 예전엔 skip해서
+ * 기본 실행이 검증 0건으로 성공했다(03-review F5).
  */
-test.skip(
-  process.env.API_ORIGIN !== STUB_ORIGIN,
-  `API_ORIGIN=${STUB_ORIGIN} 로 retail 서버를 띄워야 한다(stub-api.ts 머리말)`,
-);
-
 const CONTACT_LINE = "담당자에게 문의해 주세요";
-const BASE = "http://localhost:3101";
 
-let stub: Server | null = null;
-
-test.beforeAll(async () => {
-  stub = await startStubApi();
-});
-
-test.afterAll(async () => {
-  await new Promise<void>((resolve) => {
-    if (stub) stub.close(() => resolve());
-    else resolve();
+test.beforeAll(async ({ request, baseURL }) => {
+  /* 가짜 API가 떠 있나 */
+  const stub = await request.get(`${STUB_ORIGIN}/api/retail/auth/me`, {
+    failOnStatusCode: false,
   });
+  expect(
+    stub.status(),
+    `가짜 API(${STUB_ORIGIN})가 없다 — pnpm e2e --project retail-stub 으로 돌린다`,
+  ).toBe(401);
+
+  /* retail 서버가 그 가짜 API를 보고 있나. 3101에 다른 API_ORIGIN으로 뜬 서버를
+     재사용하면 여기서 걸린다 */
+  const settings = await request.get(`${baseURL}/settings`, {
+    headers: { cookie: "stub_retailer=bombom" },
+    maxRedirects: 0,
+    failOnStatusCode: false,
+  });
+  expect(
+    settings.status() === 200 &&
+      (await settings.text()).includes(RETAILERS.bombom.shopName),
+    `${baseURL} 서버가 API_ORIGIN=${STUB_ORIGIN} 로 떠 있지 않다 — 3101 서버를 끄고 다시 돌린다`,
+  ).toBe(true);
 });
 
+/** 실서버 세션 쿠키 대신 가짜 API가 읽는 계정 쿠키를 심는다 */
 async function signInAs(
   context: BrowserContext,
   key: RetailerKey,
   extra: Record<string, string> = {},
 ) {
+  const url = test.info().project.use.baseURL ?? "http://localhost:3101";
   await context.addCookies(
     Object.entries({ stub_retailer: key, ...extra }).map(([name, value]) => ({
       name,
       value,
-      url: BASE,
+      url,
     })),
   );
 }
