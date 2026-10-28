@@ -9,8 +9,19 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { useRoomQueries } from "../api/queries";
-import { APPROVAL_PATH, ROOM_TEXT } from "../constants";
 import {
+  isChatSessionLostError,
+  useChatSessionLost,
+  useResetChatSessionOnLeave,
+} from "../api/session";
+import {
+  APPROVAL_PATH,
+  LOGIN_PATH,
+  ROOM_TEXT,
+  SESSION_FIRST_TEXT,
+} from "../constants";
+import {
+  liveAnnouncement,
   maxSequenceOf,
   messageAc,
   returnLinkOf,
@@ -45,6 +56,7 @@ export function ChatRoomView({
   /** 주소의 `?from=`. 검사는 `returnLinkOf`가 한다 — 외부 주소는 버린다 */
   from: string | null;
 }) {
+  useResetChatSessionOnLeave();
   return (
     <div className="mx-auto max-w-wrap">
       <ChatBlock key={roomId} roomId={roomId} from={from} />
@@ -73,6 +85,14 @@ function ChatBlock({ roomId, from }: { roomId: number; from: string | null }) {
     return (
       <Panel className={BLOCK_HEIGHT}>
         <NotFoundState />
+      </Panel>
+    );
+
+  /* 첫 조회 401(S6-13) — 방 이름도 대화도 못 받았다. 쓴 글이 없어 `로그인하기`를 둔다. 주소는 그대로 */
+  if (errors.some(isChatSessionLostError))
+    return (
+      <Panel className={BLOCK_HEIGHT} data-ac="S6-13">
+        <SessionFirstState />
       </Panel>
     );
 
@@ -137,6 +157,8 @@ function ChatRoom({
   /* 기준점 — 방을 연 순간의 마지막 sequence. 이 뒤에 붙은 도매 말풍선이 polling으로 받은 것이다(S6-7).
      state 초깃값이라 polling이 다시 그려도 바뀌지 않는다 */
   const [baseline] = useState(maxSequenceOf(thread.messages));
+  const live = liveAnnouncement(thread.messages, baseline, name);
+  const sessionLost = useChatSessionLost();
 
   const { pending, send, retry, remove } = useChatSend(roomId);
   const shownPending = visiblePending(pending, thread.messages);
@@ -179,7 +201,7 @@ function ChatRoom({
       data-ac="S5-5 S5-9"
       className={BLOCK_HEIGHT}
     >
-      <RoomHead name={name} back={back} />
+      <RoomHead name={name} back={back} documentNav={sessionLost} />
 
       {/* 첫 자식의 mt-auto가 짧은 대화를 아래로 붙이고, 넘치면 0이 되어 위로 스크롤된다
           (도매 디자인 결정 17 — `justify-content:flex-end`는 위쪽이 잘려 쓰지 않는다) */}
@@ -189,7 +211,9 @@ function ChatRoom({
         aria-label={ROOM_TEXT.logLabel}
         aria-live="off"
         tabIndex={-1}
+        /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S6-8)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
         data-cursor={thread.cursor}
+        data-poll-failures={thread.failures}
         /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
            없으면 기준이 문서라 스크롤에 안 잘리고 문서 높이를 늘려 페이지가 스크롤했다(QA F3) */
         className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
@@ -220,14 +244,29 @@ function ChatRoom({
           <PendingItem
             key={item.clientMessageId}
             item={item}
-            sessionLost={false}
+            sessionLost={sessionLost}
             onRetry={() => retry(item)}
             onRemove={() => remove(item.clientMessageId)}
           />
         ))}
       </div>
 
-      <ChatComposer counterpartName={name} onSend={send} />
+      <ChatComposer
+        counterpartName={name}
+        sessionLost={sessionLost}
+        onSend={send}
+      />
+
+      {/* 알림 통로는 이것 하나(도매 디자인 결정 20). log는 off — 내 말, 한 번에 받은 50개까지 읽지 않게.
+          글을 sequence를 key로 한 span에 넣는다 — 같은 본문이 연달아 와도 노드가 바뀌어 다시 읽힌다(S6-11) */}
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-ac="S6-11"
+      >
+        {live ? <span key={live.sequence}>{live.text}</span> : null}
+      </div>
     </Panel>
   );
 }
@@ -237,20 +276,63 @@ function ChatRoom({
  * 말줄임한다(30자 상호도 한 줄, S5-15). 전체 이름은 `title`. Panel.Title(아래 여백 24)을 쓰지 않는 이유:
  * 390에서 말풍선 자리를 한 줄 더 남기려고 16으로 줄였다.
  */
-function RoomHead({ name, back }: { name: string; back: ReturnLink }) {
+function RoomHead({
+  name,
+  back,
+  documentNav = false,
+}: {
+  name: string;
+  back: ReturnLink;
+  /**
+   * 세션이 끊긴 뒤엔 `<a href>` 전체 이동(디자인 결정 15, S6-14). 클라이언트 이동이면 RSC 요청이 401을
+   * 받아 오류 화면으로 갈 수 있고, `(shop)` 레이아웃이 다시 돈다고 기대할 수 없다. 새 문서 요청이면
+   * 서버의 `requireSession`이 `/login`으로 보낸다
+   */
+  documentNav?: boolean;
+}) {
+  /* ≤40rem 높이 44 — 손가락 기준, 문의하기 버튼과 같다(와이어프레임 .rtitle .home, QA F4) */
+  const className =
+    "text-muted-foreground hover:text-foreground text-body flex shrink-0 items-center gap-0.5 whitespace-nowrap phone:min-h-11";
   return (
     <div data-ac="S5-5 S5-13 S5-15" className="mb-4 flex items-center gap-3">
       <h1 title={name} className="min-w-0 flex-1 truncate text-xl font-medium">
         {name}
       </h1>
-      <Link
-        href={back.href}
-        data-ac="S5-13"
-        /* ≤40rem 높이 44 — 손가락 기준, 문의하기 버튼과 같다(와이어프레임 .rtitle .home, QA F4) */
-        className="text-muted-foreground hover:text-foreground text-body flex shrink-0 items-center gap-0.5 whitespace-nowrap phone:min-h-11"
-      >
-        <ReturnLabel kind={back.kind} />
-      </Link>
+      {documentNav ? (
+        <a href={back.href} data-ac="S5-13 S6-14" className={className}>
+          <ReturnLabel kind={back.kind} />
+        </a>
+      ) : (
+        <Link href={back.href} data-ac="S5-13" className={className}>
+          <ReturnLabel kind={back.kind} />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 첫 조회 401(S6-13, 디자인 결정 16). 블록 가운데 안내 + `로그인하기`. 머리와 입력창이 없고 빨강도 없다 —
+ * 실패가 아니라 상태 안내다. 쓴 글이 없어서 전체 이동(`<a href>`)해도 잃는 게 없다. 로그인 뒤 돌아오기
+ * (`next`)는 기존 로그인 화면에 없어 이번엔 안 한다.
+ */
+function SessionFirstState() {
+  return (
+    <div
+      data-ac="S6-13"
+      className="my-auto flex flex-col items-center gap-3 text-center"
+    >
+      <div>
+        <p className="text-sm font-medium">{SESSION_FIRST_TEXT.title}</p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {SESSION_FIRST_TEXT.detail}
+        </p>
+      </div>
+      <Button asChild variant="line" size="sm">
+        <a href={LOGIN_PATH} data-ac="S6-13">
+          {SESSION_FIRST_TEXT.login}
+        </a>
+      </Button>
     </div>
   );
 }

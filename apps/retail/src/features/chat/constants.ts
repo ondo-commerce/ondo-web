@@ -5,6 +5,16 @@ export const CHAT_TIME_ZONE = "Asia/Seoul";
 export const MESSAGE_PAGE_SIZE = 50;
 
 /**
+ * 열린 방 polling. 도매와 같은 값 — 활성 탭당 분당 20회. 소매 사장도 문의를 남기고 답을 기다리는 동안
+ * 이 화면을 열어 둔다(01-plan §4-2 4). 열린 방 하나만 묻는다(방 목록이 없다).
+ */
+export const ROOM_POLL_MS = 3_000;
+/** 실패가 이어지면 3, 6, 12, 24, 30 … 초(흔들림 포함 상한). 서버가 아플 때 모든 탭이 3초마다 두드리지 않게 */
+export const ROOM_POLL_BACKOFF_MAX_MS = 30_000;
+/** backoff에만 섞는 흔들림(±20%). 탭들이 같은 박자로 다시 몰려오지 않게 */
+export const ROOM_POLL_JITTER = 0.2;
+
+/**
  * 주소의 `?from=`으로 받는 돌아갈 곳. 이 둘만 받는다 — 외부 주소(`https://…`, `//…`)를 링크로
  * 그리면 다른 사이트로 보내는 통로가 된다(01-plan §4-2 2).
  */
@@ -18,6 +28,14 @@ export const RETURN_PATH_PATTERN = {
  * 클라이언트 컴포넌트가 읽을 수 없어 다시 적는다
  */
 export const APPROVAL_PATH = "/approval";
+export const LOGIN_PATH = "/login";
+
+/**
+ * 계약 409(같은 키에 다른 본문). 소매 `shared/api/errorCodes.ts`에 없는 채팅 전용 코드라 feature에 둔다
+ * (01-plan §5-1). 화면 반응은 500과 같다 — 같은 말풍선의 다시 보내기는 늘 같은 본문이라 정상 흐름에선
+ * 오지 않고, 오면 서버와 어긋난 것이라 사장이 지우고 다시 쓰는 수밖에 없다.
+ */
+export const IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED";
 
 /** 입구(문의하기) 텍스트 */
 export const ENTRY_TEXT = {
@@ -54,11 +72,26 @@ export const ROOM_TEXT = {
   wholesalerHome: "도매처 홈",
 } as const;
 
+/**
+ * 채팅 세션이 끊겼을 때(`api/session.ts`). 도매 `SESSION_LOST_TEXT`와 같은 글(D28 원칙).
+ * 보낸 뒤 끊긴 경우엔 `로그인하기`를 두지 않는다 — 누르면 입력창의 쓴 글이 사라진다(디자인 결정 16)
+ */
+export const SESSION_LOST_TEXT =
+  "로그인이 끊겼어요. 다시 로그인하기 전엔 보낼 수 없어요";
+
+/** 첫 조회 401(쓴 글이 없다) — 블록 안 안내 + `로그인하기`, 빨강 없음(디자인 결정 16) */
+export const SESSION_FIRST_TEXT = {
+  title: "로그인이 끊겼어요",
+  detail: "다시 로그인하면 이 대화를 이어서 볼 수 있어요",
+  login: "로그인하기",
+} as const;
+
 export const COMPOSER_TEXT = {
   label: "메시지",
   placeholderSuffix: "에 보낼 메시지",
   send: "보내기",
   hint: "Enter로 보내기, Shift+Enter로 줄바꿈",
+  sessionLost: SESSION_LOST_TEXT,
   /** 오류가 아니라 안내라 빨강을 쓰지 않는다(도매 디자인 결정 12) */
   photo: "사진은 아직 보낼 수 없어요",
 } as const;

@@ -4,8 +4,12 @@ import {
   BODY_MAX,
   CHAT_TIME_ZONE,
   ENTRY_TEXT,
+  IDEMPOTENCY_KEY_REUSED,
   PENDING_TEXT,
   RETURN_PATH_PATTERN,
+  ROOM_POLL_BACKOFF_MAX_MS,
+  ROOM_POLL_JITTER,
+  ROOM_POLL_MS,
   ROOM_TEXT,
   WEEKDAY_LABEL,
 } from "./constants";
@@ -24,7 +28,7 @@ import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 /*
  * 도매 `apps/wholesale/src/features/chat/derive.ts`와 짝이다(01-plan §4-6). 앱 사이 import가 금지라
  * 복제했다 — **같은 이름, 같은 테스트 케이스**를 쓰고, 한쪽 버그를 고치면 다른 쪽도 고친다.
- * 역할에 따라 답이 바뀌는 함수(`bubbleKindOf` `senderLabel` `messageAc`, #285의 `liveAnnouncement`)만
+ * 역할에 따라 답이 바뀌는 함수(`bubbleKindOf` `senderLabel` `messageAc` `liveAnnouncement`)만
  * 소매 시점으로 뒤집었다(§4-5 표). 정확 수량 근거 칸(`toFactsView`)은 소매에 없다(D31②).
  */
 
@@ -297,6 +301,51 @@ export function messageAc(
   return ac.join(" ");
 }
 
+/**
+ * 낭독기 알림(S6-11) — **소매 시점**(§4-5 표). 방을 연 뒤(`baseline` 이후) 도착한 **도매 쪽** 메시지
+ * (사람 답 TEXT, 자동 답 AUTO_REPLY, CLARIFY, 모르는 kind) 중 마지막 것만. 내가 보낸 말과 SYSTEM 줄은
+ * 읽지 않는다. 첫 로딩 때는 null — 열자마자 50개를 읽어 주지 않는다. 도매 화면은 반대로 RETAILER만 읽었다.
+ *
+ * sequence를 같이 주는 이유(도매 QA F8): 같은 본문("네")이 연달아 오면 글자가 그대로라 live 영역에 변화가
+ * 없고 낭독기가 두 번째를 안 읽는다. 그리는 쪽이 sequence를 key로 써서 매번 새 노드로 바꾼다.
+ */
+export function liveAnnouncement(
+  messages: readonly ChatMessage[],
+  baseline: number,
+  counterpartName: string,
+): { text: string; sequence: number } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message === undefined || message.sequence <= baseline) break;
+    if (message.sender === "WHOLESALER")
+      return {
+        text: `${senderLabel(message, counterpartName)}: ${message.body}`,
+        sequence: message.sequence,
+      };
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------------
+ * polling 간격
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 다음 polling까지 기다릴 시간(S6-8). 실패 0번이면 3초. n번 연속 실패면 3초 × 2^(n−1)에 ±20%를 섞는다
+ * — 1번째 실패 뒤 3초, 2번째 6초, 3번째 12초, 4번째 24초. **흔들림을 섞은 뒤에도** 30초를 넘지 않는다
+ * (도매 리뷰 F5). 성공 간격에는 흔들림을 섞지 않는다. `random`은 [0, 1) — 테스트가 경계값을 본다.
+ * TODO(#285): 도메인 없는 backoff라 두 앱 공용 후보다(01-plan §8). 이번엔 복제한다.
+ */
+export function pollDelayMs(failures: number, random: number): number {
+  if (failures <= 0) return ROOM_POLL_MS;
+  const base = Math.min(
+    ROOM_POLL_MS * 2 ** (failures - 1),
+    ROOM_POLL_BACKOFF_MAX_MS,
+  );
+  const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
+  return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
+}
+
 /* ------------------------------------------------------------------------
  * 보내기
  * ------------------------------------------------------------------------ */
@@ -339,6 +388,8 @@ export function sendFailureOf(error: unknown): SendFailure {
   if (isApiError(error)) {
     if (error.code === RETAIL_ERROR_CODE.UNAUTHORIZED) return "session";
     if (error.code === TRANSPORT_ERROR_CODE.NETWORK) return "offline";
+    // 같은 키에 다른 본문 — 정상 흐름에선 안 온다. 500과 같이 다시 보내기, 지우기를 준다
+    if (error.code === IDEMPOTENCY_KEY_REUSED) return "server";
   }
   return "server";
 }

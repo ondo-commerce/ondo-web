@@ -1,22 +1,31 @@
-import { ApiError } from "@ondo/api";
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
   autoReplySeen,
+  bodyLength,
   bubbleKindOf,
   chatRoomHref,
+  checkComposer,
   entryFailureOf,
+  failureText,
   formatClock,
   formatDateDivider,
+  insertSent,
+  liveAnnouncement,
   mergeMessages,
   messageAc,
   parseRoomId,
+  pollDelayMs,
   returnLinkOf,
+  sendFailureOf,
   senderLabel,
   systemLineText,
   toThreadItems,
+  upsertPending,
+  visiblePending,
 } from "./derive";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ChatThread, PendingMessage } from "./types";
 
 /*
  * 도매 `features/chat/derive.test.ts`와 짝이다. 같은 이름의 함수는 같은 케이스를 쓰고, 역할이 뒤집힌
@@ -236,5 +245,212 @@ describe("S5-1 S5-13 입구 주소와 돌아가기", () => {
     expect(parseRoomId("-1")).toBeNull();
     expect(parseRoomId("1.5")).toBeNull();
     expect(parseRoomId("99999999999999999999")).toBeNull();
+  });
+});
+
+describe("S6-3 글자 수", () => {
+  it("S6-3 앞뒤 공백을 빼고 코드 포인트로 센다 — 이모지 하나가 1자", () => {
+    expect(bodyLength("  👍가 ")).toBe(2);
+    expect("👍".length).toBe(2); // JS length 와 다르다
+    expect(bodyLength("   \n ")).toBe(0);
+  });
+
+  it("S6-3 공백만이면 잠김, 문구 없음", () => {
+    expect(checkComposer("   ")).toMatchObject({
+      blank: true,
+      over: false,
+      overMessage: null,
+      counter: null,
+    });
+  });
+
+  it("S6-3 이모지 포함 정확히 1000자는 보낼 수 있고 900자부터 카운터", () => {
+    const exact = "👍".repeat(10) + "가".repeat(990);
+    expect(checkComposer(exact)).toMatchObject({
+      length: 1000,
+      blank: false,
+      over: false,
+      counter: "1,000/1,000",
+      overMessage: null,
+    });
+    expect(checkComposer("가".repeat(899)).counter).toBeNull();
+    expect(checkComposer("가".repeat(900)).counter).toBe("900/1,000");
+  });
+
+  it("S6-3 1001자는 자르지 않고 안내, 잠김", () => {
+    const over = "👍".repeat(10) + "가".repeat(991);
+    expect(checkComposer(over)).toMatchObject({
+      length: 1001,
+      over: true,
+      counter: null,
+      overMessage: "1,000자까지 보낼 수 있어요 (1,001/1,000)",
+    });
+  });
+});
+
+describe("S6-4 S6-5 S6-6 보내기 실패와 보류 말풍선", () => {
+  const pending: PendingMessage[] = [
+    {
+      clientMessageId: "k-1",
+      body: "레드 M 30장 오늘 출고 되나요?",
+      status: "failed",
+      failure: "server",
+    },
+    { clientMessageId: "k-2", body: "또", status: "sending", failure: null },
+  ];
+
+  it("S6-5 401(소매 UNAUTHORIZED) → session, S6-6 서버까지 못 감 → offline, 그 밖 → server", () => {
+    expect(sendFailureOf(apiError("UNAUTHORIZED", 401))).toBe("session");
+    // 도매 어휘(UNAUTHENTICATED)는 소매 401이 아니다
+    expect(sendFailureOf(apiError("UNAUTHENTICATED", 401))).toBe("server");
+    expect(sendFailureOf(apiError(TRANSPORT_ERROR_CODE.NETWORK, 0))).toBe(
+      "offline",
+    );
+    expect(sendFailureOf(apiError("INTERNAL_ERROR", 500))).toBe("server");
+    expect(sendFailureOf(apiError("IDEMPOTENCY_KEY_REUSED", 409))).toBe(
+      "server",
+    );
+    expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+
+  it("S6-6 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {
+    expect(failureText("offline")).toBe("연결이 끊겨 못 보냈어요");
+    expect(failureText("server")).toBe("못 보냈어요");
+    expect(failureText("session")).toBe("못 보냈어요");
+  });
+
+  it("S6-4 polling이 같은 clientMessageId를 가져오면 보류 말풍선을 뺀다 — 1개로 합쳐진다", () => {
+    const delivered = message(8, {
+      clientMessageId: "k-1",
+      body: "레드 M 30장 오늘 출고 되나요?",
+    });
+    expect(
+      visiblePending(pending, [message(7), delivered]).map(
+        (p) => p.clientMessageId,
+      ),
+    ).toEqual(["k-2"]);
+    expect(visiblePending(pending, [message(7)])).toHaveLength(2);
+  });
+
+  it("S6-4 다시 보내기는 제자리에서 상태만 바뀌고, 새 말풍선은 맨 아래", () => {
+    const retried = upsertPending(pending, {
+      clientMessageId: "k-1",
+      body: "레드 M 30장 오늘 출고 되나요?",
+      status: "sending",
+      failure: null,
+    });
+    expect(retried.map((p) => [p.clientMessageId, p.status])).toEqual([
+      ["k-1", "sending"],
+      ["k-2", "sending"],
+    ]);
+    const added = upsertPending(pending, {
+      clientMessageId: "k-3",
+      body: "새",
+      status: "sending",
+      failure: null,
+    });
+    expect(added.at(-1)?.clientMessageId).toBe("k-3");
+  });
+
+  it("S6-4 보내기 응답은 메시지에만 넣고 cursor는 올리지 않는다 — 그 앞 도매 메시지를 놓치지 않게", () => {
+    const thread: ChatThread = {
+      messages: [message(5)],
+      cursor: 5,
+      failures: 0,
+      nextPollMs: 3000,
+    };
+    const next = insertSent(thread, [message(7, { clientMessageId: "k-1" })]);
+    expect(next.cursor).toBe(5);
+    expect(next.messages.map((m) => m.sequence)).toEqual([5, 7]);
+    // 다음 polling이 6, 7을 가져와도 7은 한 번
+    expect(
+      mergeMessages(next.messages, [
+        message(6, { sender: "WHOLESALER" }),
+        message(7),
+      ]).map((m) => m.sequence),
+    ).toEqual([5, 6, 7]);
+  });
+});
+
+describe("S6-8 polling 간격", () => {
+  it("S6-8 성공이면 3초, 흔들림 없음", () => {
+    expect(pollDelayMs(0, 0)).toBe(3000);
+    expect(pollDelayMs(0, 0.999)).toBe(3000);
+  });
+
+  it("S6-8 연속 실패 1, 2, 3, 4번 → 3, 6, 12, 24초 ±20%", () => {
+    for (const [failures, base] of [
+      [1, 3000],
+      [2, 6000],
+      [3, 12000],
+      [4, 24000],
+    ] as const) {
+      expect(pollDelayMs(failures, 0)).toBe(base * 0.8);
+      expect(pollDelayMs(failures, 0.5)).toBe(base);
+    }
+    expect(pollDelayMs(3, 0.999)).toBeCloseTo(12000 * 1.2, -2);
+  });
+
+  it("S6-8 상한 경계: random 0과 0.999에서도 최종값이 30초를 넘지 않는다", () => {
+    // 4번째 실패: 24초 +20% ≈ 28.8초 — 상한 안
+    expect(pollDelayMs(4, 0.999)).toBeLessThanOrEqual(30_000);
+    expect(pollDelayMs(4, 0.999)).toBeGreaterThan(28_000);
+    // 5번째부터 기준 30초. +20%를 섞어도 30초에서 자르고, −20%는 24초
+    for (const failures of [5, 6, 10, 50]) {
+      expect(pollDelayMs(failures, 0.999)).toBe(30_000);
+      expect(pollDelayMs(failures, 0)).toBe(24_000);
+    }
+  });
+});
+
+describe("S6-11 낭독 알림 — 소매 시점", () => {
+  const messages = [
+    message(7),
+    message(8, { sender: "WHOLESALER", body: "네 내일 오전 10시부터 있어요" }),
+    message(9, { body: "감사합니다" }),
+  ];
+
+  it("S6-11 연 뒤 온 도매 메시지 중 마지막 것을 '이름: 본문'으로 — 그 뒤 내 말은 건너뛴다", () => {
+    expect(liveAnnouncement(messages, 7, "무드온")).toEqual({
+      text: "무드온: 네 내일 오전 10시부터 있어요",
+      sequence: 8,
+    });
+  });
+
+  it("S6-11 자동 답도 읽는다 — '무드온 자동 답변: 본문'", () => {
+    const auto = [
+      ...messages,
+      message(10, {
+        sender: "WHOLESALER",
+        kind: "AUTO_REPLY",
+        body: "10장 미만이에요",
+      }),
+    ];
+    expect(liveAnnouncement(auto, 9, "무드온")?.text).toBe(
+      "무드온 자동 답변: 10장 미만이에요",
+    );
+  });
+
+  it("S6-11 첫 로딩(기준점 = 마지막)이면 없음, 내 말이나 시스템 줄만 왔으면 없음", () => {
+    expect(liveAnnouncement(messages, 9, "무드온")).toBeNull();
+    expect(liveAnnouncement(messages.slice(0, 1), 6, "무드온")).toBeNull();
+    expect(
+      liveAnnouncement(
+        [message(10, { sender: "SYSTEM", kind: "HANDOFF" })],
+        9,
+        "무드온",
+      ),
+    ).toBeNull();
+  });
+
+  it("S6-11 같은 본문이 연달아 와도 sequence가 달라 새 알림이다", () => {
+    const twice = [
+      message(10, { sender: "WHOLESALER", body: "네" }),
+      message(11, { sender: "WHOLESALER", body: "네" }),
+    ];
+    const first = liveAnnouncement(twice.slice(0, 1), 9, "무드온");
+    const second = liveAnnouncement(twice, 9, "무드온");
+    expect(first?.text).toBe(second?.text);
+    expect(first?.sequence).not.toBe(second?.sequence);
   });
 });

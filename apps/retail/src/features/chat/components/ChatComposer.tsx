@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, cn, Textarea } from "@ondo/ui";
+import { CircleAlert } from "lucide-react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 import { memo, useEffect, useId, useRef, useState } from "react";
 import { COMPOSER_TEXT } from "../constants";
@@ -18,15 +19,18 @@ import { checkComposer } from "../derive";
  */
 export const ChatComposer = memo(function ChatComposer({
   counterpartName,
+  sessionLost,
   onSend,
 }: {
   counterpartName: string;
+  /** 401 — 쓴 글은 지키고 보내기만 잠근다(D28). 입력창은 읽기 전용, 글은 선택해 복사할 수 있다(S6-5) */
+  sessionLost: boolean;
   onSend: (body: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const canSend = !check.blank && !check.over;
+  const canSend = !check.blank && !check.over && !sessionLost;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
   const boxRef = useRef<HTMLDivElement>(null);
@@ -63,7 +67,16 @@ export const ChatComposer = memo(function ChatComposer({
   };
 
   const noteId = useId();
-  const note = check.overMessage ? (
+  const note = sessionLost ? (
+    <span
+      role="alert"
+      data-ac="S6-5"
+      className="border-destructive text-destructive-strong flex flex-1 items-center gap-1.5 rounded-control border px-3 py-2 text-sm"
+    >
+      <CircleAlert aria-hidden className="size-4 shrink-0" />
+      {COMPOSER_TEXT.sessionLost}
+    </span>
+  ) : check.overMessage ? (
     <span data-ac="S6-3" className="text-destructive-strong">
       {check.overMessage}
     </span>
@@ -84,6 +97,7 @@ export const ChatComposer = memo(function ChatComposer({
           aria-label={COMPOSER_TEXT.label}
           placeholder={`${counterpartName}${COMPOSER_TEXT.placeholderSuffix}`}
           value={draft}
+          readOnly={sessionLost}
           aria-invalid={check.over || undefined}
           aria-describedby={noteId}
           onChange={(e) => {
@@ -96,6 +110,7 @@ export const ChatComposer = memo(function ChatComposer({
           className={cn(
             "field-sizing-content max-h-40 min-w-0 flex-1 resize-none phone:min-h-16.5",
             check.over && "border-destructive",
+            sessionLost && "bg-muted",
           )}
         />
         <Button
@@ -106,7 +121,7 @@ export const ChatComposer = memo(function ChatComposer({
              가져가고, 보낸 뒤 비활성이 되면 포커스가 페이지로 떨어진다 */
           onMouseDown={(e) => e.preventDefault()}
           onClick={submit}
-          data-ac="S6-3"
+          data-ac={sessionLost ? "S6-5" : "S6-3"}
         >
           {COMPOSER_TEXT.send}
         </Button>
