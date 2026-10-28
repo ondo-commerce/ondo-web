@@ -4,11 +4,12 @@ import { createServer, type Server } from "node:http";
  * 소매 e2e용 **가짜 API 서버**. 소매는 Server Component가 `API_ORIGIN`으로 직접
  * fetch해서 브라우저 MSW(`NEXT_PUBLIC_API_MOCK=1`)가 닿지 않는다 — 이 브랜치에는
  * 소매 서버 쪽 목이 없고, dev 서버(`api-dev`)는 2026-10-28 지금 DB를 타는 요청이
- * 전부 500이다(기획 §1). 그래서 retail 서버를 이 주소로 띄우고 돌린다:
+ * 전부 500이다(기획 §1). `playwright.config.ts`의 webServer가 이 서버
+ * (`stub-server.ts`)와 `API_ORIGIN=http://localhost:3199`인 retail 서버를 같이 띄운다:
  *
- *   API_ORIGIN=http://localhost:3199 pnpm exec playwright test --project retail
+ *   pnpm e2e --project retail-stub
  *
- * 계정은 쿠키 `stub_retailer`(bombom | miso)로 고른다. 실서버 세션 쿠키 대신이다 —
+ * 계정은 쿠키 `stub_retailer`(bombom | miso | noname | pending)로 고른다. 실서버 세션 쿠키 대신이다 —
  * Next 서버가 들어온 쿠키를 그대로 이 서버로 넘긴다(`createServerApi`).
  * 정산 실패 경로는 쿠키 `stub_settlements=fail`로 고른다.
  *
@@ -136,7 +137,8 @@ function route(
         wholesalerId: WHOLESALER.id,
         name: WHOLESALER.name,
         balance: 52000,
-        overdue: null,
+        /* `PartnerSettlementWire.overdue`는 null이 아니라 객체다 — 연체 없음 = 0, 0, 0 */
+        overdue: { amount: 0, count: 0, maxDays: 0 },
         lastPaidAt: "2026-10-20",
         paidLast7Days: 0,
         bank: null,
