@@ -52,6 +52,70 @@ export type RetailerKey = keyof typeof RETAILERS;
 export const WHOLESALER = { id: 101, name: "무드온" } as const;
 export const ORDER_ID = 7001;
 
+/**
+ * 채팅 e2e(loop-05a)용 도매처 둘. 이름은 소매 채팅 목(`packages/api/src/mocks/retail/chat.ts`
+ * `CHAT_WHOLESALERS`)과 같다. 102는 거래 이력 없음(정산 줄 없음), 103은 30자 상호.
+ * 도매처 홈은 "첫 장에 게시글이 있는 도매처"만 서므로 상품을 하나씩 둔다.
+ */
+export const CHAT_WHOLESALERS = {
+  raon: { id: 102, name: "라온" },
+  cotton: {
+    id: 103,
+    name: "코튼클럽 동대문 신평화패션타운 삼층 본점 직영 도매상회",
+  },
+} as const;
+
+/** 상품 id → 도매처. 11은 무드온(side-02부터 있던 것), 21·31은 채팅 e2e가 더한 것 */
+export const LISTINGS = [
+  { listingId: 11, title: "코튼 셔츠", wholesaler: WHOLESALER },
+  { listingId: 21, title: "린넨 팬츠", wholesaler: CHAT_WHOLESALERS.raon },
+  { listingId: 31, title: "니트 조끼", wholesaler: CHAT_WHOLESALERS.cotton },
+] as const;
+
+/**
+ * 받은 요청 경로 기록. `GET /__stub/requests`로 읽는다(쿠키 없이). 채팅 요청이 가짜 API까지
+ * 새어 나오지 않고 브라우저 목에서 끝났는지(S5-12) 본다. 프로세스가 살아 있는 동안 쌓인다.
+ */
+const requestLog: string[] = [];
+
+function listingDetail(listing: (typeof LISTINGS)[number]) {
+  return {
+    listingId: listing.listingId,
+    title: listing.title,
+    productNumber: 1000 + listing.listingId,
+    description: "",
+    categoryPath: [
+      { id: 1, name: "여성" },
+      { id: 2, name: "의류" },
+      { id: 3, name: "상의" },
+    ],
+    images: [],
+    isSinglePieceAllowed: true,
+    minSalePrice: 12000,
+    maxSalePrice: 12000,
+    listedVariantCount: 1,
+    totalVariantCount: 1,
+    colorOptions: [
+      {
+        color: { id: 1, name: "블랙", hex: "#000000" },
+        variants: [
+          {
+            id: listing.listingId * 10,
+            size: "M",
+            salePrice: 12000,
+            orderLimit: 0,
+          },
+        ],
+      },
+    ],
+    wholesaler: {
+      ...listing.wholesaler,
+      storeBuilding: "신평화패션타운",
+      storeUnit: "3층 12호",
+    },
+  };
+}
+
 function cookieOf(header: string | undefined, name: string): string | null {
   for (const part of (header ?? "").split(";")) {
     const [key, ...rest] = part.trim().split("=");
@@ -105,27 +169,31 @@ function route(
     return {
       status: 200,
       body: {
-        data: [
-          {
-            listingId: 11,
-            title: "코튼 셔츠",
-            thumbnailUrl: null,
-            colorCount: 2,
-            sizeCount: 3,
-            minSalePrice: 12000,
-            isSinglePieceAllowed: true,
-            wholesaler: WHOLESALER,
-          },
-        ],
+        data: LISTINGS.map((listing) => ({
+          listingId: listing.listingId,
+          title: listing.title,
+          thumbnailUrl: null,
+          colorCount: 2,
+          sizeCount: 3,
+          minSalePrice: 12000,
+          isSinglePieceAllowed: true,
+          wholesaler: listing.wholesaler,
+        })),
         meta: {
           page: 0,
           size: 100,
-          totalElements: 1,
+          totalElements: LISTINGS.length,
           totalPages: 1,
           hasNext: false,
         },
       },
     };
+  }
+
+  const detail = /^\/api\/retail\/listings\/(\d+)$/.exec(path);
+  if (detail) {
+    const listing = LISTINGS.find((l) => l.listingId === Number(detail[1]));
+    if (listing) return ok(listingDetail(listing));
   }
 
   if (path === "/api/retail/settlements") {
@@ -206,6 +274,12 @@ function route(
 export function startStubApi(): Promise<Server> {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", STUB_ORIGIN);
+    if (url.pathname === "/__stub/requests") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ data: requestLog }));
+      return;
+    }
+    requestLog.push(`${req.method ?? "GET"} ${url.pathname}`);
     const { status, body } = route(
       req.method ?? "GET",
       url.pathname,

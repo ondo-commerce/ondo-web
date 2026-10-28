@@ -3,6 +3,7 @@
 import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { CatalogSection } from "./CatalogSection";
 import { TRADE_STATS_UNAVAILABLE, WHOLESALER_HOME_AXES } from "../constants";
@@ -36,8 +37,16 @@ export function WholesalerHomeView({
   filter,
   options,
   paging,
+  inquiryAction,
+  inquiryNotice,
 }: {
   wholesaler: Wholesaler;
+  /**
+   * 머리의 `문의하기`(loop-05a)와 실패 한 줄 자리. 거래 이력과 상관없이 선다(Q2) — 첫 주문 전에
+   * 재고를 묻는 사장에게 거래 이력이 있을 리 없다. 채팅은 다른 feature라 `app/`이 끼운다
+   */
+  inquiryAction?: ReactNode;
+  inquiryNotice?: ReactNode;
   /**
    * 거래 지표. 원본은 `features/settlement`의 `GET /settlements`이고 `app/`이 이
    * 도매처 줄을 찾아 넘긴다(F1). **거래한 적 없는 것(`null`)과 아직 알 수 없는 것
@@ -82,14 +91,16 @@ export function WholesalerHomeView({
           {/* 거래한 적 없는 도매처에서는 이 버튼을 감춘다. `/wholesalers`는 거래
               이력이 있는 곳만 서는 목록이라(§3-0 A), 누르면 방금 보던 도매처가
               없는 표로 떨어진다 — 사장이 목록을 뒤지다 만다(F9) */}
-          {traded ? (
-            <div className="ml-auto phone:ml-0">
+          <div className="ml-auto flex items-center gap-2 phone:ml-0">
+            {traded ? (
               <Button asChild variant="line" size="sm">
                 <Link href="/wholesalers">거래처에서 보기</Link>
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+            {inquiryAction}
+          </div>
         </div>
+        {inquiryNotice}
 
         <StatCards cards={statCardsOf(tradeStats)} />
       </Panel>

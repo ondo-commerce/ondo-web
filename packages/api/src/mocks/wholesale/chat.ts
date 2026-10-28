@@ -13,8 +13,9 @@ import type { WholesaleSchema } from "../../wholesale";
  * 세션이 없는 목이라 "나"는 도매처 101(상품 목의 첫 도매처)이다. 소매처 1 봄봄상회, 2 대기상회는
  * 주문, 미송 목과 같은 id다. 3~32는 목 전용 가명이다.
  *
- * 소매 쪽 목(`/api/retail/chat/*`)은 loop-05에 만든다. 그때 이 저장소를 같이 쓴다 — 방은
- * (도매처, 소매처) 쌍에 1개이고 양쪽이 같은 roomId를 보기 때문이다(README "채팅 목").
+ * 소매 쪽 목(`../retail/chat.ts`, loop-05a)은 이 저장소를 같이 쓴다 — 방은 (도매처, 소매처) 쌍에
+ * 1개이고 양쪽이 같은 roomId를 보기 때문이다(README "채팅 목"). 맨 아래 `chatStore`가 그 입구다.
+ * 목은 앱마다 브라우저 안에 살아서 도매 탭과 소매 탭이 상태를 나누지는 않는다 — 나누는 건 시드와 규칙이다.
  */
 
 type ChatMessage = WholesaleSchema<"ChatMessage">;
@@ -430,14 +431,93 @@ function seedRooms(): MockRoom[] {
     );
   }
 
-  // 방 33 — 다른 도매처(102)와 봄봄상회의 방. 101에게는 없는 방이다(404)
+  // 방 33 — 다른 도매처(102)와 봄봄상회의 방. 101에게는 없는 방이다(404).
+  // 소매 목(봄봄상회 = 나)이 보는 두 번째 방이라 소매 화면이 시험할 것을 여기 둔다(loop-05a S5-6 S5-7):
+  // 미송, 미수 자동 답(정확 수량 검사가 빈 검사가 되지 않게)과 사람 넘김 줄
   list.push(
     room(
       33,
       0,
       at(60 * 3),
-      [{ sender: "RETAILER", body: "다른 도매처 방", sentAt: at(60 * 2) }],
-      { wholesaler: 0, retailer: 1 },
+      [
+        { sender: "RETAILER", body: "다른 도매처 방", sentAt: at(60 * 2) },
+        {
+          sender: "RETAILER",
+          body: "블랙 L 미송 언제 와요?",
+          sentAt: at(60 * 2 - 1),
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          body: "블랙 L 미송 20장은 11월 3일 입고 예정이에요",
+          sentAt: at(60 * 2 - 1),
+          autoReply: {
+            intent: "BACKORDER",
+            replyToSequence: 2,
+            generatedBy: "RULE",
+            checkedAt: at(60 * 2 - 1),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: 801,
+              label: "코튼 셔츠 블랙 / L",
+            },
+            facts: {
+              stock: null,
+              backorder: {
+                qty: 20,
+                expectedInboundDate: "2026-11-03",
+                expectedInboundReason: null,
+              },
+              receivable: null,
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "제 미수 얼마예요?",
+          sentAt: at(60 * 2 - 2),
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          body: "갚을 돈 52,000원이에요. 기한 지난 것은 없어요",
+          sentAt: at(60 * 2 - 2),
+          autoReply: {
+            intent: "RECEIVABLE",
+            replyToSequence: 4,
+            generatedBy: "RULE",
+            checkedAt: at(60 * 2 - 2),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: null,
+              label: null,
+            },
+            facts: {
+              stock: null,
+              backorder: null,
+              receivable: {
+                outstandingAmount: 52_000,
+                prepaidAmount: 0,
+                overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+              },
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "조금 깎아 주세요",
+          sentAt: at(60 * 2 - 3),
+        },
+        {
+          sender: "SYSTEM",
+          kind: "HANDOFF",
+          body: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
+          sentAt: at(60 * 2 - 3),
+        },
+      ],
+      { wholesaler: 0, retailer: 7 },
       102,
     ),
   );
@@ -956,3 +1036,41 @@ export function resetChatMock(keepRooms?: number) {
 }
 
 resetChatMock();
+
+/* --- 소매 목이 같이 쓰는 것 (README "채팅 목": 방 id 체계는 하나다) -------- */
+
+export type { MockRoom as ChatMockRoom, IdempotencyRecord };
+
+/**
+ * 소매 핸들러(`../retail/chat.ts`)가 읽고 쓰는 저장소 입구. 시드를 두 벌 짓지 않으려고 여기서 꺼낸다.
+ * `rooms`는 reset마다 새 배열이라 값이 아니라 함수로 준다.
+ */
+export const chatStore = {
+  rooms: () => rooms,
+  /** 새 방. 번호는 지금 가장 큰 roomId + 1(시드 뒤 첫 방은 34) */
+  addRoom(wholesalerId: number, retailerId: number): MockRoom {
+    const roomId = rooms.reduce((max, r) => Math.max(max, r.roomId), 0) + 1;
+    const r = room(
+      roomId,
+      retailerId - 1,
+      new Date().toISOString(),
+      [],
+      { wholesaler: 0, retailer: null },
+      wholesalerId,
+    );
+    rooms.push(r);
+    return r;
+  },
+  append,
+  maxSequence,
+  openHandoff,
+  lastActivityAt,
+  codePoints,
+  hashOf,
+  intParam,
+  sizeOf,
+  sizeInvalid,
+  idempotency,
+  UUID_PATTERN,
+  MESSAGE_PAGE_DEFAULT,
+} as const;
