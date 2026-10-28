@@ -1,14 +1,17 @@
 "use client";
 
 import { cn, IconButton } from "@ondo/ui";
-import { Bell } from "lucide-react";
+import { Bell, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { NAV_ITEMS } from "@/shared/config/nav";
 
+/** 채팅 받은편지함(loop-04). 주 메뉴 7탭과 따로 둔다 */
+const CHAT_HREF = "/chats";
+
 /**
- * 상단 헤더 — 로고 + 주 메뉴 7탭 + 알림·계정.
+ * 상단 헤더 — 로고 + 주 메뉴 7탭 + 채팅·알림·계정.
  *
  * **좌측 사이드바를 대체한다.** 원래는 사이드바가 네비를 전부 맡고 이 바에는 계정·알림만
  * 있었는데, 라인 표가 가로로 넘쳐서 목록 폭을 벌기 위해 네비를 위로 올렸다
@@ -74,6 +77,29 @@ export function Topbar({
           })}
         </ul>
       </nav>
+
+      {/* 채팅은 주 메뉴 탭이 아니다 — 어느 화면에서나 여는 받은편지함이고, 탭을 늘리면 위 경고대로
+          이 줄이 무너진다(loop-04 01-plan §4-1 1). 화면 이동이라 버튼이 아니라 `<a>`다.
+          IconButton은 asChild를 막아 두어 같은 모양(ghost, size-8, 아이콘 20px)을 여기서 그린다 */}
+      <Link
+        href={CHAT_HREF}
+        aria-label="채팅"
+        title="채팅"
+        aria-current={
+          pathname === CHAT_HREF || pathname.startsWith(`${CHAT_HREF}/`)
+            ? "page"
+            : undefined
+        }
+        data-ac="S2-1"
+        className={cn(
+          "focus-visible:ring-ring inline-flex size-8 shrink-0 items-center justify-center rounded-button transition-colors focus-visible:ring-2 focus-visible:outline-hidden [&_svg]:size-5",
+          pathname === CHAT_HREF || pathname.startsWith(`${CHAT_HREF}/`)
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+        )}
+      >
+        <MessageCircle aria-hidden />
+      </Link>
 
       <IconButton variant="ghost" aria-label="알림" title="알림">
         <Bell aria-hidden />

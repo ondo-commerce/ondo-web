@@ -1,0 +1,94 @@
+import type { WholesaleSchema } from "@ondo/api";
+
+/* ------------------------------------------------------------------------
+ * wire — 스펙에서 생성한 타입의 별칭(ADR-0002). 채팅 op 5개는 초안(#263, `x-ondo-draft`)이지만
+ * 타입은 스냅샷에서 난다. BE가 구현해 sync-spec이 덮어쓰면 여기가 아니라 `codegen`이 알려준다.
+ * ------------------------------------------------------------------------ */
+
+export type ChatRoomSummary = WholesaleSchema<"ChatRoomSummary">;
+export type ChatRoomDetail = WholesaleSchema<"ChatRoomDetail">;
+export type ChatMessage = WholesaleSchema<"ChatMessage">;
+export type ChatMessagePageMeta = WholesaleSchema<"ChatMessagePageMeta">;
+export type ChatReadResult = WholesaleSchema<"ChatReadResult">;
+export type CursorPageMeta = WholesaleSchema<"CursorPageMeta">;
+export type ChatAutoReply = WholesaleSchema<"ChatAutoReply">;
+export type StockBand = WholesaleSchema<"StockBand">;
+
+/** `GET /rooms` 한 페이지. 봉투가 `PageMeta`가 아니라 커서(`nextCursor`)라 `apiFetchBody`로 통째로 받는다 */
+export interface ChatRoomPage {
+  data: ChatRoomSummary[];
+  meta: CursorPageMeta;
+}
+
+/** `GET /rooms/{id}/messages` 한 번의 응답. `meta.hasMore`가 "바로 이어 받을지"를 말한다 */
+export interface ChatMessagePage {
+  data: ChatMessage[];
+  meta: ChatMessagePageMeta;
+}
+
+/* ------------------------------------------------------------------------
+ * 방 하나의 메시지 캐시. polling이 이 모양을 계속 갱신한다.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 열린 방의 메시지 상태. queryKey 하나에 이 객체가 산다.
+ *
+ * `cursor`와 `messages`의 최대 sequence를 따로 두는 이유: 보낸 메시지(#265)는 응답을 받는 즉시
+ * `messages`에 넣지만 **cursor는 올리지 않는다.** 내가 보낸 7번 앞에 소매처의 6번이 같이 커밋됐을 수
+ * 있는데, cursor를 7로 올리면 다음 polling이 `afterSequence=7`을 물어 6번을 영영 못 받는다.
+ * cursor는 GET으로 **빠짐없이 이어 받은** 마지막 sequence다.
+ */
+export interface ChatThread {
+  /** sequence 오름차순, sequence 중복 없음 */
+  messages: ChatMessage[];
+  /** 다음 polling의 `afterSequence`. 빈 방이면 0 */
+  cursor: number;
+  /** 연속 polling 실패 수. 성공하면 0 */
+  failures: number;
+  /** 다음 polling까지 기다릴 시간. 실패할 때 한 번 뽑아 둔다 — 렌더마다 다시 뽑으면 타이머가 매번 다시 걸린다 */
+  nextPollMs: number;
+  /** polling이 401을 받았다. 이 방은 더 묻지 않는다(로그인 전엔 같은 답이다) */
+  sessionLost: boolean;
+}
+
+/** 읽음 요청 응답으로 알게 된 방별 읽음 위치. 늦게 온 목록 응답보다 이쪽이 이긴다 */
+export type ReadMarks = Readonly<Record<number, ChatReadResult>>;
+
+/* ------------------------------------------------------------------------
+ * 뷰 — 화면이 받는 모양. `derive.ts`로만 만든다.
+ * ------------------------------------------------------------------------ */
+
+/** 목록 한 행 */
+export interface ChatRoomRowView {
+  roomId: number;
+  name: string;
+  /** 서버가 80자로 자른 미리보기. 메시지가 없으면 빈 글자 */
+  preview: string;
+  /** `09:30` / `10/27` / `25.12.30` */
+  time: string;
+  /** 0이면 null — 배지를 그리지 않는다. 100 이상은 `99+` */
+  unreadLabel: string | null;
+  unreadCount: number;
+  needsReply: boolean;
+}
+
+/**
+ * 말풍선 모양. 서버 `kind`가 늘어날 수 있어(가이드 §9) 모르는 값은 `sender`만 보고 좌우를 가른다.
+ * - `them` 소매 TEXT(왼쪽) / `me` 내 TEXT(오른쪽)
+ * - `auto` 자동 답변(AUTO_REPLY) / `clarify` 되묻기(CLARIFY) — 둘 다 내 쪽, 흰 면
+ * - `system` 사람 넘김(HANDOFF)과 SYSTEM이 보낸 모르는 kind — 가운데 줄
+ */
+export type BubbleKind = "them" | "me" | "auto" | "clarify" | "system";
+
+/** 날짜 구분선 또는 메시지 한 줄. 렌더 순서 그대로 */
+export type ThreadItem =
+  | { type: "divider"; key: string; label: string }
+  | { type: "message"; key: string; message: ChatMessage };
+
+/** 자동 답변 아래 근거 칸. 도매에만 정확 수량이 온다 */
+export interface FactsView {
+  /** `판매가능 35장, 주문 한도 500장` 같은 줄들 */
+  lines: string[];
+  /** 소매처가 본 값(구간)과 조회 시각. 재고 답에만 있다 */
+  seen: string | null;
+}
