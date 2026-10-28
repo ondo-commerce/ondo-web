@@ -281,3 +281,10 @@ export const CONTACT_LINE = "담당자에게 문의해 주세요";
  */
 export const SIGNUP_CLOSED_NOTICE =
   "지금은 온라인 가입을 받지 않아요. 체험은 안내받은 테스트 계정으로 해 주세요";
+
+/**
+ * 위 안내의 DOM id. 폼과 잠긴 제출 버튼이 `aria-describedby`로 이 줄을 가리킨다 —
+ * 화면 낭독기로 버튼에 닿았을 때 "흐리게 표시됨"만 듣고 이유를 못 듣는 일을 막는다
+ * (`03-review` F2). 가입과 재신청은 다른 화면이라 한 화면에 한 번만 선다.
+ */
+export const SIGNUP_CLOSED_NOTICE_ID = "account-signup-closed";

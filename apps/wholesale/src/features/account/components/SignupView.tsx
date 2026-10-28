@@ -17,6 +17,7 @@ import {
   maxLengthNote,
   separatorNote,
   SIGNUP_CLOSED_NOTICE,
+  SIGNUP_CLOSED_NOTICE_ID,
   SIGNUP_FIELD_ORDER,
 } from "../constants";
 import {
@@ -227,11 +228,15 @@ export function SignupView() {
           표시는 필수 항목이에요.
         </p>
 
-        <form onSubmit={submit} noValidate>
+        <form
+          onSubmit={submit}
+          noValidate
+          aria-describedby={SIGNUP_CLOSED_NOTICE_ID}
+        >
           {/* 버튼을 잠근 이유를 폼 **위**에서 먼저 말한다 — 다 채운 뒤에야 못 낸다는
               걸 알면 칸을 채운 시간이 그대로 버려진다 */}
           <AuthSection>
-            <Notice data-ac="S1-2">
+            <Notice id={SIGNUP_CLOSED_NOTICE_ID} data-ac="S1-2">
               <span className="flex items-start gap-2">
                 <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
                 <span>{SIGNUP_CLOSED_NOTICE}</span>
@@ -370,7 +375,13 @@ export function SignupView() {
 
           <AuthSection>
             {/* 잠근다 — 이유는 폼 위 안내가 말한다(`SIGNUP_CLOSED_NOTICE`) */}
-            <Button type="submit" size="lg" className="w-full" disabled>
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled
+              aria-describedby={SIGNUP_CLOSED_NOTICE_ID}
+            >
               가입하기
             </Button>
           </AuthSection>

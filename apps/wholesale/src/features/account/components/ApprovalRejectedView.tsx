@@ -14,6 +14,7 @@ import {
   MASKING_HELP,
   SESSION_REQUIRED_LEAD,
   SIGNUP_CLOSED_NOTICE,
+  SIGNUP_CLOSED_NOTICE_ID,
 } from "../constants";
 import { approvalSteps, validateReapply } from "../derive";
 import { REJECTION } from "../fixtures";
@@ -135,10 +136,14 @@ export function ApprovalRejectedView() {
           </WarnNotice>
         </AuthSection>
 
-        <form onSubmit={submit} noValidate>
+        <form
+          onSubmit={submit}
+          noValidate
+          aria-describedby={SIGNUP_CLOSED_NOTICE_ID}
+        >
           {/* 버튼을 잠근 이유를 폼 **위**에서 먼저 말한다 */}
           <AuthSection>
-            <Notice data-ac="S1-2">
+            <Notice id={SIGNUP_CLOSED_NOTICE_ID} data-ac="S1-2">
               <span className="flex items-start gap-2">
                 <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
                 <span>{SIGNUP_CLOSED_NOTICE}</span>
@@ -167,7 +172,11 @@ export function ApprovalRejectedView() {
 
           <AuthSection className="flex gap-2">
             {/* 잠근다 — 이유는 폼 위 안내가 말한다(`SIGNUP_CLOSED_NOTICE`) */}
-            <Button type="submit" disabled>
+            <Button
+              type="submit"
+              disabled
+              aria-describedby={SIGNUP_CLOSED_NOTICE_ID}
+            >
               재신청하기
             </Button>
             <ComingSoonDialog

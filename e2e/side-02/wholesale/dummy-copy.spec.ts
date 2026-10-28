@@ -29,6 +29,31 @@ async function seedSession(page: Page, status: Status) {
   );
 }
 
+const PDF = {
+  name: "license.pdf",
+  mimeType: "application/pdf",
+  buffer: Buffer.from("%PDF-1.4 stub"),
+};
+
+function readSession(page: Page): Promise<string | null> {
+  return page.evaluate(
+    (key) => window.sessionStorage.getItem(key),
+    SESSION_KEY,
+  );
+}
+
+/** `/api/`로 나가는 GET 아닌 요청(신청·재신청 같은 쓰기)을 모은다 */
+function trackWrites(page: Page): () => string[] {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/") && request.method() !== "GET") {
+      seen.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  return () => seen;
+}
+
 test.describe("S1-1 서버가 없어요 문구 제거", () => {
   test("계정 메뉴에 이메일이 보이고 '서버가 없어요'가 DOM에 없다", async ({
     page,
@@ -81,6 +106,88 @@ test.describe("S1-2 가입, 재신청 제출 잠금", () => {
       page.getByRole("button", { name: "재신청하기" }),
     ).toBeDisabled();
     await expect(page).toHaveURL(/\/approval\/rejected$/);
+  });
+
+  test("안내가 폼과 잠긴 버튼의 aria-describedby로 묶여 있다", async ({
+    page,
+  }) => {
+    await page.goto("/signup");
+    await expect(page.locator("#account-signup-closed")).toHaveText(
+      SIGNUP_CLOSED,
+    );
+    await expect(page.locator("form")).toHaveAttribute(
+      "aria-describedby",
+      "account-signup-closed",
+    );
+    await expect(
+      page.getByRole("button", { name: "가입하기" }),
+    ).toHaveAccessibleDescription(SIGNUP_CLOSED);
+
+    await seedSession(page, "REJECTED");
+    await page.goto("/approval/rejected");
+    await expect(page.locator("form")).toHaveAttribute(
+      "aria-describedby",
+      "account-signup-closed",
+    );
+    await expect(
+      page.getByRole("button", { name: "재신청하기" }),
+    ).toHaveAccessibleDescription(SIGNUP_CLOSED);
+  });
+
+  test("/signup: 유효값으로 requestSubmit()해도 이동, 세션, 신청 요청이 없다", async ({
+    page,
+  }) => {
+    const writes = trackWrites(page);
+    await page.goto("/signup");
+
+    const fill = (field: string, value: string) =>
+      page.locator(`#account-${field}`).fill(value);
+    await fill("storeName", "온도의류");
+    await fill("ownerName", "김온도");
+    await fill("email", "new@ondo.test");
+    await fill("password", "ondo1234!");
+    await fill("passwordConfirm", "ondo1234!");
+    await fill("phone", "010-1234-5678");
+    await fill("bizNo", "123-45-67890");
+    await fill("address", "청평화패션몰 2층 24호");
+    for (const field of ["license", "idCard"]) {
+      await page.locator(`#account-${field}`).setInputFiles(PDF);
+    }
+    await page.locator("#account-agreeService").click();
+    await page.locator("#account-agreePrivacy").click();
+
+    /* 버튼이 잠겨 있어도 폼 제출 자체는 일어날 수 있다 — 핸들러가 막는지 본다 */
+    await page
+      .locator("form")
+      .evaluate((form) => (form as HTMLFormElement).requestSubmit());
+
+    /* 검증 문구가 없어야 "유효값 경로"를 탄 것이다 */
+    await expect(
+      page.getByText(/입력해 주세요|첨부해 주세요|동의해 주세요/),
+    ).toHaveCount(0);
+    await expect(page).toHaveURL(/\/signup$/);
+    expect(await readSession(page)).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  test("/approval/rejected: 파일을 넣고 requestSubmit()해도 상태, 주소, 요청이 그대로다", async ({
+    page,
+  }) => {
+    await seedSession(page, "REJECTED");
+    const writes = trackWrites(page);
+    await page.goto("/approval/rejected");
+    const before = await readSession(page);
+
+    await page.locator("#account-license").setInputFiles(PDF);
+    await page
+      .locator("form")
+      .evaluate((form) => (form as HTMLFormElement).requestSubmit());
+
+    await expect(page.getByText("첨부해 주세요")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/approval\/rejected$/);
+    expect(await readSession(page)).toBe(before);
+    expect(JSON.parse(before ?? "{}").overrides[EMAIL].status).toBe("REJECTED");
+    expect(writes()).toEqual([]);
   });
 });
 
