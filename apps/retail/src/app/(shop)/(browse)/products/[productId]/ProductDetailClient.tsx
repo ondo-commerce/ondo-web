@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAddCartItemMutation } from "@/features/cart";
+import { InquiryButton, InquiryEntry, InquiryError } from "@/features/chat";
 import {
   ProductDetailView,
   type AddToCartResult,
@@ -50,14 +51,22 @@ export function ProductDetailClient({ product }: { product: ProductDetail }) {
   const router = useRouter();
   const { mutateAsync } = useAddCartItemMutation({ refresh: false });
 
+  /* 판매처 칸의 `문의하기`(loop-05a)도 같은 이유로 여기서 끼운다 — 상세는 `features/chat`을 모른다 */
   return (
-    <ProductDetailView
-      product={product}
-      onAddToCart={async (items) => {
-        const result = await settleEach(items, (item) => mutateAsync(item));
-        if (result.done.length > 0) router.refresh();
-        return result;
-      }}
-    />
+    <InquiryEntry
+      wholesalerId={Number(product.wholesaler.id)}
+      listingId={Number(product.id)}
+    >
+      <ProductDetailView
+        product={product}
+        sellerAction={<InquiryButton ac="S5-1 S5-4 S5-11 S5-12" />}
+        sellerNotice={<InquiryError />}
+        onAddToCart={async (items) => {
+          const result = await settleEach(items, (item) => mutateAsync(item));
+          if (result.done.length > 0) router.refresh();
+          return result;
+        }}
+      />
+    </InquiryEntry>
   );
 }

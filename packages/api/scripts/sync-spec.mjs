@@ -13,11 +13,18 @@
 //
 // 파일 경로를 받는 이유: API 서버를 못 띄우는 환경이 있다(Docker·JDK 21 필요).
 // BE에게 `curl :8080/v3/api-docs` 결과만 받아도 타입은 끝까지 만들 수 있어야 한다.
+//
+// 초안 op(`openapi/drafts/<app>.json`): BE가 아직 없는 op를 FE가 먼저 손으로 쓴 조각이다
+// (`x-ondo-draft: true`). 받은 스펙으로 스냅샷을 통째로 덮은 **뒤에** 받은 스펙에 없는
+// 초안 op와 그 스키마만 다시 합친다 — 덮어쓰기가 초안을 지우면 화면이 쓰는 타입이 사라진다.
+// 받은 스펙에 같은 경로·메서드가 있으면 받은 쪽이 이긴다(BE가 구현했다는 뜻). 그 커밋에서
+// drafts 조각을 지운다.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkDraftSurvival, mergeDrafts, sortKeys } from "./merge-drafts.mjs";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -25,11 +32,13 @@ const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const APPS = {
   wholesale: {
     snapshot: "openapi/wholesale.json",
+    drafts: "openapi/drafts/wholesale.json",
     defaultUrl: "http://localhost:8081/v3/api-docs",
     bootHint: "cd wholesale-api && ./gradlew bootRun",
   },
   retail: {
     snapshot: "openapi/retail.json",
+    drafts: "openapi/drafts/retail.json",
     defaultUrl: "http://localhost:8080/v3/api-docs",
     bootHint: "cd retail-api && ./gradlew bootRun",
   },
@@ -47,26 +56,6 @@ if (app === undefined) {
 const SNAPSHOT_PATH = resolve(PACKAGE_ROOT, app.snapshot);
 const source = process.argv[3] ?? process.env.OPENAPI_URL ?? app.defaultUrl;
 const isUrl = /^https?:\/\//.test(source);
-
-/**
- * 키를 재귀적으로 정렬한다.
- *
- * springdoc은 같은 코드에서도 출력 순서가 흔들린다. 정렬하지 않으면 스펙이 하나도
- * 안 바뀌어도 스냅샷 diff가 나고, 그 diff에 익숙해지면 진짜 변경을 놓친다.
- */
-function sortKeys(value) {
-  if (Array.isArray(value)) {
-    return value.map(sortKeys);
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortKeys(value[key])]),
-    );
-  }
-  return value;
-}
 
 async function readSpec() {
   if (!isUrl) {
@@ -92,10 +81,35 @@ async function readSpec() {
   return response.json();
 }
 
-const spec = await readSpec();
-if (typeof spec.openapi !== "string") {
+function readDrafts() {
+  const path = resolve(PACKAGE_ROOT, app.drafts);
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+const received = await readSpec();
+if (typeof received.openapi !== "string") {
   throw new Error(
     "받은 문서에 openapi 버전이 없다. /v3/api-docs 결과가 맞는지 확인한다.",
+  );
+}
+
+const drafts = readDrafts();
+const {
+  merged: spec,
+  kept,
+  dropped,
+} = drafts === null
+  ? { merged: received, kept: [], dropped: [] }
+  : mergeDrafts(received, drafts);
+
+// 스냅샷을 쓰기 **전에** 본다. 받은 스키마가 초안 칸을 지웠으면 덮어쓰지 않고 멈춘다 —
+// 덮은 뒤 알리면 사람이 git 으로 되돌려야 하고, 그사이 codegen 이 그 칸을 이미 지운다(loop-05b S7-1)
+const lost = drafts === null ? [] : checkDraftSurvival(spec, drafts);
+if (lost.length > 0) {
+  throw new Error(
+    `받은 스펙이 초안을 지운다: ${lost.join(", ")}. ` +
+      `BE 에 그 칸을 요청하거나, 초안을 버리기로 했으면 ${app.drafts} 에서 x-ondo-draft 칸을 지우고 다시 돈다.`,
   );
 }
 
@@ -104,6 +118,12 @@ writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(sortKeys(spec), null, 2)}\n`);
 console.log(
   `스냅샷 갱신: ${app.snapshot}  (openapi ${spec.openapi} ← ${source})`,
 );
+for (const label of kept) console.log(`초안 유지: ${label}  (${app.drafts})`);
+for (const label of dropped) {
+  console.log(
+    `초안 폐기: ${label} — 받은 스펙에 같은 op가 있다. ${app.drafts} 에서 지운다.`,
+  );
+}
 
 // 타입 생성은 `codegen` 한 곳에만 둔다. CI가 같은 명령으로 drift를 재는데, 여기서 다른
 // 플래그로 만들면 로컬과 CI 결과가 갈려서 통과한 커밋이 CI에서 죽는다.

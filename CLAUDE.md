@@ -18,13 +18,15 @@ packages/config/  eslint · typescript 공유 설정 (prettier는 루트 .pretti
 
 **선례로 삼을 것: `apps/wholesale/src/features/product/`.** 폴더 구성·주석 밀도·네이밍의 기준이다.
 
-## 검증 — 이 세 개가 전부다
+## 검증 — 이 네 개가 전부다
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm build
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
-**테스트 러너가 없다.** CI(`.github/workflows/ci.yml`)도 이 3개만 돈다. 없는 테스트를 있다고 말하지 않는다.
+- `pnpm test` = vitest. **순수 함수만**(`features/*/derive.ts` 옆 `*.test.ts`). 컴포넌트 렌더 테스트는 안 한다(`docs/08` 규칙 7)
+- `pnpm e2e` = Playwright, mock 모드(`NEXT_PUBLIC_API_MOCK=1`). `e2e/<회차>/`에 쌓인다. CI는 아직 안 돈다(dev 서버 필요)
+- CI(`.github/workflows/ci.yml`)는 위 4개를 돈다. 없는 테스트를 있다고 말하지 않는다
 앱 하나만: `pnpm --filter retail dev`
 
 ## 커밋
