@@ -340,7 +340,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
                 "mr-auto text-sm",
                 note.danger
                   ? "text-destructive-strong"
-                  : "text-muted-foreground",
+                  : /* 회색이면 잠긴 저장 버튼 옆에서 꺼진 안내로 읽힌다(#254 F8) */
+                    "text-foreground",
               )}
             >
               {note.text}

@@ -530,6 +530,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wholesale/chat/auto-reply-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 채팅 자동 답 설정 보기
+         * @description 이 도매처의 채팅 자동 답 설정. 저장한 적이 없으면 전부 true 다. 소매 쪽 op 는 없다(소매는 결과만 본다).
+         *
+         *     에러: 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        get: operations["autoReplySettings"];
+        /**
+         * 채팅 자동 답 설정 바꾸기
+         * @description 자동 답 설정을 통째로 바꾼다(부분 수정 없음, 칸이 빠지면 400). 도매처 단위로 저장돼 다른 기기에도 걸린다. 판정 순서 0: enabled 가 false 면 소매 문의는 전부 사람 넘김(HANDOFF), true 여도 그 의도가 false 면 그 의도만 넘김. 바꾼 뒤 들어오는 메시지부터 적용된다(이미 보낸 자동 답은 그대로).
+         *
+         *     에러: 400 VALIDATION_FAILED(errors[].field = enabled | intents | intents.STOCK …, 불린 아님 포함) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        put: operations["updateAutoReplySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wholesale/chat/rooms": {
         parameters: {
             query?: never;
@@ -1553,6 +1585,21 @@ export interface components {
             data: components["schemas"]["StockMovementResponse"][];
             meta: components["schemas"]["PageMeta"];
         };
+        /** @description 의도별 켜짐. enabled 가 true 일 때만 뜻이 있다. OTHER 는 늘 사람 넘김이라 칸이 없다 */
+        AutoReplyIntentSettings: {
+            /** @description 미송 문의 자동 답 */
+            BACKORDER: boolean;
+            /** @description 미수 문의 자동 답 */
+            RECEIVABLE: boolean;
+            /** @description 재고 문의 자동 답 */
+            STOCK: boolean;
+        };
+        /** @description 채팅 자동 답 설정(도매처 단위). 화면은 enabled 스위치 하나만 보이고(05b-1), intents 는 그대로 돌려보낸다 */
+        AutoReplySettings: {
+            /** @description false 면 모든 소매 문의를 사람에게 넘긴다(자동 답 0건) */
+            enabled: boolean;
+            intents: components["schemas"]["AutoReplyIntentSettings"];
+        };
         Backorder: {
             /** Format: int32 */
             noDateSkuCount: number;
@@ -1693,6 +1740,8 @@ export interface components {
              * @description 값을 조회한 시각. 화면에 '조회 시각'으로 보인다
              */
             checkedAt: string;
+            /** @description CLARIFY 에만 게시 옵션 전부(색상 → 사이즈 순, 색상은 처음 등록된 순서). 그 밖엔 null 이거나 칸이 없다. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? null`) */
+            choices?: components["schemas"]["ChatChoice"][] | null;
             facts: components["schemas"]["ChatWholesaleFacts"];
             /**
              * @description RULE 규칙+템플릿 / LLM 분류 뒤 템플릿(loop-09 선택). 숫자는 둘 다 DB 값
@@ -1721,6 +1770,18 @@ export interface components {
              * @description 미송 남은 수량
              */
             qty: number;
+        };
+        /** @description 되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다 */
+        ChatChoice: {
+            /** @description 칩 글자. 예: "레드 / M". 고르면 이 글자가 메시지 본문이 된다 */
+            label: string;
+            /** @description 게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다) */
+            orderable: boolean;
+            /**
+             * Format: int64
+             * @description 옵션(SKU) id. 그 게시글의 게시된 옵션이다
+             */
+            variantId: number;
         };
         /** @description 대화 상대 사업체. 도매 응답이면 소매처, 소매 응답이면 도매처다 */
         ChatCounterpart: {
@@ -3713,6 +3774,173 @@ export interface operations {
                     "*/*": {
                         data: components["schemas"]["CategoryNodeResponse"][];
                     };
+                };
+            };
+        };
+    };
+    autoReplySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutoReplySettings"];
+                    };
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAutoReplySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoReplySettings"];
+            };
+        };
+        responses: {
+            /** @description 저장된 값 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutoReplySettings"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

@@ -31,6 +31,7 @@ import { useEffect, useRef, useState } from "react";
 import { ListingImage } from "./ListingImage";
 import { useUploadListingImageMutation } from "../api/mutations";
 import {
+  FOCUS_RING_CLASS,
   IMAGE_ACCEPT,
   IMAGE_REJECT_MESSAGE,
   IMAGE_UPLOAD_CONCURRENCY,
@@ -437,6 +438,11 @@ export function PostImageGrid({
         <SortableContext items={shown} strategy={rectSortingStrategy}>
           <SlotGrid
             id={id}
+            /*
+             * p-1 = 포커스 링이 칸 밖으로 나가는 4px(offset 2 + 두께 2). 이게 없으면 첫 열 링의
+             * 왼쪽 변이 Panel.Body 스크롤 박스(overflow-y-auto 라 x 도 잘린다)에 잘린다(side-01 F2)
+             */
+            className="p-1"
             /* 프로그램 포커스만 받는다(F3). Tab 순서엔 안 들어간다 — 칸들이 각자 받는다 */
             tabIndex={-1}
             role="group"
@@ -483,7 +489,10 @@ export function PostImageGrid({
                 }
                 onClick={() => inputRef.current?.click()}
                 /* `+`는 muted-foreground(4.9:1) — AddSlot 기본 border-strong 은 2.5:1 로 AA 미달(DD9) */
-                className="text-muted-foreground content-center text-xl leading-6 disabled:opacity-50"
+                className={cn(
+                  "text-muted-foreground content-center text-xl leading-6 disabled:opacity-50",
+                  FOCUS_RING_CLASS,
+                )}
               >
                 +<span className="text-xs leading-4">{remaining}장 더</span>
               </AddSlot>
@@ -540,10 +549,16 @@ export function PostImageGrid({
 /**
  * 정렬 가능한 슬롯 한 칸.
  *
- * ImageSlot 을 감싸는 div 를 따로 두는 이유: dnd-kit 은 ref·transform·리스너를
- * 한 엘리먼트에 몰아 걸어야 하는데, ImageSlot 은 @ondo/ui 의 표시용 프리미티브라
- * ref 를 받지 않는다. 드래그 배선을 바깥 껍데기가 받고 ImageSlot 은 지금 모습
- * 그대로 두면, 상세 화면과 등록 화면이 계속 같은 컴포넌트를 쓴다.
+ * 바깥 div 는 자리(ref·transform)만 받고, 안에 **형제 둘**을 둔다 — 집기 손잡이와 `×`.
+ * 예전엔 바깥이 dnd-kit `attributes`(`role=button`)를 받고 `×`를 품었는데, `role=button`의
+ * 자식은 낭독기에서 표시용으로 눌려 `×`가 따로 안 읽혔다(#254 F5). `×`가 손잡이 밖이면
+ * 키보드 Enter·Space 도 KeyboardSensor 에 안 닿는다(F4 가 구조로 막힌다).
+ * 드래그 중엔 바깥이 움직이므로 `×`도 같이 따라간다.
+ *
+ * 바깥엔 역할도 이름도 없다. 이름("이미지 N, 대표")과 잠김(aria-disabled)은 손잡이만 갖는다 —
+ * 바깥에도 같은 이름을 달면 낭독기가 칸마다 두 번 읽는다(side-01 F1).
+ *
+ * ImageSlot 을 감싸는 이유는 그대로다 — @ondo/ui 의 표시용 프리미티브라 ref 를 받지 않는다.
  */
 function SortableImageSlot({
   id,
@@ -570,49 +585,33 @@ function SortableImageSlot({
     transition,
     isDragging,
   } = useSortable({ id, disabled });
+  const name = isCover ? `이미지 ${index}, 대표` : `이미지 ${index}`;
 
   return (
     <div
-      /*
-       * 껍데기 자신을 집기 손잡이(activatorNode)로 등록한다. 이게 없으면 dnd-kit 6.3.1의
-       * KeyboardSensor 는 event.target 을 안 보고 안에서 올라온 Enter·Space 까지
-       * preventDefault 해서 `×` 버튼이 키보드로 안 눌린다(F4). 등록하면 target 이 껍데기일
-       * 때만 집고, 버튼에서 난 키는 버튼 몫으로 남긴다. 마우스는 8px 문턱이 그대로 가른다.
-       */
-      ref={(node) => {
-        setNodeRef(node);
-        setActivatorNodeRef(node);
-      }}
+      ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      // touch-none: 터치에서 드래그가 페이지 스크롤에 먹히지 않게 한다
       // isDragging 동안 반투명 + 위로 띄우기 — 밀려나는 칸들과 구분된다
-      className={`touch-none ${isDragging ? "z-10 opacity-50" : ""}`}
+      className={cn("relative", isDragging && "z-10 opacity-50")}
       data-state="registered"
       data-ac={disabled ? "S2-4 S2-10 S3-3" : "S2-4"}
-      aria-label={isCover ? `이미지 ${index}, 대표` : `이미지 ${index}`}
-      {...attributes}
-      {...listeners}
     >
-      <ImageSlot
-        overlay={
-          <>
-            {/*
-             * `×`는 드래그 껍데기 **안**에 있다. 8px 문턱(`PointerSensor`) 덕에 누르는 동안의
-             * 손떨림은 드래그가 안 되고 click 이 그대로 버튼에 닿는다. 키보드는 껍데기가
-             * `activatorNode`로 등록돼 있어야 버튼의 Enter·Space 를 안 가로챈다(위 ref 주석, F4).
-             */}
-            <IconButton
-              variant="line"
-              size="sm"
-              aria-label={`이미지 ${index} 빼기`}
-              data-ac="S3-1"
-              className="absolute top-1 left-1 size-6"
-              onClick={onRemove}
-              disabled={disabled}
-            >
-              <X />
-            </IconButton>
-            {isCover ? (
+      <div
+        /*
+         * 손잡이를 activatorNode 로 등록한다. dnd-kit 6.3.1의 KeyboardSensor 는 등록이 없으면
+         * event.target 을 안 보고 안에서 올라온 키까지 집는다(F4). 지금은 `×`가 밖이라
+         * 안 닿지만, 손잡이 안에 눌리는 것이 다시 들어와도 막히게 둔다.
+         */
+        ref={setActivatorNodeRef}
+        // touch-none: 터치에서 드래그가 페이지 스크롤에 먹히지 않게 한다
+        className={cn("rounded-control touch-none", FOCUS_RING_CLASS)}
+        aria-label={name}
+        {...attributes}
+        {...listeners}
+      >
+        <ImageSlot
+          overlay={
+            isCover ? (
               <Chip
                 tone="accent"
                 data-ac="S2-4"
@@ -620,12 +619,27 @@ function SortableImageSlot({
               >
                 대표
               </Chip>
-            ) : null}
-          </>
-        }
+            ) : null
+          }
+        >
+          {children}
+        </ImageSlot>
+      </div>
+      {/*
+       * DOM 에서 손잡이 뒤라 위에 그려진다(둘 다 positioned, z 없음). 8px 문턱(`PointerSensor`)이
+       * 아니어도 이제 `×` 위 pointerdown 은 손잡이 리스너에 안 간다.
+       */}
+      <IconButton
+        variant="line"
+        size="sm"
+        aria-label={`이미지 ${index} 빼기`}
+        data-ac="S3-1"
+        className={cn("absolute top-1 left-1 size-6", FOCUS_RING_CLASS)}
+        onClick={onRemove}
+        disabled={disabled}
       >
-        {children}
-      </ImageSlot>
+        <X />
+      </IconButton>
     </div>
   );
 }
@@ -670,7 +684,10 @@ function UploadSlotCell({
         data-ac={failure.kind === "retry" ? "S2-5 S2-14 S2-11" : "S2-14 S2-11"}
         aria-label={`${label}, ${failure.message}`}
         /* destructive 1px 선은 outline 으로 — border 면 88px 상자가 1px 커진다 */
-        className="bg-card outline-destructive overflow-hidden outline -outline-offset-1"
+        className={cn(
+          "bg-card outline-destructive overflow-hidden outline -outline-offset-1",
+          FOCUS_RING_CLASS,
+        )}
         overlay={
           <>
             <div
@@ -702,7 +719,7 @@ function UploadSlotCell({
               size="sm"
               aria-label={`${label} 빼기`}
               data-ac="S3-1"
-              className="absolute top-1 left-1 size-6"
+              className={cn("absolute top-1 left-1 size-6", FOCUS_RING_CLASS)}
               onClick={onRemove}
               disabled={disabled}
             >
@@ -740,7 +757,7 @@ function UploadSlotCell({
       aria-busy={state === "uploading" || undefined}
       aria-label={ariaLabel}
       data-ac={dataAc}
-      className="overflow-hidden"
+      className={cn("overflow-hidden", FOCUS_RING_CLASS)}
       overlay={
         <>
           {state !== "held" ? (

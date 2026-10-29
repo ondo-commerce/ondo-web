@@ -24,6 +24,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkDraftSurvival, mergeDrafts, sortKeys } from "./merge-drafts.mjs";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -56,26 +57,6 @@ const SNAPSHOT_PATH = resolve(PACKAGE_ROOT, app.snapshot);
 const source = process.argv[3] ?? process.env.OPENAPI_URL ?? app.defaultUrl;
 const isUrl = /^https?:\/\//.test(source);
 
-/**
- * 키를 재귀적으로 정렬한다.
- *
- * springdoc은 같은 코드에서도 출력 순서가 흔들린다. 정렬하지 않으면 스펙이 하나도
- * 안 바뀌어도 스냅샷 diff가 나고, 그 diff에 익숙해지면 진짜 변경을 놓친다.
- */
-function sortKeys(value) {
-  if (Array.isArray(value)) {
-    return value.map(sortKeys);
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortKeys(value[key])]),
-    );
-  }
-  return value;
-}
-
 async function readSpec() {
   if (!isUrl) {
     const path = resolve(process.cwd(), source);
@@ -100,71 +81,6 @@ async function readSpec() {
   return response.json();
 }
 
-/**
- * 받은 스펙에 없는 초안 op와 그 스키마를 합친다. 받은 스펙은 손대지 않고 새 객체를 돌려준다.
- *
- * 합치는 단위는 **path × method**다. 받은 스펙에 같은 경로·메서드가 있으면 초안을 버린다 —
- * 경로만 같고 메서드가 다르면(예: BE가 GET만 먼저 구현) POST 초안은 살린다.
- * `x-ondo-draft`가 없는 op는 받지 않고 멈춘다 — 표시 없이 섞이면 스냅샷에서 BE 것과 구분이
- * 안 된다.
- *
- * 스키마는 살아남은 초안 op가 (중첩까지 따라가) 참조하는 것만, 받은 쪽에 같은 이름이 없을 때 넣는다. 같은 이름이
- * 있으면 받은 쪽이 이긴다 — BE가 이름을 선점한 것이고, 모양이 다르면 codegen 뒤 typecheck가 잡는다.
- */
-function mergeDrafts(received, drafts) {
-  const merged = { ...received, paths: { ...received.paths } };
-  const kept = [];
-  const dropped = [];
-
-  for (const [path, operations] of Object.entries(drafts.paths ?? {})) {
-    for (const [method, operation] of Object.entries(operations)) {
-      const label = `${method.toUpperCase()} ${path}`;
-      if (operation["x-ondo-draft"] !== true) {
-        throw new Error(
-          `${label} 에 "x-ondo-draft": true 가 없다. drafts 의 op는 전부 초안 표시가 있어야 한다.`,
-        );
-      }
-      if (received.paths?.[path]?.[method] !== undefined) {
-        dropped.push(label);
-        continue;
-      }
-      merged.paths[path] = { ...merged.paths[path], [method]: operation };
-      kept.push({ label, operation });
-    }
-  }
-
-  const receivedSchemas = received.components?.schemas ?? {};
-  const draftSchemas = drafts.components?.schemas ?? {};
-  const schemas = { ...receivedSchemas };
-  // 참조를 **끝까지** 따라간다. op가 직접 부르는 스키마만 넣으면 그 안의 `$ref`
-  // (예: ChatSendResult → ChatMessage)가 빠져 codegen이 깨진다(#263, 채팅 계약이 처음으로 중첩 스키마를 들였다)
-  const pending = refsIn(kept.map((k) => k.operation));
-  const seen = new Set();
-  while (pending.length > 0) {
-    const name = pending.pop();
-    if (seen.has(name)) continue;
-    seen.add(name);
-    if (name in receivedSchemas) continue;
-    const schema = draftSchemas[name];
-    if (schema === undefined) continue;
-    schemas[name] = schema;
-    pending.push(...refsIn(schema));
-  }
-  merged.components = { ...received.components, schemas };
-
-  return { merged, kept: kept.map((k) => k.label), dropped };
-}
-
-/** 값 안의 `#/components/schemas/<이름>` 참조를 전부 뽑는다 */
-function refsIn(value) {
-  const names = [];
-  const pattern = /"#\/components\/schemas\/([^"]+)"/g;
-  for (const match of JSON.stringify(value).matchAll(pattern)) {
-    names.push(match[1]);
-  }
-  return names;
-}
-
 function readDrafts() {
   const path = resolve(PACKAGE_ROOT, app.drafts);
   if (!existsSync(path)) return null;
@@ -186,6 +102,16 @@ const {
 } = drafts === null
   ? { merged: received, kept: [], dropped: [] }
   : mergeDrafts(received, drafts);
+
+// 스냅샷을 쓰기 **전에** 본다. 받은 스키마가 초안 칸을 지웠으면 덮어쓰지 않고 멈춘다 —
+// 덮은 뒤 알리면 사람이 git 으로 되돌려야 하고, 그사이 codegen 이 그 칸을 이미 지운다(loop-05b S7-1)
+const lost = drafts === null ? [] : checkDraftSurvival(spec, drafts);
+if (lost.length > 0) {
+  throw new Error(
+    `받은 스펙이 초안을 지운다: ${lost.join(", ")}. ` +
+      `BE 에 그 칸을 요청하거나, 초안을 버리기로 했으면 ${app.drafts} 에서 x-ondo-draft 칸을 지우고 다시 돈다.`,
+  );
+}
 
 mkdirSync(dirname(SNAPSHOT_PATH), { recursive: true });
 writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(sortKeys(spec), null, 2)}\n`);
