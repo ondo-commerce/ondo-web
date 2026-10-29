@@ -1,9 +1,10 @@
 "use client";
 
-import { Button, cn, Textarea } from "@ondo/ui";
+import { Button, cn, Textarea, ToggleChip } from "@ondo/ui";
+import { CircleAlert } from "lucide-react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 import { memo, useEffect, useId, useRef, useState } from "react";
-import { COMPOSER_TEXT } from "../constants";
+import { COMPOSER_TEXT, STOCK_TEXT } from "../constants";
 import { checkComposer } from "../derive";
 
 /**
@@ -18,15 +19,28 @@ import { checkComposer } from "../derive";
  */
 export const ChatComposer = memo(function ChatComposer({
   counterpartName,
+  sessionLost,
   onSend,
+  askBusy,
+  onAsk,
 }: {
   counterpartName: string;
+  /** 401 — 쓴 글은 지키고 보내기만 잠근다(D28). 입력창은 읽기 전용, 글은 선택해 복사할 수 있다(S6-5) */
+  sessionLost: boolean;
   onSend: (body: string) => void;
+  /**
+   * 맨 위 줄 `재고 문의` 칩(loop-05b S8-1, 디자인 결정 21). null이면 줄 자체가 없다 — 상품 상세에서 연 방이
+   * 아니다. true면 보내는 중(스피너 + disabled + aria-busy). 원시값으로 받는 이유: 이 컴포넌트는 `memo`라
+   * 객체를 받으면 polling마다 다시 그려진다
+   */
+  askBusy: boolean | null;
+  /** 칩 보내기. 입력창 글은 건드리지 않는다 — 따로 보내는 말이다(S8-2) */
+  onAsk: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const canSend = !check.blank && !check.over;
+  const canSend = !check.blank && !check.over && !sessionLost;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
   const boxRef = useRef<HTMLDivElement>(null);
@@ -63,7 +77,16 @@ export const ChatComposer = memo(function ChatComposer({
   };
 
   const noteId = useId();
-  const note = check.overMessage ? (
+  const note = sessionLost ? (
+    <span
+      role="alert"
+      data-ac="S6-5"
+      className="border-destructive text-destructive-strong flex flex-1 items-center gap-1.5 rounded-control border px-3 py-2 text-sm"
+    >
+      <CircleAlert aria-hidden className="size-4 shrink-0" />
+      {COMPOSER_TEXT.sessionLost}
+    </span>
+  ) : check.overMessage ? (
     <span data-ac="S6-3" className="text-destructive-strong">
       {check.overMessage}
     </span>
@@ -73,17 +96,49 @@ export const ChatComposer = memo(function ChatComposer({
     </span>
   ) : null;
 
+  /* 칩을 눌러도 입력창의 글과 커서는 그대로다(S8-2). 마우스는 mousedown을 막아 포커스가 입력창에 남고,
+     키보드로 누른 경우엔 칩이 곧 disabled가 되어 포커스가 페이지로 떨어지니 입력창으로 돌려준다
+     (textarea는 포커스를 잃어도 선택 범위를 기억한다) */
+  const ask = () => {
+    if (askBusy !== false || sessionLost) return;
+    onAsk();
+    focusInput();
+  };
+
   return (
     <div
       data-ac="S5-9"
       className="border-border grid shrink-0 gap-1.5 border-t pt-3"
     >
+      {askBusy === null ? null : (
+        <div data-ac="S8-1 S8-11" className="flex">
+          <ToggleChip
+            /* 토글이 아니라 한 번 보내는 버튼이라 aria-pressed를 뺀다. 모양만 ToggleChip(결정 21) */
+            aria-pressed={undefined}
+            disabled={askBusy || sessionLost}
+            aria-busy={askBusy || undefined}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={ask}
+            data-ac="S8-1 S8-2"
+            className="phone:h-11 phone:px-3"
+          >
+            {askBusy ? (
+              <span
+                aria-hidden
+                className="border-border border-t-secondary-foreground size-3 animate-spin rounded-full border-2 motion-reduce:animate-none"
+              />
+            ) : null}
+            {STOCK_TEXT.ask}
+          </ToggleChip>
+        </div>
+      )}
       <div ref={boxRef} className="flex items-end gap-2">
         <Textarea
           rows={3}
           aria-label={COMPOSER_TEXT.label}
           placeholder={`${counterpartName}${COMPOSER_TEXT.placeholderSuffix}`}
           value={draft}
+          readOnly={sessionLost}
           aria-invalid={check.over || undefined}
           aria-describedby={noteId}
           onChange={(e) => {
@@ -96,6 +151,7 @@ export const ChatComposer = memo(function ChatComposer({
           className={cn(
             "field-sizing-content max-h-40 min-w-0 flex-1 resize-none phone:min-h-16.5",
             check.over && "border-destructive",
+            sessionLost && "bg-muted",
           )}
         />
         <Button
@@ -106,7 +162,7 @@ export const ChatComposer = memo(function ChatComposer({
              가져가고, 보낸 뒤 비활성이 되면 포커스가 페이지로 떨어진다 */
           onMouseDown={(e) => e.preventDefault()}
           onClick={submit}
-          data-ac="S6-3"
+          data-ac={sessionLost ? "S6-5" : "S6-3"}
         >
           {COMPOSER_TEXT.send}
         </Button>

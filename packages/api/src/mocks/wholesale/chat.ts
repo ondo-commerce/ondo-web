@@ -1,5 +1,14 @@
 import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import { CHAT_EXTRA_LISTINGS } from "../chat/extraListings";
+import {
+  DEFAULT_AUTO_REPLY_SETTINGS,
+  decideInquiry,
+  generatedLines,
+  type AutoReplySettings,
+  type InquiryListing,
+} from "../chat/inquiry";
+import { chatStockListing } from "./product";
 
 /**
  * 채팅 목 — 초안 op 5개(#263, 스냅샷 `x-ondo-draft`). 계약은 `01-plan.md` §5-2, 목은 §5-3.
@@ -63,6 +72,7 @@ export const CHAT_FAIL_OPS = [
   "messages",
   "send",
   "read",
+  "settings",
 ] as const;
 type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
 
@@ -79,6 +89,11 @@ interface MockRoom {
   wholesalerLastRead: number;
   /** 소매가 읽은 위치. 한 번도 안 읽었으면 null */
   retailerLastRead: number | null;
+  /**
+   * 방의 상품 문맥(loop-05b §4-2 6). 소매 `createChatRoom`의 listingId와 그 시각(ms).
+   * 자동 답이 "이 상품"을 이 값으로 읽는다. 30분 지나면 없는 것으로 본다(판정이 잰다)
+   */
+  context: { listingId: number; at: number } | null;
 }
 
 interface IdempotencyRecord {
@@ -96,6 +111,13 @@ const idempotency = new Map<string, IdempotencyRecord>();
 /** `fail500once`가 이미 한 번 실패시킨 키 */
 const failedOnceKeys = new Set<string>();
 const failPlan = new Map<ChatFailOp, { status: number; times: number }>();
+/**
+ * 자동 답 설정(도매처 단위, 초안 op `autoReplySettings`). 목은 "나"(101) 한 벌만 둔다 — 다른 도매처 방은
+ * 늘 켜짐으로 판정한다. 새로고침하면 켜짐으로 돌아간다(BE는 저장, §4-3)
+ */
+let autoReplySettings: AutoReplySettings = structuredClone(
+  DEFAULT_AUTO_REPLY_SETTINGS,
+);
 
 /* --- 시드 --------------------------------------------------------------- */
 
@@ -170,6 +192,7 @@ function room(
     messages: [],
     wholesalerLastRead: read.wholesaler,
     retailerLastRead: read.retailer,
+    context: null,
   };
   for (const line of lines) {
     append(r, line);
@@ -649,6 +672,164 @@ function hashOf(body: { body: unknown; inquiry: unknown }): string {
   return JSON.stringify([body.body, body.inquiry ?? null]);
 }
 
+/* --- 자동 답 (loop-05b) -------------------------------------------------- */
+
+/** 판정이 읽는 상품. 상품 목 시드 + 채팅 목 전용 게시글(`../chat/extraListings.ts`) */
+function chatCatalog(listingId: number): InquiryListing | null {
+  return (
+    chatStockListing(listingId) ??
+    CHAT_EXTRA_LISTINGS.find((l) => l.listingId === listingId) ??
+    null
+  );
+}
+
+function settingsFor(wholesalerId: number): AutoReplySettings {
+  return wholesalerId === CHAT_ME_WHOLESALER_ID
+    ? autoReplySettings
+    : DEFAULT_AUTO_REPLY_SETTINGS;
+}
+
+/**
+ * 방금 넣은 소매 메시지에 자동 답을 붙인다. 소매 목 보내기와 도매 `incoming` 주입이 같이 부른다.
+ * 판정은 `../chat/inquiry.ts`(순수), 여기는 저장소에 줄을 넣기만 한다.
+ *
+ * 넘김 줄은 방에 이미 열린 넘김이 있으면 또 넣지 않는다 — 사장이 답하기 전까지 소매가 쓰는 글마다
+ * "사장님께 전달했어요"가 쌓이면 대화가 그 줄로 덮인다. 자동 답(재고 구간)은 그래도 붙는다.
+ * 단 재고 0 답의 넘김 줄은 예외로 늘 붙인다(D34, 디자인 결정 27) — 소매 카드는 바로 아래 넘김 줄이
+ * 있어야 "사장님이 미송 여부를 답한다"가 보이고, 그 줄이 없으면 담기도 막힌 채 답이 끝난 것처럼 보인다.
+ *
+ * 판정이 던지면(목 버그) 오류가 아니라 넘김이다(§5-2): 소매는 답 대신 "전달했어요"를 본다.
+ */
+function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
+  const now = Date.now();
+  const history = r.messages.filter((m) => m.sequence < message.sequence);
+  const alreadyOpen = openHandoff({ ...r, messages: history });
+  let lines: ReturnType<typeof generatedLines>;
+  try {
+    lines = generatedLines(
+      decideInquiry({
+        body: message.body,
+        inquiry: message.inquiry,
+        now,
+        wholesalerId: r.wholesalerId,
+        settings: settingsFor(r.wholesalerId),
+        context: r.context,
+        history,
+        catalog: chatCatalog,
+      }),
+      message.sequence,
+      now,
+    );
+  } catch {
+    lines = generatedLines(
+      { kind: "HANDOFF", reason: "NO_INTENT", intent: null },
+      message.sequence,
+      now,
+    );
+  }
+  const sentAt = new Date(now).toISOString();
+  const zeroStock = lines.some(
+    (line) =>
+      line.kind === "AUTO_REPLY" &&
+      line.autoReply?.facts.stock?.band === "NONE",
+  );
+  return lines
+    .filter((line) => !(line.kind === "HANDOFF" && alreadyOpen && !zeroStock))
+    .map((line) =>
+      append(r, {
+        sender: line.sender,
+        kind: line.kind,
+        body: line.body,
+        sentAt,
+        clientMessageId: null,
+        autoReply: line.autoReply,
+      }),
+    );
+}
+
+function setContext(r: MockRoom, listingId: number | null, ageMinutes = 0) {
+  r.context =
+    listingId === null
+      ? null
+      : { listingId, at: Date.now() - ageMinutes * MINUTE_MS };
+}
+
+/** PUT 본문 검사. 부분 수정이 없어서 칸이 하나라도 빠지면 400이다 */
+function settingsErrors(input: unknown) {
+  const errors: { field: string; code: string; message: string }[] = [];
+  const body = (input ?? {}) as Partial<{
+    enabled: unknown;
+    intents: Record<string, unknown> | null;
+  }>;
+  if (typeof body.enabled !== "boolean")
+    errors.push({
+      field: "enabled",
+      code: "NOT_BOOLEAN",
+      message: "켜짐, 꺼짐 값이 필요합니다.",
+    });
+  if (
+    typeof body.intents !== "object" ||
+    body.intents === null ||
+    Array.isArray(body.intents)
+  ) {
+    errors.push({
+      field: "intents",
+      code: "NOT_NULL",
+      message: "의도별 설정이 필요합니다.",
+    });
+  } else {
+    for (const key of ["STOCK", "BACKORDER", "RECEIVABLE"] as const) {
+      if (typeof body.intents[key] !== "boolean")
+        errors.push({
+          field: `intents.${key}`,
+          code: "NOT_BOOLEAN",
+          message: "켜짐, 꺼짐 값이 필요합니다.",
+        });
+    }
+  }
+  return errors;
+}
+
+/**
+ * 도매, 소매 목이 같이 올리는 손잡이(스펙에 없음). 둘 다 같은 저장소를 바꾼다.
+ * - `POST /__mock/chat/rooms/{roomId}/context {listingId, ageMinutes = 0}` 방 상품 문맥을 박는다.
+ *   `ageMinutes: 31`이면 지난 문맥(넘김), `listingId: null`이면 문맥 없음, 2901/2902는 목 전용 경계 상품
+ * - `POST /__mock/chat/auto-reply {enabled, intents?}` 자동 답 켜고 끄기. 소매 탭은 도매 탭 스위치와
+ *   상태를 나누지 않아서(브라우저마다 목) 이걸로 따로 맞춘다
+ */
+export const chatSharedKnobs = [
+  http.post(
+    "*/__mock/chat/rooms/:roomId/context",
+    async ({ params, request }) => {
+      const r = rooms.find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        listingId?: number | null;
+        ageMinutes?: number;
+      };
+      if (input.listingId === undefined)
+        return invalid("listingId", "NOT_NULL", "listingId가 필요합니다.");
+      setContext(r, input.listingId, input.ageMinutes ?? 0);
+      return HttpResponse.json({
+        data: { roomId: r.roomId, context: r.context },
+      });
+    },
+  ),
+
+  http.post("*/__mock/chat/auto-reply", async ({ request }) => {
+    const input = (await request
+      .json()
+      .catch(() => ({}))) as Partial<AutoReplySettings>;
+    if (typeof input.enabled !== "boolean")
+      return invalid("enabled", "NOT_BOOLEAN", "enabled(불린)가 필요합니다.");
+    autoReplySettings = {
+      enabled: input.enabled,
+      intents: { ...autoReplySettings.intents, ...input.intents },
+    };
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+];
+
 /* --- 응답 --------------------------------------------------------------- */
 
 const CODE_BY_STATUS: Record<number, string> = {
@@ -719,6 +900,41 @@ const UUID_PATTERN =
 
 /** 스펙 자동 핸들러 **앞에** 놓는다. 같은 경로면 이쪽이 이긴다 */
 export const chatHandlers = [
+  /** 자동 답 설정(초안 op `autoReplySettings`). 처음엔 전부 켜짐 */
+  http.get("*/api/wholesale/chat/auto-reply-settings", () => {
+    const planned = plannedFailure("settings");
+    if (planned) return planned;
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+
+  /**
+   * 설정 바꾸기(초안 op `updateAutoReplySettings`). 통째로 바꾼다. 실패 손잡이는
+   * `/__mock/chat/fail {op: "settings", status}` — GET, PUT이 같은 계획을 쓴다
+   */
+  http.put("*/api/wholesale/chat/auto-reply-settings", async ({ request }) => {
+    const planned = plannedFailure("settings");
+    if (planned) return planned;
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return invalid("body", "INVALID_FORMAT", "JSON 본문이 아닙니다.");
+    }
+    const errors = settingsErrors(raw);
+    if (errors.length > 0) return fail(400, errors);
+    const input = raw as AutoReplySettings;
+    autoReplySettings = {
+      enabled: input.enabled,
+      intents: {
+        STOCK: input.intents.STOCK,
+        BACKORDER: input.intents.BACKORDER,
+        RECEIVABLE: input.intents.RECEIVABLE,
+      },
+    };
+    await delay(CHAT_SEND_DELAY_MS);
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+
   http.get("*/api/wholesale/chat/rooms", ({ request }) => {
     const planned = plannedFailure("rooms");
     if (planned) return planned;
@@ -949,7 +1165,13 @@ export const chatHandlers = [
 
   /* --- 시험 손잡이 (목 전용, 스펙에 없음) ------------------------------- */
 
-  /** 소매 메시지 주입. `{body, count?}` → count개를 이어서 넣는다. e2e가 polling을 만드는 입구 */
+  /**
+   * 소매 메시지 주입. `{body, count?, intent?, contextListingId?}` → count개를 이어서 넣는다. e2e가 polling을 만드는 입구.
+   *
+   * `contextListingId`가 있으면(숫자 또는 null) 방 문맥을 그 값으로 바꾸고, 넣은 메시지에 **자동 답을 붙인다**
+   * (count 1일 때만, loop-05b S9-3 장면 5, 6). 없으면 예전처럼 메시지만 넣는다 — loop-04 e2e가 세는 메시지 수를
+   * 바꾸지 않으려고 자동 답을 켜는 쪽을 명시로 두었다
+   */
   http.post(
     "*/__mock/chat/rooms/:roomId/incoming",
     async ({ params, request }) => {
@@ -959,9 +1181,13 @@ export const chatHandlers = [
         body?: string;
         count?: number;
         intent?: ChatIntent;
+        contextListingId?: number | null;
       };
       const count = Math.max(1, Math.min(input.count ?? 1, 500));
       const base = input.body ?? "새 문의예요";
+      const generate = input.contextListingId !== undefined && count === 1;
+      if (input.contextListingId !== undefined)
+        setContext(r, input.contextListingId);
       const created: ChatMessage[] = [];
       for (let i = 1; i <= count; i++) {
         created.push(
@@ -982,6 +1208,9 @@ export const chatHandlers = [
           }),
         );
       }
+      const first = created[0];
+      if (generate && first !== undefined)
+        created.push(...runAutoReply(r, first));
       return HttpResponse.json({ data: created }, { status: 201 });
     },
   ),
@@ -1013,6 +1242,8 @@ export const chatHandlers = [
       },
     });
   }),
+
+  ...chatSharedKnobs,
 ];
 
 /** 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다 */
@@ -1033,6 +1264,11 @@ export function resetChatMock(keepRooms?: number) {
   seedIdempotency();
   failedOnceKeys.clear();
   failPlan.clear();
+  autoReplySettings = structuredClone(DEFAULT_AUTO_REPLY_SETTINGS);
+  // 방 1은 빈티지 플라워 셔츠(2001)에서 연 방이다. 문맥 시각은 reset 시각 — 시드 메시지 시각(10/28 고정)으로
+  // 박으면 늘 30분이 지나 시연 장면 2가 넘김으로 끝난다
+  const first = rooms.find((r) => r.roomId === 1);
+  if (first !== undefined) setContext(first, 2001);
 }
 
 resetChatMock();
@@ -1062,6 +1298,9 @@ export const chatStore = {
     return r;
   },
   append,
+  runAutoReply,
+  setContext,
+  catalog: chatCatalog,
   maxSequence,
   openHandoff,
   lastActivityAt,

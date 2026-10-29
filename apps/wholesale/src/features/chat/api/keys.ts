@@ -10,6 +10,8 @@ export const chatKeys = {
   rooms: () => [...chatKeys.all, "rooms"] as const,
   room: (roomId: number) => [...chatKeys.all, "room", roomId] as const,
   thread: (roomId: number) => [...chatKeys.all, "thread", roomId] as const,
+  /** 자동 답 설정(도매처 하나에 한 벌, `settings.ts`). 메시지 polling과 상관없다 */
+  autoReplySettings: () => [...chatKeys.all, "auto-reply-settings"] as const,
   /** 요청이 아니라 "세션이 끊겼다" 표시 한 칸(`session.ts`) */
   session: () => [...chatKeys.all, "session"] as const,
 };
