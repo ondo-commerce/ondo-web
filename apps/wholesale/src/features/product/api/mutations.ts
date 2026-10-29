@@ -5,6 +5,7 @@ import { apiFetch } from "@ondo/api";
 import { PRODUCT_PATH } from "./queries";
 import type {
   Listing,
+  ListingImageUpload,
   PostStatus,
   ProductCreateRequest,
   ProductDetail,
@@ -73,6 +74,39 @@ export function useDeleteProductMutation() {
       // 지운 상품의 상세는 다시 부르면 404다. 무효화가 아니라 제거
       queryClient.removeQueries({ queryKey: productKeys.detail(productId) });
       return queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+    },
+  });
+}
+
+/**
+ * 게시글 이미지 1장 업로드(#250). 응답 `url`을 `listing.images[]`에 그대로 싣는다 —
+ * 무효화할 쿼리가 없다. 게시글에 붙기 전까지 서버 상태가 바뀌지 않기 때문이다.
+ *
+ * multipart 파트명은 `file` 하나(계약 §5-2). `Content-Type`은 안 정한다 — boundary를
+ * 브라우저가 붙여야 해서 `apiFetch`가 `FormData`를 그대로 넘긴다.
+ * `idempotencyKey`는 슬롯당 하나로 재시도에도 같은 값(D23). 동시에 여러 번 불러도 된다 —
+ * `mutateAsync`마다 요청이 따로 나가고, 동시 수는 격자의 큐가 정한다.
+ *
+ * `meta.sessionLoss: "inline"` — 401이어도 전역 핸들러가 `/login`으로 보내지 않는다
+ * (`app/sessionLoss.ts`). 격자가 받아 큐를 멈추고 화면이 저장을 잠근다. 전체 이동이 먼저
+ * 터지면 이미 올라간 사진과 입력이 같이 사라진다(#252 S4-3).
+ */
+export function useUploadListingImageMutation() {
+  return useMutation({
+    meta: { sessionLoss: "inline" },
+    mutationFn: (input: {
+      file: File;
+      idempotencyKey: string;
+      signal?: AbortSignal;
+    }) => {
+      const body = new FormData();
+      body.append("file", input.file);
+      return apiFetch<ListingImageUpload>(PRODUCT_PATH.listingImages, {
+        method: "POST",
+        body,
+        idempotencyKey: input.idempotencyKey,
+        signal: input.signal,
+      });
     },
   });
 }

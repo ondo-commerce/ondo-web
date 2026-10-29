@@ -1,5 +1,6 @@
 import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import type { InquiryListing } from "../chat/inquiry";
 import {
   IMAGE_MAGIC_LENGTH,
   IMAGE_MAX_BYTES,
@@ -507,12 +508,22 @@ declare global {
      * URL이 그대로 실렸는지 확인하는 유일한 창이다 — 브라우저 MSW라 `page.request`로는 못 본다.
      */
     __lastProductRequest?: unknown;
+    /**
+     * `POST /listing-images`가 불린 횟수. e2e(S2-7 "요청 0건"·S2-13·S2-14 "요청 수 2")가
+     * 세는 창 — 서비스 워커가 삼킨 요청은 Playwright의 request 이벤트로 못 센다.
+     */
+    __listingImageRequests?: number;
   }
 }
 
 function recordLastProductRequest(body: unknown) {
   // 핸들러는 브라우저 메인 스레드에서 돈다. 서버(RSC)에서 목을 쓰게 되면 `window`가 없다
   if (typeof window !== "undefined") window.__lastProductRequest = body;
+}
+
+function countListingImageRequest() {
+  if (typeof window !== "undefined")
+    window.__listingImageRequests = (window.__listingImageRequests ?? 0) + 1;
 }
 
 /** `[fail400once]` — 그 제목의 첫 저장만 400. 두 번째부터는 통과 */
@@ -539,6 +550,36 @@ export function findMockVariant(variantId: number): MockVariant | null {
 
 export function findMockProduct(productId: number) {
   return products.find((p) => p.id === productId) ?? null;
+}
+
+/**
+ * 채팅 자동 답(`../chat/inquiry.ts`)이 읽는 게시글 하나. **읽기만 한다** — 채팅은 재고를 바꾸지 않는다.
+ * 판매가능은 상세와 같은 식(현재고 − 주문처리중 − 미송, 음수 그대로). 옵션은 등록 순서(variantNumber)다 —
+ * 상세는 색상 마스터 id 순이라 네이비(11)가 레드(17)보다 앞이지만 되묻기 보기는 등록 순서를 따른다.
+ * 시드 variant는 전부 `listing_variant`에 있어서 게시 옵션 = 그 상품 옵션 전부다.
+ */
+export function chatStockListing(listingId: number): InquiryListing | null {
+  const listing = listings.find((l) => l.id === listingId);
+  const product =
+    listing === undefined ? null : findMockProduct(listing.productId);
+  if (listing === undefined || product === null) return null;
+  return {
+    listingId: listing.id,
+    wholesalerId: product.wholesalerId,
+    title: listing.title,
+    published: listing.status === "ON_SALE",
+    variants: variants
+      .filter((v) => v.productId === product.id)
+      .sort((a, b) => a.variantNumber - b.variantNumber)
+      .map((v) => ({
+        variantId: v.id,
+        color: colorOf(v.colorId).name,
+        size: v.size,
+        availableQty: v.stockQty - v.allocatedQty - v.backorderQty,
+        orderLimit: v.orderLimit,
+        published: true,
+      })),
+  };
 }
 
 /* --- 응답 조립 ------------------------------------------------------------ */
@@ -913,7 +954,17 @@ export const productHandlers = [
    * 것을 revoke 해도 이 URL은 살아 있다(실서버 URL이 그런 것처럼).
    */
   http.post("*/api/wholesale/listing-images", async ({ request }) => {
-    const parts = (await request.formData()).getAll("file");
+    countListingImageRequest();
+    // multipart 가 아니거나 boundary 가 없으면 formData() 가 던진다. 그것도 "파일 파트를 읽을
+    // 수 없는 요청"이라 계약의 400 이지, MSW 가 대신 내는 500 이 아니다(F2)
+    let parts: FormDataEntryValue[];
+    try {
+      parts = (await request.formData()).getAll("file");
+    } catch {
+      return validationFailed([
+        { field: "file", reason: "multipart/form-data 본문이 아닙니다." },
+      ]);
+    }
     if (parts.length === 0)
       return validationFailed([
         { field: "file", reason: "file 파트가 없습니다." },
