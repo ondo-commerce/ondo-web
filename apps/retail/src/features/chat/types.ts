@@ -16,6 +16,19 @@ export type ChatInquiry = RetailSchema<"ChatInquiry">;
 /** 되묻기 보기 하나. `choices`는 초안 칸이라 생성 타입에서 `?: … | null`이다(02-dev §4 판단 1) */
 export type ChatChoice = RetailSchema<"ChatChoice">;
 export type StockBand = RetailSchema<"StockBand">;
+/** 목록 행 하나(`GET /rooms`). 06a부터 소매 화면이 부른다 */
+export type ChatRoomSummary = RetailSchema<"ChatRoomSummary">;
+export type CursorPageMeta = RetailSchema<"CursorPageMeta">;
+/** 읽음 응답. 서버가 `max(기존, 요청)`으로 저장해 돌려준 위치와 남은 수 */
+export type ChatReadResult = RetailSchema<"ChatReadResult">;
+/** 헤더 배지 둘(초안 op `notificationUnreadCount`, #298). 06a 화면은 `chats`만 그린다 */
+export type RetailUnreadCount = RetailSchema<"RetailUnreadCount">;
+
+/** `GET /rooms` 한 장. 커서 봉투라 `apiFetchBody`로 통째로 받는다 */
+export interface ChatRoomPage {
+  data: ChatRoomSummary[];
+  meta: CursorPageMeta;
+}
 
 /** `GET /rooms/{id}/messages` 한 번의 응답. `meta.hasMore`가 "바로 이어 받을지"를 말한다 */
 export interface ChatMessagePage {
@@ -66,8 +79,61 @@ export type ThreadItem =
 /** 방 머리의 돌아가기 링크. 하나뿐이다(디자인 결정 14) */
 export interface ReturnLink {
   href: string;
-  /** `product` → `‹ 상품으로 돌아가기`, `wholesaler` → `도매처 홈 ›` */
-  kind: "product" | "wholesaler";
+  /** `product` → `‹ 상품으로 돌아가기`, `wholesaler` → `도매처 홈 ›`, `chats` → `‹ 채팅 목록` */
+  kind: "product" | "wholesaler" | "chats";
+}
+
+/* ------------------------------------------------------------------------
+ * 헤더 count와 목록(loop-06 S2)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 헤더 count 쿼리의 값. **실패도 값이다** — queryFn이 던지지 않는다(도매 `HeaderCounts`와 같은 이유).
+ * 던지면 401이 소매 전역 QueryCache를 지나 `/login` 전체 이동이 된다(`providers.tsx`, 쓰던 글이 사라진다).
+ * 그리고 TanStack의 실패 횟수는 요청마다 0으로 돌아가 "연속 몇 번 실패"를 셀 수 없다.
+ */
+export type HeaderCounts =
+  | {
+      kind: "ok";
+      /** 내 방 안 읽은 메시지 합. 채팅 링크 배지 */
+      chats: number;
+    }
+  /** 401, 403. 배지 없이 멈춘다. 다시 도는 건 새로고침이나 로그인 뒤(§4-1 3) */
+  | { kind: "stopped" }
+  /** 404, 500, 연결 실패. 배지 없이 간격만 늘린다. `failures`는 연속 실패 수(1부터) */
+  | { kind: "failed"; failures: number };
+
+/** 헤더 아이콘 하나의 그리기 값. 배지 글자와 접근 이름이 같은 숫자에서 나온다 */
+export interface BadgeView {
+  /** 접근 이름("채팅, 안 읽은 메시지 3개"). 숫자는 여기에만 한 번 */
+  label: string;
+  /** 배지 글자("3", "99+"). 없으면 배지를 안 그린다 */
+  badge: string | null;
+}
+
+/** `/chats` 행 하나 */
+export interface ChatRoomRowView {
+  roomId: number;
+  href: string;
+  name: string;
+  preview: string;
+  /** `14:18`, `어제`, `10/25` */
+  time: string;
+  /** 알약 글자. 0이면 null */
+  unreadLabel: string | null;
+  unreadCount: number;
+}
+
+/** 읽음을 지금 보낼지 정하는 입력(`nextReadTarget`) */
+export interface ReadState {
+  /** 화면에 그린 가장 큰 sequence */
+  drawn: number;
+  /** 서버가 확인해 준 위치 */
+  confirmed: number;
+  /** 응답을 기다리는 위치. 없으면 0 */
+  inFlight: number;
+  visible: boolean;
+  sessionLost: boolean;
 }
 
 /**

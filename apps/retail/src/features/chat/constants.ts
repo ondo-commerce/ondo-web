@@ -21,6 +21,8 @@ export const ROOM_POLL_JITTER = 0.2;
 export const RETURN_PATH_PATTERN = {
   product: /^\/products\/\d+$/,
   wholesaler: /^\/wholesalers\/\d+$/,
+  /** 채팅 목록에서 연 방(loop-06 S2-4). 목록은 쿼리 없이 이 주소 하나다 */
+  chats: /^\/chats$/,
 } as const;
 
 /**
@@ -70,6 +72,55 @@ export const ROOM_TEXT = {
   loading: "불러오는 중",
   backToProduct: "상품으로 돌아가기",
   wholesalerHome: "도매처 홈",
+  /** `from=/chats`로 연 방의 돌아가기(디자인 결정 36) */
+  backToList: "채팅 목록",
+} as const;
+
+/* ------------------------------------------------------------------------
+ * 헤더 채팅 링크와 `/chats` 목록(loop-06 S2)
+ * ------------------------------------------------------------------------ */
+
+/** 채팅 목록 주소. 헤더 링크가 가는 곳이고, 그 목록에서 연 방의 `?from=` 값이다 */
+export const CHATS_HREF = "/chats";
+
+/**
+ * 헤더 count 주기(D36③). 활성 탭당 분당 2회라 열린 방 polling(3초)보다 훨씬 적다.
+ * 도매 `features/notification/constants.ts`와 같은 값이다(앱 사이 import 금지라 다시 적는다).
+ */
+export const HEADER_POLL_MS = 30_000;
+
+/**
+ * 연속 실패 뒤 다음 간격. 1번째 실패 뒤 60초, 2번째 120초, 3번째부터 300초(§4-1 3).
+ * BE에 `unread-count`가 아직 없어 실서버는 404를 계속 준다 — 셸 14화면이 30초마다 두드리지 않게 늘린다.
+ */
+export const HEADER_BACKOFF_MS = [60_000, 120_000, 300_000] as const;
+
+/** 이 수부터 배지가 "99+"다. 아이콘 폭(32)을 넘지 않게 */
+export const BADGE_MAX = 99;
+
+/** `/chats` 첫 장. 06a는 이 한 장만 받는다(`더 보기`는 06b) */
+export const ROOM_LIST_SIZE = 30;
+
+/** 헤더 링크 글자. 숫자는 접근 이름에만 한 번 있다(배지 글자는 `aria-hidden`) */
+export const NAV_TEXT = {
+  label: "채팅",
+  unreadLabel: (n: number) => `채팅, 안 읽은 메시지 ${n}개`,
+} as const;
+
+/** `/chats` 글자. 와이어프레임 `18_retail-chat` `#state-chat-list` `#state-empty` `#state-error` 그대로 */
+export const LIST_TEXT = {
+  title: "채팅",
+  label: "대화 목록",
+  emptyTitle: "아직 대화가 없어요",
+  emptyDetail: "상품 화면에서 문의하면 여기에 쌓여요",
+  loadFailed: "대화 목록을 불러오지 못했어요",
+  loadFailedDetail: "잠시 뒤 다시 시도해 주세요.",
+  retry: "다시 시도",
+  loading: "불러오는 중",
+  /** 첫 장 뒤에 더 있을 때 끝 줄. 버튼은 없다(06b) */
+  firstPageOnly: `최근 대화 ${ROOM_LIST_SIZE}개만 보여요`,
+  yesterday: "어제",
+  unreadSr: (n: number) => `, 안 읽은 메시지 ${n}개`,
 } as const;
 
 /**

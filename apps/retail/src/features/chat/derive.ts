@@ -1,11 +1,17 @@
 import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import {
+  BADGE_MAX,
   BODY_COUNTER_FROM,
   BODY_MAX,
   CHAT_TIME_ZONE,
+  CHATS_HREF,
   CLARIFY_WINDOW_MS,
   ENTRY_TEXT,
+  HEADER_BACKOFF_MS,
+  HEADER_POLL_MS,
   IDEMPOTENCY_KEY_REUSED,
+  LIST_TEXT,
+  NAV_TEXT,
   PENDING_TEXT,
   RETURN_PATH_PATTERN,
   ROOM_POLL_BACKOFF_MAX_MS,
@@ -17,15 +23,21 @@ import {
   WEEKDAY_LABEL,
 } from "./constants";
 import type {
+  BadgeView,
   BubbleKind,
   CardQtyCheck,
   ChatChoice,
   ChatInquiry,
   ChatMessage,
+  ChatReadResult,
+  ChatRoomRowView,
+  ChatRoomSummary,
   ChatThread,
   ClarifyView,
   ComposerCheck,
+  HeaderCounts,
   PendingMessage,
+  ReadState,
   ReturnLink,
   SendFailure,
   StockCardView,
@@ -136,6 +148,8 @@ function returnPathOf(path: string | null | undefined): ReturnLink | null {
     return { href: path, kind: "product" };
   if (RETURN_PATH_PATTERN.wholesaler.test(path))
     return { href: path, kind: "wholesaler" };
+  if (RETURN_PATH_PATTERN.chats.test(path))
+    return { href: path, kind: "chats" };
   return null;
 }
 
@@ -152,7 +166,8 @@ export function chatRoomHref(roomId: number, from: string | null): string {
 
 /**
  * 방 머리의 돌아가기 링크 하나(S5-13). `from`이 `/products/숫자`면 그 상품으로, `/wholesalers/숫자`면 그
- * 도매처 홈으로. 없거나 다른 값(`https://x.test`, `//x.test`)은 버리고 상대 도매처 홈.
+ * 도매처 홈으로, `/chats`면 채팅 목록으로(loop-06 S2-4). 없거나 다른 값(`https://x.test`, `//x.test`,
+ * `/chats?x=1`)은 버리고 상대 도매처 홈.
  */
 export function returnLinkOf(
   from: string | null,
@@ -415,6 +430,143 @@ export function pollDelayMs(failures: number, random: number): number {
   );
   const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
   return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
+}
+
+/* ------------------------------------------------------------------------
+ * 헤더 채팅 링크(loop-06 S2). 규칙은 도매 `features/notification/derive.ts`와 같다 — 앱 사이 import가
+ * 금지라 복제했고, 같은 이름(`headerBackoffMs`)과 같은 경계값 테스트를 쓴다
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 채팅 링크의 이름과 배지(S2-2). 0이거나 count를 모르면(실패, 401, 403) 배지 없이 이름은 "채팅".
+ * 이름에는 실제 수 그대로, 배지만 "99+"로 줄인다.
+ */
+export function chatBadgeLabel(counts: HeaderCounts | undefined): BadgeView {
+  const n = counts?.kind === "ok" ? counts.chats : 0;
+  if (n <= 0) return { label: NAV_TEXT.label, badge: null };
+  return {
+    label: NAV_TEXT.unreadLabel(n),
+    badge: n > BADGE_MAX ? `${BADGE_MAX}+` : String(n),
+  };
+}
+
+/** 연속 실패 n번 뒤 다음 간격. 0이면 평소 30초, 1 → 60초, 2 → 120초, 3 이상 → 300초 */
+export function headerBackoffMs(failures: number): number {
+  if (failures <= 0) return HEADER_POLL_MS;
+  const index = Math.min(failures, HEADER_BACKOFF_MS.length) - 1;
+  return HEADER_BACKOFF_MS[index] ?? HEADER_POLL_MS;
+}
+
+/** count 쿼리의 다음 간격. 401, 403이면 멈춘다(false) */
+export function headerPollDelayMs(
+  counts: HeaderCounts | undefined,
+): number | false {
+  if (counts === undefined || counts.kind === "ok") return HEADER_POLL_MS;
+  if (counts.kind === "stopped") return false;
+  return headerBackoffMs(counts.failures);
+}
+
+/** 실패 하나를 더한 값. 직전이 성공이었거나 처음이면 1부터 센다 */
+export function failedCounts(prev: HeaderCounts | undefined): HeaderCounts {
+  return {
+    kind: "failed",
+    failures: prev?.kind === "failed" ? prev.failures + 1 : 1,
+  };
+}
+
+/**
+ * 이 count 응답을 버려야 하나(S2-6 나). count마다 시작 순번(`started`)을 달고, 읽음이 성공할 때 그때까지
+ * 나간 마지막 순번을 울타리(`fence`)로 세운다. 울타리 안쪽에서 시작한 응답은 읽기 **전** 숫자를 들고 오므로
+ * 늦게 도착하면 방금 사라진 배지를 되살린다. 같은 순번도 버린다 — 읽음과 같은 틱에 떠난 count다.
+ */
+export function isStaleCount(started: number, fence: number): boolean {
+  return started <= fence;
+}
+
+/* ------------------------------------------------------------------------
+ * 방 읽음(loop-06 S2-5, S2-6 가)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 지금 읽음을 보낼 위치. 보낼 게 없으면 null. 도매 `ChatRoomPanel`의 읽음 규칙과 같다.
+ * - 탭이 안 보이면 보내지 않는다 — 사장이 못 본 걸 읽었다고 하지 않는다. 다시 보이는 순간 평가한다
+ * - 세션이 끊겼으면 보내지 않는다(05a 끊김 상태, 요청 0)
+ * - 그린 위치가 확인된 위치 이하이거나, 같은 위치가 이미 날아가는 중이면 보내지 않는다 — 응답 전에 다시
+ *   그려져도 POST는 1회다. 날아가는 중인 위치보다 **큰** 것이 새로 그려지면 바로 보낸다(10 응답 전 12)
+ */
+export function nextReadTarget(state: ReadState): number | null {
+  if (!state.visible || state.sessionLost) return null;
+  if (state.drawn <= state.confirmed || state.drawn <= state.inFlight)
+    return null;
+  return state.drawn;
+}
+
+/**
+ * 읽음 응답을 받은 뒤 아는 위치. 서버는 `max(기존, 요청)`을 돌려주지만 응답은 순서대로 오지 않는다 —
+ * 10 요청의 응답이 12 응답 뒤에 늦게 오면 그 값(10)은 버린다(올라가기만 한다).
+ */
+export function confirmedReadOf(
+  confirmed: number,
+  result: Pick<ChatReadResult, "lastReadSequence">,
+): number {
+  return Math.max(confirmed, result.lastReadSequence);
+}
+
+/* ------------------------------------------------------------------------
+ * `/chats` 목록(loop-06 S2-4)
+ * ------------------------------------------------------------------------ */
+
+/** 서울 달력 날짜 번호. 날짜끼리 하루 차이를 센다(UTC 자정 기준 일 수) */
+function seoulDayNumber(ms: number): number {
+  const p = seoulParts(ms);
+  return Math.floor(Date.UTC(p.year, p.month - 1, p.day) / 86_400_000);
+}
+
+/**
+ * 목록 행 시각(와이어프레임 `#state-chat-list`). 오늘이면 `HH:mm`, 어제면 `어제`, 올해면 `M/D`,
+ * 그 전이면 `YY.M.D`(서울 달력). 도매 `formatListTime`에 `어제`만 더했다 — 와이어프레임이 그렇게 그렸다.
+ * `nowMs`는 부르는 쪽이 준다(테스트가 날짜에 묶이지 않게).
+ */
+export function formatListTime(iso: string, nowMs: number): string {
+  const ms = Date.parse(iso);
+  const at = seoulParts(ms);
+  const days = seoulDayNumber(nowMs) - seoulDayNumber(ms);
+  if (days <= 0) return `${pad2(at.hour)}:${pad2(at.minute)}`;
+  if (days === 1) return LIST_TEXT.yesterday;
+  if (at.year === seoulParts(nowMs).year) return `${at.month}/${at.day}`;
+  return `${String(at.year % 100).padStart(2, "0")}.${at.month}.${at.day}`;
+}
+
+/** 안 읽은 수 알약 글자. 0이면 null(알약을 안 그린다) */
+export function formatUnread(count: number): string | null {
+  if (count <= 0) return null;
+  return count > BADGE_MAX ? `${BADGE_MAX}+` : String(count);
+}
+
+/**
+ * wire → 행. 행을 누르면 `?from=/chats`로 연다 — 방 머리 돌아가기가 목록으로 온다(디자인 결정 36).
+ * 같은 방이 두 번 오면 앞 것만(첫 장 안에서도 서버가 겹쳐 줄 수 있다고 본다).
+ */
+export function toRoomRows(
+  rooms: readonly ChatRoomSummary[],
+  nowMs: number,
+): ChatRoomRowView[] {
+  const seen = new Set<number>();
+  const rows: ChatRoomRowView[] = [];
+  for (const room of rooms) {
+    if (seen.has(room.roomId)) continue;
+    seen.add(room.roomId);
+    rows.push({
+      roomId: room.roomId,
+      href: chatRoomHref(room.roomId, CHATS_HREF),
+      name: room.counterpart.name,
+      preview: room.lastMessage?.preview ?? "",
+      time: formatListTime(room.lastActivityAt, nowMs),
+      unreadLabel: formatUnread(room.unreadCount),
+      unreadCount: room.unreadCount,
+    });
+  }
+  return rows;
 }
 
 /* ------------------------------------------------------------------------
