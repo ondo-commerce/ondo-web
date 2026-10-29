@@ -150,6 +150,10 @@ export interface FactsView {
    * 근거 칸 끝 줄. 모든 자동 답에 "HH:mm 조회"(F12, S7-13). 재고 답만 앞에 "소매처에게는 …으로 보였어요."
    */
   seen: string;
+  /** `lines`와 같은 순서의 `data-ac`. 미결제 줄만 "S3-3"(QA F1), 나머지 null */
+  lineAc: (string | null)[];
+  /** 끝 줄 `data-ac`. "S7-13 S3-5", 미수 답이면 "S7-13 S3-5 S3-3"(와이어프레임 17 `.seen`, QA F1) */
+  seenAc: string;
 }
 
 /**

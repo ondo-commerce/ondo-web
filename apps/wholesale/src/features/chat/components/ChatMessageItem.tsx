@@ -30,7 +30,7 @@ export function ChatMessageItem({
   counterpartName: string;
   /** 와이어프레임 `data-ac`. polling으로 새로 붙은 말풍선은 S3-3 S3-4가 더 붙는다(QA F7) */
   ac?: string;
-  /** 조회 시각이 오늘인지 가르는 지금 시각(#302 S3-5). 방이 polling 응답 시각을 넘긴다 */
+  /** 조회 시각이 오늘인지 가르는 지금 시각(#302 S3-5). 방이 1분 tick 시각을 넘긴다(리뷰 M4) */
   nowMs: number;
 }) {
   const kind = bubbleKindOf(message);
@@ -269,8 +269,11 @@ function AutoReplyBubble({
       ) : null}
       {facts ? (
         <span className="border-border text-secondary-foreground text-body grid gap-0.5 border-t pt-2">
-          {facts.lines.map((line) => (
-            <span key={factLineText(line)}>
+          {facts.lines.map((line, n) => (
+            <span
+              key={factLineText(line)}
+              data-ac={facts.lineAc[n] ?? undefined}
+            >
               {line.map((part, i) =>
                 part.strong ? (
                   <b
@@ -285,7 +288,10 @@ function AutoReplyBubble({
               )}
             </span>
           ))}
-          <span data-ac="S7-13" className="text-muted-foreground text-xs">
+          <span
+            data-ac={facts.seenAc}
+            className="text-muted-foreground text-xs"
+          >
             {facts.seen}
           </span>
         </span>

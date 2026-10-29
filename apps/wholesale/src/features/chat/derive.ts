@@ -342,7 +342,10 @@ export function toClarifyChoicesView(
  *
  * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
  * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
- * 오늘이 아니면 날짜가 붙는다(`checkedLabel`, #302 S3-5). `nowMs`는 방이 polling 응답마다 갱신하는 시각이다.
+ * 오늘이 아니면 날짜가 붙는다(`checkedLabel`, #302 S3-5). `nowMs`는 방이 1분마다 갱신하는 지금 시각이다(리뷰 M4).
+ *
+ * `data-ac`도 여기서 정한다(QA F1). 끝 줄은 loop-04 번호 S7-13에 07 번호 S3-5, 미수 답이면 S3-3이 더 붙는다
+ * (와이어프레임 17 `#state-rc-latest` `.seen data-ac="S3-5 S3-3"`). 값 줄은 미결제 줄만 S3-3이다.
  */
 export function toFactsView(
   autoReply: ChatAutoReply | null,
@@ -351,6 +354,7 @@ export function toFactsView(
   if (autoReply === null) return null;
   const { stock, backorder, receivable } = autoReply.facts;
   const lines: FactLine[] = [];
+  const lineAc: (string | null)[] = [];
   const checked = checkedLabel(autoReply.checkedAt, nowMs);
   let seen = checked;
   // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
@@ -370,6 +374,7 @@ export function toFactsView(
             value(`${formatNumber(stock.orderLimit)}장`),
           ],
     );
+    lineAc.push(null);
     seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
   }
   if (backorder !== null) {
@@ -379,6 +384,7 @@ export function toFactsView(
         ? [...qty, label(", 입고일 미정")]
         : [...qty, label(", 입고 예정 "), value(backorder.expectedInboundDate)],
     );
+    lineAc.push(null);
   }
   if (receivable !== null) {
     lines.push([
@@ -387,6 +393,7 @@ export function toFactsView(
       label(", 선수금 "),
       value(`${formatNumber(receivable.prepaidAmount)}원`),
     ]);
+    lineAc.push("S3-3");
     const { count, amount, maxDaysOverdue } = receivable.overdue;
     lines.push(
       count === 0
@@ -397,8 +404,10 @@ export function toFactsView(
             label(` (최대 ${maxDaysOverdue}일)`),
           ],
     );
+    lineAc.push(null);
   }
-  return { lines, seen };
+  const seenAc = receivable === null ? "S7-13 S3-5" : "S7-13 S3-5 S3-3";
+  return { lines, lineAc, seen, seenAc };
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   chatLink,
   count,
   requests,
+  settled,
   waitCount,
 } from "../loop-05b2-notify-read/helpers";
 import {
@@ -11,6 +12,7 @@ import {
   installClock,
   log,
   login,
+  MESSAGES_GET,
   roomList,
   row,
   SEND_POST,
@@ -143,9 +145,9 @@ function bubble(page: Page, sequence: number | undefined): Locator {
   return log(page).locator(`[data-sequence="${sequence}"]`);
 }
 
-/** 근거 칸 끝 조회 시각 줄 */
+/** 근거 칸 끝 조회 시각 줄. 와이어프레임 07 `.seen data-ac="S3-5 S3-3"`(QA F1) — loop-04 번호 S7-13과 같은 요소 */
 function seenLine(bubble: Locator): Locator {
-  return bubble.locator('[data-ac="S7-13"]');
+  return bubble.locator('[data-ac~="S3-5"]');
 }
 
 function handoffNotes(page: Page): Locator {
@@ -164,22 +166,36 @@ function needsReplyBadge(page: Page): Locator {
     .getByText("답 필요", { exact: true });
 }
 
-/** 헤더 채팅 링크 이름의 답 필요 방 수("채팅, 답 필요 N건", 0이면 숫자 없음) */
-async function chatNeeds(page: Page): Promise<number> {
-  const label = (await chatLink(page).getAttribute("aria-label")) ?? "";
-  return Number(/답 필요 (\d+)건/.exec(label)?.[1] ?? 0);
+/** 채팅 링크 이름(`features/notification/derive` 규칙): 0이면 숫자 없이 "채팅" */
+function chatLabel(n: number): string {
+  return n > 0 ? `채팅, 답 필요 ${n}건` : "채팅";
 }
 
-/** 다음 30초 count를 밀고 응답까지 */
-async function nextPoll(page: Page): Promise<void> {
-  const before = await count(page, COUNT_GET);
-  await page.clock.fastForward(30_000);
-  await waitCount(page, COUNT_GET, before + 1);
+/**
+ * 다음 30초 count를 밀고, 그 응답의 `chatsNeedingReply`가 헤더 이름에 **그려질 때까지** 기다린 뒤 그 수를 돌려준다.
+ *
+ * QA F2: 응답 settle만 기다리고 바로 aria-label을 읽으면, 부하가 있을 때 React가 다시 그리기 전 값(첫 자동 답
+ * 전 3건)을 읽었다. 그래서 기준을 응답 본문에서 잡고 화면이 그 값이 되는 것을 확인한다.
+ * 앞서 날아간 count가 다 끝난 뒤에 응답 대기를 건다 — 밀기 전 요청의 응답(옛 값)을 잡지 않게.
+ */
+async function nextPoll(page: Page): Promise<number> {
   await expect
     .poll(async () =>
       (await requests(page, COUNT_GET)).every((r) => r.status !== null),
     )
     .toBe(true);
+  const before = await count(page, COUNT_GET);
+  const response = page.waitForResponse(
+    (r) => COUNT_GET.path.test(r.url()) && r.request().method() === "GET",
+  );
+  await page.clock.fastForward(30_000);
+  await waitCount(page, COUNT_GET, before + 1);
+  const body = (await (await response).json()) as {
+    data: { chatsNeedingReply: number };
+  };
+  const n = body.data.chatsNeedingReply;
+  await expect(chatLink(page)).toHaveAccessibleName(chatLabel(n));
+  return n;
 }
 
 /** 헤더 채팅 → 방 1. 클라이언트 이동 */
@@ -296,8 +312,7 @@ test("S3-2 장면 3 도매 절반: 미수 답 → 협상 넘김(답 필요, 배�
   await expect(seenLine(firstReply)).toHaveText("14:20 조회");
   /* 시드의 마지막 소매 말에 자동 답이 붙어 방 1은 답 필요가 아니다 — 여기서 배지 기준을 잡는다 */
   await expect(needsReplyBadge(page)).toHaveCount(0);
-  await nextPoll(page);
-  const before = await chatNeeds(page);
+  const before = await nextPoll(page);
 
   /* 2. 협상 → 넘김 줄 + NEGOTIATION 이유, 답 필요, 30초 뒤 배지 +1 */
   const discount = await inject(page, DISCOUNT);
@@ -396,6 +411,11 @@ test("S3-3 최신 금액: 37,500 14:20 조회 → 14:25 정산 탭 입금 50,000
   await expect(reply).toContainText("미결제 0원, 선수금 12,500원");
   await expect(reply).toContainText("연체 없음");
   await expect(seenLine(reply)).toHaveText("14:25 조회");
+  /* 와이어프레임 07 `#state-rc-latest` 번호(QA F1): 미결제 줄 S3-3, 조회 시각 S3-5 S3-3 */
+  await expect(reply.locator('[data-ac="S3-3"]')).toHaveText(
+    "미결제 0원, 선수금 12,500원",
+  );
+  await expect(seenLine(reply)).toHaveAttribute("data-ac", "S7-13 S3-5 S3-3");
   await expect(reply).not.toContainText("37,500");
   /* 앞 답은 그대로 둔다 — 그때 본 값이다 */
   await expect(seenLine(firstReply)).toHaveText("14:20 조회");
@@ -433,7 +453,30 @@ test("S3-5 다음 날 09:00 이 되면 같은 근거 줄이 '10/29 14:20 조회'
   const reply = bubble(page, line?.sequence ?? undefined);
   await expect(seenLine(reply)).toHaveText("14:20 조회");
   await page.clock.setSystemTime(new Date("2026-10-30T09:00:00+09:00"));
-  /* 방이 다음 polling 응답 시각으로 다시 그린다 */
+  /* 방의 1분 tick(리뷰 M4)이 지금 시각으로 다시 그린다 */
+  await page.clock.fastForward(60_000);
   await expect(seenLine(reply)).toHaveText("10/29 14:20 조회");
   await expect(reply).toContainText("미결제 37,500원, 선수금 0원");
+});
+
+test("S3-5 자정을 넘긴 뒤 polling 응답이 없어도(오프라인) 1분 안에 '10/29 14:20 조회' — 기준이 마지막 응답 시각이 아니라 지금 시각(리뷰 M4)", async ({
+  page,
+  context,
+}) => {
+  const asked = await inject(page, ASK);
+  const [line] = await waitLinesAfter(page, asked.source, 1);
+  const reply = bubble(page, line?.sequence ?? undefined);
+  await expect(seenLine(reply)).toHaveText("14:20 조회");
+
+  /* 날아가는 메시지 요청을 다 받은 뒤 끊는다 — 끊긴 뒤 도착한 응답이 기준 시각을 옮기면 이 테스트가 뜻을 잃는다 */
+  await settled(page, MESSAGES_GET);
+  await context.setOffline(true);
+  const before = await count(page, MESSAGES_GET);
+
+  await page.clock.setSystemTime(new Date("2026-10-30T00:00:30+09:00"));
+  await page.clock.fastForward(60_000);
+  await expect(seenLine(reply)).toHaveText("10/29 14:20 조회");
+  /* 그 사이 메시지 요청 0 — 날짜는 polling 응답이 아니라 tick이 붙였다 */
+  expect(await count(page, MESSAGES_GET)).toBe(before);
+  await context.setOffline(false);
 });

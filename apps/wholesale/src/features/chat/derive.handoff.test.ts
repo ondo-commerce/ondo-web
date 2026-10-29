@@ -152,6 +152,9 @@ describe("S3-5 근거 줄 조회 시각", () => {
     );
     expect(nextDay?.lines).toEqual(today?.lines);
     expect(nextDay?.seen).toBe("10/29 14:20 조회");
+    // 와이어프레임 17 `#state-rc-latest` 번호(QA F1): 미결제 줄만 S3-3, 끝 줄 S3-5 S3-3(loop-04 S7-13 유지)
+    expect(today?.lineAc).toEqual(["S3-3", null]);
+    expect(today?.seenAc).toBe("S7-13 S3-5 S3-3");
   });
 
   it("재고 근거의 앞말도 그대로 두고 시각만 날짜가 붙는다", () => {
@@ -178,5 +181,8 @@ describe("S3-5 근거 줄 조회 시각", () => {
     expect(view?.seen).toBe(
       '소매처에게는 "10~49장"으로 보였어요. 10/28 09:22 조회',
     );
+    // 재고 답은 미수 번호(S3-3)가 없다 — `#state-rc-seen-date` 재고 줄 `.seen data-ac="S3-5"`
+    expect(view?.lineAc).toEqual([null]);
+    expect(view?.seenAc).toBe("S7-13 S3-5");
   });
 });
