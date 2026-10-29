@@ -302,6 +302,9 @@ test.describe("S5-5 S5-6 방 화면", () => {
   test("S5-6 AUTO_REPLY, CLARIFY는 왼쪽에 자동 답변 + HH:mm 조회, 근거 칸과 칩 없음", async ({
     page,
   }) => {
+    /* 시드 날(10/28)에 연다. loop-07부터 오늘이 아닌 답은 `10/28 09:20 조회`로 날짜가 붙는다(Q4) — 실행 날짜에
+       흔들리지 않게 시드와 같은 날로 고정한다. 날짜 붙은 표기는 loop-07 S2-5가 본다 */
+    await page.clock.install({ time: new Date("2026-10-28T10:00:00+09:00") });
     await openRoom(page, "/chats/1");
     const autos = bubbles(page).and(
       page.locator('[data-kind="AUTO_REPLY"], [data-kind="CLARIFY"]'),

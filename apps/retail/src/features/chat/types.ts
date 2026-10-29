@@ -212,6 +212,20 @@ export interface BackorderCardView {
   reason: string | null;
 }
 
+/** 카드 한 줄의 조각. `strong`만 굵게(금액, 건수) */
+export interface TextPart {
+  text: string;
+  strong: boolean;
+}
+
+/** 미수 자동 답(AUTO_REPLY, RECEIVABLE)의 카드 칸(loop-07 S2). 담기 없음, 경고 색 없음 */
+export interface ReceivableCardView {
+  /** 줄 목록. 갚을 돈 / 기한(갚을 돈 > 0일 때만) / 선수금(> 0일 때만) */
+  lines: TextPart[][];
+  /** `/settlements?wholesaler=101` */
+  settlementHref: string;
+}
+
 /** 재고 자동 답(AUTO_REPLY, STOCK)의 카드 칸. 소매엔 정확 수량이 없다(D31②) */
 export interface StockCardView {
   variantId: number;

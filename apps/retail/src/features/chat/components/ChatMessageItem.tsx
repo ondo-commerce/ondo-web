@@ -27,11 +27,14 @@ const BUBBLE_WIDTH = "max-w-7/10 phone:max-w-17/20";
 export function ChatMessageItem({
   message,
   counterpartName,
+  now,
   ac,
   extra = null,
 }: {
   message: ChatMessage;
   counterpartName: string;
+  /** 방의 지금 시각(ms). 조회 시각이 오늘인지 가른다(`checkedLabel`) */
+  now: number;
   /** 와이어프레임 `data-ac`(`messageAc`) */
   ac: string;
   /**
@@ -77,7 +80,9 @@ export function ChatMessageItem({
     >
       <span className="sr-only">{`${who}, ${time}: `}</span>
       {kind === "auto" ? (
-        <AutoReplyBubble message={message}>{extra}</AutoReplyBubble>
+        <AutoReplyBubble message={message} now={now}>
+          {extra}
+        </AutoReplyBubble>
       ) : (
         <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
       )}
@@ -195,16 +200,19 @@ function Bubble({
 /**
  * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 칩 + 본문 + (칩 줄 또는 카드) +
  * `HH:mm 조회`(05a 디자인 결정 7, 05b 결정 18). 소매 응답엔 정확 수량이 없다(D31②). 모든 자동 답에 조회
- * 시각을 단다(F12, S7-13).
+ * 시각을 단다(F12, S7-13). 오늘이 아닌 답은 `10/28 14:20 조회`(07 결정 45).
  */
 function AutoReplyBubble({
   message,
+  now,
   children,
 }: {
   message: ChatMessage;
+  now: number;
   children: ReactNode;
 }) {
-  const seen = autoReplySeen(message);
+  const seen = autoReplySeen(message, now);
+  const receivable = message.autoReply?.intent === "RECEIVABLE";
   return (
     <Bubble tone="plain" className="grid gap-2">
       <span className="flex items-center">
@@ -212,10 +220,14 @@ function AutoReplyBubble({
           {ROOM_TEXT.autoReply}
         </Chip>
       </span>
-      <span>{message.body}</span>
+      <span data-body="">{message.body}</span>
       {children}
       {seen ? (
-        <span data-ac="S5-6 S7-13" className="text-muted-foreground text-xs">
+        <span
+          data-ac={receivable ? "S5-6 S7-13 S2-1 S2-5" : "S5-6 S7-13"}
+          data-seen=""
+          className="text-muted-foreground text-xs"
+        >
           {seen}
         </span>
       ) : null}

@@ -17,6 +17,7 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { BackorderReplyCard } from "./BackorderReplyCard";
 import { ClarifyChoices } from "./ClarifyChoices";
+import { ReceivableReplyCard } from "./ReceivableReplyCard";
 import { StockReplyCard } from "./StockReplyCard";
 import { refreshHeaderCounts } from "../api/headerCounts";
 import { useMarkReadMutation } from "../api/mutations";
@@ -49,6 +50,7 @@ import {
   stockAskInquiry,
   toBackorderReplyView,
   toClarifyView,
+  toReceivableReplyView,
   toStockCardView,
   toThreadItems,
   visiblePending,
@@ -333,11 +335,13 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
+                now={now}
                 ac={messageAc(item.message, baseline, pendingIds, acContext)}
                 extra={
                   <AutoReplyExtra
                     message={item.message}
                     messages={thread.messages}
+                    wholesalerId={room.counterpart.id}
                     pending={shownPending}
                     now={now}
                     sessionLost={sessionLost}
@@ -448,12 +452,13 @@ function useNow(): number {
 const NOW_TICK_MS = 15_000;
 
 /**
- * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 그 밖이면 없음.
- * 판정은 derive가 한다(`toClarifyView` `toStockCardView` `toBackorderReplyView`).
+ * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 미수 답이면 미수 카드,
+ * 그 밖이면 없음. 판정은 derive가 한다(`toClarifyView` `toStockCardView` `toBackorderReplyView` `toReceivableReplyView`).
  */
 function AutoReplyExtra({
   message,
   messages,
+  wholesalerId,
   pending,
   now,
   sessionLost,
@@ -462,6 +467,8 @@ function AutoReplyExtra({
 }: {
   message: ChatMessage;
   messages: readonly ChatMessage[];
+  /** 방 상대 도매처. 미수 카드의 정산 링크가 쓴다 */
+  wholesalerId: number;
   pending: readonly PendingMessage[];
   now: number;
   sessionLost: boolean;
@@ -485,6 +492,8 @@ function AutoReplyExtra({
     );
   const backorder = toBackorderReplyView(message, messages);
   if (backorder !== null) return <BackorderReplyCard card={backorder} />;
+  const receivable = toReceivableReplyView(message, wholesalerId);
+  if (receivable !== null) return <ReceivableReplyCard card={receivable} />;
   const card = toStockCardView(message, messages);
   if (card !== null)
     return (
