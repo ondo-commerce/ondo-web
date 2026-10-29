@@ -31,12 +31,14 @@ import { useEffect, useRef, useState } from "react";
 import { ListingImage } from "./ListingImage";
 import { useUploadListingImageMutation } from "../api/mutations";
 import {
+  FOCUS_RING_CLASS,
   IMAGE_ACCEPT,
   IMAGE_REJECT_MESSAGE,
   IMAGE_UPLOAD_CONCURRENCY,
   MAX_IMAGE_COUNT,
 } from "../constants";
 import {
+  cancelUploads,
   orderCompleted,
   rejectImageFile,
   remainingImageSlots,
@@ -74,9 +76,12 @@ interface RejectedLine {
  * "고장"으로 읽혔다(wire-product F3). 실패 칸의 복구 행동은 종류별로 다르다(DD2): 서버·망
  * 문제면 `다시 시도`, 파일 문제면 `×`뿐이다.
  *
- * 취소·언마운트 수명주기(요청 abort·미리보기 blob 전부 해제·401/403 큐 정지)는
- * loop-02(S4-1·S4-2·S4-3·S4-5)다. 여기선 언마운트 뒤 늦은 응답이 `setState`를 치지
- * 않게 `cancelled` 플래그만 둔다. TODO(#252): S4-1 abort · S4-2 늦은 응답 unit.
+ * 수명주기(#252). 격자가 사라지면(`함께 게시` 해제, 화면 이탈) 진행 중 요청을 abort하고
+ * 남은 칸의 미리보기를 전부 놓는다(`cancelUploads`). 의도한 취소는 실패 칸을 만들지 않는다 —
+ * `apiFetch`가 abort도 `NETWORK`로 바꿔 던지므로 에러 종류가 아니라 `cancelledRef`와
+ * "그 칸이 아직 있나"로 가른다. 응답 헤더 뒤 본문 읽기 중 abort는 다른 에러로 올 수 있어서다.
+ * 서버 쪽 업로드는 취소되지 않는다 — 프록시가 upstream에 signal을 넘기지 않아 고아 파일이
+ * 남을 수 있다(이슈 #252 제외 범위).
  */
 export function PostImageGrid({
   id,
@@ -86,6 +91,8 @@ export function PostImageGrid({
   onAdd,
   onRemove,
   onUploadStateChange,
+  onAuthFailure,
+  addDisabled = false,
   disabled = false,
 }: {
   /**
@@ -120,6 +127,16 @@ export function PostImageGrid({
    * 남으면 저장할 길이 없다.
    */
   onUploadStateChange?: (state: UploadState) => void;
+  /**
+   * 업로드가 401/403을 받았다(S4-3). 격자는 큐를 멈추고 칸을 정리한 **뒤에** 부른다.
+   * 문구와 저장 잠금은 화면(View)이 정한다 — 401과 403의 처리가 다르다.
+   */
+  onAuthFailure?: (error: unknown) => void;
+  /**
+   * `+`만 잠근다(S4-7, 세션이 끊긴 뒤). 올려도 401이라서다. 등록 칸 순서 바꾸기·빼기는
+   * 그대로 — 저장 전엔 서버에 안 실리는 일이다. `disabled`(시즌 종료)는 격자 전체를 잠근다.
+   */
+  addDisabled?: boolean;
   disabled?: boolean;
 }) {
   const shown = images.slice(0, MAX_IMAGE_COUNT);
@@ -135,25 +152,43 @@ export function PostImageGrid({
   const inputRef = useRef<HTMLInputElement>(null);
   const upload = useUploadListingImageMutation();
 
-  /* 언마운트 뒤 도착한 응답이 사라진 격자의 상태를 치지 않게. S4-2(loop-02)가 abort까지 더한다 */
+  /* 언마운트 뒤 도착한 응답이 사라진 격자의 상태를 치지 않게. 진행 중 요청은 cleanup이 abort한다 */
   const cancelledRef = useRef(false);
+  /*
+   * 401/403으로 큐가 멈췄다(§4-3-3). 멈춘 동안엔 어떤 길로도 새 요청을 띄우지 않는다 —
+   * 같은 세션으로 보내면 같은 답이다. 로직은 ref를, `다시 시도` 잠금은 거울 state를 본다.
+   * 새로 고른 파일(403일 때만 `+`가 열려 있다)은 사장이 다시 해 보겠다는 뜻이라 정지를 푼다.
+   */
+  const authStoppedRef = useRef(false);
+  const [authStopped, setAuthStopped] = useState(false);
+  /* 진행 칸마다 하나. 끝나면 지운다 — 남아 있는 것이 곧 "지금 나가 있는 요청"이다 */
+  const controllersRef = useRef(new Map<string, AbortController>());
   /*
    * 부모 콜백은 응답 콜백에서도 **최신 것**을 불러야 한다 — 요청을 띄운 렌더의 `onAdd`는
    * 그때의 `images`를 닫고 있어서 그걸 부르면 그 사이 올라간 장이 사라진다.
    */
   const onAddRef = useRef(onAdd);
   const onUploadStateChangeRef = useRef(onUploadStateChange);
+  const onAuthFailureRef = useRef(onAuthFailure);
   useEffect(() => {
     onAddRef.current = onAdd;
     onUploadStateChangeRef.current = onUploadStateChange;
+    onAuthFailureRef.current = onAuthFailure;
   });
   /* 같은 요약을 두 번 올리지 않는다 — 부모가 렌더마다 setState 를 받을 이유가 없다 */
   const reportedRef = useRef<UploadState>({ uploading: false, failedCount: 0 });
 
   useEffect(() => {
     cancelledRef.current = false;
+    const controllers = controllersRef.current;
     return () => {
       cancelledRef.current = true;
+      // 플래그를 먼저 세운다 — abort가 부르는 catch가 이걸 보고 아무것도 안 한다
+      const plan = cancelUploads(slotsRef.current);
+      for (const slotId of plan.abort) controllers.get(slotId)?.abort();
+      controllers.clear();
+      for (const url of plan.revoke) URL.revokeObjectURL(url);
+      slotsRef.current = [];
       // 격자가 사라졌는데 잠금이 남으면 저장할 길이 없다(등록 화면의 `함께 게시` 해제)
       onUploadStateChangeRef.current?.({ uploading: false, failedCount: 0 });
     };
@@ -208,7 +243,7 @@ export function PostImageGrid({
 
     const running = current.filter((s) => s.status === "uploading").length;
     const next = current
-      .filter((s) => s.status === "queued")
+      .filter((s) => s.status === "queued" && !authStoppedRef.current)
       .slice(0, Math.max(0, IMAGE_UPLOAD_CONCURRENCY - running));
     commit(
       current.map((s) =>
@@ -222,34 +257,67 @@ export function PostImageGrid({
 
   /** 요청 하나. 끝나면 그 칸만 바꾼다 — 다른 칸은 그 사이 몇 번이고 바뀌었을 수 있다 */
   async function startUpload(slot: UploadSlot) {
+    const controller = new AbortController();
+    controllersRef.current.set(slot.slotId, controller);
     let settled: Pick<UploadSlot, "status" | "url" | "failure">;
+    let authError: unknown = null;
     try {
       const { url } = await upload.mutateAsync({
         file: slot.file,
         idempotencyKey: slot.idempotencyKey,
+        signal: controller.signal,
       });
       settled = { status: "done", url, failure: null };
     } catch (error) {
       const failure = uploadFailure(
         isApiError(error) ? error.code : TRANSPORT_ERROR_CODE.NETWORK,
       );
-      if (failure.kind === "auth") {
-        // 파일 탓이 아니라 실패 칸을 만들지 않는다. 큐 정지·완료분 보존·`_form` 안내는 S4-3(loop-02)
-        if (cancelledRef.current) return;
-        URL.revokeObjectURL(slot.previewUrl);
-        slotsRef.current = slotsRef.current.filter(
-          (s) => s.slotId !== slot.slotId,
-        );
-        process();
-        return;
-      }
+      // 파일 탓이 아니라 실패 칸을 만들지 않는다. 아래 늦은 응답 검사를 지난 뒤 큐를 멈춘다
       settled = { status: "failed", url: null, failure };
+      authError = failure.kind === "auth" ? error : null;
+    } finally {
+      controllersRef.current.delete(slot.slotId);
     }
-    if (cancelledRef.current) return;
+    // 늦은 응답: 격자가 사라졌거나 그 칸을 이미 거뒀다. 실패 칸도, 등록 칸도 만들지 않는다
+    if (
+      cancelledRef.current ||
+      !slotsRef.current.some((s) => s.slotId === slot.slotId)
+    )
+      return;
+    if (authError !== null) {
+      stopForAuth(authError);
+      return;
+    }
     slotsRef.current = slotsRef.current.map((s) =>
       s.slotId === slot.slotId ? { ...s, ...settled } : s,
     );
     process();
+  }
+
+  /**
+   * 401/403(S4-3). 같은 세션으로 보내는 나머지도 같은 답을 받으니 큐를 멈춘다 —
+   * 대기·진행 칸은 조용히 거두고(진행은 abort) 미리보기를 놓는다. 실패 칸은 아니다.
+   *
+   * 끝났지만 앞 칸을 기다리던 보류 칸은 **등록 칸으로 올려 남긴다**(§4-3-4). 서버엔 이미
+   * 올라간 사진이고, 앞의 진행 칸을 거두면 `process()`의 `orderCompleted`가 자연히 넘긴다.
+   * 이미 있던 실패 칸도 그대로 둔다 — 사장이 본 칸을 말없이 지우지 않는다. 다만 그 칸의
+   * `다시 시도`는 멈춘 동안 잠긴다(빼기는 된다). 재시도가 큐를 다시 돌리면 정지가 아니다.
+   * 그다음 화면(View)에 알린다. 401이면 화면이 저장과 `+`를 잠근다.
+   */
+  function stopForAuth(error: unknown) {
+    authStoppedRef.current = true;
+    setAuthStopped(true);
+    const removed = slotsRef.current.filter(
+      (s) => s.status === "queued" || s.status === "uploading",
+    );
+    const plan = cancelUploads(removed);
+    // 칸을 먼저 뺀다 — abort가 부르는 catch는 칸이 없으니 아무것도 안 한다
+    slotsRef.current = slotsRef.current.filter((s) => !removed.includes(s));
+    for (const slotId of plan.abort)
+      controllersRef.current.get(slotId)?.abort();
+    for (const url of plan.revoke) URL.revokeObjectURL(url);
+    process();
+    onAuthFailureRef.current?.(error);
   }
 
   /**
@@ -285,6 +353,8 @@ export function PostImageGrid({
     setRejected(lines);
 
     if (taken.length === 0) return;
+    authStoppedRef.current = false;
+    setAuthStopped(false);
     slotsRef.current = [
       ...slotsRef.current,
       ...taken.map((file): UploadSlot => ({
@@ -306,6 +376,7 @@ export function PostImageGrid({
    * 건너뛰었던 뒤쪽 완료분이 다시 보류된다(F1). 그래서 재시도 뒤 칸 번호가 바뀐다.
    */
   function retry(slotId: string) {
+    if (authStoppedRef.current) return;
     slotsRef.current = requeueForRetry(slotsRef.current, slotId);
     process();
   }
@@ -367,6 +438,11 @@ export function PostImageGrid({
         <SortableContext items={shown} strategy={rectSortingStrategy}>
           <SlotGrid
             id={id}
+            /*
+             * p-1 = 포커스 링이 칸 밖으로 나가는 4px(offset 2 + 두께 2). 이게 없으면 첫 열 링의
+             * 왼쪽 변이 Panel.Body 스크롤 박스(overflow-y-auto 라 x 도 잘린다)에 잘린다(side-01 F2)
+             */
+            className="p-1"
             /* 프로그램 포커스만 받는다(F3). Tab 순서엔 안 들어간다 — 칸들이 각자 받는다 */
             tabIndex={-1}
             role="group"
@@ -393,20 +469,30 @@ export function PostImageGrid({
                 slot={slot}
                 index={shown.length + i + 1}
                 disabled={disabled}
+                retryDisabled={authStopped}
                 onRetry={() => retry(slot.slotId)}
                 onRemove={() => remove(slot.slotId)}
               />
             ))}
             {remaining > 0 ? (
               <AddSlot
-                disabled={disabled}
+                disabled={disabled || addDisabled}
                 aria-label={`이미지 추가, ${remaining}장 더 올릴 수 있어요`}
                 aria-describedby={describedBy}
                 aria-invalid={describedBy !== undefined || undefined}
-                data-ac={disabled ? "S2-1 S2-8 S2-10" : "S2-1 S2-8"}
+                data-ac={
+                  disabled
+                    ? "S2-1 S2-8 S2-10"
+                    : addDisabled
+                      ? "S2-1 S2-8 S4-7"
+                      : "S2-1 S2-8"
+                }
                 onClick={() => inputRef.current?.click()}
                 /* `+`는 muted-foreground(4.9:1) — AddSlot 기본 border-strong 은 2.5:1 로 AA 미달(DD9) */
-                className="text-muted-foreground content-center text-xl leading-6 disabled:opacity-50"
+                className={cn(
+                  "text-muted-foreground content-center text-xl leading-6 disabled:opacity-50",
+                  FOCUS_RING_CLASS,
+                )}
               >
                 +<span className="text-xs leading-4">{remaining}장 더</span>
               </AddSlot>
@@ -424,7 +510,7 @@ export function PostImageGrid({
         type="file"
         multiple
         accept={IMAGE_ACCEPT}
-        disabled={disabled}
+        disabled={disabled || addDisabled}
         tabIndex={-1}
         aria-hidden
         className="sr-only"
@@ -463,10 +549,16 @@ export function PostImageGrid({
 /**
  * 정렬 가능한 슬롯 한 칸.
  *
- * ImageSlot 을 감싸는 div 를 따로 두는 이유: dnd-kit 은 ref·transform·리스너를
- * 한 엘리먼트에 몰아 걸어야 하는데, ImageSlot 은 @ondo/ui 의 표시용 프리미티브라
- * ref 를 받지 않는다. 드래그 배선을 바깥 껍데기가 받고 ImageSlot 은 지금 모습
- * 그대로 두면, 상세 화면과 등록 화면이 계속 같은 컴포넌트를 쓴다.
+ * 바깥 div 는 자리(ref·transform)만 받고, 안에 **형제 둘**을 둔다 — 집기 손잡이와 `×`.
+ * 예전엔 바깥이 dnd-kit `attributes`(`role=button`)를 받고 `×`를 품었는데, `role=button`의
+ * 자식은 낭독기에서 표시용으로 눌려 `×`가 따로 안 읽혔다(#254 F5). `×`가 손잡이 밖이면
+ * 키보드 Enter·Space 도 KeyboardSensor 에 안 닿는다(F4 가 구조로 막힌다).
+ * 드래그 중엔 바깥이 움직이므로 `×`도 같이 따라간다.
+ *
+ * 바깥엔 역할도 이름도 없다. 이름("이미지 N, 대표")과 잠김(aria-disabled)은 손잡이만 갖는다 —
+ * 바깥에도 같은 이름을 달면 낭독기가 칸마다 두 번 읽는다(side-01 F1).
+ *
+ * ImageSlot 을 감싸는 이유는 그대로다 — @ondo/ui 의 표시용 프리미티브라 ref 를 받지 않는다.
  */
 function SortableImageSlot({
   id,
@@ -493,49 +585,33 @@ function SortableImageSlot({
     transition,
     isDragging,
   } = useSortable({ id, disabled });
+  const name = isCover ? `이미지 ${index}, 대표` : `이미지 ${index}`;
 
   return (
     <div
-      /*
-       * 껍데기 자신을 집기 손잡이(activatorNode)로 등록한다. 이게 없으면 dnd-kit 6.3.1의
-       * KeyboardSensor 는 event.target 을 안 보고 안에서 올라온 Enter·Space 까지
-       * preventDefault 해서 `×` 버튼이 키보드로 안 눌린다(F4). 등록하면 target 이 껍데기일
-       * 때만 집고, 버튼에서 난 키는 버튼 몫으로 남긴다. 마우스는 8px 문턱이 그대로 가른다.
-       */
-      ref={(node) => {
-        setNodeRef(node);
-        setActivatorNodeRef(node);
-      }}
+      ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      // touch-none: 터치에서 드래그가 페이지 스크롤에 먹히지 않게 한다
       // isDragging 동안 반투명 + 위로 띄우기 — 밀려나는 칸들과 구분된다
-      className={`touch-none ${isDragging ? "z-10 opacity-50" : ""}`}
+      className={cn("relative", isDragging && "z-10 opacity-50")}
       data-state="registered"
       data-ac={disabled ? "S2-4 S2-10 S3-3" : "S2-4"}
-      aria-label={isCover ? `이미지 ${index}, 대표` : `이미지 ${index}`}
-      {...attributes}
-      {...listeners}
     >
-      <ImageSlot
-        overlay={
-          <>
-            {/*
-             * `×`는 드래그 껍데기 **안**에 있다. 8px 문턱(`PointerSensor`) 덕에 누르는 동안의
-             * 손떨림은 드래그가 안 되고 click 이 그대로 버튼에 닿는다. 키보드는 껍데기가
-             * `activatorNode`로 등록돼 있어야 버튼의 Enter·Space 를 안 가로챈다(위 ref 주석, F4).
-             */}
-            <IconButton
-              variant="line"
-              size="sm"
-              aria-label={`이미지 ${index} 빼기`}
-              data-ac="S3-1"
-              className="absolute top-1 left-1 size-6"
-              onClick={onRemove}
-              disabled={disabled}
-            >
-              <X />
-            </IconButton>
-            {isCover ? (
+      <div
+        /*
+         * 손잡이를 activatorNode 로 등록한다. dnd-kit 6.3.1의 KeyboardSensor 는 등록이 없으면
+         * event.target 을 안 보고 안에서 올라온 키까지 집는다(F4). 지금은 `×`가 밖이라
+         * 안 닿지만, 손잡이 안에 눌리는 것이 다시 들어와도 막히게 둔다.
+         */
+        ref={setActivatorNodeRef}
+        // touch-none: 터치에서 드래그가 페이지 스크롤에 먹히지 않게 한다
+        className={cn("rounded-control touch-none", FOCUS_RING_CLASS)}
+        aria-label={name}
+        {...attributes}
+        {...listeners}
+      >
+        <ImageSlot
+          overlay={
+            isCover ? (
               <Chip
                 tone="accent"
                 data-ac="S2-4"
@@ -543,12 +619,27 @@ function SortableImageSlot({
               >
                 대표
               </Chip>
-            ) : null}
-          </>
-        }
+            ) : null
+          }
+        >
+          {children}
+        </ImageSlot>
+      </div>
+      {/*
+       * DOM 에서 손잡이 뒤라 위에 그려진다(둘 다 positioned, z 없음). 8px 문턱(`PointerSensor`)이
+       * 아니어도 이제 `×` 위 pointerdown 은 손잡이 리스너에 안 간다.
+       */}
+      <IconButton
+        variant="line"
+        size="sm"
+        aria-label={`이미지 ${index} 빼기`}
+        data-ac="S3-1"
+        className={cn("absolute top-1 left-1 size-6", FOCUS_RING_CLASS)}
+        onClick={onRemove}
+        disabled={disabled}
       >
-        {children}
-      </ImageSlot>
+        <X />
+      </IconButton>
     </div>
   );
 }
@@ -565,12 +656,15 @@ function UploadSlotCell({
   slot,
   index,
   disabled,
+  retryDisabled,
   onRetry,
   onRemove,
 }: {
   slot: UploadSlot;
   index: number;
   disabled: boolean;
+  /** 401/403으로 큐가 멈춘 동안. `다시 시도`만 잠그고 `×`는 둔다 */
+  retryDisabled: boolean;
   onRetry: () => void;
   onRemove: () => void;
 }) {
@@ -590,7 +684,10 @@ function UploadSlotCell({
         data-ac={failure.kind === "retry" ? "S2-5 S2-14 S2-11" : "S2-14 S2-11"}
         aria-label={`${label}, ${failure.message}`}
         /* destructive 1px 선은 outline 으로 — border 면 88px 상자가 1px 커진다 */
-        className="bg-card outline-destructive overflow-hidden outline -outline-offset-1"
+        className={cn(
+          "bg-card outline-destructive overflow-hidden outline -outline-offset-1",
+          FOCUS_RING_CLASS,
+        )}
         overlay={
           <>
             <div
@@ -609,7 +706,7 @@ function UploadSlotCell({
                   className="text-destructive-strong text-xs underline"
                   aria-label={`${label} 다시 시도`}
                   onClick={onRetry}
-                  disabled={disabled}
+                  disabled={disabled || retryDisabled}
                 >
                   다시 시도
                 </Button>
@@ -622,7 +719,7 @@ function UploadSlotCell({
               size="sm"
               aria-label={`${label} 빼기`}
               data-ac="S3-1"
-              className="absolute top-1 left-1 size-6"
+              className={cn("absolute top-1 left-1 size-6", FOCUS_RING_CLASS)}
               onClick={onRemove}
               disabled={disabled}
             >
@@ -660,7 +757,7 @@ function UploadSlotCell({
       aria-busy={state === "uploading" || undefined}
       aria-label={ariaLabel}
       data-ac={dataAc}
-      className="overflow-hidden"
+      className={cn("overflow-hidden", FOCUS_RING_CLASS)}
       overlay={
         <>
           {state !== "held" ? (

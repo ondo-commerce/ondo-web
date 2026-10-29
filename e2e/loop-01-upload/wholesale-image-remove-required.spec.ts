@@ -16,6 +16,7 @@ import {
   openEdit,
   png,
   pressWithinDragThreshold,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -69,7 +70,9 @@ test("S3-1 · S3-2 × — 8px 안 클릭으로 빠지고 대표가 다음 장으
   );
   await expect(registered(page)).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(registered(page).nth(0)).toHaveAccessibleName("이미지 1, 대표");
+  await expect(handleOf(registered(page).nth(0))).toHaveAccessibleName(
+    "이미지 1, 대표",
+  );
   await expect(registered(page).nth(0).getByText("대표")).toBeVisible();
   await expect(registered(page).nth(1).getByText("대표")).toHaveCount(0);
   await expect(registered(page).nth(1).locator("img")).toHaveAttribute(
@@ -275,7 +278,7 @@ test("S3-11 취소 확인 — 등록 품명 한 글자 / 수정 값 하나 / 올
 }) => {
   // ① 등록 화면, 품명 한 글자
   await page.goto("/products/new");
-  await page.getByLabel("품명").fill("a");
+  await page.getByLabel("품명", { exact: true }).fill("a");
   await cancelButton(page).click();
   const dialog = leaveDialog(page);
   await expect(dialog).toBeVisible();
@@ -329,11 +332,11 @@ test("S3-13 beforeunload — 입력·슬롯이 있으면 새로고침·탭 닫�
   // 입력 없음 — 새로고침은 그냥 된다
   await page.goto("/products/new");
   await page.reload();
-  await expect(page.getByLabel("품명")).toBeVisible();
+  await expect(page.getByLabel("품명", { exact: true })).toBeVisible();
   expect(seen).toEqual([]);
 
   // 품명 + 올리는 중 슬롯
-  await page.getByLabel("품명").fill("a");
+  await page.getByLabel("품명", { exact: true }).fill("a");
   await page.getByText("온도 마켓에 함께 게시").click();
   await chooseFiles(page, [jpg("slow5s.jpg")]);
   await expect(slotsIn(page, "uploading")).toHaveCount(1);
@@ -341,12 +344,12 @@ test("S3-13 beforeunload — 입력·슬롯이 있으면 새로고침·탭 닫�
   // 거부된 새로고침은 완료되지 않는다 — 짧게 기다리고 실패를 삼킨다
   await page.reload({ timeout: 3_000 }).catch(() => undefined);
   await expect.poll(() => seen).toEqual(["beforeunload"]);
-  await expect(page.getByLabel("품명")).toHaveValue("a");
+  await expect(page.getByLabel("품명", { exact: true })).toHaveValue("a");
   await expect(cells(page)).toHaveCount(1);
 
   await page.close({ runBeforeUnload: true });
   await expect.poll(() => seen).toEqual(["beforeunload", "beforeunload"]);
-  await expect(page.getByLabel("품명")).toHaveValue("a");
+  await expect(page.getByLabel("품명", { exact: true })).toHaveValue("a");
   await expect(cells(page)).toHaveCount(1);
 });
 
@@ -354,7 +357,7 @@ test("S3-14 계속 작성 · Esc — 모달이 닫히고 입력·슬롯·함께 
   page,
 }) => {
   await openCreateWithPost(page);
-  await page.getByLabel("품명").fill("a");
+  await page.getByLabel("품명", { exact: true }).fill("a");
   await chooseFiles(page, [jpg("a.jpg")]);
   await expect(registered(page)).toHaveCount(1, DONE);
 
@@ -364,7 +367,7 @@ test("S3-14 계속 작성 · Esc — 모달이 닫히고 입력·슬롯·함께 
   await dialog.getByRole("button", { name: "계속 작성" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(cancelButton(page)).toBeFocused();
-  await expect(page.getByLabel("품명")).toHaveValue("a");
+  await expect(page.getByLabel("품명", { exact: true })).toHaveValue("a");
   await expect(registered(page)).toHaveCount(1);
   await expect(addSlot(page)).toBeVisible();
   await expect(page).toHaveURL(/\/products\/new/);
@@ -373,6 +376,6 @@ test("S3-14 계속 작성 · Esc — 모달이 닫히고 입력·슬롯·함께 
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByLabel("품명")).toHaveValue("a");
+  await expect(page.getByLabel("품명", { exact: true })).toHaveValue("a");
   await expect(registered(page)).toHaveCount(1);
 });

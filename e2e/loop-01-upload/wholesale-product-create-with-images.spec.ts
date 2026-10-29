@@ -33,7 +33,7 @@ test("S3-9 로그인 → 등록 폼 → 상품 · 함께 게시 · 사진 3장 �
 
   await login(page);
   await page.goto("/products/new");
-  await expect(page.getByLabel("품명")).toBeVisible();
+  await expect(page.getByLabel("품명", { exact: true })).toBeVisible();
   const startedAt = Date.now();
 
   await fillProductPanel(page);

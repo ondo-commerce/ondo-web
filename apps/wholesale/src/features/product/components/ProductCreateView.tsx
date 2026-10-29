@@ -7,7 +7,11 @@ import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
-import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
+import {
+  IDLE_UPLOAD_STATE,
+  SESSION_LOST_MESSAGE,
+  LIST_PARAM,
+} from "../constants";
 import {
   clearImagesError,
   clearPostErrors,
@@ -16,6 +20,7 @@ import {
   EMPTY_PRODUCT_FORM,
   firstInvalidField,
   isProductFormDirty,
+  isSessionLostError,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
@@ -24,6 +29,7 @@ import {
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostFormValue, ProductFormValue, UploadState } from "../types";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
+import { useLinkLeaveGuard } from "../useLinkLeaveGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import { FormSplitLayout } from "@/shared/components/FormSplitLayout";
@@ -47,6 +53,30 @@ export function ProductCreateView() {
     useState<UploadState>(IDLE_UPLOAD_STATE);
   const note = uploadNote(uploadState);
   const noteId = useId();
+  /*
+   * 업로드가 401을 받았다(S4-3). 화면은 그대로 두고 저장과 `+`만 잠근다 — 지금 저장하면 저장도
+   * 401이라 전역 핸들러가 `/login`으로 보내 폼이 날아간다. `errors._form`에 넣지 않는 이유:
+   * 칸을 고칠 때마다 `_form`이 지워지는데 잠금은 남으면 버튼이 왜 잠겼는지 사라진다.
+   */
+  const [sessionLost, setSessionLost] = useState(false);
+  const formAlertId = useId();
+  const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  const handleUploadAuthFailure = (error: unknown) => {
+    if (isSessionLostError(error)) {
+      setSessionLost(true);
+      return;
+    }
+    // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다
+    const described = describeError(error);
+    setErrors((prev) => ({
+      ...prev,
+      _form: described.detail ?? described.title,
+    }));
+  };
+  const saveDescribedBy =
+    [sessionLost ? formAlertId : null, note ? noteId : null]
+      .filter((id) => id !== null)
+      .join(" ") || undefined;
 
   /*
    * 이탈 확인(D22). 입력이 있거나 사진이 올라가는 중이면 `취소`는 모달로 되묻고 새로고침·탭
@@ -66,9 +96,19 @@ export function ProductCreateView() {
     ) || uploadState.uploading;
   useBeforeUnloadGuard(dirty && !leaving);
 
+  /*
+   * 모달이 열린 이유. `null`이면 `취소`(→ LIST_PATH), 경로가 있으면 앱 안 Link가 가려던 곳(S5).
+   * 모달은 하나다 — 문구가 같고, 닫히면 포커스는 트리거인 `취소`로 돌아간다(S5-4).
+   */
+  const [linkHref, setLinkHref] = useState<string | null>(null);
+  useLinkLeaveGuard(dirty && !leaving, (href) => {
+    setLinkHref(href);
+    setLeaveOpen(true);
+  });
+
   const leave = () => {
     setLeaving(true);
-    router.push(LIST_PATH);
+    router.push(linkHref ?? LIST_PATH);
   };
 
   /**
@@ -152,6 +192,8 @@ export function ProductCreateView() {
             /* 체크된 게시글은 판매 중으로 만들어진다 — 항상 필수(D21) */
             requireImages
             onUploadStateChange={setUploadState}
+            onUploadAuthFailure={handleUploadAuthFailure}
+            uploadLocked={sessionLost}
           />
         ) : (
           /*
@@ -177,9 +219,14 @@ export function ProductCreateView() {
       actions={
         <>
           {/* 칸에 못 붙인 실패. 버튼 왼쪽에 둬서 누른 결과가 누른 자리에서 읽힌다 */}
-          {errors._form ? (
-            <p role="alert" className="text-destructive-strong mr-auto text-sm">
-              {errors._form}
+          {formMessage ? (
+            <p
+              id={formAlertId}
+              role="alert"
+              data-ac={sessionLost ? "S4-3 S4-7" : undefined}
+              className="text-destructive-strong mr-auto text-sm"
+            >
+              {formMessage}
             </p>
           ) : null}
           {/* 저장이 왜 잠겼는지 / 뭐가 안 실리는지. 버튼이 `aria-describedby`로 가리킨다(DD10) */}
@@ -192,7 +239,8 @@ export function ProductCreateView() {
                 "mr-auto text-sm",
                 note.danger
                   ? "text-destructive-strong"
-                  : "text-muted-foreground",
+                  : /* 회색이면 잠긴 저장 버튼 옆에서 꺼진 안내로 읽힌다(#254 F8) */
+                    "text-foreground",
               )}
             >
               {note.text}
@@ -205,9 +253,11 @@ export function ProductCreateView() {
           <LeaveConfirmDialog
             open={leaveOpen}
             /* 트리거(취소)가 열자고 할 때 더티가 아니면 열지 않고 바로 떠난다 */
-            onOpenChange={(open) =>
-              open && !dirty ? leave() : setLeaveOpen(open)
-            }
+            onOpenChange={(open) => {
+              if (open && !dirty) return leave();
+              setLeaveOpen(open);
+              if (!open) setLinkHref(null);
+            }}
             onLeave={leave}
           >
             <Button
@@ -222,8 +272,8 @@ export function ProductCreateView() {
           <Button
             size="lg"
             onClick={submit}
-            disabled={create.isPending || uploadState.uploading}
-            aria-describedby={note ? noteId : undefined}
+            disabled={create.isPending || uploadState.uploading || sessionLost}
+            aria-describedby={saveDescribedBy}
             data-ac="S2-3 S2-4"
           >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}

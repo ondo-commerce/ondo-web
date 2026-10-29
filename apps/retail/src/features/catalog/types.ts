@@ -103,7 +103,7 @@ export type CatalogSort = "favorited-desc" | "price-asc" | "price-desc";
  * feature끼리 직접 import하지 않으므로(`CLAUDE.md`) 이 feature는 정산 응답을 모른다.
  *
  * **서버가 주는 둘뿐이다.** fixtures 시절의 확정 대기·미송 건수는 없다 — 도매처별로
- * 그 수를 주는 소매 API가 없어서 `진행 중` 카드는 `준비 중`으로 남는다(#240).
+ * 그 수를 주는 소매 API가 없어서 `진행 중` 카드는 뺐다(#240).
  */
 export interface TradeStats {
   /** 미수 잔액. **음수면 선수금**이다(§3-0 E). 거래처 관리 표와 같은 값 */

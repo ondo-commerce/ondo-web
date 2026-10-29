@@ -65,6 +65,14 @@ export function registered(page: Page): Locator {
   return slotsIn(page, "registered");
 }
 
+/**
+ * 등록 칸의 집기 손잡이. 칸 이름("이미지 N, 대표")과 잠김(aria-disabled)은 여기에만 있다 —
+ * 바깥 칸은 자리만 받는다(#254 F5, side-01 F1)
+ */
+export function handleOf(cell: Locator): Locator {
+  return cell.locator('[aria-roledescription="sortable"]');
+}
+
 export function slotsIn(page: Page, state: string): Locator {
   return grid(page).locator(`> [data-state="${state}"]`);
 }
@@ -133,7 +141,7 @@ export async function fillProductForm(page: Page): Promise<void> {
 
 /** 좌측 상품 패널. 카테고리·색상·사이즈는 시드 값(여성 > 상의 > 티셔츠, 블랙 M) */
 export async function fillProductPanel(page: Page): Promise<void> {
-  await page.getByLabel("품명").fill("e2e 업로드 상품");
+  await page.getByLabel("품명", { exact: true }).fill("e2e 업로드 상품");
 
   await page.getByRole("combobox", { name: "카테고리 대분류" }).click();
   await page.getByRole("option", { name: "여성" }).click();

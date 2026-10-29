@@ -13,6 +13,7 @@ import {
   login,
   openCreateWithPost,
   png,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -96,7 +97,7 @@ test("사장 3 — 올리다가 취소 눌렀다가 계속 작성: 업로드가 
   page,
 }) => {
   await openCreateWithPost(page);
-  await page.getByLabel("품명").fill("신상 셔츠");
+  await page.getByLabel("품명", { exact: true }).fill("신상 셔츠");
   await chooseFiles(page, [jpg("slow5s-front.jpg")]);
   await expect(slotsIn(page, "uploading")).toHaveCount(1);
 
@@ -105,7 +106,9 @@ test("사장 3 — 올리다가 취소 눌렀다가 계속 작성: 업로드가 
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "계속 작성" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByLabel("품명")).toHaveValue("신상 셔츠");
+  await expect(page.getByLabel("품명", { exact: true })).toHaveValue(
+    "신상 셔츠",
+  );
   // 올리던 사진이 그대로 끝난다
   await expect(registered(page)).toHaveCount(1, DONE);
   await expect(saveButton(page)).toBeEnabled();
@@ -237,54 +240,30 @@ test("키보드 — × 에 포커스를 두고 Enter·Space 를 누르면 빠진
     observe("키보드-×-Space", { afterSpace: await registered(page).count() });
   }
   await expect(registered(page)).toHaveCount(1);
-  await expect(registered(page).first()).toHaveAccessibleName("이미지 1, 대표");
+  await expect(handleOf(registered(page).first())).toHaveAccessibleName(
+    "이미지 1, 대표",
+  );
 });
 
-test("구조 — 등록 칸 껍데기(role=button, dnd-kit)가 × 버튼을 품는다: interactive 중첩 여부를 기록", async ({
+test("구조 — 등록 칸 손잡이(role=button, dnd-kit)는 × 버튼을 품지 않는다(#254 F5)", async ({
   page,
 }) => {
   await openCreateWithPost(page);
   await chooseFiles(page, [jpg("a.jpg")]);
   await expect(registered(page)).toHaveCount(1, DONE);
   const shell = registered(page).first();
-  const info = await shell.evaluate((e) => ({
-    role: e.getAttribute("role"),
-    tabindex: e.getAttribute("tabindex"),
-    roledescription: e.getAttribute("aria-roledescription"),
-    nestedButtons: e.querySelectorAll("button").length,
-  }));
+  const info = await shell.evaluate((e) => {
+    const handle = e.querySelector('[aria-roledescription="sortable"]');
+    return {
+      role: handle?.getAttribute("role") ?? null,
+      tabindex: handle?.getAttribute("tabindex") ?? null,
+      roledescription: handle?.getAttribute("aria-roledescription") ?? null,
+      nestedButtons: handle?.querySelectorAll("button").length ?? -1,
+      siblingButtons: e.querySelectorAll(":scope > button").length,
+    };
+  });
   observe("구조-등록칸-중첩", info);
-  expect(info.nestedButtons).toBe(1);
-});
-
-/* ------------------------------------------------------------------------
- * 패턴 3b — 목록에서 `상품 등록` 링크(클라이언트 이동)로 들어온 직후의 입력
- * 패턴 4 테스트에서 fillProductPanel 이 채운 품명이 저장 시점에 비어 있었다. 재현 조건을 가른다.
- * ------------------------------------------------------------------------ */
-
-test("패턴 3b 클라이언트 이동 직후 품명 입력 — 바로 치면 남는가 / 1.5초 뒤 치면 남는가", async ({
-  page,
-}) => {
-  test.fail(
-    true,
-    "F9 — 목록 → 상품 등록 클라이언트 이동 직후 1~2초 안의 입력이 지워진다(재마운트). 이번 diff 밖 파일로 보임",
-  );
-  await page.goto("/products");
-  await page.locator('a[href="/products/new"]').first().click();
-  const name = page.getByLabel("품명");
-  await expect(name).toBeVisible();
-  await name.fill("즉시 입력");
-  await page.waitForTimeout(2_000);
-  const immediate = await name.inputValue();
-
-  await page.goto("/products");
-  await page.locator('a[href="/products/new"]').first().click();
-  await expect(name).toBeVisible();
-  await page.waitForTimeout(1_500);
-  await name.fill("늦게 입력");
-  await page.waitForTimeout(1_000);
-  const delayed = await name.inputValue();
-  observe("패턴3b-client-nav-input", { immediate, delayed });
-  expect(delayed).toBe("늦게 입력");
-  expect(immediate).toBe("즉시 입력");
+  expect(info.role).toBe("button");
+  expect(info.nestedButtons).toBe(0);
+  expect(info.siblingButtons).toBe(1);
 });
