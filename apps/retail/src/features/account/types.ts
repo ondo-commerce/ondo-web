@@ -26,38 +26,11 @@ export type EmailAvailabilityResponse =
  */
 export type SignUpRequestField = keyof SignUpRequest;
 
-/**
- * 설정 화면이 읽는 계정의 뼈대. 로그인·승인 화면은 이제 `/me`(`RetailerResponse`)를
- * 직접 읽으므로 이 타입을 안 쓴다 — 설정만 남았다(설정 API는 스냅샷에 없다).
- *
- * 비밀번호를 담지 않는다. 더미라도 자격증명 형태를 소스에 적어 두면 그대로 굳는다.
+/*
+ * 설정 화면의 더미 계정 타입(`Account`·`AccountProfile`)과 고칠 수 있는 칸 이름
+ * (`SettingsField`·`PasswordField`)은 지웠다. 설정은 이제 `/me`(`RetailerResponse`)를
+ * 읽기만 한다 — 고치는 API가 스냅샷에 없다(`side-02` #4, BE 요청 B9).
  */
-export interface Account {
-  email: string;
-  storeName: string;
-  status: AccountStatus;
-}
-
-/**
- * 설정 화면이 읽는 확장 정보 — 대표자명·연락처가 더 붙는다.
- *
- * `Account`에 두 필드를 필수로 올리지 않은 이유: 로그인 분기(`ACCOUNTS`)의 심사
- * 중·거절 더미에는 대표자명도 연락처도 없다. 필수로 올리면 그 두 건에 **없는
- * 개인정보를 지어내야** 한다. 설정은 승인 완료 계정 한 건만 보므로 그 한 건만
- * 확장한다. 값은 자리표시자다(`010-0000-0000`) — 실제 형식의 번호를 소스에
- * 적지 않는다는 `fixtures.ts`의 기존 원칙 그대로다.
- */
-export interface AccountProfile extends Account {
-  ownerName: string;
-  phone: string;
-}
-
-/** 설정 화면에서 **고칠 수 있는** 칸 이름. 잠긴 칸은 여기 없다 — 검증 대상이 아니다 */
-export type SettingsField = "storeName" | "ownerName" | "phone";
-
-/** 비밀번호 변경 다이얼로그의 칸 이름 */
-export type PasswordField =
-  "currentPassword" | "newPassword" | "newPasswordConfirm";
 
 /** 로그인 폼의 칸 이름. 오류 표시·포커스 이동이 이 이름으로 칸을 찾는다 */
 export type LoginField = "email" | "password";
@@ -118,17 +91,6 @@ export type ApprovalStepState = "done" | "current" | "todo";
 export interface ApprovalStep {
   label: string;
   state: ApprovalStepState;
-}
-
-/**
- * 설정 화면의 `사업자 정보` 패널이 읽는 신청 요약(더미). 승인 대기 화면은 이제
- * `ApplicationView`를 쓴다 — 설정 API가 스냅샷에 없어 이쪽만 남았다.
- */
-export interface Application {
-  storeName: string;
-  /** 자리표시자만 쓴다. 실제 형식의 번호를 소스에 적지 않는다 */
-  bizNo: string;
-  appliedAt: string;
 }
 
 /**

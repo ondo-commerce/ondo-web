@@ -478,10 +478,6 @@ export const STATEMENT_TEXT = {
   shippedAt: "출고 일시",
   receiverName: "수령인",
   origin: "원주문",
-  print: "인쇄",
-  save: "저장",
-  /** 잠긴 두 버튼 옆에 글자로 선다. 눌러도 아무 일이 없는 버튼으로 두지 않는다 */
-  disabledReason: "인쇄·저장은 아직 준비 중이에요.",
   toSettlement: "정산에서 보기",
   /** 단가를 못 찾은 줄의 금액 자리 */
   priceUnknown: "—",
