@@ -26,11 +26,16 @@ async function seed(page: Page, status: "APPROVED" | "PENDING" | "REJECTED") {
 }
 
 /**
- * mock 모드 표의 거래처 "봄봄상회"는 MSW 스냅샷(스펙 예시)이 준 행 값이다 — 소스에
- * 박힌 더미가 아니다. 표 칸(<td>)에서 온 것만 빼고 나머지는 그대로 센다.
+ * mock 모드의 거래처 "봄봄상회"는 MSW 목이 준 행 값이다 — 소스에 박힌 더미가 아니다.
+ * 표 칸(<td>)과 대시보드 신규 주문 타일의 "가장 오래 … · 봄봄상회" 줄(#294 summary 목이
+ * 주문 목에서 센다)에서 온 것만 빼고 나머지는 그대로 센다.
  */
 const withoutMockRows = (hits: string[]) =>
-  hits.filter((h) => !h.startsWith("봄봄상회 | <td>"));
+  hits.filter(
+    (h) =>
+      !h.startsWith("봄봄상회 | <td>") &&
+      !/^봄봄상회 \| <p> \| 가장 오래 .* · 봄봄상회$/.test(h),
+  );
 
 async function record(page: Page, name: string): Promise<string[]> {
   await shot(page, `local-w-${name}`);
@@ -117,10 +122,11 @@ test.describe("QA 도매 로그인 뒤 (세션 심기, mock)", () => {
   /*
    * F7: 예전 공개 스모크는 "준비 중"을 dialog, data-ac, dl, alert, status 안에서만
    * 세서 상품 등록의 "이미지 업로드는 준비 중이에요"(<p>)를 못 잡았다(QA 때 test.fail).
-   * 이제 스모크(`forbiddenScan`)가 본문 전체를 센다. 이 문장은 BE 업로드 API 대기라
-   * 허용 목록(`ALLOWED_TEXTS`)에 사유와 함께 올렸다 — 스모크가 **보고 나서** 뺐는지를 본다.
+   * 이제 스모크(`forbiddenScan`)가 본문 전체를 센다. 이미지 업로드가 붙어(#250) 그 문장은
+   * 화면에서 없어졌다 — 칸을 펼친 뒤 QA 검사와 스모크 둘 다 "준비 중"을 하나도 못 봐야 한다.
+   * 허용 목록(`ALLOWED_TEXTS`)의 그 문장은 production이 옛 화면인 동안만 남긴다.
    */
-  test("F7 스모크 검사가 /products/new의 '준비 중' 문장을 보고 허용 목록으로만 뺀다", async ({
+  test("F7 /products/new 이미지 칸을 펼쳐도 '준비 중' 문장이 없다", async ({
     page,
   }) => {
     await seed(page, "APPROVED");
@@ -129,20 +135,15 @@ test.describe("QA 도매 로그인 뒤 (세션 심기, mock)", () => {
     /* 평가위원이 게시글 칸을 펼쳐야 이미지 칸이 보인다 */
     await page.getByText("온도 마켓에 함께 게시", { exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "이미지 추가", exact: true }),
+      page.getByRole("button", { name: /^이미지 추가/ }),
     ).toBeVisible();
     const qa = await record(page, "products-new");
-    /* 보이는 화면에는 있다 — QA 검사로 확인 */
-    expect(qa.some((h) => h.startsWith("준비 중"))).toBe(true);
-    /* 스모크 검사는 그걸 봤고, 허용 목록 사유로만 뺐다. 다른 "준비 중"은 없다 */
+    expect(qa.filter((h) => h.startsWith("준비 중"))).toEqual([]);
     const smoke = await forbiddenScan(page);
     appendFileSync(
       `${QA_DIR}/hits-local.jsonl`,
       `${JSON.stringify({ app: "wholesale", name: "products-new-smoke", url: page.url(), ...smoke })}\n`,
     );
-    expect(
-      smoke.allowed.some((h) => h.includes("이미지 업로드는 준비 중이에요")),
-    ).toBe(true);
     expect(smoke.hits.filter((h) => h.includes("준비 중"))).toEqual([]);
   });
 });

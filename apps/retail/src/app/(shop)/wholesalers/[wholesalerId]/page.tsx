@@ -19,6 +19,7 @@ import {
   type ListingSummaryWire,
   type TradeStatsSlot,
 } from "@/features/catalog";
+import { InquiryButton, InquiryEntry, InquiryError } from "@/features/chat";
 import {
   SETTLEMENT_API_PATH,
   findSettlement,
@@ -135,14 +136,19 @@ export default async function Page({ params, searchParams }: PageProps) {
     fetchTradeStats(wholesalerId),
   ]);
 
+  /* `문의하기`(loop-05a)는 `features/chat`이라 여기서 끼운다. 도매처 홈엔 상품 문맥이 없다(listingId null) */
   return (
-    <WholesalerHomeView
-      wholesaler={wholesaler}
-      tradeStats={tradeStats}
-      products={products}
-      filter={filter}
-      options={options}
-      paging={toCatalogPaging(products.length, products.length)}
-    />
+    <InquiryEntry wholesalerId={Number(wholesaler.id)} listingId={null}>
+      <WholesalerHomeView
+        wholesaler={wholesaler}
+        tradeStats={tradeStats}
+        products={products}
+        filter={filter}
+        options={options}
+        paging={toCatalogPaging(products.length, products.length)}
+        inquiryAction={<InquiryButton ac="S5-2 S5-4 S5-11" />}
+        inquiryNotice={<InquiryError />}
+      />
+    </InquiryEntry>
   );
 }

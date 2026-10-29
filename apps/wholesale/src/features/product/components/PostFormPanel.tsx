@@ -14,7 +14,12 @@ import { PostImageGrid } from "./PostImageGrid";
 import { PostPriceTable } from "./PostPriceTable";
 import { errorId, fieldId, INVALID_INPUT_CLASS } from "../constants";
 import { EMPTY_PRICE_VALUE, type ProductFormErrors } from "../derive";
-import type { PostFormValue, PostStatus, PriceRow } from "../types";
+import type {
+  PostFormValue,
+  PostStatus,
+  PriceRow,
+  UploadState,
+} from "../types";
 import { FieldError } from "@/shared/components/FieldError";
 
 /**
@@ -31,10 +36,23 @@ export function PostFormPanel({
   onStatusChange,
   action,
   errors = {},
+  requireImages = false,
+  onImagesChange,
+  onUploadStateChange,
+  onUploadAuthFailure,
+  uploadLocked = false,
 }: {
   title: string;
   value: PostFormValue;
   onChange: (next: PostFormValue) => void;
+  /**
+   * 이미지만 **갱신 함수**로 받는 둘째 채널. 다른 칸은 사장의 입력이라 `onChange(next)`로
+   * 충분하지만, 업로드 완료는 뒤늦게 오는 응답 콜백이라 그 시점의 `value`를 닫은 값으로
+   * 만들면 연달아 온 둘째가 첫째를 덮어쓴다(#250 §4-2). 화면(View)이 `setPost(prev => …)`로
+   * 적용한다. 순서 변경·빼기도 같은 길을 쓴다 — 이미지를 바꾸는 길이 둘이면 어느 쪽이
+   * 진짜인지 다시 묻게 된다.
+   */
+  onImagesChange: (update: (images: string[]) => string[]) => void;
   priceRows: PriceRow[];
   /**
    * 가격표의 평균원가 열을 보일지.
@@ -56,26 +74,53 @@ export function PostFormPanel({
    */
   action?: ReactNode;
   errors?: ProductFormErrors;
+  /**
+   * 이미지가 필수인가(D21). **저장되는 게시글 상태**가 정한다 — 판매 중이면 참. 라벨의 `*`만
+   * 여기서 그리고 검사는 화면(View)의 `validateProductForm(…, { requireImages })`가 한다.
+   */
+  requireImages?: boolean;
+  /**
+   * 이미지 격자의 업로드 요약(대기·진행 있음 / 실패 수). 저장 버튼은 패널 밖 하단 바에
+   * 있어서 화면(View)이 받아야 한다 — 패널은 그대로 올려 보내기만 한다.
+   */
+  onUploadStateChange?: (state: UploadState) => void;
+  /** 업로드가 401/403을 받았다(S4-3). 저장 버튼처럼 화면(View)이 처리하므로 그대로 올린다 */
+  onUploadAuthFailure?: (error: unknown) => void;
+  /** 세션이 끊겨 새 사진을 못 올린다 — 격자의 `+`만 잠근다(S4-7) */
+  uploadLocked?: boolean;
 }) {
   const disabled = status === "SEASON_ENDED";
 
   /**
    * 이미지 순서 변경. from 번째를 to 번째 자리로 옮긴다.
    *
-   * PostImageGrid 가 아니라 여기서 배열을 다시 만드는 이유: images 는 폼 값이라
-   * 다른 필드와 똑같이 onChange 한 갈래로 나가야 한다. 그리드가 자기 안에서
-   * 상태를 들면 저장 시점에 어느 쪽이 진짜인지 모르게 된다.
+   * PostImageGrid 가 아니라 여기서 배열을 다시 만드는 이유: images 는 폼 값이다.
+   * 그리드가 자기 안에서 상태를 들면 저장 시점에 어느 쪽이 진짜인지 모르게 된다.
    */
   function handleImageReorder(from: number, to: number) {
     // dnd-kit 의 arrayMove 를 쓰지 않고 손으로 옮긴다 — 이 파일이 라이브러리를
     // import 하는 순간, 위에 적어둔 "그리드만 갈아끼우면 된다"는 경계가 깨진다.
     // 세 줄이라 가져올 값어치도 없다.
-    const next = [...value.images];
-    const [moved] = next.splice(from, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
+    onImagesChange((images) => {
+      const next = [...images];
+      const [moved] = next.splice(from, 1);
+      if (moved === undefined) return images;
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
 
-    onChange({ ...value, images: next });
+  /**
+   * 업로드가 끝난 URL을 끝에 붙인다. 격자가 선택 순서를 지켜 넘기므로(`orderCompleted`)
+   * 여기선 순서를 다시 보지 않는다.
+   */
+  function handleImageAdd(urls: string[]) {
+    onImagesChange((images) => [...images, ...urls]);
+  }
+
+  /** 등록 슬롯 빼기(S3-1). 0번을 빼면 다음 장이 0번 = 대표가 된다 — 따로 할 일이 없다 */
+  function handleImageRemove(index: number) {
+    onImagesChange((images) => images.filter((_, i) => i !== index));
   }
 
   return (
@@ -183,13 +228,24 @@ export function PostFormPanel({
             </FormField>
 
             {/*
-             * 필수(*) 표시를 붙이지 않는다 — 업로드 API가 없어 지금은 채울 수 없는 칸이다.
-             * 필수라고 써 두고 채울 길이 없으면 사장은 자기가 뭘 빠뜨렸는지 찾는다.
-             * TODO(#156): 업로드 API가 오면 `required`를 되살린다(PostImageGrid 주석 참고).
+             * `*`는 판매 중으로 저장될 때만(D21) — 시즌 종료로 토글하면 빠진다. 그래서
+             * `required`가 상수가 아니라 prop 이다.
+             * 제한 한 줄은 hint **끝에** 붙인다(DD7) — 고르기 전에 보여야 하고, 줄을 따로
+             * 만들면 다른 필드와 무게가 달라진다.
              */}
             <FormField
               label="게시글 이미지"
-              hint="첫 번째 이미지가 대표 이미지로 지정됩니다. 드래그하거나, 슬롯을 선택한 뒤 스페이스바로 집어 방향키로 순서를 바꿀 수 있어요."
+              required={requireImages}
+              data-ac="S3-7"
+              hint={
+                <span data-ac="S2-1 S3-8">
+                  첫 번째가 대표 이미지예요. 드래그하거나 슬롯을 고른 뒤
+                  스페이스바로 집어 방향키로 순서를 바꿀 수 있어요.{" "}
+                  <b className="text-secondary-foreground font-medium">
+                    jpg, png · 한 장 4MB까지 · 최대 9장
+                  </b>
+                </span>
+              }
             >
               {/*
                * disabled 를 손으로 내려보내는 유일한 필드다. 위 fieldset 이
@@ -199,9 +255,21 @@ export function PostFormPanel({
                * 계속 바뀐다.
                */}
               <PostImageGrid
+                /* `+` 슬롯이 이 칸의 포커스 대상이다 — 0장 오류는 거기서 고친다(S3-7) */
+                id={fieldId("listing.images")}
+                describedBy={
+                  errors["listing.images"]
+                    ? errorId("listing.images")
+                    : undefined
+                }
                 images={value.images}
                 disabled={disabled}
                 onReorder={handleImageReorder}
+                onAdd={handleImageAdd}
+                onRemove={handleImageRemove}
+                onUploadStateChange={onUploadStateChange}
+                onAuthFailure={onUploadAuthFailure}
+                addDisabled={uploadLocked}
               />
               {errors["listing.images"] ? (
                 <FieldError id={errorId("listing.images")}>

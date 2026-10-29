@@ -8,7 +8,7 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
-import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
+import { isSessionLoss, shouldRedirectOnSessionLoss } from "./sessionLoss";
 
 /**
  * 세션이 끊긴 걸 알아채는 유일한 지점.
@@ -19,10 +19,7 @@ import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
  * 전체 새로고침으로 보내는 이유는 남아 있는 캐시·상태를 한 번에 버리기 위해서다.
  */
 function handleSessionLoss(error: unknown): void {
-  if (
-    !isApiError(error) ||
-    error.code !== WHOLESALE_ERROR_CODE.UNAUTHENTICATED
-  ) {
+  if (!isSessionLoss(error)) {
     return;
   }
   if (window.location.pathname === "/login") {
@@ -68,7 +65,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
     () =>
       new QueryClient({
         queryCache: new QueryCache({ onError: handleSessionLoss }),
-        mutationCache: new MutationCache({ onError: handleSessionLoss }),
+        /*
+         * 쿼리와 달리 mutation엔 예외가 하나 있다 — `meta.sessionLoss: "inline"`이면 화면이
+         * 401을 직접 받는다(업로드 중 폼 보존, #252). 판정은 `sessionLoss.ts`
+         */
+        mutationCache: new MutationCache({
+          onError: (error, _variables, _result, mutation) => {
+            if (shouldRedirectOnSessionLoss(error, mutation.meta))
+              handleSessionLoss(error);
+          },
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30_000,

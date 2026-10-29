@@ -15,6 +15,8 @@ export type ColorItem = WholesaleSchema<"ColorItem">;
 export type ProductCreateRequest = WholesaleSchema<"ProductCreateRequest">;
 export type ProductUpdateRequest = WholesaleSchema<"ProductUpdateRequest">;
 export type ListingUpsertRequest = WholesaleSchema<"ListingUpsertRequest">;
+/** `POST /listing-images` 응답. 초안 op(#249, `x-ondo-draft`)지만 타입은 스냅샷에서 난다 */
+export type ListingImageUpload = WholesaleSchema<"ListingImageUploadResponse">;
 
 /**
  * 사이즈 축. 스펙 enum(`XS S M L XL 2XL FREE`)이 원본이다 — 상품마다 쓰는 값이
@@ -173,6 +175,18 @@ export interface PostFormValue {
   prices: Record<string, PriceValue>;
 }
 
+/**
+ * `isProductFormDirty`가 비교하는 한 벌 — 폼 값 둘 + **저장되지 않는 화면 모드.**
+ * `publishToMarket`은 등록 화면만, `status`(상태 토글)는 게시글이 있는 수정 화면만 든다.
+ * 둘 다 폼 값은 아니지만 바꿔 놓고 나가면 잃는 것이라 더티 판정에 들어간다(D22).
+ */
+export interface ProductFormSnapshot {
+  product: ProductFormValue;
+  post: PostFormValue;
+  publishToMarket?: boolean;
+  status?: PostStatus;
+}
+
 /** 가격표 한 행. 옵션 매트릭스(색상 × 사이즈)에서 나온다 */
 export interface PriceRow {
   id: string;
@@ -195,3 +209,54 @@ export type ProductField =
   | "listing.description"
   | "listing.images"
   | "listing.variantPrices";
+
+/* ------------------------------------------------------------------------
+ * 업로드 슬롯 — 격자(`PostImageGrid`)만 드는 상태. **폼 값이 아니다.**
+ * 완료된 URL만 `onAdd(urls)`로 `PostFormValue.images`에 들어가고, 그 순간 슬롯은 사라진다.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 슬롯 한 칸의 상태. `done`은 **끝났지만 아직 `images[]`에 못 들어간** 칸이다 —
+ * 앞 칸이 진행 중이면 선택 순서를 지키려고 보류한다(화면엔 `held`로 보인다, S2-12).
+ */
+export type UploadSlotStatus = "queued" | "uploading" | "done" | "failed";
+
+/** 실패 뒤 사장이 할 수 있는 일. 파일 탓이면 재전송이 소용없어 `repick`이다(S1-4) */
+export type UploadFailureKind = "retry" | "repick";
+
+export type UploadFailure =
+  | {
+      kind: UploadFailureKind;
+      /** 88px 칸에 들어가는 짧은 꼴 */
+      short: string;
+      /** 전체 문장. 칸의 `aria-label`이 이걸 읽는다(DD3) */
+      message: string;
+    }
+  /** 세션 문제 — 파일 탓이 아니라 실패 칸을 만들지 않는다(S4-3, loop-02) */
+  | { kind: "auth" };
+
+/** 사전 검사 거절 사유(S2-6). `null`이면 통과 */
+export type ImageRejectReason = "TYPE" | "EMPTY" | "SIZE";
+
+export interface UploadSlot {
+  /** `crypto.randomUUID()`. 같은 파일을 두 번 골라도 다른 칸이다 */
+  slotId: string;
+  file: File;
+  /** 격자가 만든 `blob:` 미리보기. 목이 돌려주는 `blob:`과는 별개 객체다 */
+  previewUrl: string;
+  status: UploadSlotStatus;
+  /** 재시도에도 같은 값을 보낸다 — 응답만 끊긴 재시도가 파일을 하나 더 만들지 않게(D23) */
+  idempotencyKey: string;
+  /** `done`일 때 서버가 준 URL */
+  url: string | null;
+  /** `failed`일 때 종류와 문구 */
+  failure: UploadFailure | null;
+}
+
+/** 격자가 화면(View)에 올려 보내는 요약. 저장 버튼 잠금과 그 옆 문구가 이걸 본다 */
+export interface UploadState {
+  /** 대기·진행 칸이 하나라도 있다 → 저장 잠금 */
+  uploading: boolean;
+  /** 실패 칸 수 → "실패한 사진 N장은 저장되지 않아요" */
+  failedCount: number;
+}
