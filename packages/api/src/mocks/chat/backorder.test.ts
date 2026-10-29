@@ -386,3 +386,48 @@ describe("칩 검증(§4-2 2) — 보기 밖, 30분, 보기 뒤 해소", () => {
     });
   });
 });
+
+describe("R1 색상, 사이즈가 둘 이상이면 확정하지 않는다(D37 ④)", () => {
+  const blackL = [row(9101, { color: "블랙", size: "L" })];
+
+  it("블랙/L만 열림 + '블랙 M이랑 화이트 L' → 블랙/L로 답하지 않고 되묻는다", () => {
+    const d = decide("블랙 M이랑 화이트 L 미송 언제 와요?", blackL);
+    expect(d.kind).not.toBe("AUTO_REPLY");
+    expect(generatedLines(d, 1, GOLDEN_T0).map((l) => l.kind)).not.toContain(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("색상 둘, 사이즈 하나('블랙 L이랑 화이트 L')도 확정하지 않는다", () => {
+    expect(decide("블랙 L이랑 화이트 L 미송 언제 와요?", blackL).kind).not.toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("색상 하나, 사이즈 둘('블랙 M L')도 확정하지 않는다", () => {
+    expect(decide("블랙 M L 미송 언제 와요?", blackL).kind).not.toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("같은 사이즈를 두 번 말한 건 하나로 본다('블랙 L, L 사이즈') → 답", () => {
+    expect(decide("블랙 L L사이즈 미송 언제 와요?", blackL).kind).toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("대조군: '블랙 L' 한 쌍이면 답한다", () => {
+    expect(decide("블랙 L 미송 언제 와요?", blackL).kind).toBe("AUTO_REPLY");
+  });
+
+  it("되묻기(보기 블랙/L 하나) 뒤 답글에 쌍이 둘이면 다시 넘김(CLARIFY_AGAIN)", () => {
+    const first = decide("미송 언제 와요?", blackL);
+    expect(first.kind).toBe("CLARIFY");
+    const history = asHistory(first, GOLDEN_T0);
+    const d = decide("블랙 M이랑 화이트 L", blackL, {
+      now: GOLDEN_T0 + MINUTE,
+      history,
+    });
+    expect(d).toMatchObject({ kind: "HANDOFF", reason: "CLARIFY_AGAIN" });
+  });
+});

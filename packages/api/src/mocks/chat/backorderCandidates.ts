@@ -156,7 +156,7 @@ export interface Narrowed {
   said: boolean;
   /** 나온 말을 전부 만족하는 후보(입력 순서 그대로) */
   left: InquiryBackorder[];
-  /** 남은 게 1개이고 본문에 색상과 사이즈가 둘 다 있다(M1: 한쪽만으로 확정하지 않는다) */
+  /** 남은 게 1개이고 본문에 색상과 사이즈가 하나씩 있다(M1: 한쪽만으로 확정하지 않는다, R1: 둘 이상이면 쌍을 몰라 확정하지 않는다) */
   confirmed: InquiryBackorder | null;
 }
 
@@ -177,7 +177,9 @@ export function narrowBackorders(
   const colors = [
     ...new Set([...COLOR_WORDS, ...pool.map((b) => b.color)]),
   ].filter((c) => flat.includes(c));
-  const sizes = [...normalized.matchAll(SIZE_TOKEN)].map((m) => m[1] as Size);
+  const sizes = [
+    ...new Set([...normalized.matchAll(SIZE_TOKEN)].map((m) => m[1] as Size)),
+  ];
   const said = words.length + colors.length + sizes.length > 0;
   const left = pool.filter(
     (b) =>
@@ -185,8 +187,10 @@ export function narrowBackorders(
       (colors.length === 0 || colors.includes(b.color)) &&
       (sizes.length === 0 || sizes.includes(b.size)),
   );
+  // 색상이나 사이즈가 둘 이상이면 어느 색에 어느 사이즈인지(쌍)를 이 거르기가 모른다. "블랙 M이랑 화이트 L"은
+  // 블랙/L도 통과시킨다 — 묻지 않은 옵션으로 확정하게 된다(D37 ④, 리뷰 R1). 그래서 각각 하나일 때만 확정한다
   const confirmed =
-    left.length === 1 && colors.length > 0 && sizes.length > 0
+    left.length === 1 && colors.length === 1 && sizes.length === 1
       ? (left[0] ?? null)
       : null;
   return { said, left, confirmed };
