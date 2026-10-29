@@ -11,6 +11,7 @@ import {
   openCreateWithPost,
   png,
   PNG_WIDTH,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -209,7 +210,7 @@ test("S2-10 시즌 종료 수정 화면 — + 와 드래그가 비활성", async
   ).toBeVisible();
   await expect(addSlot(page)).toBeDisabled();
   await expect(addSlot(page)).toHaveAttribute("data-ac", /S2-10/);
-  await expect(registered(page).first()).toHaveAttribute(
+  await expect(handleOf(registered(page).first())).toHaveAttribute(
     "aria-disabled",
     "true",
   );

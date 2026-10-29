@@ -47,15 +47,16 @@ export const ALL_AXES: FilterAxes = {
 export const WHOLESALER_HOME_AXES: FilterAxes = { ...ALL_AXES, price: false };
 
 /**
- * 도매처 홈 통계 칸이 값을 못 받을 때 쓰는 말. 두 자리가 쓴다 —
- * `진행 중` 카드는 늘(도매처별 확정 대기·미송 건수를 주는 소매 API가 없다 · #240),
- * `미결제 잔액` 카드는 정산 요청이 실패했을 때(`TradeStatsSlot.unavailable`).
- * 숫자를 지어내지 않는다 — `0건 · 0원`은 "거래 없음"으로 읽혀서 실제로 미수가 있는
+ * `미결제 잔액` 카드가 정산 요청 실패로 값을 못 받았을 때(`TradeStatsSlot.unavailable`).
+ * 숫자를 지어내지 않는다 — `0원`은 "거래 없음"으로 읽혀서 실제로 미수가 있는
  * 도매처가 깨끗해 보인다(#183).
+ *
+ * 예전 `진행 중` 카드는 지웠다. 도매처별 확정 대기·미송 건수를 주는 API가 없어
+ * 늘 "거래 정보 준비 중"이었다(#240, `side-02` #3). 서버가 주면(BE 요청 B8) 다시 단다.
  */
-export const TRADE_STATS_PENDING = {
+export const TRADE_STATS_UNAVAILABLE = {
   value: "—",
-  sub: "거래 정보 준비 중",
+  sub: "불러오지 못했어요",
 } as const;
 
 /** 정렬 라벨. 찜 목록만 정렬이 있다 — 목록 API에 정렬 파라미터가 없다 */

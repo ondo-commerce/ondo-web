@@ -37,6 +37,7 @@ import {
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView, UploadState } from "../types";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
+import { useLinkLeaveGuard } from "../useLinkLeaveGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import {
@@ -190,9 +191,19 @@ function ProductEditForm({ product }: { product: ProductView }) {
     ) || uploadState.uploading;
   useBeforeUnloadGuard(dirty && !leaving);
 
+  /*
+   * 모달이 열린 이유. `null`이면 `취소`(→ detailPath), 경로가 있으면 앱 안 Link가 가려던 곳(S5).
+   * 모달은 하나다 — 문구가 같고, 닫히면 포커스는 트리거인 `취소`로 돌아간다(S5-4).
+   */
+  const [linkHref, setLinkHref] = useState<string | null>(null);
+  useLinkLeaveGuard(dirty && !leaving, (href) => {
+    setLinkHref(href);
+    setLeaveOpen(true);
+  });
+
   const leave = () => {
     setLeaving(true);
-    router.push(detailPath);
+    router.push(linkHref ?? detailPath);
   };
 
   /**
@@ -329,7 +340,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
                 "mr-auto text-sm",
                 note.danger
                   ? "text-destructive-strong"
-                  : "text-muted-foreground",
+                  : /* 회색이면 잠긴 저장 버튼 옆에서 꺼진 안내로 읽힌다(#254 F8) */
+                    "text-foreground",
               )}
             >
               {note.text}
@@ -344,9 +356,11 @@ function ProductEditForm({ product }: { product: ProductView }) {
           <LeaveConfirmDialog
             open={leaveOpen}
             /* 트리거(취소)가 열자고 할 때 더티가 아니면 열지 않고 바로 떠난다 */
-            onOpenChange={(open) =>
-              open && !dirty ? leave() : setLeaveOpen(open)
-            }
+            onOpenChange={(open) => {
+              if (open && !dirty) return leave();
+              setLeaveOpen(open);
+              if (!open) setLinkHref(null);
+            }}
             onLeave={leave}
           >
             <Button

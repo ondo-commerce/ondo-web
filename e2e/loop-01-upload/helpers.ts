@@ -65,6 +65,14 @@ export function registered(page: Page): Locator {
   return slotsIn(page, "registered");
 }
 
+/**
+ * 등록 칸의 집기 손잡이. 칸 이름("이미지 N, 대표")과 잠김(aria-disabled)은 여기에만 있다 —
+ * 바깥 칸은 자리만 받는다(#254 F5, side-01 F1)
+ */
+export function handleOf(cell: Locator): Locator {
+  return cell.locator('[aria-roledescription="sortable"]');
+}
+
 export function slotsIn(page: Page, state: string): Locator {
   return grid(page).locator(`> [data-state="${state}"]`);
 }
