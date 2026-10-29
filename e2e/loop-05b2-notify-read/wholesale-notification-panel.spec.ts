@@ -12,6 +12,7 @@ import {
   openPanel,
   orderCard,
   panel,
+  PEEK_GET,
   READ_POST,
   readBodies,
   rowById,
@@ -214,6 +215,50 @@ test("S11-9 그 사이 새 알림 → 409 안내, 점 그대로, 첫 행 새 주
   await expect(panel(page).getByRole("status")).toHaveCount(0);
 });
 
+test("F3 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 새 알림 줄, 모두 읽음은 보내지 않고 안내 + 첫 장 다시", async ({
+  page,
+}) => {
+  await openPanel(page);
+  /* 다른 기기 흉내: 같은 사업체가 1025 를 읽는다(읽음 범위는 사업체) */
+  await page.evaluate(() =>
+    fetch("/api/wholesale/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [1025] }),
+    }),
+  );
+  await notify(page, "incoming", { type: "NEW_ORDER" });
+  const counts = await count(page, COUNT_GET);
+  await page.clock.fastForward(30_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+
+  const newer = panel(page).getByRole("button", {
+    name: "새 알림 1개 보기",
+    exact: true,
+  });
+  await expect(newer).toBeVisible();
+  await expect(markAllButton(page)).toHaveText("안 읽은 알림 3개 모두 읽음");
+  expect(await rowIds(page)).not.toContain(NEW_ID);
+
+  const lists = await count(page, LIST_GET);
+  await markAllButton(page).click();
+  await expect(panel(page).getByRole("status")).toHaveText(
+    "그 사이 알림이 바뀌었어요. 확인하고 다시 눌러 주세요",
+  );
+  await expect(rows(page).first()).toHaveAttribute("data-id", String(NEW_ID));
+  await expect(newer).toHaveCount(0);
+  expect(await count(page, LIST_GET), "첫 장 다시 1회").toBe(lists + 1);
+  /* read 는 다른 기기 흉내 1번뿐 — 모두 읽음은 나가지 않았다 */
+  expect(await readBodies(page)).toEqual([{ ids: [1025] }]);
+  await expect(unreadRows(page)).toHaveCount(2);
+
+  /* 새 행을 본 뒤 다시 누르면 그때 읽는다 */
+  await markAllButton(page).click();
+  await expect(markAllButton(page)).toHaveCount(0);
+  await expect(unreadRows(page)).toHaveCount(0);
+  await expect(bell(page)).toHaveAccessibleName("알림");
+});
+
 test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'로만 첫 장 다시", async ({
   page,
 }) => {
@@ -224,6 +269,7 @@ test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'�
   await list.evaluate((el) => (el.scrollTop = 200));
   const before = await rowIds(page);
   const lists = await count(page, LIST_GET);
+  expect(await count(page, PEEK_GET), "연 순간엔 엿보기 0").toBe(0);
 
   await notify(page, "incoming", { type: "NEW_ORDER" });
   const counts = await count(page, COUNT_GET);
@@ -236,6 +282,7 @@ test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'�
   expect(await count(page, LIST_GET), "목록을 저절로 다시 받지 않는다").toBe(
     lists,
   );
+  expect(await count(page, PEEK_GET), "count 1회 뒤 엿보기 1회").toBe(1);
 
   await newer.click();
   await expect(rows(page).first()).toHaveAttribute("data-id", String(NEW_ID));

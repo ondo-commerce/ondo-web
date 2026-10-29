@@ -19,14 +19,15 @@ import { chatBadge } from "../derive";
  * 실패해도 아이콘은 늘 있다(디자인 결정 36). count를 모르면 배지만 없다.
  */
 export function HeaderInbox() {
-  const { data: counts } = useHeaderCountsQuery();
+  const { data: counts, dataUpdatedAt: countsAt } = useHeaderCountsQuery();
   const pathname = usePathname();
   const chat = chatBadge(counts);
   const chatActive =
     pathname === CHAT_HREF || pathname.startsWith(`${CHAT_HREF}/`);
 
   return (
-    <>
+    /* 헤더 줄의 배지 둘(와이어프레임 `.hbar` S11-12 S11-15). `contents`라 셸 flex 배치는 그대로다 */
+    <div className="contents" data-ac="S11-12 S11-15">
       {/* 채팅은 주 메뉴 탭이 아니다 — 어느 화면에서나 여는 받은편지함이고, 탭을 늘리면 `Topbar` 경고대로
           그 줄이 무너진다(loop-04 01-plan §4-1 1). 화면 이동이라 버튼이 아니라 `<a>`다.
           IconButton은 asChild를 막아 두어 같은 모양(ghost, size-8, 아이콘 20px)을 여기서 그린다 */}
@@ -49,7 +50,7 @@ export function HeaderInbox() {
         ) : null}
       </Link>
 
-      <NotificationBell counts={counts} />
-    </>
+      <NotificationBell counts={counts} countsAt={countsAt} />
+    </div>
   );
 }

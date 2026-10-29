@@ -13,6 +13,12 @@ export const HEADER_BACKOFF_MS = [60_000, 120_000, 300_000] as const;
 /** 패널 한 장. 계약 기본값과 같다 */
 export const NOTIFICATION_PAGE_SIZE = 20;
 
+/**
+ * 열린 패널의 엿보기 한 장(F3). count가 올 때마다 첫 장 맨 위보다 새 행이 있는지만 본다.
+ * 화면에 그리지 않으니 한 장(20)까지 받을 필요가 없다 — 이보다 많이 쌓였으면 count 차이가 N을 받친다(`newerBarCount`)
+ */
+export const NOTIFICATION_PEEK_SIZE = 10;
+
 /** 이 수부터 알약이 "99+"다. 아이콘 폭을 넘지 않게 */
 export const BADGE_MAX = 99;
 

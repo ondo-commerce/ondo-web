@@ -7,8 +7,11 @@ import {
   headerBackoffMs,
   headerPollDelayMs,
   markPagesRead,
+  newerBarCount,
   newerCount,
+  newerSince,
   relativeTime,
+  topMark,
   toNotificationRow,
   unreadOf,
   withUnread,
@@ -131,6 +134,46 @@ describe("S11-10 새 알림 N개 보기", () => {
     expect(newerCount(3, 0)).toBe(0);
     expect(newerCount(null, 4)).toBe(0);
     expect(newerCount(3, null)).toBe(0);
+  });
+});
+
+describe("F3 새 알림 줄은 수가 아니라 첫 장 맨 위보다 새 행으로", () => {
+  const at = (iso: string, id: number) => ({ createdAt: iso, id });
+  const TOP = at("2026-10-29T15:00:00+09:00", 1025);
+
+  it("topMark: 목록을 모르면 undefined, 빈 목록 null, 아니면 첫 장 첫 행", () => {
+    expect(topMark(undefined)).toBeUndefined();
+    expect(topMark([])).toBeNull();
+    expect(topMark([page([])])).toBeNull();
+    expect(topMark([page([1025, 1024]), page([1001])])).toEqual(TOP);
+  });
+
+  it("newerSince: 시각이 늦은 행, 같은 시각이면 id 가 큰 행만 센다", () => {
+    const rows = [
+      at("2026-10-29T15:01:00+09:00", 1026),
+      at("2026-10-29T15:00:00+09:00", 1030),
+      TOP,
+      at("2026-10-29T15:00:00+09:00", 1020),
+      at("2026-10-29T14:00:00+09:00", 1040),
+    ];
+    expect(newerSince(rows, TOP)).toBe(2);
+    expect(newerSince([TOP], TOP)).toBe(0);
+    /* 오프셋이 달라도 같은 순간이면 같은 시각 */
+    expect(newerSince([at("2026-10-29T06:00:00Z", 1025)], TOP)).toBe(0);
+  });
+
+  it("newerSince: 연 때 빈 목록(null)이면 엿본 행 전부가 새 행", () => {
+    expect(newerSince([TOP, at("2026-10-29T14:00:00+09:00", 1)], null)).toBe(2);
+  });
+
+  it("QA (g): 연 뒤 다른 기기가 1개 읽고 새 1개 → count 차이 0 이어도 줄 1", () => {
+    const peek = [at("2026-10-29T15:05:00+09:00", 1026), TOP];
+    expect(newerBarCount(newerCount(3, 3), newerSince(peek, TOP))).toBe(1);
+  });
+
+  it("newerBarCount: 엿보기를 모르면(실패) count 가 늘어난 만큼은 알린다", () => {
+    expect(newerBarCount(newerCount(3, 5), 0)).toBe(2);
+    expect(newerBarCount(0, 0)).toBe(0);
   });
 });
 

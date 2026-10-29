@@ -8,6 +8,7 @@ import type {
   BadgeView,
   HeaderCounts,
   Notification,
+  NotificationMark,
   NotificationPage,
   NotificationRowView,
 } from "./types";
@@ -99,6 +100,44 @@ export function newerCount(
 ): number {
   if (openedUnread === null || latestUnread === null) return 0;
   return Math.max(latestUnread - openedUnread, 0);
+}
+
+/** 받은 첫 장의 맨 위 행. "이보다 새 행이 있나"의 기준(F3). 목록을 아직 모르면 undefined, 빈 목록이면 null */
+export function topMark(
+  pages: readonly NotificationPage[] | undefined,
+): NotificationMark | null | undefined {
+  if (pages === undefined) return undefined;
+  const first = pages[0]?.data[0];
+  return first === undefined
+    ? null
+    : { createdAt: first.createdAt, id: first.id };
+}
+
+/**
+ * `since`보다 목록 순서(createdAt 내림차순, 같으면 id 내림차순)로 앞에 오는 행 수(F3).
+ * `since`가 null(연 때 빈 목록)이면 전부 새 행이다.
+ *
+ * 수를 비교하지 않는 이유: 패널을 연 사이 다른 기기가 1개 읽고 새 알림이 1개 오면 count가 같다.
+ * 그러면 "새 알림 N개 보기"가 안 뜨고, `모두 읽음`이 본 적 없는 행까지 409 없이 읽는다.
+ */
+export function newerSince(
+  rows: readonly Pick<Notification, "createdAt" | "id">[],
+  since: NotificationMark | null,
+): number {
+  if (since === null) return rows.length;
+  const sinceMs = Date.parse(since.createdAt);
+  return rows.filter((n) => {
+    const ms = Date.parse(n.createdAt);
+    return ms > sinceMs || (ms === sinceMs && n.id > since.id);
+  }).length;
+}
+
+/**
+ * "새 알림 N개 보기"의 N. 첫 장 맨 위보다 새 행 수(엿보기)가 기준이고, count가 연 때보다 늘어난 수는 아래 한계다 —
+ * 엿보기는 한 장(`NOTIFICATION_PEEK_SIZE`)만 보고 실패할 수도 있어서, 그때도 늘어난 만큼은 알린다.
+ */
+export function newerBarCount(countNewer: number, peekNewer: number): number {
+  return Math.max(countNewer, peekNewer);
 }
 
 /* ------------------------------------------------------------------------

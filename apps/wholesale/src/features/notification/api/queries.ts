@@ -1,17 +1,24 @@
 "use client";
 
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
+import { useEffect } from "react";
 import { notificationKeys } from "./keys";
-import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_PATH } from "../constants";
+import {
+  NOTIFICATION_PAGE_SIZE,
+  NOTIFICATION_PATH,
+  NOTIFICATION_PEEK_SIZE,
+} from "../constants";
 import { failedCounts, headerPollDelayMs } from "../derive";
 import type {
   HeaderCounts,
+  NotificationMark,
   NotificationPage,
   NotificationUnreadCount,
 } from "../types";
@@ -49,9 +56,18 @@ async function fetchHeaderCounts(
  * 대시보드 갱신과 따로 돈다.
  *
  * 401 뒤엔 `enabled`가 꺼진다 — 탭 복귀나 read 뒤 다시 받기도 요청을 내지 않는다.
+ *
+ * 그 멈춤은 **셸이 새로 붙을 때** 푼다(F2). 로그아웃 → 로그인은 클라이언트 이동이라 QueryClient가 그대로고,
+ * 지우지 않으면 다시 로그인한 사장이 새로고침 전까지 배지 0을 본다. 셸(`(erp)` 레이아웃)은 `/login`에서 내려가니
+ * 마운트 한 번 = 세션 한 번이다. 같은 화면에 머무는 동안은 그대로 멈춘다(S11-13).
  */
 export function useHeaderCountsQuery() {
   const queryClient = useQueryClient();
+  useEffect(() => {
+    const key = notificationKeys.counts();
+    if (queryClient.getQueryData<HeaderCounts>(key)?.kind === "unauthorized")
+      void queryClient.resetQueries({ queryKey: key, exact: true });
+  }, [queryClient]);
   return useQuery({
     queryKey: notificationKeys.counts(),
     queryFn: () => fetchHeaderCounts(queryClient),
@@ -85,9 +101,10 @@ async function headerSafe<T>(run: () => Promise<T>): Promise<T> {
  * Suspense를 쓰지 않는다. 패널 안 세 상태(막대, 빈 상태, 실패)와 `더 보기` 실패 한 줄이 같은 표면 안에 있어서
  * 경계로 쪼개면 머리 줄(제목, `모두 읽음`)까지 같이 사라진다(디자인 결정 35 "머리 줄은 셋 다 그린다").
  */
-export function useNotificationListQuery() {
+export function useNotificationListQuery(enabled = true) {
   return useInfiniteQuery({
     queryKey: notificationKeys.list(),
+    enabled,
     queryFn: ({ pageParam }) =>
       headerSafe(() =>
         apiFetchBody<NotificationPage>(NOTIFICATION_PATH.list, {
@@ -99,6 +116,43 @@ export function useNotificationListQuery() {
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.meta.nextCursor,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+}
+
+/**
+ * 열린 패널의 엿보기(F3). count가 새로 올 때마다(`countsAt`) 첫 장 크기보다 작은 한 장을 받아
+ * 맨 위 행(`since`)보다 새 행이 있는지 본다. **화면 목록에는 넣지 않는다** — 목록은 "새 알림 N개 보기"로만 바뀐다(S11-10).
+ *
+ * `enabled`는 부르는 쪽이 정한다: 패널이 열렸고, 첫 장을 받았고, 그 뒤에 온 count가 있을 때만.
+ * 키가 바뀌는 동안 앞 결과를 들고 있는다(`keepPreviousData`) — 줄이 깜빡이지 않게. 앞 결과는 부르는 쪽이
+ * 지금 `since`로 다시 센다(`newerSince`)라 첫 장을 다시 받은 뒤 남은 옛 결과는 0이 된다.
+ */
+export function useNotificationPeekQuery({
+  since,
+  countsAt,
+  enabled,
+}: {
+  since: NotificationMark | null;
+  countsAt: number;
+  enabled: boolean;
+}) {
+  return useQuery({
+    queryKey: notificationKeys.peek(
+      since === null ? "" : `${since.createdAt}#${since.id}`,
+      countsAt,
+    ),
+    queryFn: () =>
+      headerSafe(() =>
+        apiFetchBody<NotificationPage>(NOTIFICATION_PATH.list, {
+          searchParams: { size: NOTIFICATION_PEEK_SIZE },
+        }),
+      ),
+    enabled,
+    placeholderData: keepPreviousData,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

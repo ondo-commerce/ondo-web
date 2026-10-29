@@ -40,7 +40,10 @@ export type HeaderCounts =
       /** 답 필요 방 수. 채팅 링크 배지(Q2) */
       chatsNeedingReply: number;
     }
-  /** 세션이 끊겼다. 배지 없이 멈춘다. 다시 도는 건 새로고침이나 로그인 뒤 */
+  /**
+   * 세션이 끊겼다. 배지 없이 멈춘다(그 화면에 있는 동안). 다시 도는 건 새로고침, 또는 셸이 다시 그려질 때 —
+   * 로그인은 클라이언트 이동이라 캐시에 이 값이 남는다. 셸이 새로 붙을 때 지운다(`useHeaderCountsQuery`, F2)
+   */
   | { kind: "unauthorized" }
   /** 404, 500, 연결 실패. 배지 없이 간격만 늘린다. `failures`는 연속 실패 수(1부터) */
   | { kind: "failed"; failures: number };
@@ -68,6 +71,12 @@ export interface NotificationRowView {
   unread: boolean;
   /** 누르면 갈 곳. 모르는 type이나 target이면 null — 읽음만 하고 이동하지 않는다 */
   href: string | null;
+}
+
+/** 목록 순서의 한 점(createdAt, id). 패널 첫 장 맨 위 행을 기억해 "그보다 새 행"을 센다(F3) */
+export interface NotificationMark {
+  createdAt: string;
+  id: number;
 }
 
 /** 패널 위쪽 한 줄 안내. 다음 누름에서 사라진다 */

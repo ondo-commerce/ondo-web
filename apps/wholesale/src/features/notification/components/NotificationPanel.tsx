@@ -89,14 +89,19 @@ export function NotificationPanel({
 
       {/* 409는 사장 잘못이 아니라 빨강을 안 쓴다(디자인 결정 33). 500은 오류 한 줄 */}
       {notice === "changed" ? (
-        <Notice role="status" className="mt-3 shrink-0" data-ac="S11-9">
+        <Notice
+          role="status"
+          /* 떠 있는 작은 표면이라 Notice 기본(12 16, 14)보다 작게 — 와이어프레임 `.pop .notice` 8 12, 13 */
+          className="mt-3 shrink-0 px-3 py-2 text-body"
+          data-ac="S11-9"
+        >
           {PANEL_TEXT.changed}
         </Notice>
       ) : null}
       {notice === "markFailed" ? (
         <p
           role="alert"
-          className="text-destructive-strong mt-3 flex shrink-0 items-center gap-1.5 text-sm"
+          className="text-destructive-strong mt-3 flex shrink-0 items-center gap-1.5 text-body"
           data-ac="S11-8"
         >
           <TriangleAlert aria-hidden className="size-4 shrink-0" />
@@ -247,7 +252,7 @@ function PanelList({
 }
 
 const ROW_CLASS =
-  "focus-visible:ring-ring grid w-full grid-cols-[0.5rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-control px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset aria-disabled:cursor-default";
+  "focus-visible:ring-ring grid w-full grid-cols-[0.5rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-control py-2.5 pr-3 pl-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset aria-disabled:cursor-default";
 
 /**
  * 행 하나(디자인 결정 30). 점 8 + title + 오른쪽 시각, 아래 body 한 줄. 종류 아이콘은 없다(title 첫 말이 종류).
