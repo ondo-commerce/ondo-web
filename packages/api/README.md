@@ -106,6 +106,28 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | HTTP | `POST /__mock/chat/fail {op, status = 500, times = 1}` | op(`rooms` `room` `messages` `send` `read` `settings`)의 다음 n회 실패. `settings`는 설정 GET, PUT 공용 |
 | HTTP | `POST /__mock/chat/reset {rooms?}` | 시드로(자동 답 설정은 켜짐, 방 1 문맥은 2001 지금). `rooms: 0`이면 빈 목록, `n`이면 최근 n개만 |
 | HTTP | `POST /__mock/chat/rooms/{roomId}/context {listingId, ageMinutes = 0}` | 방 상품 문맥. `ageMinutes: 31`이면 지난 문맥, `null`이면 없음 (도매, 소매 공용) |
+
+### 미송 자동 답과 소매 헤더 배지 (loop-06, #298)
+
+판정은 `src/mocks/chat/inquiry.ts`의 미송 가지와 `src/mocks/chat/backorderCandidates.ts`(후보, 서울 날짜, 칩 글자,
+본문 좁히기)다. 후보 원본은 도매 미송 목 저장소(`wholesale/backorder.ts` `inquiryBackorders()`)를 **거르지 않고**
+넘기고, 이 방 도매처와 이 소매처 것만 고르는 건 판정이 한다. 원본에는 원래 수량, 판매가능, 소매처 이름 칸이 없다.
+한 탭 안에서는 미송 탭의 입고일 저장과 배분이 다음 자동 답에 바로 쓰인다.
+
+시드 날짜: 입고 예정일은 **reset 시각(서울) 기준 상대값**이다(3003 −3일, 3019 +7일, 3801 +5일, 3011 미정).
+채팅 reset이 미송 목도 같이 되돌린다. e2e는 reset 전에 `page.clock`을 2026-10-29 14:20(+09:00)에 고정한다.
+미송 시드 행: 9001 9002 9003 9005 9006(봄봄상회, 원래 4 남은 2) 9004(해소) 801(도매처 102, 방 33). 미송 탭은 도매처 101 것만 본다.
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 도매 | `POST /__mock/chat/rooms/{roomId}/incoming {body, autoReply: true, inquiry?}` | 방 문맥을 안 바꾸고 판정을 돌린다. `inquiry`는 칩 주입(`{intent: BACKORDER, backorderId, variantId}`, `{notListed: true}`) |
+| 도매, 소매 | `POST /__mock/chat/reset {noBackorders?}` | 미송 0건으로(후보 0개 시험) |
+| 소매 | `POST /__mock/chat/reset {empty?}` | 내 방(봄봄상회) 0개 |
+| 소매 | `POST /__mock/chat/fail {op: count, status}` | 헤더 배지 op `GET /api/retail/notifications/unread-count`의 다음 n회 실패 |
+| 소매 | `POST /__mock/chat/delay {op: count\|read, ms, times = 1}` | 다음 n회 응답을 늦춘다. 값은 요청 시점에 정한다(늦은 count 시험) |
+
+소매 `unread-count` = `{notifications: 0, chats: 내 방 unreadCount 합, latestNotificationId: null}`. 알림은 06b라 06a 목에선 늘 0과 null이다.
+골든셋 v3(`openapi/golden/inquiry-golden.json`)은 재고 35 + 미송 24. 판정 unit이 전부, 소매 HTTP 테스트가 방 1 시나리오를 돈다.
 | HTTP | `POST /__mock/chat/auto-reply {enabled, intents?}` | 자동 답 켜고 끄기. 소매 탭은 도매 탭 스위치와 상태를 나누지 않아 이걸로 맞춘다 (공용) |
 
 계약 테스트는 `chat.test.ts`(vitest + `msw/node`, `pnpm test`가 돈다).

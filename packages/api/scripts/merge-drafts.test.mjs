@@ -82,8 +82,11 @@ describe("S7-1 초안 병합 뒤 choices 와 설정 op", () => {
       expect(
         merged.components.schemas.ChatAutoReply.properties.choices,
       ).toBeUndefined();
+      // choices 가 빠지면 ChatChoice 를 부르는 곳이 없어 병합에 안 들어온다 → loop-06 이 더한 보기 칸 둘도 같이 사라짐
       expect(checkDraftSurvival(merged, DRAFTS[app])).toEqual([
         "`ChatAutoReply.choices` 사라짐",
+        "`ChatChoice.backorderId` 사라짐",
+        "`ChatChoice.kind` 사라짐",
       ]);
     }
   });
@@ -191,5 +194,135 @@ describe("S10-1 알림 초안 op 3개", () => {
       p.startsWith("/api/wholesale/notifications"),
     );
     expect(paths.sort()).toEqual(NOTIFICATION_OPS.map(([p]) => p).sort());
+  });
+});
+
+/**
+ * loop-06 S1-1. 소매 헤더 배지 op 1개 + 기존 스키마에 더한 칸 3개(`ChatChoice.kind`, `ChatChoice.backorderId`,
+ * `ChatInquiry.notListed`, 도매와 소매 양쪽). 칸은 required 가 아니라 BE 가 빼고 내도 typecheck 가 못 잡는다.
+ */
+const RETAIL_UNREAD = "/api/retail/notifications/unread-count";
+const LOOP06_FIELDS = [
+  ["ChatChoice", "kind"],
+  ["ChatChoice", "backorderId"],
+  ["ChatInquiry", "notListed"],
+];
+
+describe("S1-1 loop-06 초안: 소매 unread-count op, 보기 kind, backorderId, notListed", () => {
+  it("drafts 와 스냅샷 양쪽에 칸 3개, 전부 x-ondo-draft, required 아님. kind enum 3개", () => {
+    for (const app of ["retail", "wholesale"]) {
+      for (const doc of [DRAFTS[app], SNAPSHOTS[app]]) {
+        for (const [schema, prop] of LOOP06_FIELDS) {
+          const s = doc.components.schemas[schema];
+          expect(
+            s.properties[prop]?.["x-ondo-draft"],
+            `${app} ${schema}.${prop}`,
+          ).toBe(true);
+          expect(s.required).not.toContain(prop);
+        }
+        expect(doc.components.schemas.ChatChoice.properties.kind.enum).toEqual([
+          "VARIANT",
+          "BACKORDER",
+          "NOT_LISTED",
+        ]);
+        expect(
+          doc.components.schemas.ChatChoice.properties.backorderId.type,
+        ).toEqual(["integer", "null"]);
+      }
+    }
+  });
+
+  it("소매 drafts 에 op 1개(notificationUnreadCount, x-ondo-draft, 401 403 500), RetailUnreadCount {notifications, chats} 필수", () => {
+    const op = DRAFTS.retail.paths[RETAIL_UNREAD]?.get;
+    expect(op?.operationId).toBe("notificationUnreadCount");
+    expect(op?.["x-ondo-draft"]).toBe(true);
+    expect(Object.keys(op?.responses ?? {}).sort()).toEqual([
+      "200",
+      "401",
+      "403",
+      "500",
+    ]);
+    expect(op.responses["401"].content["application/json"].example.code).toBe(
+      "UNAUTHORIZED",
+    );
+    expect(op.responses["403"].content["application/json"].example.code).toBe(
+      "ACCOUNT_NOT_APPROVED",
+    );
+    const schema = DRAFTS.retail.components.schemas.RetailUnreadCount;
+    expect(schema.required).toEqual(["chats", "notifications"]);
+    // 06b 새 알림 판단용(05b-2 QA F3). optional + 초안 표시라 BE 가 빼면 재병합 검사가 잡는다
+    expect(schema.properties.latestNotificationId).toMatchObject({
+      type: ["integer", "null"],
+      format: "int64",
+      "x-ondo-draft": true,
+    });
+    expect(schema.required).not.toContain("latestNotificationId");
+    expect(SNAPSHOTS.retail.components.schemas.RetailUnreadCount).toEqual(
+      schema,
+    );
+    const received = emptyReceived();
+    received.paths[RETAIL_UNREAD] = { get: { responses: {} } };
+    received.components.schemas.RetailUnreadCount = JSON.parse(
+      JSON.stringify(schema),
+    );
+    delete received.components.schemas.RetailUnreadCount.properties
+      .latestNotificationId;
+    expect(
+      checkDraftSurvival(
+        mergeDrafts(received, DRAFTS.retail).merged,
+        DRAFTS.retail,
+      ),
+    ).toEqual(["`RetailUnreadCount.latestNotificationId` 사라짐"]);
+    expect(SNAPSHOTS.retail.paths[RETAIL_UNREAD]?.get).toEqual(op);
+  });
+
+  it("빈 BE 스펙과 합치면 op, RetailUnreadCount, ErrorResponse 참조까지 들어오고 검사가 빈 배열이다", () => {
+    const { merged, kept } = mergeDrafts(emptyReceived(), DRAFTS.retail);
+    expect(kept).toContain(`GET ${RETAIL_UNREAD}`);
+    expect(merged.components.schemas.RetailUnreadCount).toBeDefined();
+    expect(checkDraftSurvival(merged, DRAFTS.retail)).toEqual([]);
+  });
+
+  it("가짜 스펙: BE 가 kind, backorderId 없는 ChatChoice, notListed 없는 ChatInquiry 를 내면 칸 3개 사라짐으로 실패한다", () => {
+    for (const app of ["retail", "wholesale"]) {
+      const received = emptyReceived();
+      for (const name of ["ChatChoice", "ChatInquiry", "ChatAutoReply"]) {
+        received.components.schemas[name] = JSON.parse(
+          JSON.stringify(DRAFTS[app].components.schemas[name]),
+        );
+      }
+      delete received.components.schemas.ChatChoice.properties.kind;
+      delete received.components.schemas.ChatChoice.properties.backorderId;
+      delete received.components.schemas.ChatInquiry.properties.notListed;
+      const { merged } = mergeDrafts(received, DRAFTS[app]);
+      expect(checkDraftSurvival(merged, DRAFTS[app]).sort(), app).toEqual(
+        [
+          "`ChatChoice.backorderId` 사라짐",
+          "`ChatChoice.kind` 사라짐",
+          "`ChatInquiry.notListed` 사라짐",
+        ].sort(),
+      );
+    }
+  });
+
+  it("가짜 스펙: 병합 뒤 unread-count op 가 빠지면 사라짐으로 실패한다", () => {
+    const { merged } = mergeDrafts(emptyReceived(), DRAFTS.retail);
+    delete merged.paths[RETAIL_UNREAD];
+    expect(checkDraftSurvival(merged, DRAFTS.retail)).toEqual([
+      `GET ${RETAIL_UNREAD} 사라짐`,
+    ]);
+  });
+
+  it("기존 op 는 안 바뀐다: 소매 스냅샷의 알림 경로는 새 op 하나뿐, 도매 스냅샷에는 retail 경로 없음", () => {
+    expect(
+      Object.keys(SNAPSHOTS.retail.paths).filter((p) =>
+        p.includes("/notifications"),
+      ),
+    ).toEqual([RETAIL_UNREAD]);
+    expect(
+      Object.keys(SNAPSHOTS.wholesale.paths).filter((p) =>
+        p.startsWith("/api/retail/"),
+      ),
+    ).toEqual([]);
   });
 });

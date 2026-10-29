@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { chatStockListing } from "../wholesale/product";
 import { CHAT_EXTRA_LISTINGS } from "./extraListings";
+import { seoulDate } from "./backorderCandidates";
 import {
   GOLDEN,
+  GOLDEN_T0,
   fullInquiry,
+  goldenBackorders,
   goldenCatalog,
   projectDecision,
+  projectStep,
   type GoldenExpect,
   type GoldenInquiry,
   type GoldenScenario,
 } from "./golden.testkit";
 import {
+  BACKORDER_CHOICE_MAX,
   DEFAULT_AUTO_REPLY_SETTINGS,
   INQUIRY_BAND_EDGES,
   INQUIRY_CONTEXT_MINUTES,
@@ -29,8 +34,17 @@ import {
  */
 
 const CATALOG = goldenCatalog(GOLDEN.stock);
-const BASE = Date.parse("2026-10-28T10:00:00+09:00");
+const BACKORDERS = goldenBackorders(GOLDEN.backorders);
+/** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
+const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
+const DAY = 86_400_000;
+/** decideInquiry 를 직접 부르는 재고 unit 이 같이 넘기는 칸(방 1 봄봄상회, 오늘, 골든셋 미송 원본) */
+const ROOM1 = {
+  retailerId: 1,
+  today: seoulDate(BASE),
+  backorders: BACKORDERS,
+};
 
 interface StepResult {
   scenario: string;
@@ -40,8 +54,8 @@ interface StepResult {
 }
 
 /** 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 생성 줄을 history에 쌓는다 */
-function runScenario(s: GoldenScenario): StepResult[] {
-  let now = BASE;
+function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
+  let now = BASE + (s.room.afterDays ?? 0) * DAY;
   let context =
     s.room.context === null
       ? null
@@ -49,9 +63,10 @@ function runScenario(s: GoldenScenario): StepResult[] {
           listingId: s.room.context.listingId,
           at: now - s.room.context.ageMinutes * MINUTE,
         };
-  const settings = s.room.autoReply
-    ? DEFAULT_AUTO_REPLY_SETTINGS
-    : { ...DEFAULT_AUTO_REPLY_SETTINGS, enabled: false };
+  const settings = {
+    enabled: s.room.autoReply,
+    intents: s.room.intents ?? DEFAULT_AUTO_REPLY_SETTINGS.intents,
+  };
   const history: InquiryHistoryItem[] = [];
   let sequence = 0;
   return s.steps.map((step) => {
@@ -68,10 +83,13 @@ function runScenario(s: GoldenScenario): StepResult[] {
       inquiry: fullInquiry(step.inquiry),
       now,
       wholesalerId: s.room.wholesalerId,
+      retailerId: s.room.retailerId ?? 1,
+      today: seoulDate(now),
       settings,
       context,
       history: [...history],
       catalog: CATALOG,
+      backorders,
     });
     const sentAt = new Date(now).toISOString();
     history.push({
@@ -81,7 +99,8 @@ function runScenario(s: GoldenScenario): StepResult[] {
       sentAt,
       autoReply: null,
     });
-    for (const line of generatedLines(decision, mine, now)) {
+    const lines = generatedLines(decision, mine, now);
+    for (const line of lines) {
       sequence += 1;
       history.push({
         sequence,
@@ -95,12 +114,12 @@ function runScenario(s: GoldenScenario): StepResult[] {
       scenario: s.id,
       required: s.required,
       expect: step.expect,
-      actual: projectDecision(decision),
+      actual: projectStep(decision, lines, now),
     };
   });
 }
 
-const RESULTS = GOLDEN.scenarios.flatMap(runScenario);
+const RESULTS = GOLDEN.scenarios.flatMap((s) => runScenario(s));
 
 const isAuto = (e: GoldenExpect) =>
   e.kind === "AUTO_REPLY" ||
@@ -108,31 +127,42 @@ const isAuto = (e: GoldenExpect) =>
 const isHandoff = (e: GoldenExpect) =>
   e.kind === "HANDOFF" ||
   (Array.isArray(e.kinds) && e.kinds.includes("HANDOFF"));
+/** 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지 */
 const sameAnswer = (a: GoldenExpect, e: GoldenExpect) =>
-  a.target === e.target && a.band === e.band && a.orderable === e.orderable;
+  a.target === e.target &&
+  a.band === e.band &&
+  a.orderable === e.orderable &&
+  a.remainingQty === e.remainingQty &&
+  JSON.stringify(a.eta) === JSON.stringify(e.eta);
 
 describe("골든셋 모양", () => {
-  it("시나리오 35개 = 필수 3 + 재고 답 17 + 넘김 15, id 중복 없음", () => {
+  it("v3 시나리오 59개 = 필수 4 + 재고 답 17 + 넘김 15 + 미송 23, id 중복 없음", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.scenarios).toHaveLength(35);
-    expect([count("required"), count("stock"), count("handoff")]).toEqual([
-      3, 17, 15,
-    ]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(35);
+    expect(GOLDEN.version).toBe(3);
+    expect(GOLDEN.scenarios).toHaveLength(59);
+    expect([
+      count("required"),
+      count("stock"),
+      count("handoff"),
+      count("backorder"),
+    ]).toEqual([4, 17, 15, 23]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(59);
     expect(GOLDEN.scenarios.filter((s) => s.required).map((s) => s.id)).toEqual(
-      ["P1", "P2", "P3"],
+      ["P1", "P2", "P3", "P4"],
     );
   });
 
-  it("규칙 상수가 코드와 같다(문맥 30분, 구간 경계 0 10 50)", () => {
+  it("규칙 상수가 코드와 같다(문맥 30분, 구간 경계 0 10 50, 미송 보기 8, T0 서울 2026-10-29)", () => {
     expect(GOLDEN.rules.contextMinutes).toBe(INQUIRY_CONTEXT_MINUTES);
     expect(GOLDEN.rules.bands).toEqual([...INQUIRY_BAND_EDGES]);
+    expect(GOLDEN.rules.backorderChoiceMax).toBe(BACKORDER_CHOICE_MAX);
+    expect(seoulDate(GOLDEN_T0)).toBe("2026-10-29");
   });
 });
 
-describe("S7-2 필수 경로 P1 P2 P3 — 모든 단계 정확 일치", () => {
-  for (const id of ["P1", "P2", "P3"]) {
+describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 — 모든 단계 정확 일치", () => {
+  for (const id of ["P1", "P2", "P3", "P4"]) {
     it(`${id} kind, intent, 대상, 구간, 주문 가능, choices`, () => {
       const steps = RESULTS.filter((r) => r.scenario === id);
       expect(steps.length).toBeGreaterThan(1);
@@ -141,7 +171,7 @@ describe("S7-2 필수 경로 P1 P2 P3 — 모든 단계 정확 일치", () => {
   }
 });
 
-describe("S7-3 골든셋 35개 지표", () => {
+describe("S7-3, S1-2 골든셋 59개 지표", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),
@@ -285,10 +315,11 @@ describe("되묻기 계승은 같은 의도와 같은 상품일 때만(PR #291 C
     steps: { text: string; inquiry?: GoldenInquiry; expect: GoldenExpect }[],
   ) => adhoc("C1", 2001, [ASK, ...steps])[1]?.actual;
 
-  it('(a) 재고 되묻기 뒤 "레드 M 미송은 언제 와요?" → 재고 답 없이 넘김(미송 NOT_SUPPORTED)', () => {
+  it('(a) 재고 되묻기 뒤 "레드 M 미송은 언제 와요?" → 재고 답 없이 미송 판정. 봄봄상회의 레드 M 미송(9004)은 해소돼 넘김(NO_MATCH)', () => {
+    // loop-05b 때는 미송이 넘김(NOT_SUPPORTED)이었다. loop-06부터 미송 가지가 받는다 — 재고 3002로 답하지 않는 게 요점
     expect(second([{ text: "레드 M 미송은 언제 와요?", expect: {} }])).toEqual({
       kind: "HANDOFF",
-      reason: "NOT_SUPPORTED",
+      reason: "NO_MATCH",
     });
   });
 
@@ -374,6 +405,7 @@ describe("S7-4 정규화 표 6행", () => {
             context: { listingId: 2001, at: now - 2 * MINUTE },
             history: [],
             catalog: CATALOG,
+            ...ROOM1,
           });
           const at = new Date(now - MINUTE).toISOString();
           history.push({
@@ -401,6 +433,7 @@ describe("S7-4 정규화 표 6행", () => {
           context: { listingId: 2001, at: now - 2 * MINUTE },
           history,
           catalog: CATALOG,
+          ...ROOM1,
         });
         expect(projectDecision(d), c.text).toEqual(c.expect);
       }

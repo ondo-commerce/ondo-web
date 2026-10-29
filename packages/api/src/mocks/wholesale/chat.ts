@@ -8,6 +8,8 @@ import {
   type AutoReplySettings,
   type InquiryListing,
 } from "../chat/inquiry";
+import { seoulDate } from "../chat/backorderCandidates";
+import { inquiryBackorders, resetBackorderMock } from "./backorder";
 import { chatStockListing } from "./product";
 
 /**
@@ -695,7 +697,8 @@ function settingsFor(wholesalerId: number): AutoReplySettings {
  *
  * 넘김 줄은 방에 이미 열린 넘김이 있으면 또 넣지 않는다 — 사장이 답하기 전까지 소매가 쓰는 글마다
  * "사장님께 전달했어요"가 쌓이면 대화가 그 줄로 덮인다. 자동 답(재고 구간)은 그래도 붙는다.
- * 단 재고 0 답의 넘김 줄은 예외로 늘 붙인다(D34, 디자인 결정 27) — 소매 카드는 바로 아래 넘김 줄이
+ * 단 답 + 넘김 두 줄(재고 0, loop-06의 미송 입고일 미정과 지남)의 넘김 줄은 예외로 늘 붙인다(D34, 디자인 결정 27,
+ * loop-06 §4-2 6) — 소매 카드는 바로 아래 넘김 줄이
  * 있어야 "사장님이 미송 여부를 답한다"가 보이고, 그 줄이 없으면 담기도 막힌 채 답이 끝난 것처럼 보인다.
  *
  * 판정이 던지면(목 버그) 오류가 아니라 넘김이다(§5-2): 소매는 답 대신 "전달했어요"를 본다.
@@ -712,10 +715,13 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
         inquiry: message.inquiry,
         now,
         wholesalerId: r.wholesalerId,
+        retailerId: r.retailerId,
+        today: seoulDate(now),
         settings: settingsFor(r.wholesalerId),
         context: r.context,
         history,
         catalog: chatCatalog,
+        backorders: inquiryBackorders,
       }),
       message.sequence,
       now,
@@ -728,13 +734,14 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
     );
   }
   const sentAt = new Date(now).toISOString();
-  const zeroStock = lines.some(
-    (line) =>
-      line.kind === "AUTO_REPLY" &&
-      line.autoReply?.facts.stock?.band === "NONE",
-  );
+  // 답 + 넘김 두 줄(재고 0, 미송 입고일 미정, 지남)은 넘김 줄이 답의 일부다 — 열린 넘김이 있어도 붙인다
+  const answerWithHandoff =
+    lines.some((line) => line.kind === "AUTO_REPLY") &&
+    lines.some((line) => line.kind === "HANDOFF");
   return lines
-    .filter((line) => !(line.kind === "HANDOFF" && alreadyOpen && !zeroStock))
+    .filter(
+      (line) => !(line.kind === "HANDOFF" && alreadyOpen && !answerWithHandoff),
+    )
     .map((line) =>
       append(r, {
         sender: line.sender,
@@ -1182,12 +1189,39 @@ export const chatHandlers = [
         count?: number;
         intent?: ChatIntent;
         contextListingId?: number | null;
+        autoReply?: boolean;
+        inquiry?: Partial<ChatInquiry> & { intent: ChatIntent };
       };
       const count = Math.max(1, Math.min(input.count ?? 1, 500));
       const base = input.body ?? "새 문의예요";
-      const generate = input.contextListingId !== undefined && count === 1;
+      // `autoReply: true`는 방 문맥을 안 바꾸고 판정만 돌린다(loop-06 §5-4 5, 미송은 상품 문맥이 필요 없다)
+      const generate =
+        (input.contextListingId !== undefined || input.autoReply === true) &&
+        count === 1;
       if (input.contextListingId !== undefined)
         setContext(r, input.contextListingId);
+      // `inquiry`는 칩 주입(미송 칩 `{intent: BACKORDER, backorderId}`, `{notListed: true}`). 없으면 예전처럼 intent만
+      const inquiry: ChatInquiry | null =
+        input.inquiry !== undefined
+          ? {
+              intent: input.inquiry.intent,
+              listingId: input.inquiry.listingId ?? null,
+              variantId: input.inquiry.variantId ?? null,
+              backorderId: input.inquiry.backorderId ?? null,
+              label: input.inquiry.label ?? null,
+              ...(input.inquiry.notListed === undefined
+                ? {}
+                : { notListed: input.inquiry.notListed }),
+            }
+          : input.intent === undefined
+            ? null
+            : {
+                intent: input.intent,
+                listingId: null,
+                variantId: null,
+                backorderId: null,
+                label: null,
+              };
       const created: ChatMessage[] = [];
       for (let i = 1; i <= count; i++) {
         created.push(
@@ -1195,16 +1229,7 @@ export const chatHandlers = [
             sender: "RETAILER",
             body: count === 1 ? base : `${base} ${i}`,
             sentAt: new Date().toISOString(),
-            inquiry:
-              input.intent === undefined
-                ? null
-                : {
-                    intent: input.intent,
-                    listingId: null,
-                    variantId: null,
-                    backorderId: null,
-                    label: null,
-                  },
+            inquiry,
           }),
         );
       }
@@ -1233,8 +1258,9 @@ export const chatHandlers = [
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       rooms?: number;
+      noBackorders?: boolean;
     };
-    resetChatMock(input.rooms);
+    resetChatMock(input.rooms, { noBackorders: input.noBackorders === true });
     return HttpResponse.json({
       data: {
         rooms: rooms.filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
@@ -1247,8 +1273,13 @@ export const chatHandlers = [
 ];
 
 /** 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다 */
-export function resetChatMock(keepRooms?: number) {
+export function resetChatMock(
+  keepRooms?: number,
+  options: { noBackorders?: boolean } = {},
+) {
   rooms = seedRooms();
+  // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
+  resetBackorderMock({ empty: options.noBackorders === true });
   if (keepRooms !== undefined) {
     const keep = new Set(
       rooms
@@ -1306,6 +1337,10 @@ export const chatStore = {
     );
     rooms.push(r);
     return r;
+  },
+  /** 그 소매처의 방을 지운다. 소매 `reset {empty}`(목록 빈 상태, loop-06 S2-4)용 */
+  removeRetailerRooms(retailerId: number) {
+    rooms = rooms.filter((r) => r.retailerId !== retailerId);
   },
   append,
   runAutoReply,
