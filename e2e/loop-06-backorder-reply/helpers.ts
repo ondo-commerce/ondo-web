@@ -63,6 +63,56 @@ export function roomRow(page: Page, roomId: number): Locator {
   return roomList(page).locator(`a[data-room-id="${roomId}"]`);
 }
 
+/** 헤더 → `/chats` → 방 1. 클라이언트 이동이라 걸어 둔 목 상태가 남는다 */
+export async function openRoomFromList(page: Page): Promise<void> {
+  await chatNav(page).click();
+  await expect(page).toHaveURL("/chats");
+  await roomRow(page, 1).click();
+  await expect(page).toHaveURL("/chats/1?from=/chats");
+  await expect(
+    page.getByRole("textbox", { name: "메시지", exact: true }),
+  ).toBeVisible();
+}
+
+/* --- 미송 되묻기와 카드(S3) -------------------------------------------- */
+
+/** 기획 §2-1 장면 2의 질문 */
+export const ASK_WHEN = "지난주 주문한 거 언제 와요?";
+
+/** 미송 보기 목록(말풍선 안 group). 여럿이면 화면 순서 */
+export function orderGroups(page: Page): Locator {
+  return page
+    .getByRole("log", { name: "대화", exact: true })
+    .getByRole("group", { name: "주문 고르기", exact: true });
+}
+
+/** 미송 보기 하나 */
+export function orderChoice(group: Locator, backorderId: number): Locator {
+  return group.locator(`button[data-backorder-id="${backorderId}"]`);
+}
+
+export function notListedChip(group: Locator): Locator {
+  return group.locator('button[data-kind="NOT_LISTED"]');
+}
+
+/** 미송 답 카드 칸 */
+export function orderCards(page: Page, backorderId?: number): Locator {
+  return page
+    .getByRole("log", { name: "대화", exact: true })
+    .locator(
+      backorderId === undefined
+        ? 'div[data-ac="S3-3"][data-backorder-id]'
+        : `div[data-ac="S3-3"][data-backorder-id="${backorderId}"]`,
+    );
+}
+
+/** 입력창에 쓰고 Enter */
+export async function say(page: Page, text: string): Promise<void> {
+  const box = page.getByRole("textbox", { name: "메시지", exact: true });
+  await box.fill(text);
+  await box.press("Enter");
+}
+
 /** read POST 본문을 쌓는다(`page.goto` 전에). `watchRequests`는 본문을 안 남긴다 */
 export async function recordReadBodies(page: Page): Promise<void> {
   await page.addInitScript(() => {

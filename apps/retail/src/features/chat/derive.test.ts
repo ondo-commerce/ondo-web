@@ -751,14 +751,14 @@ describe("S8-4 S8-16 되묻기 칩 — choicesActive, selectedChoice", () => {
         ],
         [],
         4,
-      ),
+      )?.variantId,
     ).toBe(3002);
     expect(
       selectedChoice(
         [ask, clarify(4), message(5, { body: " 네이비 / S " })],
         [],
         4,
-      ),
+      )?.variantId,
     ).toBe(3004);
     expect(
       selectedChoice(
@@ -777,7 +777,7 @@ describe("S8-4 S8-16 되묻기 칩 — choicesActive, selectedChoice", () => {
           }),
         ],
         4,
-      ),
+      )?.variantId,
     ).toBe(3003);
     expect(selectedChoice([ask, clarify(4)], [], 4)).toBeNull();
   });
@@ -795,10 +795,11 @@ describe("S8-4 S8-16 되묻기 칩 — choicesActive, selectedChoice", () => {
   it("S8-3 toClarifyView: 보기 5개, 게시글 id, 활성, 고른 것. 보기 없거나 되묻기가 아니면 null", () => {
     const view = toClarifyView(clarify(4), [ask, clarify(4)], [], now);
     expect(view).toEqual({
+      mode: "stock",
       listingId: 2001,
       choices: CHOICES,
       active: true,
-      selectedVariantId: null,
+      selectedKey: null,
     });
     expect(
       toClarifyView(

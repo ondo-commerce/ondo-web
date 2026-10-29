@@ -15,6 +15,7 @@ import {
 } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
+import { BackorderReplyCard } from "./BackorderReplyCard";
 import { ClarifyChoices } from "./ClarifyChoices";
 import { StockReplyCard } from "./StockReplyCard";
 import { refreshHeaderCounts } from "../api/headerCounts";
@@ -35,6 +36,7 @@ import {
 import {
   askChipBusy,
   askListingId,
+  backorderChoiceInquiry,
   choiceInquiry,
   choiceSendFailed,
   confirmedReadOf,
@@ -45,6 +47,7 @@ import {
   nextReadTarget,
   returnLinkOf,
   stockAskInquiry,
+  toBackorderReplyView,
   toClarifyView,
   toStockCardView,
   toThreadItems,
@@ -52,7 +55,6 @@ import {
 } from "../derive";
 import type {
   AddToCart,
-  ChatChoice,
   ChatInquiry,
   ChatMessage,
   ChatRoomDetail,
@@ -340,9 +342,7 @@ function ChatRoom({
                     now={now}
                     sessionLost={sessionLost}
                     addToCart={addToCart}
-                    onChoose={(listingId, choice) =>
-                      sendChip(choice.label, choiceInquiry(listingId, choice))
-                    }
+                    onChoose={sendChip}
                   />
                 }
               />
@@ -448,8 +448,8 @@ function useNow(): number {
 const NOW_TICK_MS = 15_000;
 
 /**
- * 자동 답 말풍선 안 칸 하나. 되묻기면 칩 줄, 재고 답이면 카드, 그 밖이면 없음. 판정은 derive가 한다
- * (`toClarifyView` `toStockCardView`).
+ * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 그 밖이면 없음.
+ * 판정은 derive가 한다(`toClarifyView` `toStockCardView` `toBackorderReplyView`).
  */
 function AutoReplyExtra({
   message,
@@ -466,7 +466,7 @@ function AutoReplyExtra({
   now: number;
   sessionLost: boolean;
   addToCart: AddToCart | null;
-  onChoose: (listingId: number, choice: ChatChoice) => void;
+  onChoose: (body: string, inquiry: ChatInquiry) => void;
 }) {
   const clarify = toClarifyView(message, messages, pending, now);
   if (clarify !== null)
@@ -474,9 +474,17 @@ function AutoReplyExtra({
       <ClarifyChoices
         view={clarify}
         locked={sessionLost}
-        onChoose={(choice) => onChoose(clarify.listingId, choice)}
+        onChoose={(choice) => {
+          /* 미송 보기는 kind별 문맥(backorderId, notListed)으로, 재고 보기는 그 게시글로 */
+          if (clarify.mode === "backorder")
+            onChoose(choice.label, backorderChoiceInquiry(choice));
+          else if (clarify.listingId !== null)
+            onChoose(choice.label, choiceInquiry(clarify.listingId, choice));
+        }}
       />
     );
+  const backorder = toBackorderReplyView(message, messages);
+  if (backorder !== null) return <BackorderReplyCard card={backorder} />;
   const card = toStockCardView(message, messages);
   if (card !== null)
     return (
