@@ -24,6 +24,7 @@ import {
   INQUIRY_CONTEXT_MINUTES,
   decideInquiry,
   generatedLines,
+  hasPeriodWord,
   linesToAppend,
   openHandoffOf,
   orderLimitOf,
@@ -452,6 +453,105 @@ describe("옵션 확정은 색상과 사이즈 둘 다(§4-2 2, 7, codex-meta M1
       { text: "FREE 몇 장 남았어요?", expect: {} },
     ]);
     expect(single?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3901 });
+  });
+});
+
+/** 방 1 한 번 판정. 상품 문맥 2001(2분 전)을 줄지 고른다 */
+function decideOnce(body: string, withContext = false) {
+  return decideInquiry({
+    body,
+    inquiry: null,
+    now: BASE,
+    wholesalerId: 101,
+    settings: DEFAULT_AUTO_REPLY_SETTINGS,
+    context: withContext ? { listingId: 2001, at: BASE - 2 * MINUTE } : null,
+    history: [],
+    catalog: CATALOG,
+    ...ROOM1,
+  });
+}
+
+const PERIOD_HANDOFF = {
+  kind: "HANDOFF",
+  reason: "PERIOD",
+  intent: "RECEIVABLE",
+} as const;
+
+describe("미수 기간 말은 넓게 잡는다(loop-07 codex-meta M1, QA F4)", () => {
+  it("달, 주, 날, 해, 지난번, 날짜 모양이 붙은 미수 질문 → 금액 없이 PERIOD 넘김", () => {
+    for (const body of [
+      "9월 미수 얼마예요?",
+      "10 월 외상 얼마예요",
+      "시월 미수 얼마예요?",
+      "지난주 미수 얼마예요?",
+      "이번 주 미수 얼마예요?",
+      "저번 주 외상 얼마예요",
+      "다음 주까지 갚을 돈 얼마예요?",
+      "다음달 잔금 얼마예요",
+      "월말 미수 얼마예요?",
+      "지난번 미수 얼마예요?",
+      "저번에 가져간 거 외상 얼마예요",
+      "어제 미수 얼마예요?",
+      "오늘 미수 얼마예요?",
+      "그저께 외상 얼마예요",
+      "엊그제 잔액 얼마예요",
+      "9/7 미수 얼마예요?",
+      "10.29 외상 얼마예요",
+      "9-15 잔금 얼마예요",
+      "15일 미수 얼마예요?",
+      "2주 동안 외상 얼마예요",
+      "3개월 미수 얼마예요?",
+      "두 달 밀린 거 얼마예요",
+      "상반기 미수 얼마예요?",
+      "하반기 외상 얼마예요",
+      "올해 미수 얼마예요",
+      "작년 외상 얼마예요",
+      "1분기 잔액 얼마예요",
+      "최근 미수 얼마예요?",
+      "월요일 외상 얼마예요",
+    ]) {
+      expect(decideOnce(body), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
+  it("기간 말 없는 미수 질문은 그대로 금액 답(지금, 금액 숫자, 쉼표는 기간이 아니다)", () => {
+    for (const body of [
+      "지금 미수 얼마예요?",
+      "미수 얼마예요?",
+      "제 외상 얼마 있어요?",
+      "잔액 얼마예요",
+      "미수 37,500원 맞아요?",
+    ]) {
+      expect(decideOnce(body), body).toMatchObject({
+        kind: "AUTO_REPLY",
+        intent: "RECEIVABLE",
+      });
+    }
+  });
+
+  it('상품 문맥이 있는 방의 "이번 달 얼마 남았어요?"는 재고 되묻기가 아니라 PERIOD 넘김(F4)', () => {
+    for (const body of [
+      "이번 달 얼마 남았어요?",
+      "지난주 얼마 남았어요",
+      "9월 얼마 남았나요?",
+    ]) {
+      expect(decideOnce(body, true), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
+  it('기간 말 없는 "이 셔츠 얼마 남았어요?"(R10), "얼마" 없는 "오늘 몇 장 남았어요?"는 재고 되묻기 그대로', () => {
+    for (const body of ["이 셔츠 얼마 남았어요?", "오늘 몇 장 남았어요?"]) {
+      expect(decideOnce(body, true), body).toMatchObject({
+        kind: "CLARIFY",
+        intent: "STOCK",
+      });
+    }
+  });
+
+  it("hasPeriodWord 는 원문 날짜 모양을 본다(정규화가 / 를 공백으로 바꾸기 전)", () => {
+    expect(hasPeriodWord("9/7 주문분")).toBe(true);
+    expect(hasPeriodWord("37,500원")).toBe(false);
+    expect(hasPeriodWord("지금 미수 얼마예요?")).toBe(false);
   });
 });
 

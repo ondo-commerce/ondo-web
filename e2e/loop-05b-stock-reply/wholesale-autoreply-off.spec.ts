@@ -388,7 +388,9 @@ test.describe("S7-13 도매 조회 시각 (F12)", () => {
     await row(page, "대기상회").click();
     await expect(page).toHaveURL(/room=2$/);
     const receivable = log(page).locator('[data-kind="AUTO_REPLY"]').first();
-    await expect(receivable).toContainText("미결제 786,000원, 선수금 0원");
+    // 시드는 정산 목 대기상회 값(0원, 문장 C)과 같다(loop-07 F3)
+    await expect(receivable).toContainText("미결제 0원, 선수금 0원");
+    await expect(receivable).toContainText("연체 없음");
     // 시드 checkedAt 06:00(서울). 말풍선 시각이 아니라 checkedAt 이다
     await expect(receivable.locator('[data-ac~="S7-13"]')).toHaveText(
       "06:00 조회",

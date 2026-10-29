@@ -356,7 +356,9 @@ function seedRooms(): MockRoom[] {
         {
           sender: "WHOLESALER",
           kind: "AUTO_REPLY",
-          body: "갚을 돈 786,000원, 그중 기한 지난 것 1건이에요",
+          // 정산 목(대기상회 = 소매처 2, 확정 주문만 있고 출고 0)과 같은 값, 문장 C. 같은 방에서 다시 물어도
+          // 같은 답이 나와야 한다 — 옛 시드 786,000원은 정산 원본에 없는 금액이었다(QA F3)
+          body: "지금 갚을 돈은 없어요",
           sentAt: at(60 * 4),
           autoReply: {
             intent: "RECEIVABLE",
@@ -373,9 +375,9 @@ function seedRooms(): MockRoom[] {
               stock: null,
               backorder: null,
               receivable: {
-                outstandingAmount: 786_000,
+                outstandingAmount: 0,
                 prepaidAmount: 0,
-                overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+                overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
               },
             },
           },

@@ -66,12 +66,16 @@ export type ReceivableConversion =
   | { ok: true; facts: ChatReceivableFacts; checkedAt: string }
   | { ok: false; anomaly: ReceivableAnomaly };
 
-const isWhole = (n: number) => Number.isInteger(n);
+/**
+ * 안전 정수만 받는다. `Number.isInteger(1e21)`은 true인데 글로 바꾸면 "1e+21원"이 되고, 2^53을 넘으면 뺄셈
+ * 검사(`unpaid − prepaid = balance`)도 반올림 때문에 틀린 값을 맞다고 본다(Codex M3)
+ */
+const isWhole = (n: number) => Number.isSafeInteger(n);
 
 /**
  * 원본 한 줄 → 소매에게 나갈 facts. 아래 하나라도 맞으면 금액 답 없이 넘김(`AMOUNT_UNSURE`, §4-1 7):
  *  1. `exact` false
- *  2. 정수 아닌 값, NaN(`balance` 포함 전부) / 음수(`balance` 빼고 전부 — balance만 마이너스가 뜻이 있다)
+ *  2. 안전 정수(±2^53 − 1) 아닌 값, NaN, Infinity(`balance` 포함 전부) / 음수(`balance` 빼고 전부 — balance만 마이너스가 뜻이 있다)
  *  3. `unpaid − prepaid ≠ balance` — 부호가 뒤집혔거나 원본끼리 안 맞는다
  *  4. `unpaid > 0`이고 `prepaid > 0` — 배분 안 된 입금이 있다. 갚을 돈에서 뺄지 사람이 정한다(Codex 1)
  *  5. 연체 건수와 연체 금액 중 하나만 0이 아니다

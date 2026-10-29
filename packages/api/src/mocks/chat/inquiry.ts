@@ -146,9 +146,86 @@ const RECEIVABLE_WORDS = [
 const PAYMENT_REPORT_WORDS = ["입금했", "송금했", "이체했", "입금완료"];
 /**
  * 기간 말. 미수 질문에 붙으면 넘긴다(Q2) — 배정이 주문 단위라 달별로 나눌 규칙이 없고, "지난달 얼마예요"에
- * 전체 금액을 말하면 질문과 다른 답이다
+ * 전체 금액을 말하면 질문과 다른 답이다.
+ *
+ * **일부러 넓게 잡는다**(Codex M1). 여섯 낱말만 보던 때 "9월 미수 얼마예요?", "지난주 미수 얼마예요?"에 전체
+ * 잔액이 나갔다. 기간이 아닌 말을 기간으로 읽으면 사장에게 넘어갈 뿐이고, 기간을 놓치면 틀린 금액이 나간다.
+ * "지금"은 넣지 않는다 — "지금 미수 얼마예요?"는 전체 잔액을 묻는 장면 문장이다(P5, R04).
+ * 공백을 지운 본문(`flat`)에서 찾는다
  */
-const PERIOD_WORDS = ["이번달", "지난달", "저번달", "이번주", "오늘", "어제"];
+const PERIOD_WORDS = [
+  // 달: 이번달, 지난달, 저번달, 다음달, 요번달, 월말, 월초 …
+  "이번달",
+  "요번달",
+  "지난달",
+  "저번달",
+  "다음달",
+  "담달",
+  "월말",
+  "월초",
+  "말일",
+  "초순",
+  "중순",
+  "하순",
+  // 주
+  "이번주",
+  "요번주",
+  "지난주",
+  "저번주",
+  "다음주",
+  "금주",
+  "주말",
+  "요일",
+  // 날
+  "오늘",
+  "어제",
+  "그제",
+  "그저께",
+  "엊그제",
+  "내일",
+  "모레",
+  // 해, 반기, 분기
+  "올해",
+  "금년",
+  "작년",
+  "지난해",
+  "내년",
+  "연말",
+  "연초",
+  "상반기",
+  "하반기",
+  "분기",
+  // 지난 어느 때(주문 하나, 거래 한 번을 가리킨다 — 그 몫만 따로 셀 규칙이 없다)
+  "지난번",
+  "저번",
+  "요전",
+  "최근",
+  "요즘",
+];
+/**
+ * 숫자가 붙은 기간: "9월", "10일", "2주", "3개월", "2025년", "1분기", 한글 수 "한달", "두 달", "몇 주"
+ */
+const PERIOD_PATTERNS: readonly RegExp[] = [
+  /\d+(월|일|주|개월|달|년|분기)/,
+  /(한|두|세|석|네|넉|몇|여러)(달|주|개월)/,
+  /(일|이|삼|사|오|유|육|칠|팔|구|시|십|십일|십이)월(달|분|에|미수|외상|잔금|잔액|거)/,
+];
+/**
+ * 날짜 모양 "9/7", "9.7", "9-7", "10/29". 정규화가 문장부호를 공백으로 바꾸기 전 원문에서 찾는다.
+ * 금액 쉼표("37,500")는 이 모양이 아니다
+ */
+const PERIOD_DATE = /\d{1,4}\s*[/.-]\s*\d{1,2}(?!\d)/;
+
+/** 본문에 기간 표현이 있는가. `body`는 원문, 판정은 NFKC만 거친 원문과 공백 지운 정규화 본문을 같이 본다 */
+export function hasPeriodWord(body: string): boolean {
+  const raw = body.normalize("NFKC");
+  const flat = compact(normalizeInquiryText(body));
+  return (
+    PERIOD_WORDS.some((w) => flat.includes(w)) ||
+    PERIOD_PATTERNS.some((p) => p.test(flat)) ||
+    PERIOD_DATE.test(raw)
+  );
+}
 /**
  * 배송어. 미송 의도여도 이 말이 있으면 넘긴다 — 미송 답은 "도매 입고 예정"만 말한다. 출고, 배송, 수령은 다른
  * 업무 단계라 같은 날짜로 답하면 틀린다(Codex 7). "언제받", "아직안왔"도 수령 질문이라 미송 키워드에 안 넣었다
@@ -553,9 +630,8 @@ function decideBackorder(
  *  d. 이상값 7종(`toReceivableFacts`) → AMOUNT_UNSURE
  *  e. 답. `checkedAt` = 원본 `asOf`
  */
-function decideReceivable(input: InquiryInput, flat: string): InquiryDecision {
-  if (PERIOD_WORDS.some((w) => flat.includes(w)))
-    return handoff("PERIOD", "RECEIVABLE");
+function decideReceivable(input: InquiryInput): InquiryDecision {
+  if (hasPeriodWord(input.body)) return handoff("PERIOD", "RECEIVABLE");
   let rows;
   try {
     rows = input.receivables();
@@ -613,6 +689,16 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   // 칩 의도와 본문 의도가 다르면 의도 둘로 본다. 칩만 믿으면 미송 질문에 재고 숫자가 나간다(C1)
   if (inquiry !== null && intents.size === 1 && !saidIntent(inquiry.intent))
     return handoff("MULTI_INTENT");
+  // 1-3. "이번 달 얼마 남았어요?": 재고 낱말("남았")뿐이지만 "얼마" + 기간 말은 돈을 묻는 문장일 수 있다(QA F4).
+  // 색상, 사이즈를 되묻거나 잔액을 말하지 않고 기간 넘김으로 보낸다. 기간 말이 없는 "이 셔츠 얼마 남았어요?"는
+  // 그대로 재고다(R10), "얼마"가 없는 "오늘 몇 장 남았어요?"도 재고다
+  if (
+    intents.size === 1 &&
+    intents.has("STOCK") &&
+    flat.includes("얼마") &&
+    hasPeriodWord(input.body)
+  )
+    return handoff("PERIOD", "RECEIVABLE");
 
   // 2. 되묻기 계승: 같은 의도, 같은 상품일 때만. 칩이면 variantId가 보기 안, 아니면 본문이 보기 하나
   if (prev !== null && prev.listingId !== null) {
@@ -658,7 +744,7 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   if (intent === "BACKORDER")
     return decideBackorder(input, text, backorderPrev);
   // 미수는 되묻기가 없고 다른 의도의 열린 되묻기를 계승하지 않는다(R14). 위 계승은 같은 의도일 때만 걸린다
-  if (intent === "RECEIVABLE") return decideReceivable(input, flat);
+  if (intent === "RECEIVABLE") return decideReceivable(input);
   if (intent !== "STOCK") return handoff("NOT_SUPPORTED", intent);
 
   // 6. 상품 문맥: inquiry.listingId > 방 문맥(30분 안)
