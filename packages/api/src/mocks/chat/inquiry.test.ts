@@ -7,6 +7,7 @@ import {
   goldenCatalog,
   projectDecision,
   type GoldenExpect,
+  type GoldenInquiry,
   type GoldenScenario,
 } from "./golden.testkit";
 import {
@@ -211,6 +212,148 @@ describe("S7-3 골든셋 35개 지표", () => {
         GOLDEN.stock.filter((r) => r.listingId === id).map((r) => r.variantId),
       );
     }
+  });
+});
+
+/** 골든셋 밖 시나리오. 골든셋 파일은 계약 stage에서만 바꾼다 — 그래서 여기 unit으로 둔다 */
+function adhoc(
+  id: string,
+  listingId: number,
+  steps: { text: string; inquiry?: GoldenInquiry; expect: GoldenExpect }[],
+): StepResult[] {
+  return runScenario({
+    id,
+    title: id,
+    required: false,
+    group: "handoff",
+    room: {
+      wholesalerId: 101,
+      context: { listingId, ageMinutes: 2 },
+      autoReply: true,
+    },
+    steps: steps.map((st) => ({ ...st, inquiry: st.inquiry ?? null })),
+  });
+}
+
+const CLARIFY_2001 = {
+  kind: "CLARIFY",
+  intent: "STOCK",
+  choices: [3001, 3002, 3003, 3004, 3005],
+};
+
+describe("옵션 확정은 색상과 사이즈 둘 다(§4-2 2, 7, codex-meta M1)", () => {
+  it('되묻기 뒤 "빨강 L 몇 장 있어요?" → 넘김(CLARIFY_AGAIN), "L이요" → 넘김. L이 레드뿐이어도 레드 L로 답하지 않는다', () => {
+    for (const [text, reason] of [
+      ["빨강 L 몇 장 있어요?", "CLARIFY_AGAIN"],
+      ["빨강 L", "NO_INTENT"],
+      ["L이요", "NO_INTENT"],
+    ] as const) {
+      const [, second] = adhoc("M1-inherit", 2001, [
+        { text: "이 셔츠 몇 장 남았어요?", expect: CLARIFY_2001 },
+        { text, expect: { kind: "HANDOFF", reason } },
+      ]);
+      expect(second?.actual, text).toEqual({ kind: "HANDOFF", reason });
+    }
+  });
+
+  it("첫 문장에 사이즈만, 색상만 있으면 답하지 않고 되묻는다", () => {
+    for (const text of [
+      "L 몇 장 있어요?",
+      "빨강 L 몇 장 있어요?",
+      "레드 몇 장 남았어요?",
+    ]) {
+      const [first] = adhoc("M1-fresh", 2001, [{ text, expect: CLARIFY_2001 }]);
+      expect(first?.actual, text).toEqual(CLARIFY_2001);
+    }
+  });
+
+  it("값이 하나뿐인 칸은 말하지 않아도 된다(FREE 상품의 색상만), 게시 옵션 1개면 옵션어 없이 답(S7-7)", () => {
+    const [beige] = adhoc("M1-free", 2002, [
+      { text: "베이지 몇 장 남았어요?", expect: {} },
+    ]);
+    expect(beige?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3007 });
+    const [single] = adhoc("M1-single", 2901, [
+      { text: "FREE 몇 장 남았어요?", expect: {} },
+    ]);
+    expect(single?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3901 });
+  });
+});
+
+describe("되묻기 계승은 같은 의도와 같은 상품일 때만(PR #291 C1, D34)", () => {
+  const ASK = { text: "이 셔츠 몇 장 남았어요?", expect: CLARIFY_2001 };
+  const second = (
+    steps: { text: string; inquiry?: GoldenInquiry; expect: GoldenExpect }[],
+  ) => adhoc("C1", 2001, [ASK, ...steps])[1]?.actual;
+
+  it('(a) 재고 되묻기 뒤 "레드 M 미송은 언제 와요?" → 재고 답 없이 넘김(미송 NOT_SUPPORTED)', () => {
+    expect(second([{ text: "레드 M 미송은 언제 와요?", expect: {} }])).toEqual({
+      kind: "HANDOFF",
+      reason: "NOT_SUPPORTED",
+    });
+  });
+
+  it('(b) 2001 되묻기가 열린 채 inquiry {STOCK, 2002} + "레드 M" → 2001의 3002로 답하지 않는다', () => {
+    expect(
+      second([
+        {
+          text: "레드 M",
+          inquiry: { intent: "STOCK", listingId: 2002, variantId: null },
+          expect: {},
+        },
+      ]),
+    ).toEqual({ kind: "CLARIFY", intent: "STOCK", choices: [3006, 3007] });
+    // 보기 안의 variantId(3002)라도 상품이 2002면 계승하지 않는다 → 2002에 없는 옵션이라 넘김
+    expect(
+      second([
+        {
+          text: "레드 M",
+          inquiry: { intent: "STOCK", listingId: 2002, variantId: 3002 },
+          expect: {},
+        },
+      ]),
+    ).toEqual({ kind: "HANDOFF", reason: "INVALID_TARGET" });
+  });
+
+  it('(c) inquiry.variantId가 보기 밖이면 본문 "레드 M"으로 넘어가 고르지 않는다', () => {
+    for (const variantId of [3999, 3006]) {
+      expect(
+        second([
+          {
+            text: "레드 M",
+            inquiry: { intent: "STOCK", listingId: 2001, variantId },
+            expect: {},
+          },
+        ]),
+        `${variantId}`,
+      ).toEqual({ kind: "HANDOFF", reason: "INVALID_TARGET" });
+    }
+  });
+
+  it("inquiry.intent와 본문 키워드 의도가 다르면 MULTI_INTENT 넘김(되묻기 없어도)", () => {
+    const [first] = adhoc("C1-377", 2001, [
+      {
+        text: "레드 M 미송 언제 와요?",
+        inquiry: { intent: "STOCK", listingId: 2001, variantId: 3002 },
+        expect: {},
+      },
+    ]);
+    expect(first?.actual).toEqual({ kind: "HANDOFF", reason: "MULTI_INTENT" });
+  });
+
+  it("같은 의도, 같은 상품이면 그대로 계승한다(칩, 본문 옵션어)", () => {
+    expect(
+      second([
+        {
+          text: "레드 / M",
+          inquiry: { intent: "STOCK", listingId: 2001, variantId: 3002 },
+          expect: {},
+        },
+      ]),
+    ).toMatchObject({ kind: "AUTO_REPLY", target: 3002 });
+    expect(second([{ text: "레드 M이요", expect: {} }])).toMatchObject({
+      kind: "AUTO_REPLY",
+      target: 3002,
+    });
   });
 });
 

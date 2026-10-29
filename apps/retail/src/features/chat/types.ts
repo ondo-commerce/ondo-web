@@ -11,6 +11,11 @@ export type ChatMessage = RetailSchema<"ChatMessage">;
 export type ChatMessagePageMeta = RetailSchema<"ChatMessagePageMeta">;
 export type ChatSendResult = RetailSchema<"ChatSendResult">;
 export type CreateChatRoomRequest = RetailSchema<"CreateChatRoomRequest">;
+/** 칩으로 고른 문의 문맥. 자유 문장이면 null(loop-05b §4-1 2) */
+export type ChatInquiry = RetailSchema<"ChatInquiry">;
+/** 되묻기 보기 하나. `choices`는 초안 칸이라 생성 타입에서 `?: … | null`이다(02-dev §4 판단 1) */
+export type ChatChoice = RetailSchema<"ChatChoice">;
+export type StockBand = RetailSchema<"StockBand">;
 
 /** `GET /rooms/{id}/messages` 한 번의 응답. `meta.hasMore`가 "바로 이어 받을지"를 말한다 */
 export interface ChatMessagePage {
@@ -81,6 +86,11 @@ export interface PendingMessage {
   /** 말풍선 하나에 uuid 하나. 그대로 `Idempotency-Key`다 — 다시 보내도 같은 키 */
   clientMessageId: string;
   body: string;
+  /**
+   * 보낼 때 같이 간 문의 문맥(loop-05b §4-1 3). 다시 보내기가 같은 `{body, inquiry}`를 같은 키로 보내려면
+   * 말풍선이 들고 있어야 한다 — 훅이 다시 만들면 칩으로 고른 옵션이 자유 문장으로 바뀐다(S8-15)
+   */
+  inquiry: ChatInquiry | null;
   status: "sending" | "failed";
   failure: SendFailure | null;
 }
@@ -98,3 +108,53 @@ export interface ComposerCheck {
   /** `1,000자까지 보낼 수 있어요 (1,001/1,000)`. 넘지 않으면 null */
   overMessage: string | null;
 }
+
+/* ------------------------------------------------------------------------
+ * 재고 자동 답(loop-05b S8) — 되묻기 칩, 재고 카드, 장바구니 담기
+ * ------------------------------------------------------------------------ */
+
+/** 되묻기(CLARIFY) 말풍선 안 옵션 칩 줄 */
+export interface ClarifyView {
+  /** 이 되묻기가 물은 게시글. 칩을 고를 때 `inquiry.listingId`로 간다 */
+  listingId: number;
+  choices: ChatChoice[];
+  /** 지금 고를 수 있나(`choicesActive`). 아니면 줄 전체 disabled */
+  active: boolean;
+  /** 이 되묻기에 대해 이미 고른 옵션(보낸 것, 보내는 중, 못 보낸 것 포함). 없으면 null */
+  selectedVariantId: number | null;
+}
+
+/** 재고 자동 답(AUTO_REPLY, STOCK)의 카드 칸. 소매엔 정확 수량이 없다(D31②) */
+export interface StockCardView {
+  variantId: number;
+  /** `레드 / M` */
+  optionName: string;
+  band: StockBand;
+  /** `10~49장`, 재고 없음이면 `재고 없음`(디자인 결정 20) */
+  bandLabel: string;
+  orderable: boolean;
+  /** 1회 한도. 한도 없음이면 null — 카드 한 줄에서 한도 조각을 뺀다 */
+  orderLimit: number | null;
+  /** 수량 칸과 담기를 켤 수 있나. 재고 없음이거나 주문 불가면 false — 버튼은 disabled로 남는다(결정 27) */
+  addable: boolean;
+}
+
+/** 카드 수량 칸 판정(`checkCardQty`). `reason`이 있으면 담기 잠김 + 그 한 줄 */
+export interface CardQtyCheck {
+  /** 보낼 수량. 못 받는 값이면 null */
+  qty: number | null;
+  reason: string | null;
+}
+
+/**
+ * 장바구니 담기 한 번. `features/cart`를 모르는 이 feature에 조립부(`app/(shop)/chats/[roomId]`)가 끼워 준다.
+ * 돌려받는 `qty`는 더해진 뒤의 장수 — 같은 SKU를 다시 담으면 "지금 2장"이 된다
+ */
+export type AddToCart = (input: {
+  variantId: number;
+  qty: number;
+}) => Promise<{ qty: number }>;
+
+/** 담기 결과 한 줄. 결정 25 */
+export type CardNote =
+  { type: "added"; qty: number } | { type: "failed"; message: string };

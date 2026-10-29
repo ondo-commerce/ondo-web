@@ -319,11 +319,15 @@ test.describe("S5-5 S5-6 방 화면", () => {
     await expect(autos.nth(1).getByText(/^\d\d:\d\d 조회$/)).toHaveText(
       "09:22 조회",
     );
-    // 근거 칸(정확 수량), 되묻기 글자, 옵션 칩 없음
+    // 근거 칸(정확 수량), 되묻기 글자, 옵션 칩 없음. 05b(#288)부터 재고 답엔 카드(수량 −/+, 담기)가 붙는다 —
+    // 대화 안 버튼은 그 카드 것뿐이다(시드 되묻기는 보기가 없어 칩 줄이 없다)
     await expect(log(page).getByText(/판매가능|되묻기|주문 한도/)).toHaveCount(
       0,
     );
-    await expect(log(page).getByRole("button")).toHaveCount(0);
+    await expect(log(page).getByRole("button")).toHaveCount(3);
+    await expect(
+      log(page).locator("[data-variant-id]").getByRole("button"),
+    ).toHaveCount(3);
   });
 
   test("S5-6 HANDOFF는 가운데 '사장님께 전달했어요', 모르는 kind는 body만 왼쪽", async ({
@@ -658,6 +662,8 @@ test.describe("S5-15 S5-16 390 블록 상태와 키보드", () => {
   }) => {
     await page.setViewportSize({ width: 390, height: 480 });
     await openRoom(page, "/chats/1");
+    // 05b(#288): 재고 문장엔 자동 답이 붙어 말풍선이 9개가 된다. 이 테스트는 보내기 1회만 보므로 끈다
+    await mock(page, "auto-reply", { enabled: false });
     await composer(page).focus();
     await composer(page).fill("레드 M 몇 장 있어요?");
     const inside = await page.evaluate(() => {

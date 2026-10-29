@@ -363,6 +363,24 @@ describe("S7-12 방 문맥 갱신", () => {
     expect(second.body.data.generatedMessages).toEqual([]);
     expect(second.body.data.generation).toBe("NONE");
   });
+
+  it("열린 넘김이 있어도 재고 0 답의 넘김 줄은 붙는다(D34, 결정 27, codex-meta M2)", async () => {
+    await enter(2001);
+    const ask = await send("할인해 주세요");
+    expect(ask.body.data.generatedMessages.map((m) => m.kind)).toEqual([
+      "HANDOFF",
+    ]);
+    const zero = await send("레드 L 몇 장 있어요");
+    const lines = zero.body.data.generatedMessages;
+    expect(lines.map((m) => m.kind)).toEqual(["AUTO_REPLY", "HANDOFF"]);
+    expect(lines[0]?.autoReply?.subject.variantId).toBe(3003);
+    expect(lines[0]?.autoReply?.facts.stock?.band).toBe("NONE");
+    // 재고가 있는 답은 그대로 넘김 줄 없이(열린 넘김 억제 유지)
+    const some = await send("레드 S 몇 장 있어요");
+    expect(some.body.data.generatedMessages.map((m) => m.kind)).toEqual([
+      "AUTO_REPLY",
+    ]);
+  });
 });
 
 describe("S9-5 자동 답 설정 왕복(도매 op → 소매 보내기)", () => {

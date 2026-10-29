@@ -13,6 +13,8 @@ export type ChatReadResult = WholesaleSchema<"ChatReadResult">;
 export type CursorPageMeta = WholesaleSchema<"CursorPageMeta">;
 export type ChatAutoReply = WholesaleSchema<"ChatAutoReply">;
 export type StockBand = WholesaleSchema<"StockBand">;
+/** 자동 답 설정(초안 op `autoReplySettings`, #266). 도매처 하나에 한 벌 */
+export type AutoReplySettings = WholesaleSchema<"AutoReplySettings">;
 
 /** `GET /rooms` 한 페이지. 봉투가 `PageMeta`가 아니라 커서(`nextCursor`)라 `apiFetchBody`로 통째로 받는다 */
 export interface ChatRoomPage {
@@ -130,7 +132,17 @@ export interface FactPart {
 export type FactLine = FactPart[];
 
 export interface FactsView {
+  /** 값 줄. 되묻기처럼 값이 없는 자동 답은 빈 배열 — 그래도 조회 시각 줄은 있다 */
   lines: FactLine[];
-  /** 소매처가 본 값(구간)과 조회 시각. 재고 답에만 있다 */
-  seen: string | null;
+  /**
+   * 근거 칸 끝 줄. 모든 자동 답에 "HH:mm 조회"(F12, S7-13). 재고 답만 앞에 "소매처에게는 …으로 보였어요."
+   */
+  seen: string;
 }
+
+/**
+ * 목록 머리 아래 한 줄(디자인 결정 24, 25).
+ * - `off` 꺼짐 안내(Notice, role=status)
+ * - `failed` 바꾸기 실패(role=alert). 다음 누름에서 사라진다
+ */
+export type AutoReplyNote = "off" | "failed" | null;

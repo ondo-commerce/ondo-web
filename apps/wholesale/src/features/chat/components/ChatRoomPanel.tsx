@@ -13,6 +13,7 @@ import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
 import {
   liveAnnouncement,
   maxSequenceOf,
+  handoffCauses,
   messageAc,
   toThreadItems,
   visiblePending,
@@ -190,6 +191,7 @@ function ChatRoom({
   }, [thread.messages.length, shownPending.length]);
 
   const items = toThreadItems(thread.messages);
+  const causes = handoffCauses(thread.messages);
 
   return (
     <>
@@ -235,7 +237,7 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
-                ac={messageAc(item.message, baseline, pendingIds)}
+                ac={messageAc(item.message, baseline, pendingIds, causes)}
               />
             ),
           )

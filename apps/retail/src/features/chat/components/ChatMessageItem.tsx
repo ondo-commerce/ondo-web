@@ -6,6 +6,7 @@ import {
   bubbleKindOf,
   failureText,
   formatClock,
+  pendingAc,
   senderLabel,
   systemLineText,
 } from "../derive";
@@ -27,11 +28,17 @@ export function ChatMessageItem({
   message,
   counterpartName,
   ac,
+  extra = null,
 }: {
   message: ChatMessage;
   counterpartName: string;
   /** 와이어프레임 `data-ac`(`messageAc`) */
   ac: string;
+  /**
+   * 자동 답 말풍선 안, 본문과 조회 시각 사이에 들어갈 칸 — 되묻기 칩 줄(`ClarifyChoices`)이나 재고 카드
+   * (`StockReplyCard`). 방이 판정해서 넘긴다(loop-05b 방향안 A: 답 하나 = 말풍선 하나)
+   */
+  extra?: ReactNode;
 }) {
   const kind = bubbleKindOf(message);
   const time = formatClock(message.sentAt);
@@ -70,7 +77,7 @@ export function ChatMessageItem({
     >
       <span className="sr-only">{`${who}, ${time}: `}</span>
       {kind === "auto" ? (
-        <AutoReplyBubble message={message} />
+        <AutoReplyBubble message={message}>{extra}</AutoReplyBubble>
       ) : (
         <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
       )}
@@ -105,7 +112,7 @@ export function PendingItem({
       aria-busy={sending || undefined}
       data-client-id={item.clientMessageId}
       data-pending={item.status}
-      data-ac={sending ? "S6-1" : "S6-4"}
+      data-ac={pendingAc(item)}
       className={cn(
         "flex min-w-0 flex-col items-end gap-1 self-end",
         BUBBLE_WIDTH,
@@ -186,10 +193,17 @@ function Bubble({
 }
 
 /**
- * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 칩 + `HH:mm 조회`(디자인 결정 7).
- * 근거 칸, 옵션 칩, `되묻기` 글자가 없다 — 근거 카드와 칩은 05b, 소매 응답엔 정확 수량도 없다(D31②).
+ * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 칩 + 본문 + (칩 줄 또는 카드) +
+ * `HH:mm 조회`(05a 디자인 결정 7, 05b 결정 18). 소매 응답엔 정확 수량이 없다(D31②). 모든 자동 답에 조회
+ * 시각을 단다(F12, S7-13).
  */
-function AutoReplyBubble({ message }: { message: ChatMessage }) {
+function AutoReplyBubble({
+  message,
+  children,
+}: {
+  message: ChatMessage;
+  children: ReactNode;
+}) {
   const seen = autoReplySeen(message);
   return (
     <Bubble tone="plain" className="grid gap-2">
@@ -199,8 +213,9 @@ function AutoReplyBubble({ message }: { message: ChatMessage }) {
         </Chip>
       </span>
       <span>{message.body}</span>
+      {children}
       {seen ? (
-        <span data-ac="S5-6" className="text-muted-foreground text-xs">
+        <span data-ac="S5-6 S7-13" className="text-muted-foreground text-xs">
           {seen}
         </span>
       ) : null}
