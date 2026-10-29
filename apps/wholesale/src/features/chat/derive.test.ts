@@ -644,7 +644,10 @@ describe("#296 S13-1 되묻기 보기 줄", () => {
           choice("네이비 / M", 3005),
         ],
       }),
-    ).toBe("보기: 레드 / S, 레드 / M, 레드 / L, 네이비 / S, 네이비 / M");
+    ).toEqual({
+      mode: "inline",
+      text: "보기: 레드 / S, 레드 / M, 레드 / L, 네이비 / S, 네이비 / M",
+    });
   });
 
   it("orderable false → 뒤에 '(주문 불가)'만(와이어프레임 그대로 붙여 쓴다)", () => {
@@ -657,7 +660,10 @@ describe("#296 S13-1 되묻기 보기 줄", () => {
           choice("네이비 / M", 3005),
         ],
       }),
-    ).toBe("보기: 레드 / M, 레드 / L(주문 불가), 네이비 / M");
+    ).toEqual({
+      mode: "inline",
+      text: "보기: 레드 / M, 레드 / L(주문 불가), 네이비 / M",
+    });
   });
 
   it("choices 칸 없음, null, 빈 배열, 자동 답 없음 → 줄 없음(null)", () => {
@@ -665,5 +671,131 @@ describe("#296 S13-1 되묻기 보기 줄", () => {
     expect(toClarifyChoicesView({ ...clarify, choices: null })).toBeNull();
     expect(toClarifyChoicesView({ ...clarify, choices: [] })).toBeNull();
     expect(toClarifyChoicesView(null)).toBeNull();
+  });
+});
+
+describe("#299 S4-1 미송 되묻기 보기 줄", () => {
+  /* 목 생성기가 실제로 내는 모양(`backorderCandidates.ts`): 미송 보기는 orderable true,
+     `다른 주문이에요`는 variantId 0, orderable false */
+  const clarify: ChatAutoReply = {
+    intent: "BACKORDER",
+    replyToSequence: 7,
+    generatedBy: "RULE",
+    checkedAt: "2026-10-29T05:20:00Z",
+    subject: {
+      listingId: null,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+  const order = (
+    label: string,
+    backorderId: number,
+    variantId: number,
+    orderable = true,
+  ) => ({
+    kind: "BACKORDER" as const,
+    label,
+    variantId,
+    backorderId,
+    orderable,
+  });
+  const notListed = {
+    kind: "NOT_LISTED" as const,
+    label: "다른 주문이에요",
+    variantId: 0,
+    backorderId: null,
+    orderable: false,
+  };
+  const ITEMS = [
+    "빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001",
+    "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002",
+    "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006",
+    "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003",
+  ];
+
+  it("미송 4 + 다른 주문이에요 → 목록 모양, 서버 순서 그대로, 쉼표로 잇지 않는다", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          order(ITEMS[0] ?? "", 9001, 3003),
+          order(ITEMS[1] ?? "", 9002, 3011),
+          order(ITEMS[2] ?? "", 9006, 3003),
+          order(ITEMS[3] ?? "", 9003, 3019),
+          notListed,
+        ],
+      }),
+    ).toEqual({ mode: "list", items: [...ITEMS, "다른 주문이에요"] });
+  });
+
+  it("BACKORDER, NOT_LISTED 는 orderable false 여도 '(주문 불가)' 0", () => {
+    const view = toClarifyChoicesView({
+      ...clarify,
+      choices: [order(ITEMS[0] ?? "", 9001, 3003, false), notListed],
+    });
+    expect(view).toEqual({
+      mode: "list",
+      items: [ITEMS[0], "다른 주문이에요"],
+    });
+    expect(JSON.stringify(view)).not.toContain("(주문 불가)");
+  });
+
+  it("섞여 와도 VARIANT + orderable false 만 '(주문 불가)'. kind 없음은 VARIANT 로 읽는다", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          {
+            kind: "VARIANT",
+            label: "레드 / L",
+            variantId: 3003,
+            orderable: false,
+          },
+          { label: "레드 / M", variantId: 3002, orderable: false },
+          {
+            kind: "VARIANT",
+            label: "레드 / S",
+            variantId: 3001,
+            orderable: true,
+          },
+          order(ITEMS[3] ?? "", 9003, 3019, false),
+          notListed,
+        ],
+      }),
+    ).toEqual({
+      mode: "list",
+      items: [
+        "레드 / L(주문 불가)",
+        "레드 / M(주문 불가)",
+        "레드 / S",
+        ITEMS[3],
+        "다른 주문이에요",
+      ],
+    });
+  });
+
+  it("kind VARIANT 만 명시돼 오면 05b-2 그대로 한 줄", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          {
+            kind: "VARIANT",
+            label: "레드 / M",
+            variantId: 3002,
+            orderable: true,
+          },
+          {
+            kind: "VARIANT",
+            label: "레드 / L",
+            variantId: 3003,
+            orderable: false,
+          },
+        ],
+      }),
+    ).toEqual({ mode: "inline", text: "보기: 레드 / M, 레드 / L(주문 불가)" });
   });
 });
