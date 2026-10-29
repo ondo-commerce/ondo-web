@@ -62,6 +62,45 @@ test("S11-6 검색 '라온' + 정산 필터가 걸린 주문 탭에서 알림 �
   await expect(page).toHaveURL(/\/orders$/);
 });
 
+test("S11-6 2쪽을 보던 중 알림 → 1쪽으로 돌아와 그 주문 펼침(03-review M5)", async ({
+  page,
+}) => {
+  /* 주문 탭 밖에서 쌓는다 — 주문 탭에 들어갈 때 목록을 새로 받는다. 시드 5 + 96 = 101건 → 100행씩 2쪽 */
+  await start(page);
+  const latest = await page.evaluate(async () => {
+    let last: { notification: { id: number }; orderId: number } | null = null;
+    for (let i = 0; i < 96; i++) {
+      const response = await fetch("/__mock/notifications/incoming", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "NEW_ORDER" }),
+      });
+      last = ((await response.json()) as { data: NonNullable<typeof last> })
+        .data;
+    }
+    return last;
+  });
+  if (latest === null) throw new Error("incoming 0건");
+
+  await page.getByRole("link", { name: "주문", exact: true }).click();
+  await expect(page).toHaveURL(/\/orders$/);
+  const pager = page.getByRole("navigation", { name: "페이지 이동" });
+  await expect(pager).toContainText("1 / 2");
+  await pager.getByRole("button", { name: "다음" }).click();
+  await expect(pager).toContainText("2 / 2");
+  /* 가장 최근 주문은 1쪽 맨 위라 2쪽에는 없다 */
+  await expect(expandedOrder(page, latest.orderId)).toHaveCount(0);
+  await expect(
+    page.locator(`button[aria-controls="order-detail-${latest.orderId}"]`),
+  ).toHaveCount(0);
+
+  await openPanel(page);
+  await rowById(page, latest.notification.id).click();
+  await expect(pager).toContainText("1 / 2");
+  await expect(expandedOrder(page, latest.orderId)).toBeVisible();
+  await expect(orderCard(page)).not.toContainText("현재 목록 조건에 없는 주문");
+});
+
 test("S11-7 7003 에 적던 이번 출고 '2' 는 7006 알림을 다녀와도 그대로", async ({
   page,
 }) => {
