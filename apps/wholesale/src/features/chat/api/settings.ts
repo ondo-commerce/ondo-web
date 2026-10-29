@@ -13,10 +13,14 @@ const SETTINGS_PATH = "/api/wholesale/chat/auto-reply-settings";
 const SESSION_LOSS_INLINE = { sessionLoss: "inline" } as const;
 
 /**
- * 자동 답 설정. `/chats`에 들어올 때 **1회**만 받는다(S9-1).
+ * 자동 답 설정. `/chats`에 들어올 때마다(목록 패널 마운트) **1회** 받는다(S9-1).
  *
- * 다시 받지 않는 이유: 설정은 이 화면의 스위치로만 바뀌고, 바꾸면 PUT 응답이 곧 새 값이다(캐시에 그대로 넣는다).
- * 창 복귀마다 다시 받으면 GET이 늘 뿐 바뀌는 게 없다. 다른 기기에서 바꾼 값은 다음 진입 때 본다.
+ * 진입 때는 캐시가 있어도 다시 받는다(`refetchOnMount: "always"`). 다른 기기에서 바꾼 값을 옛 캐시로
+ * 보여 주면, 스위치를 누를 때 `toggledSettings`가 옛 intents로 서버 값을 덮어쓴다(리뷰 R1).
+ * `"always"`는 이 훅을 새로 부르는 컴포넌트가 마운트될 때마다 받는다. 그래서 목록 패널 한 곳에서만 부른다 —
+ * 방을 바꿔도 패널은 다시 마운트되지 않아 한 진입에 1회 그대로다.
+ * 화면 안에서는 다시 받지 않는다: 설정은 이 화면의 스위치로만 바뀌고 PUT 응답이 곧 새 값이다(캐시에 그대로
+ * 넣는다). 그래서 창 포커스, 재연결 재요청은 끄고 `staleTime: Infinity`로 둔다.
  * 실패해도 다시 묻지 않는다(`retry: false`) — 스위치 자리가 비고 대화는 그대로 쓴다.
  */
 export function useAutoReplySettingsQuery() {
@@ -28,6 +32,7 @@ export function useAutoReplySettingsQuery() {
         apiFetch<AutoReplySettings>(SETTINGS_PATH),
       ),
     staleTime: Infinity,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,

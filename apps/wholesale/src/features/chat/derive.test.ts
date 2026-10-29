@@ -17,6 +17,7 @@ import {
   liveAnnouncement,
   mergeMessages,
   mergeReadMark,
+  handoffCauses,
   messageAc,
   parseRoomParam,
   pollDelayMs,
@@ -467,6 +468,28 @@ describe("S4-6 보류 말풍선 합치기", () => {
     expect(messageAc(message(9, { clientMessageId: "k-1" }), 7, ids)).toBe(
       "S3-1 S3-3 S3-4 S4-6",
     );
+  });
+
+  it("S9-3 data-ac: 넘김 줄과 바로 앞 소매 문의에만 S9-3(QA F4)", () => {
+    const messages = [
+      message(5),
+      message(6, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(7),
+      message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+    ];
+    const causes = handoffCauses(messages);
+    expect([...causes]).toEqual([7]);
+    const acs = messages.map((m) => messageAc(m, 8, new Set(), causes));
+    expect(acs).toEqual(["S3-1", "S3-1", "S3-1 S9-3", "S3-1 S9-3"]);
+  });
+
+  it("S9-3 넘김 앞이 소매 말이 아니면(도매 답 뒤 넘김) 문의로 잇지 않는다", () => {
+    expect(
+      handoffCauses([
+        message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+        message(7, { sender: "WHOLESALER" }),
+      ]).size,
+    ).toBe(0);
   });
 });
 

@@ -490,11 +490,14 @@ export function insertSent(
 /**
  * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
  * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6.
+ * 넘김 줄과 그 바로 앞 소매 문의는 S9-3(와이어프레임 `#state-autoreply-off-flow`, QA F4). 넘김이 꺼짐 때문인지
+ * 메시지만으로는 모른다 — 넘김 줄이면 다 단다.
  */
 export function messageAc(
-  message: Pick<ChatMessage, "sequence" | "clientMessageId">,
+  message: Pick<ChatMessage, "sequence" | "clientMessageId" | "kind">,
   baseline: number,
   pendingIds: ReadonlySet<string>,
+  handoffCauseIds: ReadonlySet<number> = new Set(),
 ): string {
   const ac = ["S3-1"];
   if (message.sequence > baseline) ac.push("S3-3", "S3-4");
@@ -503,7 +506,26 @@ export function messageAc(
     pendingIds.has(message.clientMessageId)
   )
     ac.push("S4-6");
+  if (message.kind === "HANDOFF" || handoffCauseIds.has(message.sequence))
+    ac.push("S9-3");
   return ac.join(" ");
+}
+
+/**
+ * 넘김 줄 바로 앞의 소매 말 sequence들 — 넘김을 부른 문의다(S9-3). 서버는 소매 말과 넘김 줄을 연달아
+ * 붙인다(n, n+1). 사이에 다른 말이 끼면 잇지 않는다. 소매 앱의 같은 이름 함수와 같은 규칙(앱끼리 복제)
+ */
+export function handoffCauses(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+): Set<number> {
+  const causes = new Set<number>();
+  const sorted = [...messages].sort((a, b) => a.sequence - b.sequence);
+  sorted.forEach((message, i) => {
+    const prev = sorted[i - 1];
+    if (message.kind === "HANDOFF" && prev?.sender === "RETAILER")
+      causes.add(prev.sequence);
+  });
+  return causes;
 }
 
 /**

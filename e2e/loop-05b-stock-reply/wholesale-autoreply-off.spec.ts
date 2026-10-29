@@ -171,6 +171,49 @@ test.describe("S9-1 S9-2 목록 머리 스위치", () => {
     await expect(listPanel(page).getByRole("status")).toHaveCount(0);
   });
 
+  test("S9-1 R1: /chats 를 나갔다 다시 들어오면 GET 1회 더, 그 사이 다른 기기에서 끈 값이 보인다", async ({
+    page,
+  }) => {
+    await expect(autoSwitch(page)).toBeChecked();
+    expect(await count(page, SETTINGS_GET)).toBe(1);
+    // 화면 안 이동(같은 QueryClient, 캐시 그대로) — page.goto 는 목과 캐시를 둘 다 새로 만든다
+    await page
+      .getByRole("navigation", { name: "주 메뉴" })
+      .getByRole("link")
+      .first()
+      .click();
+    await page.waitForURL((url) => !url.pathname.startsWith("/chats"));
+    // 다른 기기: 서버 값만 꺼짐으로 바꾼다(이 탭의 캐시는 켜짐 그대로)
+    const put = await page.evaluate(async () => {
+      const path = "/api/wholesale/chat/auto-reply-settings";
+      const got = (await (await fetch(path)).json()) as {
+        data: Record<string, unknown>;
+      };
+      const response = await fetch(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...got.data, enabled: false }),
+      });
+      return response.status;
+    });
+    expect(put).toBe(200);
+    const before = await count(page, SETTINGS_GET);
+
+    await page.getByRole("link", { name: "채팅", exact: true }).click();
+    await page.waitForURL(/\/chats$/);
+    await waitCount(page, SETTINGS_GET, before + 1);
+    await settled(page, SETTINGS_GET);
+    await expect(autoSwitch(page)).not.toBeChecked();
+    await expect(listPanel(page).getByRole("status")).toHaveText(OFF_NOTICE);
+    // 한 진입에 1회 — 방을 열고 목록 polling 이 돌아도 더 안 나간다
+    await row(page, "봄봄상회").click();
+    await expect(page).toHaveURL(/room=1$/);
+    const rooms = await count(page, ROOMS_GET);
+    await page.clock.runFor(15_500);
+    await waitCount(page, ROOMS_GET, rooms + 1);
+    expect(await count(page, SETTINGS_GET)).toBe(before + 1);
+  });
+
   test("S9-2 끄기 → 즉시 저장 중 + 잠김(손잡이 그대로), 3연타 PUT 1회 {enabled false, intents 전부 true}, 꺼짐 안내", async ({
     page,
   }) => {
@@ -248,6 +291,15 @@ test.describe("S9-3 꺼짐 → 넘김만, 다시 켜면 자동 답 + 근거 칸"
       );
     expect(order[1]).toBe("note");
     expect(order[0]).toContain(ASK);
+    // S9-3 자리(와이어프레임 #state-autoreply-off-flow): 넘김 줄과 그 문의 말풍선
+    await expect(log(page).getByRole("note").last()).toHaveAttribute(
+      "data-ac",
+      /(^| )S9-3( |$)/,
+    );
+    await expect(retailBubbles(page, ASK)).toHaveAttribute(
+      "data-ac",
+      /(^| )S9-3( |$)/,
+    );
     await expect(row(page, "봄봄상회")).toContainText("답 필요");
 
     await autoSwitch(page).click();
