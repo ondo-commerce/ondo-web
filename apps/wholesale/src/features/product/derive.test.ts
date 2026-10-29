@@ -6,6 +6,7 @@ import {
   PRICE_INPUT_MAX_DIGITS,
 } from "./constants";
 import {
+  cancelUploads,
   clearImagesError,
   EMPTY_POST_FORM,
   EMPTY_PRODUCT_FORM,
@@ -15,6 +16,7 @@ import {
   isIntegerText,
   isPriceMissing,
   isProductFormDirty,
+  linkLeaveTarget,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   orderCompleted,
   parseIntegerText,
@@ -288,6 +290,141 @@ describe("requeueForRetry — F1: 재시도 칸은 큐 끝으로, 성공분은 �
   it("없는 칸이면 그대로", () => {
     const before = [slot("A", "done")];
     expect(requeueForRetry(before, "Z")).toEqual(before);
+  });
+});
+
+describe("cancelUploads — S4-2·S4-5: 거둘 때 abort 는 진행 칸만, revoke 는 격자 미리보기 전부", () => {
+  const slot = (
+    slotId: string,
+    status: UploadSlotStatus,
+    url: string | null = null,
+  ) => ({ slotId, status, previewUrl: `blob:preview-${slotId}`, url });
+
+  it("대기·진행·보류·실패가 섞여 있으면 진행만 abort, 넷 다 revoke", () => {
+    expect(
+      cancelUploads([
+        slot("Q", "queued"),
+        slot("U", "uploading"),
+        slot("H", "done", "blob:server-H"),
+        slot("F", "failed"),
+      ]),
+    ).toEqual({
+      abort: ["U"],
+      revoke: [
+        "blob:preview-Q",
+        "blob:preview-U",
+        "blob:preview-H",
+        "blob:preview-F",
+      ],
+    });
+  });
+
+  it("S4-5 서버가 준 url(등록 칸이 그리는 것)은 revoke 에 없다", () => {
+    const { revoke } = cancelUploads([
+      slot("H1", "done", "blob:server-H1"),
+      slot("H2", "done", "blob:server-H2"),
+    ]);
+    expect(revoke).not.toContain("blob:server-H1");
+    expect(revoke).not.toContain("blob:server-H2");
+    expect(revoke.every((u) => u.startsWith("blob:preview-"))).toBe(true);
+  });
+
+  it("빈 큐면 할 일 없음", () => {
+    expect(cancelUploads([])).toEqual({ abort: [], revoke: [] });
+  });
+
+  it("F1 회귀: 재시도로 끝에 간 칸이 진행 중이면 그 칸도 abort, 순서는 큐 그대로", () => {
+    const queue = requeueForRetry(
+      [
+        { ...slot("A", "failed"), failure: { kind: "retry" } },
+        { ...slot("B", "done", "blob:server-B"), failure: null },
+      ],
+      "A",
+    ).map((s) =>
+      s.slotId === "A" ? { ...s, status: "uploading" as const } : s,
+    );
+    expect(queue.map((s) => s.slotId)).toEqual(["B", "A"]);
+    expect(cancelUploads(queue)).toEqual({
+      abort: ["A"],
+      revoke: ["blob:preview-B", "blob:preview-A"],
+    });
+  });
+});
+
+describe("linkLeaveTarget — S5: 가드가 붙잡을 Link 클릭만 고른다", () => {
+  const here = {
+    origin: "http://localhost:3100",
+    pathname: "/products/new",
+    search: "",
+  };
+  const click = (
+    over: Partial<Parameters<typeof linkLeaveTarget>[0]> = {},
+  ) => ({
+    defaultPrevented: false,
+    button: 0,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    target: "",
+    download: false,
+    href: "http://localhost:3100/inventory",
+    ...over,
+  });
+
+  it("같은 origin 의 다른 경로 → 그 경로", () => {
+    expect(linkLeaveTarget(click(), here)).toBe("/inventory");
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products?productId=1#x" }),
+        here,
+      ),
+    ).toBe("/products?productId=1#x");
+  });
+
+  it("S5-3 수정키·가운데 버튼은 건드리지 않는다", () => {
+    for (const key of ["metaKey", "ctrlKey", "shiftKey", "altKey"] as const)
+      expect(linkLeaveTarget(click({ [key]: true }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ button: 1 }), here)).toBeNull();
+  });
+
+  it("이미 막힌 클릭, _blank, download 는 건드리지 않는다", () => {
+    expect(linkLeaveTarget(click({ defaultPrevented: true }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ target: "_blank" }), here)).toBeNull();
+    expect(linkLeaveTarget(click({ target: "_self" }), here)).toBe(
+      "/inventory",
+    );
+    expect(linkLeaveTarget(click({ download: true }), here)).toBeNull();
+  });
+
+  it("외부 origin·비 http 스킴은 beforeunload 몫이다", () => {
+    expect(
+      linkLeaveTarget(click({ href: "https://example.com/a" }), here),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(click({ href: "mailto:a@ondo.test" }), here),
+    ).toBeNull();
+  });
+
+  it("pathname 과 search 가 같으면 떠나는 게 아니다. query 만 달라도 떠난다", () => {
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new" }),
+        here,
+      ),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new#top" }),
+        here,
+      ),
+    ).toBeNull();
+    expect(
+      linkLeaveTarget(
+        click({ href: "http://localhost:3100/products/new?x=1" }),
+        here,
+      ),
+    ).toBe("/products/new?x=1");
   });
 });
 

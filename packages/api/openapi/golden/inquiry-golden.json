@@ -1,0 +1,691 @@
+{
+  "version": 2,
+  "about": "재고 문의 자동 답 골든셋(loop-05b §5-4). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 3(P1~P3)은 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지), HANDOFF 는 kind reason. 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. reason 은 골든셋 안 표시이고 API 칸이 아니다. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. inquiry 의 backorderId, label 은 null 로 채운다.",
+  "rules": {
+    "contextMinutes": 30,
+    "bands": [0, 10, 50],
+    "orderLimitZero": "한도 없음. 답의 orderLimit 은 null",
+    "bandNames": ["NONE", "UNDER_10", "UNDER_50", "FIFTY_PLUS"]
+  },
+  "normalization": [
+    {
+      "rule": "공백 접기, 앞뒤 공백 제거",
+      "example": "\"몇 장\"/\"몇장\", \"레드 M\"/\"레드M\", \"10 장\"/\"10장\"",
+      "result": "같은 판정",
+      "cases": [
+        {"text": "  몇 장 남았어요  ", "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "몇장 남았어요", "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 M 몇 장", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "레드M 몇 장", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "레드 M 10 장 되나요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": true}},
+        {"text": "레드 M 10장 되나요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": true}}
+      ]
+    },
+    {
+      "rule": "문장부호, 이모지 제거",
+      "example": "\"남았어요??\", \"레드/M!\"",
+      "result": "같은 판정",
+      "cases": [
+        {"text": "남았어요??", "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드/M! 몇 장요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "레드 M 남았어요 🙏", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "rule": "사이즈 대문자",
+      "example": "\"레드 m\"",
+      "result": "3002",
+      "cases": [
+        {"text": "레드 m 몇 장", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "rule": "오타 사전(목록에 있는 것만)",
+      "example": "\"남앗\", \"잇어요\", \"몇쟝\"",
+      "result": "남았, 있어요, 몇 장",
+      "cases": [
+        {"text": "레드 M 남앗어요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "레드 M 잇어요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "레드 M 몇쟝", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "rule": "색상 별칭은 안 받음",
+      "example": "\"빨강 M\"",
+      "result": "옵션 불명 → CLARIFY(직전 유효 되묻기 있으면 HANDOFF)",
+      "cases": [
+        {"text": "빨강 M 몇 장 남았어요?", "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "빨강 M 몇 장 남았어요?", "afterClarify": true, "expect": {"kind": "HANDOFF", "reason": "CLARIFY_AGAIN"}}
+      ]
+    },
+    {
+      "rule": "수량",
+      "example": "\"10장\", \"열 장\"",
+      "result": "숫자만 수량 한 줄. 한글 수사는 수량 없음",
+      "cases": [
+        {"text": "레드 M 10장 되나요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": true}},
+        {"text": "레드 M 열 장 되나요", "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    }
+  ],
+  "stock": [
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3001, "color": "레드", "size": "S", "availableQty": 40, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3002, "color": "레드", "size": "M", "availableQty": 35, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3003, "color": "레드", "size": "L", "availableQty": -13, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3004, "color": "네이비", "size": "S", "availableQty": 20, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3005, "color": "네이비", "size": "M", "availableQty": 18, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2002, "wholesalerId": 101, "listingTitle": "루즈핏 니트 가디건", "listingPublished": true, "variantId": 3006, "color": "블랙", "size": "FREE", "availableQty": 12, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2002, "wholesalerId": 101, "listingTitle": "루즈핏 니트 가디건", "listingPublished": true, "variantId": 3007, "color": "베이지", "size": "FREE", "availableQty": 8, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3008, "color": "네이비", "size": "S", "availableQty": 15, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3009, "color": "네이비", "size": "M", "availableQty": 22, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3010, "color": "네이비", "size": "L", "availableQty": 9, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3011, "color": "소라", "size": "M", "availableQty": 5, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2901, "wholesalerId": 101, "listingTitle": "무지 캔버스 에코백", "listingPublished": true, "variantId": 3901, "color": "블랙", "size": "FREE", "availableQty": 50, "orderLimit": 0, "variantPublished": true, "source": "chat mock extra"},
+    {"listingId": 2901, "wholesalerId": 101, "listingTitle": "무지 캔버스 에코백", "listingPublished": true, "variantId": 3902, "color": "화이트", "size": "FREE", "availableQty": 5, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"},
+    {"listingId": 2902, "wholesalerId": 101, "listingTitle": "샘플 반팔 티셔츠", "listingPublished": true, "variantId": 3903, "color": "그레이", "size": "M", "availableQty": 10, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"}
+  ],
+  "scenarios": [
+    {
+      "id": "P1",
+      "title": "자유 문장 → 되묻기 → 옵션 칩 → 답 (시연 장면 2, 3)",
+      "required": true,
+      "group": "required",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 / M", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": 3002}, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "재고 문의 칩 → 되묻기 → \"레드 M이요\"(계승) → 답",
+      "required": true,
+      "group": "required",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 상품 몇 장 남았어요?", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": null}, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 M이요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "문장 속 옵션과 수량 → 답 + 수량 한 줄 → 협상 → 넘김",
+      "required": true,
+      "group": "required",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 M 10장 되나요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": true}},
+        {"text": "10장이면 좀 깎아 주세요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "S01",
+      "title": "문장 속 옵션 바로 답 (레드 S)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 S 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3001, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S02",
+      "title": "문장 속 옵션 바로 답 (네이비 M, 재고+있나요)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "네이비 M 재고 있나요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3005, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S03",
+      "title": "문장 속 옵션 바로 답 (네이비 S, 수량)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "네이비 S 수량 알려주세요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3004, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S04",
+      "title": "문장 속 옵션 바로 답 (있어요 + 옵션어)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 M 있어요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S05",
+      "title": "정규화: 붙여 쓰기, 물음표 둘",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드M 몇장 남았어요??", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S06",
+      "title": "정규화: 소문자 사이즈, 오타 남앗",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 m 몇 장 남앗어요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S07",
+      "title": "정규화: 오타 잇어요, 이모지",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "네이비 S 잇어요?! 🙏", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3004, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S08",
+      "title": "정규화: 오타 몇쟝",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 S 몇쟝 남았나요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3001, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S09",
+      "title": "재고 0 (판매가능 −13): 문장 → 없음 + 넘김",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 L 몇 장 있어요", "inquiry": null, "expect": {"kinds": ["AUTO_REPLY", "HANDOFF"], "intent": "STOCK", "target": 3003, "band": "NONE", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S10",
+      "title": "재고 0: 칩 → 되묻기 → 칩 레드 / L → 없음 + 넘김",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 상품 몇 장 남았어요?", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": null}, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 / L", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": 3003}, "expect": {"kinds": ["AUTO_REPLY", "HANDOFF"], "intent": "STOCK", "target": 3003, "band": "NONE", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S11",
+      "title": "게시 옵션 1개 상품: 되묻지 않고 답",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2901,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 가방 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3901, "band": "FIFTY_PLUS", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S12",
+      "title": "답 받은 뒤 같은 상품 재문의 → 새 되묻기",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 / M", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": 3002}, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}},
+        {"text": "이 셔츠 재고 있어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}}
+      ]
+    },
+    {
+      "id": "S13",
+      "title": "경계: 판매가능 8 → 1~9장, 한도 없음",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2002,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "베이지 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3007, "band": "UNDER_10", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S14",
+      "title": "경계: 판매가능 12 → 10~49장",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2002,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "블랙 재고 있나요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3006, "band": "UNDER_50", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S15",
+      "title": "경계: 판매가능 50 → 50장 이상(칩)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2901,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "블랙 / FREE", "inquiry": {"intent": "STOCK", "listingId": 2901, "variantId": 3901}, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3901, "band": "FIFTY_PLUS", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S16",
+      "title": "되묻기 뒤 다른 옵션어(레드 대신 네이비 M)",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "네이비 M은요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3005, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "S17",
+      "title": "지난 문맥(40분) → 상품에서 다시 들어옴 → 문맥 갱신 → 답",
+      "required": false,
+      "group": "stock",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 40
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 S 몇 장 남았어요?", "inquiry": null, "enter": {"listingId": 2001}, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3001, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "H01",
+      "title": "협상어: 할인",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 M 할인 되나요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "H02",
+      "title": "협상어: 네고",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "50장 사면 네고 가능해요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "H03",
+      "title": "협상어: 교환",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 M 교환 되나요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "H04",
+      "title": "협상어: 반품",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "지난번 거 반품하고 싶어요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "H05",
+      "title": "칩(inquiry 3002) + 협상 본문 → 넘김",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "깎아 주세요", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": 3002}, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "H06",
+      "title": "의도 둘: 재고 + 미송",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 M 재고랑 미송 언제 와요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "MULTI_INTENT"}}
+      ]
+    },
+    {
+      "id": "H07",
+      "title": "의도 둘: 재고 + 미수",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "재고 몇 장인지랑 제 미수 얼마예요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "MULTI_INTENT"}}
+      ]
+    },
+    {
+      "id": "H08",
+      "title": "남의 도매처(102) 상품 variant를 방 1(101)에서",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "네이비 / S", "inquiry": {"intent": "STOCK", "listingId": 2003, "variantId": 3008}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "H09",
+      "title": "게시 안 된 옵션 지정",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2901,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "화이트 / FREE", "inquiry": {"intent": "STOCK", "listingId": 2901, "variantId": 3902}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "H10",
+      "title": "게시 옵션 0개 상품",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2902,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "몇 장 남았어요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_OPTIONS"}}
+      ]
+    },
+    {
+      "id": "H11",
+      "title": "되묻기 뒤 딴소리(배송)",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "배송은 언제 돼요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_INTENT"}}
+      ]
+    },
+    {
+      "id": "H12",
+      "title": "되묻기 뒤 색상 별칭(빨강) → 두 번째 되묻기 없이 넘김",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "빨강 M 몇 장 있어요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "CLARIFY_AGAIN"}}
+      ]
+    },
+    {
+      "id": "H13",
+      "title": "되묻기 31분 뒤 \"레드 M\" → 계승 안 함 → 넘김",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 M", "inquiry": null, "afterMinutes": 31, "expect": {"kind": "HANDOFF", "reason": "NO_INTENT"}}
+      ]
+    },
+    {
+      "id": "H14",
+      "title": "상품 문맥 없음(도매처 홈에서 연 방)",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "몇 장 남았어요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_CONTEXT"}}
+      ]
+    },
+    {
+      "id": "H15",
+      "title": "자동 답 꺼짐",
+      "required": false,
+      "group": "handoff",
+      "room": {
+        "wholesalerId": 101,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": false
+      },
+      "steps": [
+        {"text": "레드 M 몇 장 있어요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "OFF"}}
+      ]
+    }
+  ]
+}

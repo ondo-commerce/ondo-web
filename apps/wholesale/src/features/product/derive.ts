@@ -37,6 +37,7 @@ import type {
   SkuSize,
   SkuView,
   UploadFailure,
+  UploadSlot,
   UploadSlotStatus,
 } from "./types";
 import { formatNumber } from "@/shared/lib/format";
@@ -243,6 +244,81 @@ export function requeueForRetry<
     ...slots.filter((s) => s.slotId !== slotId),
     { ...target, status: "queued", failure: null },
   ];
+}
+
+/**
+ * 업로드 401/403 중 세션이 끊긴 쪽인가(S4-3). 401이면 화면이 저장을 잠그고, 403(승인 안 됨)은
+ * 세션은 살아 있어 서버 문구만 보여 주고 저장은 기존 경로에 맡긴다.
+ */
+export function isSessionLostError(error: unknown): boolean {
+  return (
+    isApiError(error) && error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED
+  );
+}
+
+/**
+ * 업로드 칸을 거둘 때 할 일(S4-2). 격자가 사라지거나(언마운트) 세션이 끊겨 큐를 멈출 때 쓴다.
+ *
+ * - `abort`: 진행 칸만. 대기 칸은 요청이 아직 없고, 보류·실패 칸은 요청이 이미 끝났다.
+ * - `revoke`: 넘겨받은 칸의 미리보기 **전부**. 격자가 `createObjectURL`로 만든 것만 여기 있다 —
+ *   서버(목)가 준 `url`은 등록 칸이 그리는 중일 수 있어 절대 넣지 않는다(S4-5).
+ *
+ * 순수 함수라 실제 abort·revoke는 부르는 쪽이 한다. 늦게 온 응답은 칸이 이미 없어서
+ * 아무것도 바꾸지 않는다 — 그건 격자의 몫이다.
+ */
+export function cancelUploads(
+  slots: readonly Pick<UploadSlot, "slotId" | "status" | "previewUrl">[],
+): { abort: string[]; revoke: string[] } {
+  return {
+    abort: slots.filter((s) => s.status === "uploading").map((s) => s.slotId),
+    revoke: slots.map((s) => s.previewUrl),
+  };
+}
+
+/**
+ * 앱 안 Link 클릭을 이탈 가드가 붙잡을지(S5). 붙잡으면 이동할 경로(`pathname+search+hash`),
+ * 아니면 `null`. 브라우저·Next가 원래 하던 일을 그대로 둬야 하는 클릭은 전부 `null`이다:
+ *
+ * - 이미 누가 막은 클릭, 왼쪽 버튼이 아닌 클릭, ⌘·Ctrl·Shift·Alt 클릭 — 새 탭·새 창·다운로드다.
+ *   원래 탭의 폼은 그대로 남는다(S5-3).
+ * - `_self`가 아닌 `target`, `download` 링크.
+ * - http(s)가 아닌 스킴(`mailto:` 등), 다른 origin — 문서 전체 이동이라 beforeunload가 받는다.
+ *   여기서도 잡으면 경고가 두 번 뜬다.
+ * - pathname과 search가 지금과 같은 링크 — 떠나는 게 아니다. pathname만 비교하면 query만
+ *   바뀌는 이동을 놓친다.
+ */
+export function linkLeaveTarget(
+  click: {
+    defaultPrevented: boolean;
+    button: number;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    /** `<a target>`. 없으면 빈 문자열 */
+    target: string;
+    download: boolean;
+    /** `<a>.href` — 브라우저가 절대 URL로 풀어 준 값 */
+    href: string;
+  },
+  current: { origin: string; pathname: string; search: string },
+): string | null {
+  if (click.defaultPrevented || click.button !== 0) return null;
+  if (click.metaKey || click.ctrlKey || click.shiftKey || click.altKey)
+    return null;
+  if (click.target !== "" && click.target !== "_self") return null;
+  if (click.download) return null;
+  let url: URL;
+  try {
+    url = new URL(click.href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.origin !== current.origin) return null;
+  if (url.pathname === current.pathname && url.search === current.search)
+    return null;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 /**

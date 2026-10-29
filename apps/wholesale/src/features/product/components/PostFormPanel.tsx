@@ -39,6 +39,8 @@ export function PostFormPanel({
   requireImages = false,
   onImagesChange,
   onUploadStateChange,
+  onUploadAuthFailure,
+  uploadLocked = false,
 }: {
   title: string;
   value: PostFormValue;
@@ -82,6 +84,10 @@ export function PostFormPanel({
    * 있어서 화면(View)이 받아야 한다 — 패널은 그대로 올려 보내기만 한다.
    */
   onUploadStateChange?: (state: UploadState) => void;
+  /** 업로드가 401/403을 받았다(S4-3). 저장 버튼처럼 화면(View)이 처리하므로 그대로 올린다 */
+  onUploadAuthFailure?: (error: unknown) => void;
+  /** 세션이 끊겨 새 사진을 못 올린다 — 격자의 `+`만 잠근다(S4-7) */
+  uploadLocked?: boolean;
 }) {
   const disabled = status === "SEASON_ENDED";
 
@@ -262,6 +268,8 @@ export function PostFormPanel({
                 onAdd={handleImageAdd}
                 onRemove={handleImageRemove}
                 onUploadStateChange={onUploadStateChange}
+                onAuthFailure={onUploadAuthFailure}
+                addDisabled={uploadLocked}
               />
               {errors["listing.images"] ? (
                 <FieldError id={errorId("listing.images")}>

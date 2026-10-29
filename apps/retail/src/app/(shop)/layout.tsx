@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { AccountChip } from "@/features/account";
+import { AccountChip, storeNameLabel } from "@/features/account";
 import { CART_PATH, CartButton, type CartCountWire } from "@/features/cart";
 import { requireSession, serverApi } from "@/shared/api/server";
 import { AppShell } from "@/shared/components/AppShell";
@@ -68,7 +68,7 @@ export default async function ShopLayout({
   return (
     <AppShell
       cart={<CartButton count={cartCount} />}
-      account={<AccountChip storeName={me.shopName} />}
+      account={<AccountChip storeName={storeNameLabel(me.shopName)} />}
     >
       {children}
     </AppShell>
