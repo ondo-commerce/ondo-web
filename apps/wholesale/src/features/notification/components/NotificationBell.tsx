@@ -9,18 +9,7 @@ import { CountBadge } from "./CountBadge";
 import { NotificationPanel } from "./NotificationPanel";
 import { notificationKeys } from "../api/keys";
 import { useMarkNotificationsReadMutation } from "../api/mutations";
-import {
-  useNotificationListQuery,
-  useNotificationPeekQuery,
-} from "../api/queries";
-import {
-  bellBadge,
-  newerBarCount,
-  newerCount,
-  newerSince,
-  topMark,
-  unreadOf,
-} from "../derive";
+import { bellBadge, newerCount, unreadOf } from "../derive";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 import type {
@@ -42,17 +31,14 @@ type ListData = InfiniteData<NotificationPage, string | null>;
  *  - 안 읽은 행 → 그 행 잠김 → read `{ids}` 1회(응답 안 기다림) + 이동. 같은 틱 연타도 1회(S11-5)
  *  - 읽은 행 → POST 없이 이동. 모르는 type → 이동 없이 읽음만(S11-16)
  *  - `모두 읽음` N은 count 값(받은 행 수가 아니다, S11-8). 409면 아무것도 안 바꾸고 다시 받는다(S11-9)
- *  - "새 알림 N개 보기" 줄이 떠 있으면 `모두 읽음`은 보내지 않고 409와 같은 길로 간다(F3) — 줄이 뜬 건
- *    첫 장 맨 위보다 새 행이 있다는 뜻이고, 그 행은 사장이 본 적이 없다. count가 같아도(다른 기기가 하나 읽고
- *    새 것이 하나 옴) 서버의 expectedUnread 검사는 못 잡는다(계약 "한계")
+ *  - "새 알림 N개 보기"는 count 차이다. 연 뒤 다른 기기가 하나 읽고 새 것이 하나 오면 수가 같아 줄이 안 뜨고,
+ *    `모두 읽음`도 409 없이 그 새 행까지 읽는다. 계약 §5-2가 허용한 한계다 — 목록을 따로 엿보면 30초마다 GET이
+ *    늘고(§4-1⑤) 계약에 없는 차단이 생겨서 뺐다(03-review M1 M2). 06b의 latestNotificationId로 푼다
  */
 export function NotificationBell({
   counts,
-  countsAt,
 }: {
   counts: HeaderCounts | undefined;
-  /** count 값을 마지막으로 받은 시각(`dataUpdatedAt`). 열린 패널의 엿보기가 이걸 보고 한 번씩 돈다 */
-  countsAt: number;
 }) {
   const queryClient = useQueryClient();
   const titleId = useId();
@@ -73,26 +59,6 @@ export function NotificationBell({
 
   const bell = bellBadge(counts);
   const unread = unreadOf(counts);
-
-  /* 첫 장 맨 위 행(F3). 패널이 열린 동안만 목록을 본다 — 닫혀 있으면 요청이 없다(S11-4) */
-  const list = useNotificationListQuery(open);
-  const since = topMark(list.data?.pages);
-  const peek = useNotificationPeekQuery({
-    since: since ?? null,
-    countsAt,
-    /* 첫 장을 받은 **뒤에** 온 count마다 한 번. 연 순간에는 목록이 count보다 늦으니 돌지 않는다 */
-    enabled:
-      open &&
-      since !== undefined &&
-      counts?.kind === "ok" &&
-      countsAt > list.dataUpdatedAt,
-  });
-  const newer = newerBarCount(
-    newerCount(baseline, unread),
-    peek.data === undefined || since === undefined
-      ? 0
-      : newerSince(peek.data.data, since),
-  );
 
   const readCachedUnread = useCallback(
     () =>
@@ -173,11 +139,6 @@ export function NotificationBell({
         release();
         return;
       }
-      if (newer > 0) {
-        setNotice("changed");
-        void reloadFirstPage().finally(release);
-        return;
-      }
       setNotice(null);
       markAll
         .mutateAsync({ all: true, expectedUnread: expected })
@@ -235,7 +196,7 @@ export function NotificationBell({
           titleRef={titleRef}
           scrollRef={scrollRef}
           unread={unread}
-          newer={newer}
+          newer={newerCount(baseline, unread)}
           notice={notice}
           marking={markAll.isPending}
           lockedIds={lockedIds}

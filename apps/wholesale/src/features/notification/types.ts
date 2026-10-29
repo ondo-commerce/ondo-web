@@ -73,11 +73,5 @@ export interface NotificationRowView {
   href: string | null;
 }
 
-/** 목록 순서의 한 점(createdAt, id). 패널 첫 장 맨 위 행을 기억해 "그보다 새 행"을 센다(F3) */
-export interface NotificationMark {
-  createdAt: string;
-  id: number;
-}
-
 /** 패널 위쪽 한 줄 안내. 다음 누름에서 사라진다 */
 export type PanelNotice = "changed" | "markFailed" | null;

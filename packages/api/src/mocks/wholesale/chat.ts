@@ -1171,6 +1171,9 @@ export const chatHandlers = [
    * `contextListingId`가 있으면(숫자 또는 null) 방 문맥을 그 값으로 바꾸고, 넣은 메시지에 **자동 답을 붙인다**
    * (count 1일 때만, loop-05b S9-3 장면 5, 6). 없으면 예전처럼 메시지만 넣는다 — loop-04 e2e가 세는 메시지 수를
    * 바꾸지 않으려고 자동 답을 켜는 쪽을 명시로 두었다
+   *
+   * `choices`가 있으면(배열 또는 null) 그 자동 답의 되묻기 보기를 그 값으로 바꾼다(03-review M4). 생성기는
+   * 게시 옵션만 보기로 내서 "보기 없음"이나 "주문 불가"를 못 만든다 — 계약상 둘 다 올 수 있는 응답이다
    */
   http.post(
     "*/__mock/chat/rooms/:roomId/incoming",
@@ -1182,6 +1185,7 @@ export const chatHandlers = [
         count?: number;
         intent?: ChatIntent;
         contextListingId?: number | null;
+        choices?: NonNullable<ChatMessage["autoReply"]>["choices"];
       };
       const count = Math.max(1, Math.min(input.count ?? 1, 500));
       const base = input.body ?? "새 문의예요";
@@ -1211,6 +1215,11 @@ export const chatHandlers = [
       const first = created[0];
       if (generate && first !== undefined)
         created.push(...runAutoReply(r, first));
+      const { choices } = input;
+      if (choices !== undefined)
+        for (const m of created)
+          if (m.kind === "CLARIFY" && m.autoReply !== null)
+            m.autoReply = { ...m.autoReply, choices };
       return HttpResponse.json({ data: created }, { status: 201 });
     },
   ),

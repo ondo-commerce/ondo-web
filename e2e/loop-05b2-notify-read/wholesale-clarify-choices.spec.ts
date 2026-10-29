@@ -6,7 +6,8 @@ import { chatMock, notify, start } from "./helpers";
  *
  * 채팅 목의 방 1 시드 되묻기는 `choices` 칸이 없다(05b-1 이전 시드) — 그래서 "줄 없음" 쪽을 본다.
  * 보기가 있는 되묻기는 목의 같은 생성기가 만든다: 문맥 2001(빈티지 플라워 셔츠) + 옵션 없는 재고 문장.
- * `(주문 불가)`는 목 생성기가 게시 옵션만 보기로 내서 e2e로 만들 수 없다 — unit(`toClarifyChoicesView`)이 본다.
+ * 생성기는 게시 옵션만 보기로 내서 `choices: null`과 `orderable: false`를 못 만든다 — incoming 손잡이의 `choices`로
+ * 그 되묻기의 보기를 바꿔 넣는다(03-review M4).
  */
 
 const ASK = "이 셔츠 몇 장 남았어요?";
@@ -86,4 +87,39 @@ test("S13-1 choices 가 없는 되묻기(방 1 시드)는 보기 줄이 없다",
   await expect(bubble).not.toContainText("보기:");
   /* 근거 칸(조회 시각)은 그대로 */
   await expect(bubble.locator('[data-ac~="S7-13"]')).toBeVisible();
+});
+
+test("S13-1 choices null 인 되묻기 응답 → 보기 줄 없음, 근거 칸은 그대로", async ({
+  page,
+}) => {
+  await chatMock(page, "rooms/6/incoming", {
+    body: ASK,
+    contextListingId: 2001,
+    choices: null,
+  });
+  const bubble = clarifyBubbles(page).last();
+  await expect(bubble).toBeVisible();
+  await expect(bubble.locator('[data-ac="S13-1"]')).toHaveCount(0);
+  await expect(bubble).not.toContainText("보기:");
+  await expect(bubble.locator('[data-ac~="S7-13"]')).toBeVisible();
+});
+
+test("S13-1 orderable false 보기 → 그 보기 뒤에 '(주문 불가)', 나머지는 그대로", async ({
+  page,
+}) => {
+  await chatMock(page, "rooms/6/incoming", {
+    body: ASK,
+    contextListingId: 2001,
+    choices: [
+      { variantId: 3001, label: "레드 / S", orderable: true },
+      { variantId: 3002, label: "레드 / M", orderable: false },
+      { variantId: 3003, label: "레드 / L", orderable: true },
+    ],
+  });
+  const bubble = clarifyBubbles(page).last();
+  await expect(bubble.locator('[data-ac="S13-1"]')).toHaveText(
+    "보기: 레드 / S, 레드 / M(주문 불가), 레드 / L",
+  );
+  await expect(bubble.getByRole("button")).toHaveCount(0);
+  expect(await focusables(bubble)).toBe(0);
 });

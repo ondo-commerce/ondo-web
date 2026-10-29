@@ -12,7 +12,6 @@ import {
   openPanel,
   orderCard,
   panel,
-  PEEK_GET,
   READ_POST,
   readBodies,
   rowById,
@@ -215,7 +214,11 @@ test("S11-9 그 사이 새 알림 → 409 안내, 점 그대로, 첫 행 새 주
   await expect(panel(page).getByRole("status")).toHaveCount(0);
 });
 
-test("F3 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 새 알림 줄, 모두 읽음은 보내지 않고 안내 + 첫 장 다시", async ({
+/**
+ * 계약 한계(§5-2) 기록. 03-review M1 M2로 엿보기를 뺐다 — 이 경우 줄은 안 뜨고 모두 읽음은 POST 1회로 본 적 없는
+ * 새 행까지 읽는다. F3는 accept, 06b의 latestNotificationId로 푼다. 그때 이 테스트를 409 쪽으로 바꾼다
+ */
+test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 줄 0, 모두 읽음 POST 1회 200", async ({
   page,
 }) => {
   await openPanel(page);
@@ -229,34 +232,53 @@ test("F3 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 새 알
   );
   await notify(page, "incoming", { type: "NEW_ORDER" });
   const counts = await count(page, COUNT_GET);
+  const lists = await count(page, LIST_GET);
   await page.clock.fastForward(30_000);
   await waitCount(page, COUNT_GET, counts + 1);
 
-  const newer = panel(page).getByRole("button", {
-    name: "새 알림 1개 보기",
-    exact: true,
-  });
-  await expect(newer).toBeVisible();
   await expect(markAllButton(page)).toHaveText("안 읽은 알림 3개 모두 읽음");
-  expect(await rowIds(page)).not.toContain(NEW_ID);
-
-  const lists = await count(page, LIST_GET);
-  await markAllButton(page).click();
-  await expect(panel(page).getByRole("status")).toHaveText(
-    "그 사이 알림이 바뀌었어요. 확인하고 다시 눌러 주세요",
+  await expect(
+    panel(page).getByRole("button", { name: /^새 알림 \d+개 보기$/ }),
+  ).toHaveCount(0);
+  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(
+    lists,
   );
-  await expect(rows(page).first()).toHaveAttribute("data-id", String(NEW_ID));
-  await expect(newer).toHaveCount(0);
-  expect(await count(page, LIST_GET), "첫 장 다시 1회").toBe(lists + 1);
-  /* read 는 다른 기기 흉내 1번뿐 — 모두 읽음은 나가지 않았다 */
-  expect(await readBodies(page)).toEqual([{ ids: [1025] }]);
-  await expect(unreadRows(page)).toHaveCount(2);
 
-  /* 새 행을 본 뒤 다시 누르면 그때 읽는다 */
   await markAllButton(page).click();
   await expect(markAllButton(page)).toHaveCount(0);
-  await expect(unreadRows(page)).toHaveCount(0);
+  expect(await readBodies(page)).toEqual([
+    { ids: [1025] },
+    { all: true, expectedUnread: 3 },
+  ]);
+  await expect(panel(page).getByRole("status")).toHaveCount(0);
   await expect(bell(page)).toHaveAccessibleName("알림");
+  expect(await rowIds(page)).not.toContain(NEW_ID);
+});
+
+test("S11-16 안 읽은 모르는 type → read {ids} 1회, 이동 0, 점 사라짐, 배지 −1(03-review M3)", async ({
+  page,
+}) => {
+  const created = (await notify(page, "incoming", {
+    type: "PAYMENT_RECEIVED",
+  })) as { data: { notification: { id: number } } };
+  const id = created.data.notification.id;
+  await page.clock.fastForward(30_000);
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 4개");
+  await openPanel(page);
+
+  const unknown = rowById(page, id);
+  await expect(unknown).toHaveJSProperty("tagName", "BUTTON");
+  await expect(unknown).toHaveAttribute("data-unread", "true");
+  await expect(unknown).toContainText("입금이 확인됐어요");
+  const history = await historyLength(page);
+  await unknown.click();
+
+  await expect(unknown).toHaveAttribute("data-unread", "false");
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 3개");
+  expect(await readBodies(page)).toEqual([{ ids: [id] }]);
+  await expect(page).toHaveURL(/\/products$/);
+  await expect(panel(page)).toBeVisible();
+  expect(await historyLength(page), "이동 0").toBe(history);
 });
 
 test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'로만 첫 장 다시", async ({
@@ -269,7 +291,6 @@ test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'�
   await list.evaluate((el) => (el.scrollTop = 200));
   const before = await rowIds(page);
   const lists = await count(page, LIST_GET);
-  expect(await count(page, PEEK_GET), "연 순간엔 엿보기 0").toBe(0);
 
   await notify(page, "incoming", { type: "NEW_ORDER" });
   const counts = await count(page, COUNT_GET);
@@ -282,7 +303,6 @@ test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'�
   expect(await count(page, LIST_GET), "목록을 저절로 다시 받지 않는다").toBe(
     lists,
   );
-  expect(await count(page, PEEK_GET), "count 1회 뒤 엿보기 1회").toBe(1);
 
   await newer.click();
   await expect(rows(page).first()).toHaveAttribute("data-id", String(NEW_ID));

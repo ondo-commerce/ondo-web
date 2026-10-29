@@ -19,7 +19,7 @@ import { chatBadge } from "../derive";
  * 실패해도 아이콘은 늘 있다(디자인 결정 36). count를 모르면 배지만 없다.
  */
 export function HeaderInbox() {
-  const { data: counts, dataUpdatedAt: countsAt } = useHeaderCountsQuery();
+  const { data: counts } = useHeaderCountsQuery();
   const pathname = usePathname();
   const chat = chatBadge(counts);
   const chatActive =
@@ -50,7 +50,7 @@ export function HeaderInbox() {
         ) : null}
       </Link>
 
-      <NotificationBell counts={counts} countsAt={countsAt} />
+      <NotificationBell counts={counts} />
     </div>
   );
 }

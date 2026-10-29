@@ -35,17 +35,8 @@ export const COUNT_GET = {
   path: /\/api\/wholesale\/notifications\/unread-count$/,
   method: "GET",
 } as const;
-/**
- * 패널 목록 한 장(size 20, 첫 장이나 `더 보기`). 열린 패널의 엿보기(size 10, F3)는 따로 센다 —
- * "목록을 저절로 다시 받지 않는다"는 화면에 그리는 장을 말한다. 엿보기는 화면에 안 들어간다
- */
 export const LIST_GET = {
-  path: /\/api\/wholesale\/notifications\?(.*&)?size=20(&|$)/,
-  method: "GET",
-} as const;
-/** 열린 패널의 엿보기(F3). count 가 새로 올 때마다 1회, 첫 장 맨 위보다 새 행이 있는지만 본다 */
-export const PEEK_GET = {
-  path: /\/api\/wholesale\/notifications\?(.*&)?size=10(&|$)/,
+  path: /\/api\/wholesale\/notifications(\?|$)/,
   method: "GET",
 } as const;
 export const READ_POST = {
