@@ -88,14 +88,25 @@ export const PENDING_TEXT = {
 
 /**
  * 재고 구간. 소매처 화면에는 정확 수량 대신 이 말이 간다(계약 `ChatRetailFacts`).
- * 도매 화면은 정확 수량과 같이 "소매처가 무엇을 봤는지"를 보여 준다.
+ * 도매 화면은 정확 수량과 같이 "소매처가 무엇을 봤는지"를 보여 준다 — 그래서 소매 카드 글자 표
+ * (`apps/retail` chat `constants.ts`)와 **같은 글자**여야 한다(디자인 결정 20, 27). 앱끼리 import 할 수 없어
+ * 두 벌이다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
  */
 export const STOCK_BAND_LABEL: Record<StockBand, string> = {
   NONE: "재고 없음",
-  UNDER_10: "10장 미만",
-  UNDER_50: "50장 미만",
+  UNDER_10: "1~9장",
+  UNDER_50: "10~49장",
   FIFTY_PLUS: "50장 이상",
 };
+
+/** 목록 머리 자동 답변 스위치(S9, 디자인 결정 22~25) */
+export const AUTO_REPLY_TEXT = {
+  /** 스위치 이름이자 보이는 글자. 이름은 스위치 하나만 낭독한다 */
+  label: "자동 답변",
+  saving: "저장 중",
+  off: "자동 답변이 꺼져 있어요. 소매 문의는 사장님께 바로 전달돼요",
+  failed: "설정을 바꾸지 못했어요. 다시 눌러 주세요",
+} as const;
 
 /** 요일. `Intl`의 `weekday: "short"`는 `(화)`가 아니라 `화`라 괄호는 derive가 붙인다 */
 export const WEEKDAY_LABEL = [

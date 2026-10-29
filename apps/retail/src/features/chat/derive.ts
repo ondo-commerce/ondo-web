@@ -286,9 +286,26 @@ export function autoReplySeen(
   return `${formatClock(message.autoReply.checkedAt)}${ROOM_TEXT.checkedSuffix}`;
 }
 
+/** `messageAc`가 말풍선 하나만 봐서는 모르는 방 상태(loop-05b 와이어프레임 상태별 data-ac) */
+export interface MessageAcContext {
+  /** 401 끊김 — 자동 답 말풍선 S8-8 */
+  sessionLost: boolean;
+  /** 바로 뒤에 사람 넘김 줄이 붙은 내 말(`handoffCauses`) — S8-10 */
+  handoffCauses: ReadonlySet<number>;
+  /** 옵션 칩으로 보낸 말이 못 보냄 상태(`choiceSendFailed`) — 되묻기 말풍선 S8-15 */
+  choiceFailed: boolean;
+}
+
+const NO_AC_CONTEXT: MessageAcContext = {
+  sessionLost: false,
+  handoffCauses: new Set(),
+  choiceFailed: false,
+};
+
 /**
  * 말풍선의 와이어프레임 `data-ac`. 소매 AC ID로 새로 붙인다(§4-5 표). 기본 S5-5, 자동 답과 사람 넘김
  * S5-6, 방을 연 뒤 받은 도매 말풍선은 S6-7 S6-11, 보류 말풍선과 같은 키라 그것을 대신한 것은 S6-4.
+ * 05b 상태별 번호(넘김 S8-10, 401 S8-8, 칩 재시도 S8-15)는 `context`로 받는다(QA F4).
  */
 export function messageAc(
   message: Pick<
@@ -297,12 +314,17 @@ export function messageAc(
   >,
   baseline: number,
   pendingIds: ReadonlySet<string>,
+  context: MessageAcContext = NO_AC_CONTEXT,
 ): string {
   const kind = bubbleKindOf(message);
   const ac = [kind === "auto" || kind === "system" ? "S5-6" : "S5-5"];
   // 05b 와이어프레임: 되묻기는 S8-3, 재고 답은 S8-4
   if (message.kind === "CLARIFY") ac.push("S8-3");
   if (message.kind === "AUTO_REPLY") ac.push("S8-4");
+  if (message.kind === "AUTO_REPLY" && context.sessionLost) ac.push("S8-8");
+  if (message.kind === "CLARIFY" && context.choiceFailed) ac.push("S8-15");
+  if (message.kind === "HANDOFF" || context.handoffCauses.has(message.sequence))
+    ac.push("S8-10");
   if (message.sequence > baseline && message.sender === "WHOLESALER")
     ac.push("S6-7", "S6-11");
   if (
@@ -311,6 +333,43 @@ export function messageAc(
   )
     ac.push("S6-4");
   return ac.join(" ");
+}
+
+/**
+ * 사람 넘김 줄 바로 앞의 내 말 sequence들 — 넘김을 부른 문의다(와이어프레임 #state-handoff-nego, S8-10).
+ * 서버는 내 말과 넘김 줄을 한 응답에 연달아 준다(sequence n, n+1). 사이에 다른 말이 끼면 잇지 않는다
+ */
+export function handoffCauses(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+): Set<number> {
+  const causes = new Set<number>();
+  const sorted = [...messages].sort((a, b) => a.sequence - b.sequence);
+  sorted.forEach((message, i) => {
+    const prev = sorted[i - 1];
+    if (message.kind === "HANDOFF" && prev?.sender === "RETAILER")
+      causes.add(prev.sequence);
+  });
+  return causes;
+}
+
+/** 옵션 칩으로 보낸 말(문맥에 variant가 있다)인가 — 재시도 때 문맥을 지키는 대상(S8-15) */
+function isChoiceSend(item: Pick<PendingMessage, "inquiry">): boolean {
+  return item.inquiry?.intent === "STOCK" && item.inquiry.variantId !== null;
+}
+
+/** 옵션 칩으로 보낸 말 중 못 보낸 게 있나(S8-15 — 되묻기 말풍선과 그 실패 말풍선에 번호를 단다) */
+export function choiceSendFailed(
+  pending: readonly Pick<PendingMessage, "inquiry" | "status">[],
+): boolean {
+  return pending.some((p) => p.status === "failed" && isChoiceSend(p));
+}
+
+/** 보류 말풍선의 `data-ac`. 보내는 중 S6-1, 못 보냄 S6-4, 옵션 칩으로 보낸 걸 못 보냈으면 + S8-15 */
+export function pendingAc(
+  item: Pick<PendingMessage, "inquiry" | "status">,
+): string {
+  if (item.status === "sending") return "S6-1";
+  return isChoiceSend(item) ? "S6-4 S8-15" : "S6-4";
 }
 
 /**

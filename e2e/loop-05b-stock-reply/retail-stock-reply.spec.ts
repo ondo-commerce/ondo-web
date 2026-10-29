@@ -437,6 +437,34 @@ test.describe("S8-11 넘친 방 — 가려진 대상", () => {
       expect(lastAdd.y + lastAdd.height).toBeLessThanOrEqual(
         Math.min(input.y, chipRow.y),
       );
+      // 아래끝 비교만으론 화면 위로 밀려난 버튼도 통과한다(codex-meta M5). 가운데 점을 실제로 누가
+      // 차지하는지, 그 점이 메시지 영역 안인지까지 본다. 마지막 카드는 재고 0이라 버튼이 비활성이고,
+      // Button의 disabled:pointer-events-none 때문에 그대로 찍으면 아래 요소가 잡힌다. 잠깐 auto로 두고
+      // 찍는다 — 보려는 건 누를 수 있느냐가 아니라 그 자리에 다른 게 덮여 있지 않느냐다
+      const logHandle = await log(page).elementHandle();
+      const hit = await addButton(cards(page).last()).evaluate(
+        (button, logEl) => {
+          const r = button.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          const area = (logEl as HTMLElement).getBoundingClientRect();
+          const prev = (button as HTMLElement).style.pointerEvents;
+          (button as HTMLElement).style.pointerEvents = "auto";
+          const el = document.elementFromPoint(x, y);
+          (button as HTMLElement).style.pointerEvents = prev;
+          return {
+            isButton: el !== null && (el === button || button.contains(el)),
+            inLog: (logEl as HTMLElement).contains(button),
+            inArea:
+              x >= area.left &&
+              x <= area.right &&
+              y >= area.top &&
+              y <= area.bottom,
+          };
+        },
+        logHandle,
+      );
+      expect(hit).toEqual({ isButton: true, inLog: true, inArea: true });
 
       if (viewport.width === 390) {
         const group = choiceGroups(page).last();

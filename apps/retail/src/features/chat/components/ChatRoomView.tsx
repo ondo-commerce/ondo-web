@@ -33,6 +33,8 @@ import {
   askChipBusy,
   askListingId,
   choiceInquiry,
+  choiceSendFailed,
+  handoffCauses,
   liveAnnouncement,
   maxSequenceOf,
   messageAc,
@@ -46,6 +48,7 @@ import {
 import type {
   AddToCart,
   ChatChoice,
+  ChatInquiry,
   ChatMessage,
   ChatRoomDetail,
   ChatThread,
@@ -212,10 +215,27 @@ function ChatRoom({
   /* 입력창 위 `재고 문의` 칩(S8-1). 상품 상세에서 연 방만. `onAsk`는 같은 함수로 남아야 입력창(memo)이
      polling마다 다시 그려지지 않는다 */
   const askListing = askListingId(from);
+
+  /* 칩 보내기 single-flight(QA F2). 두 칩은 보류 말풍선이 그려진 뒤에야 disabled가 된다 — 같은 틱의 두 번째,
+     세 번째 클릭은 아직 켜진 칩을 누른다. 담기(S8-7 `inflight`)처럼 ref로 그 틈만 막고, 보류 목록이 바뀌어
+     칩의 disabled가 반영되면 푼다(실패하면 칩이 다시 켜지니 다시 누를 수 있어야 한다) */
+  const chipFlight = useRef(false);
+  useEffect(() => {
+    chipFlight.current = false;
+  }, [pending]);
+  const sendChip = useCallback(
+    (body: string, inquiry: ChatInquiry) => {
+      if (chipFlight.current) return;
+      chipFlight.current = true;
+      send(body, inquiry);
+    },
+    [send],
+  );
+
   const onAsk = useCallback(() => {
     if (askListing !== null)
-      send(STOCK_TEXT.askBody, stockAskInquiry(askListing));
-  }, [send, askListing]);
+      sendChip(STOCK_TEXT.askBody, stockAskInquiry(askListing));
+  }, [sendChip, askListing]);
   const now = useNow();
 
   /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존은 loop-08, 도매와 같다) */
@@ -247,6 +267,11 @@ function ChatRoom({
   }, []);
 
   const items = toThreadItems(thread.messages);
+  const acContext = {
+    sessionLost,
+    handoffCauses: handoffCauses(thread.messages),
+    choiceFailed: choiceSendFailed(shownPending),
+  };
 
   return (
     <Panel
@@ -289,7 +314,7 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
-                ac={messageAc(item.message, baseline, pendingIds)}
+                ac={messageAc(item.message, baseline, pendingIds, acContext)}
                 extra={
                   <AutoReplyExtra
                     message={item.message}
@@ -299,7 +324,7 @@ function ChatRoom({
                     sessionLost={sessionLost}
                     addToCart={addToCart}
                     onChoose={(listingId, choice) =>
-                      send(choice.label, choiceInquiry(listingId, choice))
+                      sendChip(choice.label, choiceInquiry(listingId, choice))
                     }
                   />
                 }
@@ -334,7 +359,11 @@ function ChatRoom({
         className="sr-only"
         data-ac="S6-11"
       >
-        {live ? <span key={live.sequence}>{live.text}</span> : null}
+        {live ? (
+          <span key={live.sequence} data-ac="S8-12">
+            {live.text}
+          </span>
+        ) : null}
       </div>
     </Panel>
   );

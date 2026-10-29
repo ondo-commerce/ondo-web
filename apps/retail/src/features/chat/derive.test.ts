@@ -6,6 +6,9 @@ import {
   askListingId,
   autoReplySeen,
   cardAddedText,
+  choiceSendFailed,
+  handoffCauses,
+  pendingAc,
   cartAddFailureOf,
   checkCardQty,
   choiceInquiry,
@@ -193,7 +196,7 @@ describe("S5-6 자동 답변, 사람 넘김, 모르는 kind", () => {
     ).toBe("S5-6 S8-3");
     expect(
       messageAc(message(5, { sender: "SYSTEM", kind: "HANDOFF" }), 7, none),
-    ).toBe("S5-6");
+    ).toBe("S5-6 S8-10");
     expect(messageAc(message(8, { sender: "WHOLESALER" }), 7, none)).toBe(
       "S5-5 S6-7 S6-11",
     );
@@ -203,6 +206,72 @@ describe("S5-6 자동 답변, 사람 넘김, 모르는 kind", () => {
     expect(
       messageAc(message(9, { clientMessageId: key }), 7, new Set([key])),
     ).toBe("S5-5 S6-4");
+  });
+});
+
+describe("QA F4 상태별 data-ac — S8-8 S8-10 S8-15", () => {
+  const none = new Set<string>();
+  const ctx = {
+    sessionLost: false,
+    handoffCauses: new Set<number>(),
+    choiceFailed: false,
+  };
+
+  it("S8-10 넘김 줄 바로 앞의 내 말만 넘김을 부른 문의다. 사이에 자동 답이 끼면 잇지 않는다", () => {
+    const messages = [
+      message(1),
+      message(2, { sender: "SYSTEM", kind: "HANDOFF" }),
+      message(3),
+      message(4, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(5, { sender: "SYSTEM", kind: "HANDOFF" }),
+    ];
+    // 순서가 섞여 와도 sequence로 본다
+    const causes = handoffCauses([...messages].reverse());
+    expect([...causes]).toEqual([1]);
+    expect(
+      messageAc(message(1), 7, none, { ...ctx, handoffCauses: causes }),
+    ).toBe("S5-5 S8-10");
+    expect(
+      messageAc(message(3), 7, none, { ...ctx, handoffCauses: causes }),
+    ).toBe("S5-5");
+  });
+
+  it("S8-8 끊긴 방의 자동 답 말풍선, S8-15 옵션 칩 보내기가 실패한 방의 되묻기", () => {
+    const auto = message(4, { sender: "WHOLESALER", kind: "AUTO_REPLY" });
+    const clarify = message(4, { sender: "WHOLESALER", kind: "CLARIFY" });
+    expect(messageAc(auto, 7, none, { ...ctx, sessionLost: true })).toBe(
+      "S5-6 S8-4 S8-8",
+    );
+    expect(messageAc(clarify, 7, none, { ...ctx, sessionLost: true })).toBe(
+      "S5-6 S8-3",
+    );
+    expect(messageAc(clarify, 7, none, { ...ctx, choiceFailed: true })).toBe(
+      "S5-6 S8-3 S8-15",
+    );
+  });
+
+  it("S8-15 못 보낸 옵션 칩 말풍선만 + S8-15. 재고 문의 칩(variant 없음)과 자유 문장은 아니다", () => {
+    const choice = {
+      intent: "STOCK" as const,
+      listingId: 2001,
+      variantId: 3002,
+      backorderId: null,
+      label: "레드 / M",
+    };
+    const ask = { ...choice, variantId: null, label: null };
+    expect(pendingAc({ status: "sending", inquiry: choice })).toBe("S6-1");
+    expect(pendingAc({ status: "failed", inquiry: choice })).toBe("S6-4 S8-15");
+    expect(pendingAc({ status: "failed", inquiry: ask })).toBe("S6-4");
+    expect(pendingAc({ status: "failed", inquiry: null })).toBe("S6-4");
+    expect(choiceSendFailed([{ status: "failed", inquiry: choice }])).toBe(
+      true,
+    );
+    expect(
+      choiceSendFailed([
+        { status: "sending", inquiry: choice },
+        { status: "failed", inquiry: ask },
+      ]),
+    ).toBe(false);
   });
 });
 
