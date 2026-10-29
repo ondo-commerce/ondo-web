@@ -26,11 +26,16 @@ async function seed(page: Page, status: "APPROVED" | "PENDING" | "REJECTED") {
 }
 
 /**
- * mock 모드 표의 거래처 "봄봄상회"는 MSW 스냅샷(스펙 예시)이 준 행 값이다 — 소스에
- * 박힌 더미가 아니다. 표 칸(<td>)에서 온 것만 빼고 나머지는 그대로 센다.
+ * mock 모드의 거래처 "봄봄상회"는 MSW 목이 준 행 값이다 — 소스에 박힌 더미가 아니다.
+ * 표 칸(<td>)과 대시보드 신규 주문 타일의 "가장 오래 … · 봄봄상회" 줄(#294 summary 목이
+ * 주문 목에서 센다)에서 온 것만 빼고 나머지는 그대로 센다.
  */
 const withoutMockRows = (hits: string[]) =>
-  hits.filter((h) => !h.startsWith("봄봄상회 | <td>"));
+  hits.filter(
+    (h) =>
+      !h.startsWith("봄봄상회 | <td>") &&
+      !/^봄봄상회 \| <p> \| 가장 오래 .* · 봄봄상회$/.test(h),
+  );
 
 async function record(page: Page, name: string): Promise<string[]> {
   await shot(page, `local-w-${name}`);

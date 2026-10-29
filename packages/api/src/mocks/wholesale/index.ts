@@ -4,6 +4,7 @@ import { handlersFromSpec } from "../handlers";
 import type { OpenApiDocument } from "../openapi";
 import { backorderHandlers } from "./backorder";
 import { chatHandlers } from "./chat";
+import { dashboardHandlers } from "./dashboard";
 import { inventoryHandlers } from "./inventory";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
@@ -20,6 +21,7 @@ import { shipmentHandlers } from "./shipment";
  */
 export const wholesaleHandlers: RequestHandler[] = [
   ...chatHandlers,
+  ...dashboardHandlers,
   ...productHandlers,
   ...orderHandlers,
   ...backorderHandlers,
