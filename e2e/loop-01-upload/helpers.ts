@@ -36,7 +36,8 @@ export async function login(page: Page): Promise<void> {
   await page.getByLabel("이메일").fill("e2e@ondo.test");
   await page.getByLabel("비밀번호").fill("ondo1234!");
   await page.getByRole("button", { name: "로그인" }).click();
-  await page.waitForURL(/\/products/);
+  /* 로그인 도착지는 `/dashboard`다(#276). 각 spec이 그다음에 자기 화면으로 간다 */
+  await page.waitForURL(/\/dashboard/);
 }
 
 /** `/products/new` 에서 `함께 게시` 를 켜 게시글 패널(격자)을 연다 */

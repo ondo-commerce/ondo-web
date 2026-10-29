@@ -34,7 +34,7 @@ export default defineConfig({
     },
     {
       name: "retail",
-      testMatch: /retail[/-].*\.spec\.ts/,
+      testMatch: /retail[/-].*\.spec\.ts|smoke\/retail.*\.spec\.ts/,
       /* 가짜 API가 있어야 도는 폴더는 별도 설정(`playwright.stub.config.ts`,
          `pnpm e2e:stub`)이 맡는다. 여기 넣으면 dev API를 보는 이 서버로 돌아 실패한다 */
       testIgnore:

@@ -30,11 +30,6 @@ export interface AccountOverride {
    */
   appliedAt?: string;
   bankAccount?: BankAccount | null;
-  /**
-   * 계좌 온보딩을 이미 한 번 지나갔나. 로그아웃해도 지우지 않는다 — 같은 탭에서
-   * 다시 로그인했을 때 방금 거절한 안내가 또 뜨면 안내가 아니라 방해다.
-   */
-  bankPromptSeen?: boolean;
 }
 
 interface SessionState {
@@ -166,7 +161,6 @@ export type SessionView =
   | {
       state: "signedIn";
       account: Account;
-      bankPromptSeen: boolean;
       /** 이번 세션에 신청한 시각. 더미 계정으로 로그인만 했으면 `null`이다 */
       appliedAt: string | null;
     };
@@ -223,28 +217,8 @@ function resolve(snapshot: SessionState): SessionView {
   return {
     state: "signedIn",
     account,
-    bankPromptSeen: override?.bankPromptSeen ?? account.bankAccount !== null,
     appliedAt: override?.appliedAt ?? null,
   };
-}
-
-/**
- * 이메일 하나의 덮어쓰기를 합쳐 넣는다. **저장소를 먼저 읽는다**(`ensureLoaded`) —
- * 읽지 않은 채 합치면 이 탭에 이미 있던 다른 변경이 사라진다.
- */
-function patchOverride(email: string, patch: AccountOverride): SessionState {
-  const current = ensureLoaded();
-  const next: SessionState = {
-    ...current,
-    loaded: true,
-    overrides: {
-      ...current.overrides,
-      [email]: { ...current.overrides[email], ...patch },
-    },
-  };
-  writeStorage(next);
-  commit(next);
-  return next;
 }
 
 /**
@@ -318,68 +292,9 @@ export function signOut(): void {
   commit(next);
 }
 
-/**
- * 가입 신청을 접수하고 그 계정으로 로그인한다. 승인이 앱 밖에서 일어나므로 여기서
- * 하는 일은 "심사 중 계정 하나가 생겼다"까지다.
- *
- * 방금 적은 상호명·사업자 등록번호를 세션에 얹는 이유: 승인 대기 화면이 이 값을
- * 읽어야 **상수 하나가 늘 같은 이름을 말하는 일**이 없다(`retail-account` F1).
+/*
+ * 가입 신청(`applySignup`)·재신청(`applyReapply`)·계좌 저장(`saveBankAccount`)은
+ * 지웠다. 셋 다 브라우저 세션에만 적고 "심사 중"·"등록했어요"를 띄웠는데 서버엔
+ * 아무것도 가지 않았다 — 거짓 성공이다(`side-02` N3). 가입은 업로드 API가 생기면
+ * 서버 호출로 다시 만든다(D32 Q1-C).
  */
-export function applySignup(input: {
-  email: string;
-  storeName: string;
-  bizNo: string;
-}): void {
-  /* 덮어쓰기의 **키**가 곧 로그인 대조 값이다(`wholesale-account` F7) */
-  const email = normalizeEmail(input.email);
-  const next = patchOverride(email, {
-    storeName: input.storeName,
-    bizNo: input.bizNo,
-    status: "PENDING",
-    appliedAt: formatAppliedAt(new Date()),
-  });
-  const signedIn: SessionState = { ...next, email };
-  writeStorage(signedIn);
-  commit(signedIn);
-}
-
-/**
- * 서류를 다시 내고 재심사를 신청한다. 무엇을 다시 올렸는지는 담지 않는다 — 보낼
- * 서버가 없어 파일은 화면에 이름을 남기는 데서 끝난다.
- */
-export function applyReapply(email: string): void {
-  patchOverride(email, {
-    status: "PENDING",
-    appliedAt: formatAppliedAt(new Date()),
-  });
-}
-
-/**
- * 확정 와이어프레임 형식 그대로. `toLocaleString`을 쓰지 않는 이유: 브라우저
- * 로케일에 따라 갈려서 같은 화면이 단말마다 다른 모양의 날짜를 말한다.
- */
-function formatAppliedAt(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${at.getFullYear()}.${pad(at.getMonth() + 1)}.${pad(at.getDate())} ` +
-    `${pad(at.getHours())}:${pad(at.getMinutes())}`
-  );
-}
-
-/**
- * 정산 계좌를 등록한다. **첫 계좌는 자동으로 주 계좌다** — `isPrimary`를 두지 않는
- * 이유는 계좌가 하나뿐인 순간에 구분할 대상이 없어서다. 체크박스를 보여 주면
- * "안 켜면 어떻게 되나"라는 질문만 생긴다. 다계좌 이슈가 열릴 때 타입까지 연다.
- */
-export function saveBankAccount(email: string, account: BankAccount): void {
-  patchOverride(email, { bankAccount: account, bankPromptSeen: true });
-}
-
-/**
- * 계좌 입력을 건너뛴다. **다음 로그인부터 온보딩이 다시 뜨지 않는다** — 한 번
- * 거절한 안내를 반복하는 것은 안내가 아니라 방해다. 대신 안 넣은 사실이
- * **계정 메뉴에 상시로 남아** 찾아갈 곳이 하나로 고정된다.
- */
-export function skipBankPrompt(email: string): void {
-  patchOverride(email, { bankPromptSeen: true });
-}

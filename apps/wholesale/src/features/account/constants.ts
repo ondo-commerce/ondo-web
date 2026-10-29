@@ -4,9 +4,10 @@ export const ACCOUNT_PATH = {
   signup: "/signup",
   approval: "/approval",
   rejected: "/approval/rejected",
-  bankOnboarding: "/onboarding/bank-account",
-  /** 승인이 끝난 사장이 도착하는 곳. 대시보드는 아직 화면이 없다 */
-  erpHome: "/products",
+  /** 정산 계좌를 실제로 등록·수정하는 곳(정산 탭). 옛 온보딩 주소도 여기로 보낸다 */
+  settlements: "/settlements",
+  /** 승인이 끝난 사장이 도착하는 곳. 확정을 기다리는 주문을 먼저 보게 한다 */
+  erpHome: "/dashboard",
 } as const;
 
 /**
@@ -87,12 +88,6 @@ export const SERVER_UNREACHABLE_MESSAGE =
  */
 export const ARRIVAL_MESSAGE = {
   signedIn: "로그인했어요.",
-  signedUp: "가입 신청을 접수했어요. 심사 현황 화면이에요.",
-  reapplied: "재신청을 접수했어요. 심사 현황 화면이에요.",
-  bankSaved: "정산 계좌를 등록했어요. 상품 화면이에요.",
-  bankUpdated: "정산 계좌를 바꿨어요. 상품 화면이에요.",
-  bankSkipped: "계좌 등록을 건너뛰었어요. 상품 화면이에요.",
-  bankKept: "계좌를 그대로 뒀어요. 상품 화면이에요.",
 } as const;
 
 /**
@@ -117,9 +112,7 @@ export const SESSION_REQUIRED_LEAD = {
   approval:
     "심사 현황은 로그인한 계정의 신청서만 보여드려요. 로그인하면 방금 낸 신청서가 열려요.",
   rejected:
-    "거절 사유와 재신청은 로그인해야 열려요. 메일 링크를 새 탭에서 열면 로그인이 풀려 있어요 — 로그인하면 서류를 다시 올릴 수 있어요.",
-  bankOnboarding:
-    "계좌는 로그인한 계정에 저장돼요. 로그인하지 않으면 저장할 곳이 없어서 폼을 열지 않아요 — 다 채우고 눌러도 사라지니까요.",
+    "거절 사유는 로그인해야 열려요. 메일 링크를 새 탭에서 열면 로그인이 풀려 있어요.",
 } as const;
 
 /** 상태 한글 이름. 배지·안내 문구가 같은 말을 쓰게 한다 */
@@ -171,12 +164,6 @@ export const VALIDATION_MESSAGE = {
    옛 dev@ondo.test(PENDING)는 더 안 쓴다 */
 export const DEV_SEED_ACCOUNT =
   "moodon · raon · cottonclub@ondo.test / ondo1234!";
-
-/**
- * 흉내라는 사실을 감추지 않는 한 줄. 계정 메뉴(로그아웃이 있는 자리)에 둔다 —
- * 사장이 "왜 로그아웃됐지"를 묻는 자리가 거기다.
- */
-export const SESSION_DISCLAIMER = "서버가 없어요 — 탭을 닫으면 로그아웃돼요";
 
 /* ── 회원가입 ─────────────────────────────────────────────────────────── */
 
@@ -268,50 +255,36 @@ export const APPROVAL_STEP_STATE_LABEL = {
 
 /* ── 정산 계좌 ────────────────────────────────────────────────────────── */
 
-export const BANK_FIELD_ORDER = ["bankName", "accountNo", "holder"] as const;
+/**
+ * 계정 메뉴의 계좌 항목. 계좌는 정산 탭의 「내 정산 계좌」(`/bank-accounts` 실서버)
+ * 한 곳에서만 다룬다 — 예전 온보딩 화면은 브라우저 세션에만 적고 서버에는 아무것도
+ * 보내지 않아서, 등록했다고 말한 계좌가 소매 화면에는 없었다(`side-02` N3).
+ */
+export const BANK_MENU_LABEL = "정산 계좌 관리";
+
+/* ── 운영 문의 ────────────────────────────────────────────────────────── */
 
 /**
- * 계좌번호 길이 범위. **막는 것은 글자 종류와 길이뿐이다.** 은행마다 자릿수와
- * 구분자 위치가 달라(Figma 더미만 봐도 `110-482-948102`·`829102-01-294812`·
- * `032-094812-01-011`로 셋 다 다르다) 형식을 지어내지 않는다 — 규칙 없이 하이픈을
- * 끼워 넣으면 **사장이 친 진짜 번호를 앱이 망가뜨린다.**
+ * "준비 중" 대신 서는 문의 한 줄. 비밀번호 찾기, 승인 대기·거절의 문의하기,
+ * 가입 꼬리말이 **전부 이 상수 하나**를 본다 — 연락처가 바뀌면 여기만 고친다.
+ * 막다른 안내("준비 중이에요")는 눌러 본 사람이 다음에 할 일을 주지 않는다.
+ *
+ * TODO(#276): 운영 문의 이메일을 받으면 이 값만 그 주소가 든 문장으로 바꾼다.
  */
-export const ACCOUNT_NO_MIN = 8;
-export const ACCOUNT_NO_MAX = 20;
-
-export const BANK_MESSAGE = {
-  bankName: "은행을 선택해 주세요.",
-  accountNo: "계좌번호를 입력해 주세요.",
-  /* 무엇이 안 되는지 말한다. 조용히 지우면 사장은 자기가 뭘 잘못 쳤는지 모른다 */
-  accountNoShape: "계좌번호는 숫자와 - 만 넣을 수 있어요.",
-  accountNoLength: `계좌번호를 ${ACCOUNT_NO_MIN}~${ACCOUNT_NO_MAX}자로 입력해 주세요.`,
-  holder: "예금주를 입력해 주세요.",
-} as const;
-
-/** 예금주 길이 상한. 상호명과 같은 자리표시에 서는 값이라 같은 값을 쓴다 */
-export const HOLDER_MAX = 40;
+export const CONTACT_LINE = "담당자에게 문의해 주세요";
 
 /**
- * 계정 메뉴가 계좌를 말하는 한 줄. `edit`이 있는 이유: 등록하고 나면 계좌 줄이
- * 읽기 전용이 되어 **한 자 틀린 계좌번호를 화면에서 고칠 길이 없었다**
- * (`wholesale-account` F8). 소매 사장이 그 번호로 송금하는 값이라 되돌릴 수 없다.
+ * 가입·재신청 폼 위 안내. 제출 버튼을 잠그는 **이유**가 이 한 줄이다 — 잠긴 버튼은
+ * 스스로 왜 못 누르는지 말하지 않는다. 서류를 올릴 도매 업로드 API가 없어 신청을
+ * 서버에 보낼 길이 없고, 예전처럼 브라우저 세션에만 적고 "심사 중"을 띄우면 거짓
+ * 성공이다(`side-02` N3, D32 Q1-A).
  */
-export const BANK_MENU_LABEL = {
-  registered: "정산 계좌",
-  empty: "정산 계좌 등록",
-  edit: "계좌 수정",
-} as const;
+export const SIGNUP_CLOSED_NOTICE =
+  "지금은 온라인 가입을 받지 않아요. 체험은 안내받은 테스트 계정으로 해 주세요";
 
 /**
- * 저장 **직전** 확인 단계의 문구. 계좌번호는 "틀리면 나중에 고치면 되는" 값이
- * 아니라서 친 값을 그대로 다시 보여 주고 한 번 더 묻는다(`wholesale-account` F8).
+ * 위 안내의 DOM id. 폼과 잠긴 제출 버튼이 `aria-describedby`로 이 줄을 가리킨다 —
+ * 화면 낭독기로 버튼에 닿았을 때 "흐리게 표시됨"만 듣고 이유를 못 듣는 일을 막는다
+ * (`03-review` F2). 가입과 재신청은 다른 화면이라 한 화면에 한 번만 선다.
  */
-export const BANK_CONFIRM = {
-  createTitle: "이 계좌로 등록할까요?",
-  editTitle: "이 계좌로 바꿀까요?",
-  description:
-    "등록한 계좌는 소매 사장님 화면의 「입금 계좌 안내」에 그대로 보여요. 한 자라도 다르면 그 번호로 송금돼요.",
-  cancel: "다시 고치기",
-  createConfirm: "이 계좌로 등록하기",
-  editConfirm: "이 계좌로 바꾸기",
-} as const;
+export const SIGNUP_CLOSED_NOTICE_ID = "account-signup-closed";

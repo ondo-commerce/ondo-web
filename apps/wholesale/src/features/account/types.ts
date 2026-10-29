@@ -14,8 +14,8 @@ export type AccountStatus = WholesaleSchema<"LoginResponse">["approvalStatus"];
  * `apps/retail/src/features/settlement/types.ts`의 `BankAccount`가 같은 3필드다.
  * 앱끼리 직접 import가 금지라(`CLAUDE.md`) 타입을 여기 다시 적는다.
  *
- * `memo`·`isPrimary`·`registeredAt`는 계좌가 여럿일 때만 쓸모가 있어 넣지 않는다
- * (`store.saveBankAccount` 참고).
+ * `memo`·`isPrimary`·`registeredAt`는 계좌가 여럿일 때만 쓸모가 있어 넣지 않는다.
+ * 실제 계좌 등록·수정은 정산 탭(`features/settlement`)이 서버로 한다.
  */
 export interface BankAccount {
   bankName: string;
@@ -108,5 +108,3 @@ export interface Rejection {
   decidedAt: string;
   decidedBy: string;
 }
-
-export type BankField = "bankName" | "accountNo" | "holder";

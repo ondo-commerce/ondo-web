@@ -48,3 +48,5 @@ pnpm-debug.log*
 /test-results/
 /playwright-report/
 /blob-report/
+# 공개 스모크 로그인 세션(쿠키). 비밀이다 — 올리지 않는다
+/e2e/.auth/
