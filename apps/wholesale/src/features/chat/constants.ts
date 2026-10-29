@@ -1,4 +1,4 @@
-import type { StockBand } from "./types";
+import type { ChatHandoffReason, StockBand } from "./types";
 
 /** 화면 시각은 전부 이 시간대로 읽는다. 서버는 오프셋을 붙인 ISO를 준다 */
 export const CHAT_TIME_ZONE = "Asia/Seoul";
@@ -53,7 +53,29 @@ export const ROOM_TEXT = {
   choicesLabel: "보기",
   /** 게시가 내려간 보기 뒤에 붙는 글자. 와이어프레임 `#state-clarify` 그대로 띄어 쓰지 않는다 */
   choiceNotOrderable: "(주문 불가)",
+  /** 근거 칸 끝 조회 시각 뒤 글자(`14:20 조회`, `10/28 14:20 조회`) */
+  checkedSuffix: " 조회",
 } as const;
+
+/**
+ * 넘김 줄 아래 이유 한 줄(#302 S3-1, 기획 §4-3 4, 디자인 결정 39). 이번 회차는 이 8개만 글이 있다.
+ * 표에 없는 이유(STOCK_ZERO, ETA_* 같은 이번 회차 밖 값, 서버가 나중에 늘린 값)와 `handoff` 없음은 이유 줄을
+ * 그리지 않는다(결정 42) — "알 수 없음" 같은 대체 글자가 사장에게 할 일을 주지 않아서다. 나머지 글은 `[loop-08]`.
+ *
+ * PAYMENT_REPORT의 "정산 탭"은 글자다(결정 40). 시스템 줄 안에 버튼을 두면 누르면 넘김이 닫히는 것처럼 읽힌다.
+ */
+export const HANDOFF_REASON_TEXT: Readonly<
+  Partial<Record<ChatHandoffReason, string>>
+> = {
+  NEGOTIATION: "가격, 외상, 교환, 반품 이야기예요",
+  MULTI_INTENT: "한 번에 두 가지를 물었어요",
+  PAYMENT_REPORT: "입금했다는 말이에요. 정산 탭에서 입금을 확인해 주세요",
+  PERIOD: "기간을 정해 물었어요. 기간별 금액은 자동으로 답하지 않아요",
+  AMOUNT_UNSURE: "잔액과 연체 내역 확인이 필요해요",
+  NO_RELATION: "정산 기록이 없는 소매처예요",
+  LOOKUP_FAILED: "정산 조회에 실패했어요",
+  OFF: "자동 답변이 꺼져 있어요",
+};
 
 /**
  * 채팅 세션이 끊겼을 때(`api/session.ts`). 상품 폼 `SESSION_LOST_MESSAGE`와 같은 꼴("저장" → "보낼").

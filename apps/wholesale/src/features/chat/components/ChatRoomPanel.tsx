@@ -238,6 +238,9 @@ function ChatRoom({
                 message={item.message}
                 counterpartName={name}
                 ac={messageAc(item.message, baseline, pendingIds, causes)}
+                /* "오늘"의 기준 = 마지막 polling 응답 시각. 목록이 `dataUpdatedAt`을 쓰는 것과 같은 이유 — 렌더 중에
+                   시계를 읽지 않는다. 3초마다 갱신돼 자정을 넘기면 다음 응답에 날짜가 붙는다(S3-5) */
+                nowMs={threadUpdatedAt}
               />
             ),
           )
