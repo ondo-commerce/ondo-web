@@ -231,7 +231,7 @@ export interface paths {
         put?: never;
         /**
          * 채팅방 열기 (있으면 그 방)
-         * @description 도매처와의 방을 연다. 방은 (도매처, 소매처) 쌍에 1개라 이미 있으면 그 방을 200 으로 돌려준다(멱등, 키 불필요). 도매 쪽과 같은 roomId 다. 소매처는 세션에서 정한다(요청에 없다). listingId 는 첫 문맥일 뿐 방을 가르지 않는다.
+         * @description 도매처와의 방을 연다. 방은 (도매처, 소매처) 쌍에 1개라 이미 있으면 그 방을 200 으로 돌려준다(멱등, 키 불필요). 도매 쪽과 같은 roomId 다. 소매처는 세션에서 정한다(요청에 없다). listingId 는 방을 가르지 않고 방의 상품 문맥(자동 답이 '이 상품'으로 읽는 것)만 바꾼다 — 200, 201 둘 다.
          *
          *     에러: 400 VALIDATION_FAILED / 401 / 403 / 404(없는 도매처)
          *
@@ -887,6 +887,8 @@ export interface components {
              * @description 값을 조회한 시각. 화면에 '조회 시각'으로 보인다
              */
             checkedAt: string;
+            /** @description CLARIFY 에만 게시 옵션 전부(색상 → 사이즈 순, 색상은 처음 등록된 순서). 그 밖엔 null 이거나 칸이 없다. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? null`) */
+            choices?: components["schemas"]["ChatChoice"][] | null;
             facts: components["schemas"]["ChatRetailFacts"];
             /**
              * @description RULE 규칙+템플릿 / LLM 분류 뒤 템플릿(loop-09 선택). 숫자는 둘 다 DB 값
@@ -915,6 +917,18 @@ export interface components {
              * @description 미송 남은 수량
              */
             qty: number;
+        };
+        /** @description 되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다 */
+        ChatChoice: {
+            /** @description 칩 글자. 예: "레드 / M". 고르면 이 글자가 메시지 본문이 된다 */
+            label: string;
+            /** @description 게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다) */
+            orderable: boolean;
+            /**
+             * Format: int64
+             * @description 옵션(SKU) id. 그 게시글의 게시된 옵션이다
+             */
+            variantId: number;
         };
         /** @description 대화 상대 사업체. 도매 응답이면 소매처, 소매 응답이면 도매처다 */
         ChatCounterpart: {
@@ -1082,7 +1096,7 @@ export interface components {
              * @description 1회 주문 한도. 한도 없음이면 null
              */
             orderLimit: number | null;
-            /** @description 지금 주문할 수 있는지 */
+            /** @description 지금 주문할 수 있는지 = 게시 중이고 옵션이 살아 있다. 재고 수량과 무관하다(band 가 NONE 이어도 true 일 수 있다) */
             orderable: boolean;
         };
         /** @description 방 머리. ChatRoomSummary 와 같은 칸 + 상대 읽음 위치 */
@@ -1263,7 +1277,7 @@ export interface components {
         CreateChatRoomRequest: {
             /**
              * Format: int64
-             * @description 문의를 시작한 상품 문맥. 도매처 홈에서 열면 null
+             * @description 문의를 시작한 상품 문맥(게시글 id). 도매처 홈에서 열면 null. 방의 상품 문맥을 이 값과 지금 시각으로 바꾼다(null 이면 지운다, 이미 있는 방도). 30분 지나면 문맥 없음으로 본다
              */
             listingId: number | null;
             /**

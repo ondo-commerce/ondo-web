@@ -302,6 +302,46 @@
         },
         "type": "object"
       },
+      "AutoReplyIntentSettings": {
+        "description": "의도별 켜짐. enabled 가 true 일 때만 뜻이 있다. OTHER 는 늘 사람 넘김이라 칸이 없다",
+        "properties": {
+          "BACKORDER": {
+            "description": "미송 문의 자동 답",
+            "type": "boolean"
+          },
+          "RECEIVABLE": {
+            "description": "미수 문의 자동 답",
+            "type": "boolean"
+          },
+          "STOCK": {
+            "description": "재고 문의 자동 답",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "BACKORDER",
+          "RECEIVABLE",
+          "STOCK"
+        ],
+        "type": "object"
+      },
+      "AutoReplySettings": {
+        "description": "채팅 자동 답 설정(도매처 단위). 화면은 enabled 스위치 하나만 보이고(05b-1), intents 는 그대로 돌려보낸다",
+        "properties": {
+          "enabled": {
+            "description": "false 면 모든 소매 문의를 사람에게 넘긴다(자동 답 0건)",
+            "type": "boolean"
+          },
+          "intents": {
+            "$ref": "#/components/schemas/AutoReplyIntentSettings"
+          }
+        },
+        "required": [
+          "enabled",
+          "intents"
+        ],
+        "type": "object"
+      },
       "Backorder": {
         "properties": {
           "noDateSkuCount": {
@@ -630,6 +670,17 @@
             "format": "date-time",
             "type": "string"
           },
+          "choices": {
+            "description": "CLARIFY 에만 게시 옵션 전부(색상 → 사이즈 순, 색상은 처음 등록된 순서). 그 밖엔 null 이거나 칸이 없다. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? null`)",
+            "items": {
+              "$ref": "#/components/schemas/ChatChoice"
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "x-ondo-draft": true
+          },
           "facts": {
             "$ref": "#/components/schemas/ChatWholesaleFacts"
           },
@@ -691,6 +742,30 @@
           "expectedInboundDate",
           "expectedInboundReason",
           "qty"
+        ],
+        "type": "object"
+      },
+      "ChatChoice": {
+        "description": "되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다",
+        "properties": {
+          "label": {
+            "description": "칩 글자. 예: \"레드 / M\". 고르면 이 글자가 메시지 본문이 된다",
+            "type": "string"
+          },
+          "orderable": {
+            "description": "게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다)",
+            "type": "boolean"
+          },
+          "variantId": {
+            "description": "옵션(SKU) id. 그 게시글의 게시된 옵션이다",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "orderable",
+          "variantId"
         ],
         "type": "object"
       },
@@ -5118,6 +5193,188 @@
         "tags": [
           "02 상품·게시"
         ]
+      }
+    },
+    "/api/wholesale/chat/auto-reply-settings": {
+      "get": {
+        "description": "이 도매처의 채팅 자동 답 설정. 저장한 적이 없으면 전부 true 다. 소매 쪽 op 는 없다(소매는 결과만 본다).\n\n에러: 401 / 403\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.",
+        "operationId": "autoReplySettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AutoReplySettings"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "채팅 자동 답 설정 보기",
+        "tags": [
+          "10 채팅"
+        ],
+        "x-ondo-draft": true
+      },
+      "put": {
+        "description": "자동 답 설정을 통째로 바꾼다(부분 수정 없음, 칸이 빠지면 400). 도매처 단위로 저장돼 다른 기기에도 걸린다. 판정 순서 0: enabled 가 false 면 소매 문의는 전부 사람 넘김(HANDOFF), true 여도 그 의도가 false 면 그 의도만 넘김. 바꾼 뒤 들어오는 메시지부터 적용된다(이미 보낸 자동 답은 그대로).\n\n에러: 400 VALIDATION_FAILED(errors[].field = enabled | intents | intents.STOCK …, 불린 아님 포함) / 401 / 403\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.",
+        "operationId": "updateAutoReplySettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoReplySettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AutoReplySettings"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "저장된 값"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [],
+                  "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "채팅 자동 답 설정 바꾸기",
+        "tags": [
+          "10 채팅"
+        ],
+        "x-ondo-draft": true
       }
     },
     "/api/wholesale/chat/rooms": {
