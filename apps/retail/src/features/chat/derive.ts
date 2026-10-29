@@ -3,6 +3,7 @@ import {
   BODY_COUNTER_FROM,
   BODY_MAX,
   CHAT_TIME_ZONE,
+  CLARIFY_WINDOW_MS,
   ENTRY_TEXT,
   IDEMPOTENCY_KEY_REUSED,
   PENDING_TEXT,
@@ -11,19 +12,27 @@ import {
   ROOM_POLL_JITTER,
   ROOM_POLL_MS,
   ROOM_TEXT,
+  STOCK_BAND_LABEL,
+  STOCK_TEXT,
   WEEKDAY_LABEL,
 } from "./constants";
 import type {
   BubbleKind,
+  CardQtyCheck,
+  ChatChoice,
+  ChatInquiry,
   ChatMessage,
   ChatThread,
+  ClarifyView,
   ComposerCheck,
   PendingMessage,
   ReturnLink,
   SendFailure,
+  StockCardView,
   ThreadItem,
 } from "./types";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
+import { QTY_UNIT, SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
 
 /*
  * 도매 `apps/wholesale/src/features/chat/derive.ts`와 짝이다(01-plan §4-6). 앱 사이 import가 금지라
@@ -291,6 +300,9 @@ export function messageAc(
 ): string {
   const kind = bubbleKindOf(message);
   const ac = [kind === "auto" || kind === "system" ? "S5-6" : "S5-5"];
+  // 05b 와이어프레임: 되묻기는 S8-3, 재고 답은 S8-4
+  if (message.kind === "CLARIFY") ac.push("S8-3");
+  if (message.kind === "AUTO_REPLY") ac.push("S8-4");
   if (message.sequence > baseline && message.sender === "WHOLESALER")
     ac.push("S6-7", "S6-11");
   if (
@@ -436,4 +448,263 @@ export function upsertPending(
   );
   if (index < 0) return [...pending, next];
   return pending.map((p, i) => (i === index ? next : p));
+}
+
+/* ------------------------------------------------------------------------
+ * 재고 자동 답(loop-05b S8) — 재고 문의 칩, 되묻기 칩, 재고 카드, 장바구니 담기
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 입력창 위 `재고 문의` 칩이 물을 상품(S8-1). 방이 상품 상세에서 열렸을 때(`?from=/products/{id}`)만.
+ * 도매처 홈에서 왔거나 `from`이 없으면 null — 칩 줄 자체가 없다. 그때 자유 문장은 서버가 방 문맥(30분)으로
+ * 판정한다(§4-2 6).
+ */
+export function askListingId(from: string | null): number | null {
+  const back = returnPathOf(from);
+  if (back?.kind !== "product") return null;
+  return Number(back.href.slice(back.href.lastIndexOf("/") + 1));
+}
+
+/** `재고 문의` 칩의 문의 문맥. 옵션은 서버가 되묻는다(§4-1 1) */
+export function stockAskInquiry(listingId: number): ChatInquiry {
+  return {
+    intent: "STOCK",
+    listingId,
+    variantId: null,
+    backorderId: null,
+    label: null,
+  };
+}
+
+/** 옵션 칩 하나를 고른 문의 문맥. 본문은 칩 글자 그대로다(카카오 바로가기 응답과 같다, §4-1 5) */
+export function choiceInquiry(
+  listingId: number,
+  choice: ChatChoice,
+): ChatInquiry {
+  return {
+    intent: "STOCK",
+    listingId,
+    variantId: choice.variantId,
+    backorderId: null,
+    label: choice.label,
+  };
+}
+
+/**
+ * `재고 문의` 칩이 보내는 중인가(S8-2). 칩이 보낸 말풍선(옵션 없는 재고 문의)이 아직 응답 전이면 true.
+ * 실패하면 다시 켠다 — 같은 질문을 또 물을 수 있다(결정 21). 칩 상태를 따로 두지 않고 보류 말풍선에서 읽는다
+ */
+export function askChipBusy(pending: readonly PendingMessage[]): boolean {
+  return pending.some(
+    (p) =>
+      p.status === "sending" &&
+      p.inquiry?.intent === "STOCK" &&
+      p.inquiry.variantId === null,
+  );
+}
+
+function choicesOf(message: Pick<ChatMessage, "autoReply">): ChatChoice[] {
+  return message.autoReply?.choices ?? [];
+}
+
+/**
+ * 되묻기 칩을 지금 고를 수 있나(§4-1 5, S8-16). 셋 다 맞아야 한다.
+ * - 그 방의 **마지막** 되묻기다
+ * - 그 뒤에 소매 메시지(보낸 것, 보내는 중, 못 보낸 것)도 도매 사람 답(TEXT와 모르는 kind)도 없다
+ * - 되묻기가 온 지 30분 안이다(서버 계승 규칙과 같은 창)
+ *
+ * 못 보낸 말풍선(`pending`)도 막는 이유(결정 28): 고른 칩이 실패해도 줄은 고른 채 잠겨 있고 `다시 보내기`만
+ * 같은 키로 보낸다. `지우기`로 보류 말풍선이 사라지면 30분 안일 때 다시 켜진다.
+ * `now`는 부르는 쪽이 준다 — 이 함수는 시계를 읽지 않는다.
+ */
+export function choicesActive(
+  messages: readonly ChatMessage[],
+  pending: readonly PendingMessage[],
+  sequence: number,
+  now: number,
+): boolean {
+  const index = messages.findIndex((m) => m.sequence === sequence);
+  const clarify = messages[index];
+  if (clarify === undefined || clarify.kind !== "CLARIFY") return false;
+  if (choicesOf(clarify).length === 0) return false;
+  if (pending.length > 0) return false;
+  for (const later of messages.slice(index + 1)) {
+    if (later.kind === "CLARIFY") return false;
+    if (later.sender === "RETAILER") return false;
+    if (bubbleKindOf(later) === "them") return false;
+  }
+  return now - Date.parse(clarify.sentAt) <= CLARIFY_WINDOW_MS;
+}
+
+/**
+ * 이 되묻기에 고른 옵션. 되묻기 바로 뒤의 첫 소매 메시지(서버에 간 것이 먼저, 없으면 보류 말풍선)가 보기 중
+ * 하나를 골랐으면 그 variantId. 칩으로 골랐으면 `inquiry.variantId`, 칩 글자를 그대로 쳤으면 본문으로 안다.
+ * 딴소리였거나 아직 아무것도 안 보냈으면 null(체크 없이 전부 잠김, 와이어프레임 `#state-chip-lock`).
+ */
+export function selectedChoice(
+  messages: readonly ChatMessage[],
+  pending: readonly PendingMessage[],
+  sequence: number,
+): number | null {
+  const index = messages.findIndex((m) => m.sequence === sequence);
+  const clarify = messages[index];
+  if (clarify === undefined) return null;
+  const choices = choicesOf(clarify);
+  const answer =
+    messages.slice(index + 1).find((m) => m.sender === "RETAILER") ??
+    pending[0];
+  if (answer === undefined) return null;
+  // 칩으로 고른 것(variantId)이 먼저 — 본문은 사장이 칩 글자를 직접 친 경우에만 본다
+  const picked =
+    choices.find((c) => c.variantId === answer.inquiry?.variantId) ??
+    choices.find((c) => c.label === answer.body.trim());
+  return picked?.variantId ?? null;
+}
+
+/** 되묻기 말풍선의 칩 줄. 보기가 없는 되묻기(05a 시드, 상품을 못 찾은 것)는 null — 칩 없이 본문만 */
+export function toClarifyView(
+  message: ChatMessage,
+  messages: readonly ChatMessage[],
+  pending: readonly PendingMessage[],
+  now: number,
+): ClarifyView | null {
+  if (message.kind !== "CLARIFY") return null;
+  const choices = choicesOf(message);
+  const listingId = message.autoReply?.subject.listingId ?? null;
+  if (choices.length === 0 || listingId === null) return null;
+  return {
+    listingId,
+    choices,
+    active: choicesActive(messages, pending, message.sequence, now),
+    selectedVariantId: selectedChoice(messages, pending, message.sequence),
+  };
+}
+
+/**
+ * 카드 머리의 옵션 이름 `레드 / M`. 서버 `subject.label`은 `빈티지 플라워 셔츠 레드 / M`(상품명 + 옵션)이라
+ * 그대로 쓰면 카드 한 줄이 길어진다(결정 19). 같은 방의 되묻기 보기에 이 variant가 있으면 그 글자를 쓰고,
+ * 없으면(되묻기 없이 바로 답한 "레드 L 몇 장") label 끝의 `색 / 사이즈` 조각을 쓴다. 그것도 없으면 label 전체.
+ */
+function optionNameOf(
+  variantId: number,
+  label: string | null,
+  messages: readonly ChatMessage[],
+): string {
+  for (const m of messages) {
+    const hit = choicesOf(m).find((c) => c.variantId === variantId);
+    if (hit !== undefined) return hit.label;
+  }
+  const tail = /(\S+ \/ \S+)$/.exec(label ?? "");
+  return tail?.[1] ?? label ?? "";
+}
+
+/**
+ * 재고 자동 답의 카드 칸(S8-4, S8-9). 재고 답이 아니거나 대상 옵션이 없으면 null — 본문만 그린다.
+ * 소매 `facts.stock`에는 정확 수량이 없다(D31②). 지난 카드도 담기를 막지 않는다 — 장바구니 쪽이 다시 본다(§4-1 6).
+ */
+export function toStockCardView(
+  message: ChatMessage,
+  messages: readonly ChatMessage[],
+): StockCardView | null {
+  if (message.kind !== "AUTO_REPLY") return null;
+  const reply = message.autoReply;
+  if (reply === null || reply.intent !== "STOCK") return null;
+  const stock = reply.facts.stock;
+  const variantId = reply.subject.variantId;
+  if (stock === null || variantId === null) return null;
+  return {
+    variantId,
+    optionName: optionNameOf(variantId, reply.subject.label, messages),
+    band: stock.band,
+    bandLabel: STOCK_BAND_LABEL[stock.band],
+    orderable: stock.orderable,
+    orderLimit: stock.orderLimit,
+    addable: stock.band !== "NONE" && stock.orderable,
+  };
+}
+
+/**
+ * 카드 한 줄을 조각으로(결정 19). 굵게는 옵션 이름과 값만. 재고 없음이면 `레드 / L 재고 없음`으로 끝난다(결정 27).
+ * 한도가 없거나 주문할 수 없으면 한도 조각을 뺀다.
+ */
+export function stockCardLine(
+  card: StockCardView,
+): { text: string; strong: boolean }[] {
+  if (card.band === "NONE")
+    return [
+      { text: card.optionName, strong: true },
+      { text: ` ${card.bandLabel}`, strong: false },
+    ];
+  const parts = [
+    { text: card.optionName, strong: true },
+    { text: STOCK_TEXT.stock, strong: false },
+    { text: card.bandLabel, strong: true },
+  ];
+  parts.push({
+    text: `, ${card.orderable ? STOCK_TEXT.orderable : STOCK_TEXT.notOrderable}`,
+    strong: false,
+  });
+  if (card.orderable && card.orderLimit !== null) {
+    parts.push(
+      { text: `, ${STOCK_TEXT.limitPrefix}`, strong: false },
+      { text: `${formatCount(card.orderLimit)}${QTY_UNIT}`, strong: true },
+    );
+  }
+  return parts;
+}
+
+/** 카드가 담을 수 있는 상한. 한도 없음(null, 0)이면 SKU 상한 500 — 한도가 그보다 커도 500을 넘지 않는다 */
+function cardLimit(orderLimit: number | null): number {
+  if (orderLimit === null || orderLimit <= 0) return SKU_ORDER_LIMIT;
+  return Math.min(orderLimit, SKU_ORDER_LIMIT);
+}
+
+/**
+ * 카드 수량 칸 판정(S8-6, 결정 26). **친 글자를 고치지 않는다** — 상품 상세처럼 501을 500으로 맞추면
+ * 사장은 501장을 담았다고 믿는다. 못 받는 값이면 `qty: null`과 이유 한 줄, 담기 잠김.
+ * 숫자 판정은 `parseQty` 하나다(부호, 소수점, 전각, 지수 표기를 막는 정규식이 거기 있다).
+ */
+export function checkCardQty(
+  text: string,
+  orderLimit: number | null,
+): CardQtyCheck {
+  const { issue } = parseQty(text);
+  if (issue === "NOT_A_NUMBER")
+    return { qty: null, reason: STOCK_TEXT.qtyNotNumber };
+  const trimmed = text.trim();
+  const value = trimmed === "" ? 0 : Number(trimmed);
+  if (value < 1) return { qty: null, reason: STOCK_TEXT.qtyMin };
+  const limit = cardLimit(orderLimit);
+  if (value > limit)
+    return {
+      qty: null,
+      reason: `한 번에 ${formatCount(limit)}${QTY_UNIT}까지 담을 수 있어요`,
+    };
+  return { qty: value, reason: null };
+}
+
+/** 담기 성공 한 줄. 같은 SKU를 또 담아 서버 합계가 1보다 크면 `(지금 N장)`을 붙인다(S8-5) */
+export function cardAddedText(qty: number): string {
+  return qty > 1
+    ? `${STOCK_TEXT.added}(지금 ${formatCount(qty)}${QTY_UNIT})`
+    : STOCK_TEXT.added;
+}
+
+/**
+ * 담기 실패를 화면 반응으로(§4-1 7). 401은 여기 오지 않는다 — 부르는 쪽이 `guardSession`으로 방 끊김으로
+ * 바꿨다. 403은 승인 대기 화면, 400은 서버가 준 말 그대로(지어내지 않는다, 결정 25), 그 밖(500, 연결 실패)은
+ * "다시 눌러 주세요".
+ */
+export function cartAddFailureOf(
+  error: unknown,
+): "approval" | { message: string } {
+  if (isApiError(error)) {
+    if (error.code === RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED)
+      return "approval";
+    if (error.status === 400) {
+      const message = error.fieldErrors[0]?.message ?? error.message;
+      return { message: message === "" ? STOCK_TEXT.addFailed : message };
+    }
+  }
+  return { message: STOCK_TEXT.addFailed };
 }

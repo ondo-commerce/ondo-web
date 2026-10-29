@@ -184,7 +184,7 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
       const me = s('[data-sender="RETAILER"] > div');
       const them = s('[data-sender="WHOLESALER"][data-kind="TEXT"] > div');
       const auto = s('[data-kind="AUTO_REPLY"] > div');
-      const seen = s('[data-kind="AUTO_REPLY"] [data-ac="S5-6"]');
+      const seen = s('[data-kind="AUTO_REPLY"] [data-ac~="S5-6"]');
       return {
         me: [
           me.backgroundColor === token("--color-primary"),

@@ -78,7 +78,7 @@ test("measure 1470", async ({ page }) => {
       meWrap: pick('[data-sender="RETAILER"]'),
       them: pick('[data-sender="WHOLESALER"][data-kind="TEXT"] > div'),
       auto: pick('[data-kind="AUTO_REPLY"] > div'),
-      seen: pick('[data-kind="AUTO_REPLY"] [data-ac="S5-6"]'),
+      seen: pick('[data-kind="AUTO_REPLY"] [data-ac~="S5-6"]'),
       sys: pick('[role="note"]'),
       log: pick('[role="log"]'),
       logW: logEl?.clientWidth,

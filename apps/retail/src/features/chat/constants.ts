@@ -114,6 +114,52 @@ export const PENDING_TEXT = {
   srFailed: "보내지 못함",
 } as const;
 
+/* ------------------------------------------------------------------------
+ * 재고 자동 답(loop-05b S8)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 되묻기 칩을 고를 수 있는 시간. 서버 판정의 "직전 유효 되묻기 30분"과 같은 값(§4-2 2) — 화면이 더 오래
+ * 켜 두면 서버는 계승하지 않아 고른 칩이 넘김으로 끝난다
+ */
+export const CLARIFY_WINDOW_MS = 30 * 60_000;
+
+/**
+ * 재고 구간 글자(디자인 결정 20). 도매 근거 칸 "소매처에게는 …으로 보였어요"도 같은 표를 쓴다(도매 결정 27) —
+ * 앱 사이 import가 금지라 도매 `STOCK_BAND_LABEL`과 같은 값을 따로 적는다. 한쪽을 고치면 다른 쪽도 고친다
+ */
+export const STOCK_BAND_LABEL = {
+  NONE: "재고 없음",
+  UNDER_10: "1~9장",
+  UNDER_50: "10~49장",
+  FIFTY_PLUS: "50장 이상",
+} as const;
+
+export const STOCK_TEXT = {
+  /** 입력창 위 칩 이름. AC가 이름을 정확히 본다(S8-1) */
+  ask: "재고 문의",
+  /** 칩이 보내는 본문. 서버는 본문이 아니라 `inquiry`로 판정한다 */
+  askBody: "이 상품 몇 장 남았어요?",
+  choicesLabel: "색상, 사이즈 고르기",
+  /** 고른 칩 뒤 숨긴 글. 색(테두리)만으로 고른 것을 알리지 않는다(결정 23) */
+  selectedSr: " (고름)",
+  stock: " 재고 ",
+  orderable: "지금 주문할 수 있어요",
+  notOrderable: "지금은 주문할 수 없어요",
+  limitPrefix: "한 번에 최대 ",
+  qtyLabelSuffix: " 수량",
+  add: "장바구니에 담기",
+  adding: "담는 중",
+  added: "장바구니에 담았어요",
+  viewCart: "장바구니 보기",
+  addFailed: "장바구니에 담지 못했어요. 다시 눌러 주세요",
+  qtyMin: "1장 이상 넣어 주세요",
+  qtyNotNumber: "숫자만 넣을 수 있어요(소수점, 부호는 못 받아요)",
+} as const;
+
+/** 담기 결과의 `장바구니 보기` */
+export const CART_HREF = "/cart";
+
 /** 요일. `Intl`의 `weekday: "short"`는 `(화)`가 아니라 `화`라 괄호는 derive가 붙인다 */
 export const WEEKDAY_LABEL = [
   "일",
