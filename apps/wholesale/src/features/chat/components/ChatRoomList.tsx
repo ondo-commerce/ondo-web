@@ -4,6 +4,11 @@ import { Badge, Button, cn, Panel } from "@ondo/ui";
 import Link from "next/link";
 import type { KeyboardEvent, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
+import {
+  AutoReplyNoteLine,
+  AutoReplySwitch,
+  useAutoReplyToggle,
+} from "./AutoReplySwitch";
 import { useRoomListQuery } from "../api/queries";
 import { isChatSessionLostError } from "../api/session";
 import { LIST_TEXT, SESSION_LOST_TEXT } from "../constants";
@@ -20,11 +25,18 @@ interface ListProps {
   onOpen: () => void;
 }
 
-/** 왼쪽 목록 패널(360px 고정, 디자인 결정 1). 실패와 로딩은 이 패널 안에서만 */
+/**
+ * 왼쪽 목록 패널(360px 고정, 디자인 결정 1). 실패와 로딩은 이 패널 안에서만.
+ * 머리 오른쪽에 자동 답변 스위치(S9, 결정 22) — 설정은 도매처 하나에 하나라 방 머리가 아니라 여기다.
+ */
 export function ChatRoomListPanel(props: ListProps) {
+  const autoReply = useAutoReplyToggle();
   return (
     <Panel role="region" aria-label={LIST_TEXT.label} className="w-90 shrink-0">
-      <Panel.Title>{LIST_TEXT.title}</Panel.Title>
+      <Panel.Title action={<AutoReplySwitch state={autoReply} />}>
+        {LIST_TEXT.title}
+      </Panel.Title>
+      <AutoReplyNoteLine note={autoReply.note} />
       <QueryBoundary
         fallback={<ListSkeleton rows={6} />}
         errorFallback={({ error, described, retry }) =>

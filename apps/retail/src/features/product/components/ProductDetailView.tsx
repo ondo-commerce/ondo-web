@@ -3,7 +3,7 @@
 import { Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { OptionTable } from "./OptionTable";
 import { ProductGallery } from "./ProductGallery";
 import { SummaryBar } from "./SummaryBar";
@@ -46,8 +46,16 @@ import { useProductFavorite } from "@/features/catalog";
 export function ProductDetailView({
   product,
   onAddToCart,
+  sellerAction,
+  sellerNotice,
 }: {
   product: ProductDetail;
+  /**
+   * 판매처 칸의 `문의하기`(loop-05a) 자리와 그 실패 한 줄 자리. 채팅은 `features/chat`이라 이 화면이
+   * import할 수 없어 `app/`이 끼워 넣는다 — `onAddToCart`와 같은 이유다
+   */
+  sellerAction?: ReactNode;
+  sellerNotice?: ReactNode;
   /**
    * 조합마다 하나씩 `POST /cart-items`. **reject하지 않고** 담긴 것과 못 담은 것을
    * 갈라 돌려준다 — 부분 성공을 화면이 알아야 성공분을 두 번 담지 않는다(F2)
@@ -164,7 +172,8 @@ export function ProductDetailView({
           <ProductGallery images={product.images} productName={product.name} />
 
           <div>
-            <SellerCard product={product} />
+            <SellerCard product={product} action={sellerAction} />
+            {sellerNotice}
 
             <section className="mt-6">
               <h1 className="text-xl font-medium">{product.name}</h1>
@@ -243,7 +252,14 @@ function Breadcrumb({ categoryPath }: { categoryPath: readonly string[] }) {
 }
 
 /** 누구 물건인지. 상품 상세에 들어온 사장이 가장 먼저 확인하는 값이다 */
-function SellerCard({ product }: { product: ProductDetail }) {
+function SellerCard({
+  product,
+  action,
+}: {
+  product: ProductDetail;
+  /** `도매처 홈` 앞에 서는 버튼(디자인 결정 1). 이름은 말줄임으로 줄고 버튼과 링크는 한 줄을 지킨다 */
+  action?: ReactNode;
+}) {
   const { wholesaler } = product;
 
   return (
@@ -263,13 +279,16 @@ function SellerCard({ product }: { product: ProductDetail }) {
           </p>
         ) : null}
       </div>
-      <Link
-        href={`/wholesalers/${wholesaler.id}`}
-        className="text-muted-foreground hover:text-foreground text-body ml-auto flex shrink-0 items-center gap-0.5"
-      >
-        도매처 홈
-        <ChevronRight aria-hidden className="size-3.5" />
-      </Link>
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {action}
+        <Link
+          href={`/wholesalers/${wholesaler.id}`}
+          className="text-muted-foreground hover:text-foreground text-body flex items-center gap-0.5"
+        >
+          도매처 홈
+          <ChevronRight aria-hidden className="size-3.5" />
+        </Link>
+      </div>
     </div>
   );
 }

@@ -68,7 +68,7 @@ test.describe("S3-1 날짜 구분선, 좌우, 자동 답변, 되묻기, 사람 �
     const auto = log(page).locator('[data-kind="AUTO_REPLY"]');
     await expect(auto).toContainText("자동 답변");
     await expect(auto).toContainText("판매가능 35장, 주문 한도 500장");
-    await expect(auto).toContainText('소매처에게는 "50장 미만"으로 보였어요');
+    await expect(auto).toContainText('소매처에게는 "10~49장"으로 보였어요');
     const clarify = log(page).locator('[data-kind="CLARIFY"]');
     await expect(clarify).toContainText("되묻기");
     await expect(clarify).toContainText("어떤 색상, 사이즈요?");

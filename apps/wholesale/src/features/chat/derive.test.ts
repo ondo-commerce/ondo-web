@@ -1,27 +1,43 @@
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
   applyReadMark,
+  autoReplyNoteOf,
+  bodyLength,
   bubbleKindOf,
+  checkComposer,
   factLineText,
+  failureText,
   formatClock,
   formatDateDivider,
   formatListTime,
   formatUnread,
+  insertSent,
   liveAnnouncement,
   mergeMessages,
   mergeReadMark,
+  handoffCauses,
+  messageAc,
   parseRoomParam,
   pollDelayMs,
+  sendFailureOf,
   toFactsView,
+  toggledSettings,
   toRoomRows,
   toThreadItems,
+  upsertPending,
+  visiblePending,
 } from "./derive";
+import { STOCK_BAND_LABEL } from "./constants";
 import type {
+  AutoReplySettings,
   ChatAutoReply,
   ChatMessage,
   ChatRoomPage,
   ChatRoomSummary,
+  ChatThread,
+  PendingMessage,
 } from "./types";
 
 /** 서울 2026-10-28(수) 10:30 */
@@ -217,12 +233,6 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
       "1,200장",
       "500장",
     ]);
-    expect(
-      toFactsView({
-        ...autoReply,
-        facts: { stock: null, backorder: null, receivable: null },
-      }),
-    ).toBeNull();
     expect(toFactsView(null)).toBeNull();
     expect(
       toFactsView({
@@ -325,5 +335,278 @@ describe("S2-5 ?room= 값", () => {
     expect(parseRoomParam("-1")).toBe("invalid");
     expect(parseRoomParam("abc")).toBe("invalid");
     expect(parseRoomParam("1.5")).toBe("invalid");
+  });
+});
+
+describe("S4-4 글자 수", () => {
+  it("S4-4 앞뒤 공백을 빼고 코드 포인트로 센다 — 이모지 하나가 1자", () => {
+    expect(bodyLength("  👍가 ")).toBe(2);
+    expect("👍".length).toBe(2); // JS length 와 다르다
+    expect(bodyLength("   \n ")).toBe(0);
+  });
+
+  it("S4-4 공백만이면 잠김, 문구 없음", () => {
+    expect(checkComposer("   ")).toMatchObject({
+      blank: true,
+      over: false,
+      overMessage: null,
+      counter: null,
+    });
+  });
+
+  it("S4-4 이모지 포함 정확히 1000자는 보낼 수 있고 900자부터 카운터", () => {
+    const exact = "👍".repeat(10) + "가".repeat(990);
+    expect(checkComposer(exact)).toMatchObject({
+      length: 1000,
+      blank: false,
+      over: false,
+      counter: "1,000/1,000",
+      overMessage: null,
+    });
+    expect(checkComposer("가".repeat(899)).counter).toBeNull();
+    expect(checkComposer("가".repeat(900)).counter).toBe("900/1,000");
+  });
+
+  it("S4-4 1001자는 자르지 않고 안내, 잠김", () => {
+    const over = "👍".repeat(10) + "가".repeat(991);
+    expect(checkComposer(over)).toMatchObject({
+      length: 1001,
+      over: true,
+      counter: null,
+      overMessage: "1,000자까지 보낼 수 있어요 (1,001/1,000)",
+    });
+  });
+});
+
+describe("S4-5 S4-7 S4-8 보내기 실패 종류", () => {
+  it("S4-7 401 → session, S4-8 서버까지 못 감 → offline, 그 밖 → server", () => {
+    const err = (status: number, code: string) =>
+      new ApiError({ status, code, message: "x" });
+    expect(sendFailureOf(err(401, "UNAUTHENTICATED"))).toBe("session");
+    expect(sendFailureOf(err(0, TRANSPORT_ERROR_CODE.NETWORK))).toBe("offline");
+    expect(sendFailureOf(err(500, "INTERNAL_ERROR"))).toBe("server");
+    expect(sendFailureOf(err(409, "IDEMPOTENCY_KEY_REUSED"))).toBe("server");
+    expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+
+  it("S4-8 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {
+    expect(failureText("offline")).toBe("연결이 끊겨 못 보냈어요");
+    expect(failureText("server")).toBe("못 보냈어요");
+    expect(failureText("session")).toBe("못 보냈어요");
+  });
+});
+
+describe("S4-6 보류 말풍선 합치기", () => {
+  const pending: PendingMessage[] = [
+    {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "failed",
+      failure: "server",
+    },
+    { clientMessageId: "k-2", body: "또", status: "sending", failure: null },
+  ];
+
+  it("S4-6 polling 이 같은 clientMessageId 를 가져오면 보류 말풍선을 뺀다 — 1개로 합쳐진다", () => {
+    const delivered = message(8, {
+      sender: "WHOLESALER",
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+    });
+    expect(
+      visiblePending(pending, [message(7), delivered]).map(
+        (p) => p.clientMessageId,
+      ),
+    ).toEqual(["k-2"]);
+    expect(visiblePending(pending, [message(7)])).toHaveLength(2);
+  });
+
+  it("S4-5 다시 보내기는 제자리에서 상태만 바뀌고, 새 말풍선은 맨 아래", () => {
+    const retried = upsertPending(pending, {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "sending",
+      failure: null,
+    });
+    expect(retried.map((p) => [p.clientMessageId, p.status])).toEqual([
+      ["k-1", "sending"],
+      ["k-2", "sending"],
+    ]);
+    const added = upsertPending(pending, {
+      clientMessageId: "k-3",
+      body: "새",
+      status: "sending",
+      failure: null,
+    });
+    expect(added.at(-1)?.clientMessageId).toBe("k-3");
+  });
+
+  it("S4-6 보내기 응답은 메시지에만 넣고 cursor 는 올리지 않는다 — 그 앞 소매 메시지를 놓치지 않게", () => {
+    const thread: ChatThread = {
+      messages: [message(5)],
+      cursor: 5,
+      failures: 0,
+      nextPollMs: 3000,
+    };
+    const next = insertSent(thread, [
+      message(7, { sender: "WHOLESALER", clientMessageId: "k-1" }),
+    ]);
+    expect(next.cursor).toBe(5);
+    expect(next.messages.map((m) => m.sequence)).toEqual([5, 7]);
+    // 다음 polling 이 6, 7 을 가져와도 7 은 한 번
+    expect(
+      mergeMessages(next.messages, [message(6), message(7)]).map(
+        (m) => m.sequence,
+      ),
+    ).toEqual([5, 6, 7]);
+  });
+
+  it("S4-6 S3-3 data-ac: 연 뒤 붙은 말풍선은 S3-3 S3-4, 보류 말풍선을 대신한 것은 S4-6(QA F7)", () => {
+    const ids = new Set(["k-1"]);
+    expect(messageAc(message(5), 7, ids)).toBe("S3-1");
+    expect(messageAc(message(8), 7, ids)).toBe("S3-1 S3-3 S3-4");
+    expect(messageAc(message(9, { clientMessageId: "k-1" }), 7, ids)).toBe(
+      "S3-1 S3-3 S3-4 S4-6",
+    );
+  });
+
+  it("S9-3 data-ac: 넘김 줄과 바로 앞 소매 문의에만 S9-3(QA F4)", () => {
+    const messages = [
+      message(5),
+      message(6, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(7),
+      message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+    ];
+    const causes = handoffCauses(messages);
+    expect([...causes]).toEqual([7]);
+    const acs = messages.map((m) => messageAc(m, 8, new Set(), causes));
+    expect(acs).toEqual(["S3-1", "S3-1", "S3-1 S9-3", "S3-1 S9-3"]);
+  });
+
+  it("S9-3 넘김 앞이 소매 말이 아니면(도매 답 뒤 넘김) 문의로 잇지 않는다", () => {
+    expect(
+      handoffCauses([
+        message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+        message(7, { sender: "WHOLESALER" }),
+      ]).size,
+    ).toBe(0);
+  });
+});
+
+describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () => {
+  const base: ChatAutoReply = {
+    intent: "STOCK",
+    replyToSequence: 3,
+    generatedBy: "RULE",
+    // UTC로 와도 서울 시각으로 읽는다(01:20Z = 서울 10:20)
+    checkedAt: "2026-10-28T01:20:00Z",
+    subject: {
+      listingId: 2001,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+
+  it("되묻기(값 없음) → 값 줄 0, 끝 줄 '10:20 조회'", () => {
+    const view = toFactsView(base);
+    expect(view?.lines).toEqual([]);
+    expect(view?.seen).toBe("10:20 조회");
+  });
+
+  it("재고 → 앞말 + 조회 시각, 구간 글자는 소매 카드와 같은 '10~49장'", () => {
+    const view = toFactsView({
+      ...base,
+      facts: {
+        stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
+        backorder: null,
+        receivable: null,
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "판매가능 35장, 주문 한도 500장",
+    ]);
+    expect(view?.seen).toBe('소매처에게는 "10~49장"으로 보였어요. 10:20 조회');
+  });
+
+  it("미송 → 값 줄 + '14:02 조회'(앞말 없음)", () => {
+    const view = toFactsView({
+      ...base,
+      intent: "BACKORDER",
+      checkedAt: "2026-10-28T14:02:00+09:00",
+      facts: {
+        stock: null,
+        backorder: {
+          qty: 20,
+          expectedInboundDate: "10/30",
+          expectedInboundReason: null,
+        },
+        receivable: null,
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미송 20장, 입고 예정 10/30",
+    ]);
+    expect(view?.seen).toBe("14:02 조회");
+  });
+
+  it("미수 → 값 두 줄 + '06:40 조회'. 서울 자정 넘김(전날 21:40Z)도 서울 날로 읽는다", () => {
+    const view = toFactsView({
+      ...base,
+      intent: "RECEIVABLE",
+      checkedAt: "2026-10-27T21:40:00Z",
+      facts: {
+        stock: null,
+        backorder: null,
+        receivable: {
+          outstandingAmount: 786_000,
+          prepaidAmount: 0,
+          overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+        },
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미결제 786,000원, 선수금 0원",
+      "연체 1건 120,000원 (최대 3일)",
+    ]);
+    expect(view?.seen).toBe("06:40 조회");
+  });
+
+  it("구간 글자 표 4개 = 소매 카드 글자(디자인 결정 20, 27)", () => {
+    expect(STOCK_BAND_LABEL).toEqual({
+      NONE: "재고 없음",
+      UNDER_10: "1~9장",
+      UNDER_50: "10~49장",
+      FIFTY_PLUS: "50장 이상",
+    });
+  });
+});
+
+describe("S9 자동 답변 스위치", () => {
+  const on: AutoReplySettings = {
+    enabled: true,
+    intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+  };
+
+  it("S9-2 끄기 PUT 본문 = {enabled: false, intents 전부 true} — 받은 intents 그대로", () => {
+    expect(toggledSettings(on, false)).toEqual({
+      enabled: false,
+      intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+    });
+    // 다른 곳에서 끈 의도를 기본값으로 덮어 다시 켜지 않는다
+    const stockOff = { ...on, intents: { ...on.intents, STOCK: false } };
+    expect(toggledSettings(stockOff, false).intents.STOCK).toBe(false);
+    // 받은 객체는 그대로(캐시 값을 고치지 않는다)
+    toggledSettings(on, false).intents.STOCK = false;
+    expect(on.intents.STOCK).toBe(true);
+  });
+
+  it("S9-2 S9-4 안내 줄: 꺼짐 → off, 실패 → failed(꺼짐보다 먼저), 켜짐이나 모름 → 없음", () => {
+    expect(autoReplyNoteOf(on, false)).toBeNull();
+    expect(autoReplyNoteOf({ ...on, enabled: false }, false)).toBe("off");
+    expect(autoReplyNoteOf({ ...on, enabled: false }, true)).toBe("failed");
+    expect(autoReplyNoteOf(on, true)).toBe("failed");
+    expect(autoReplyNoteOf(undefined, false)).toBeNull();
   });
 });

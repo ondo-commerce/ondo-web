@@ -1,5 +1,9 @@
+import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import {
+  BODY_COUNTER_FROM,
+  BODY_MAX,
   CHAT_TIME_ZONE,
+  PENDING_TEXT,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
   ROOM_POLL_MS,
@@ -9,6 +13,8 @@ import {
   WEEKDAY_LABEL,
 } from "./constants";
 import type {
+  AutoReplyNote,
+  AutoReplySettings,
   BubbleKind,
   ChatAutoReply,
   ChatMessage,
@@ -16,12 +22,17 @@ import type {
   ChatRoomPage,
   ChatRoomRowView,
   ChatRoomSummary,
+  ChatThread,
+  ComposerCheck,
   FactLine,
   FactPart,
   FactsView,
+  PendingMessage,
   ReadMarks,
+  SendFailure,
   ThreadItem,
 } from "./types";
+import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import { formatNumber } from "@/shared/lib/format";
 
 /* ------------------------------------------------------------------------
@@ -284,12 +295,16 @@ export function senderLabel(
 /**
  * 자동 답변 근거 칸. 도매 화면에만 정확 수량이 있다 — 사장이 소매처가 본 구간과 실제 값을 같이 본다.
  * 재고 외(미송, 미수)는 이번 회차 시드에만 있고 문안이 정해지지 않아 값만 한 줄로 적는다.
+ *
+ * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
+ * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
  */
 export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
   if (autoReply === null) return null;
   const { stock, backorder, receivable } = autoReply.facts;
   const lines: FactLine[] = [];
-  let seen: string | null = null;
+  const checked = `${formatClock(autoReply.checkedAt)} 조회`;
+  let seen = checked;
   // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
   const value = (text: string): FactPart => ({ text, strong: true });
   const label = (text: string): FactPart => ({ text, strong: false });
@@ -307,7 +322,7 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
             value(`${formatNumber(stock.orderLimit)}장`),
           ],
     );
-    seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${formatClock(autoReply.checkedAt)} 조회`;
+    seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
   }
   if (backorder !== null) {
     const qty = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
@@ -335,7 +350,31 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
           ],
     );
   }
-  return lines.length === 0 ? null : { lines, seen };
+  return { lines, seen };
+}
+
+/**
+ * 스위치를 눌렀을 때 PUT 본문. `intents`는 받은 값 그대로 돌려보낸다 — 화면은 전체 스위치 하나지만 계약은
+ * 의도별 칸이라(Q6), 여기서 기본값으로 덮으면 다른 곳에서 끈 의도가 다시 켜진다.
+ */
+export function toggledSettings(
+  settings: AutoReplySettings,
+  enabled: boolean,
+): AutoReplySettings {
+  return { enabled, intents: { ...settings.intents } };
+}
+
+/**
+ * 목록 머리 아래 한 줄. 실패가 꺼짐 안내보다 먼저다 — 실패면 스위치가 원래 값으로 돌아와 있어서
+ * 꺼짐 안내가 같이 뜨면 "꺼졌다"와 "못 바꿨다"가 함께 보인다. 설정을 아직 모르면 아무것도 없다.
+ */
+export function autoReplyNoteOf(
+  settings: AutoReplySettings | undefined,
+  failed: boolean,
+): AutoReplyNote {
+  if (failed) return "failed";
+  if (settings === undefined) return null;
+  return settings.enabled ? null : "off";
 }
 
 /** 근거 한 줄을 글자로. 테스트와 낭독용 */
@@ -389,4 +428,130 @@ export function pollDelayMs(failures: number, random: number): number {
   );
   const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
   return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
+}
+
+/* ------------------------------------------------------------------------
+ * 보내기 (#265)
+ * ------------------------------------------------------------------------ */
+
+/** 서버와 같은 셈 — 앞뒤 공백을 빼고 코드 포인트로. 이모지 하나가 1자다 */
+export function bodyLength(text: string): number {
+  return [...text.trim()].length;
+}
+
+/**
+ * 입력창 판정(S4-4). 넘어도 **자르지 않는다** — 붙여 넣은 긴 글을 사장이 직접 줄이게 둔다.
+ * 판정과 안내만 하고 보내기를 잠근다.
+ */
+export function checkComposer(text: string): ComposerCheck {
+  const length = bodyLength(text);
+  const over = length > BODY_MAX;
+  const shown = `${formatNumber(length)}/${formatNumber(BODY_MAX)}`;
+  return {
+    length,
+    blank: length === 0,
+    over,
+    counter: !over && length >= BODY_COUNTER_FROM ? shown : null,
+    overMessage: over
+      ? `${formatNumber(BODY_MAX)}자까지 보낼 수 있어요 (${shown})`
+      : null,
+  };
+}
+
+/**
+ * 보내기 실패를 화면 반응 셋으로. **`code`로만 가른다.** 서버까지 못 간 것(`NETWORK_ERROR`)은
+ * 오프라인과 같은 안내다 — 사장이 할 일(연결 확인 뒤 다시 보내기)이 같다.
+ */
+export function sendFailureOf(error: unknown): SendFailure {
+  if (isApiError(error)) {
+    if (error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED) return "session";
+    if (error.code === TRANSPORT_ERROR_CODE.NETWORK) return "offline";
+  }
+  return "server";
+}
+
+/** 실패 말풍선 아래 문구 */
+export function failureText(failure: SendFailure | null): string {
+  return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
+}
+
+/**
+ * 보내기 응답을 방 캐시에 넣는다. **cursor는 그대로 둔다** — 내가 보낸 7번 앞에 소매처의 6번이 같이
+ * 커밋됐을 수 있다. cursor를 7로 올리면 다음 polling이 6번을 건너뛴다(`ChatThread` 주석).
+ * 다음 polling이 7번을 다시 가져와도 `mergeMessages`가 한 번만 남긴다.
+ */
+export function insertSent(
+  thread: ChatThread,
+  sent: readonly ChatMessage[],
+): ChatThread {
+  return { ...thread, messages: mergeMessages(thread.messages, sent) };
+}
+
+/**
+ * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
+ * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6.
+ * 넘김 줄과 그 바로 앞 소매 문의는 S9-3(와이어프레임 `#state-autoreply-off-flow`, QA F4). 넘김이 꺼짐 때문인지
+ * 메시지만으로는 모른다 — 넘김 줄이면 다 단다.
+ */
+export function messageAc(
+  message: Pick<ChatMessage, "sequence" | "clientMessageId" | "kind">,
+  baseline: number,
+  pendingIds: ReadonlySet<string>,
+  handoffCauseIds: ReadonlySet<number> = new Set(),
+): string {
+  const ac = ["S3-1"];
+  if (message.sequence > baseline) ac.push("S3-3", "S3-4");
+  if (
+    message.clientMessageId !== null &&
+    pendingIds.has(message.clientMessageId)
+  )
+    ac.push("S4-6");
+  if (message.kind === "HANDOFF" || handoffCauseIds.has(message.sequence))
+    ac.push("S9-3");
+  return ac.join(" ");
+}
+
+/**
+ * 넘김 줄 바로 앞의 소매 말 sequence들 — 넘김을 부른 문의다(S9-3). 서버는 소매 말과 넘김 줄을 연달아
+ * 붙인다(n, n+1). 사이에 다른 말이 끼면 잇지 않는다. 소매 앱의 같은 이름 함수와 같은 규칙(앱끼리 복제)
+ */
+export function handoffCauses(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+): Set<number> {
+  const causes = new Set<number>();
+  const sorted = [...messages].sort((a, b) => a.sequence - b.sequence);
+  sorted.forEach((message, i) => {
+    const prev = sorted[i - 1];
+    if (message.kind === "HANDOFF" && prev?.sender === "RETAILER")
+      causes.add(prev.sequence);
+  });
+  return causes;
+}
+
+/**
+ * 화면에 남길 보류 말풍선(S4-6). 서버 메시지 중 같은 `clientMessageId`가 있으면 뺀다 — 응답은 유실됐는데
+ * polling이 먼저 가져온 경우다. 그러면 실패 말풍선 대신 서버 말풍선 하나만 남는다.
+ */
+export function visiblePending(
+  pending: readonly PendingMessage[],
+  messages: readonly ChatMessage[],
+): PendingMessage[] {
+  const delivered = new Set(
+    messages.flatMap((m) =>
+      m.clientMessageId === null ? [] : [m.clientMessageId],
+    ),
+  );
+  return pending.filter((p) => !delivered.has(p.clientMessageId));
+}
+
+/** 같은 키의 보류 말풍선을 바꾼다. 없으면 맨 아래에 붙인다(다시 보내기는 제자리) */
+export function upsertPending(
+  pending: readonly PendingMessage[],
+  next: PendingMessage,
+): PendingMessage[] {
+  const index = pending.findIndex(
+    (p) => p.clientMessageId === next.clientMessageId,
+  );
+  if (index < 0) return [...pending, next];
+  return pending.map((p, i) => (i === index ? next : p));
 }

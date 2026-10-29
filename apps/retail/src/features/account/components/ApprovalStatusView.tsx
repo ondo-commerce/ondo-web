@@ -5,7 +5,7 @@ import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
 import { ApprovalSteps } from "./ApprovalSteps";
 import { ComingSoonDialog } from "./ComingSoonDialog";
 import { SummaryList } from "./SummaryList";
-import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL } from "../constants";
+import { ACCOUNT_PATH, ACCOUNT_STATUS_LABEL, CONTACT_LINE } from "../constants";
 import { approvalSteps } from "../derive";
 import type { ApplicationView } from "../types";
 
@@ -66,8 +66,8 @@ export function ApprovalStatusView({
           </Button>
           <ComingSoonDialog
             trigger={<Button variant="ghost">문의하기</Button>}
-            title="문의 창구는 준비 중이에요"
-            description="아직 만들지 않은 화면이에요. 심사가 3영업일을 넘기면 신청하신 이메일로 진행 상황을 먼저 보내드려요."
+            title="문의하기"
+            description={CONTACT_LINE}
           />
         </AuthSection>
       </AuthPanel>

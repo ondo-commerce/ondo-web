@@ -40,6 +40,14 @@ export function ChatView() {
   const listRef = useRef<HTMLUListElement>(null);
   const listEmpty = useRoomListEmptyPeek();
   useResetChatSessionOnLeave();
+  /* 입력창 Esc → 선택 행으로(S4-11). 쓰던 글은 입력창에 남는다 — 같은 행에서 Enter면 이어 쓴다 */
+  const onEscape = useCallback(
+    () =>
+      listRef.current
+        ?.querySelector<HTMLAnchorElement>('a[aria-current="true"]')
+        ?.focus(),
+    [],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 gap-2">
@@ -55,6 +63,7 @@ export function ChatView() {
           roomId={selectedRoomId}
           onRead={onRead}
           focusTick={focusTick}
+          onEscape={onEscape}
         />
       ) : (
         <Panel className="min-w-0 flex-1" data-ac="S2-5">

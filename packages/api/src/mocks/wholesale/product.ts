@@ -1,5 +1,6 @@
 import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import type { InquiryListing } from "../chat/inquiry";
 import {
   IMAGE_MAGIC_LENGTH,
   IMAGE_MAX_BYTES,
@@ -549,6 +550,36 @@ export function findMockVariant(variantId: number): MockVariant | null {
 
 export function findMockProduct(productId: number) {
   return products.find((p) => p.id === productId) ?? null;
+}
+
+/**
+ * 채팅 자동 답(`../chat/inquiry.ts`)이 읽는 게시글 하나. **읽기만 한다** — 채팅은 재고를 바꾸지 않는다.
+ * 판매가능은 상세와 같은 식(현재고 − 주문처리중 − 미송, 음수 그대로). 옵션은 등록 순서(variantNumber)다 —
+ * 상세는 색상 마스터 id 순이라 네이비(11)가 레드(17)보다 앞이지만 되묻기 보기는 등록 순서를 따른다.
+ * 시드 variant는 전부 `listing_variant`에 있어서 게시 옵션 = 그 상품 옵션 전부다.
+ */
+export function chatStockListing(listingId: number): InquiryListing | null {
+  const listing = listings.find((l) => l.id === listingId);
+  const product =
+    listing === undefined ? null : findMockProduct(listing.productId);
+  if (listing === undefined || product === null) return null;
+  return {
+    listingId: listing.id,
+    wholesalerId: product.wholesalerId,
+    title: listing.title,
+    published: listing.status === "ON_SALE",
+    variants: variants
+      .filter((v) => v.productId === product.id)
+      .sort((a, b) => a.variantNumber - b.variantNumber)
+      .map((v) => ({
+        variantId: v.id,
+        color: colorOf(v.colorId).name,
+        size: v.size,
+        availableQty: v.stockQty - v.allocatedQty - v.backorderQty,
+        orderLimit: v.orderLimit,
+        published: true,
+      })),
+  };
 }
 
 /* --- 응답 조립 ------------------------------------------------------------ */
