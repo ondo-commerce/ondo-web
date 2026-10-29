@@ -132,6 +132,28 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 
 계약 테스트는 `chat.test.ts`(vitest + `msw/node`, `pnpm test`가 돈다).
 
+### 미수 자동 답과 넘김 이유 (loop-07, #301)
+
+판정은 `src/mocks/chat/inquiry.ts`의 미수 가지(입금 알림 → 의도 둘 → 기간 말 → 조회 → 줄 → 이상값)와
+`src/mocks/chat/receivable.ts`(`toReceivableFacts`, 문장 A B C D)다. 원본은 도매처 × 소매처 요약 한 줄
+`{balance, unpaid, prepaid, overdue, exact, asOf}`이고 **거르지 않고** 넘긴다. 이 방 한 줄을 고르는 건 판정이 한다.
+부호와 이상값 7종은 `toReceivableFacts` 한 곳에서만 보고, 하나라도 걸리면 금액 없이 넘긴다(`AMOUNT_UNSURE`).
+
+- 원본: 도매처 101은 정산 목 장부(`wholesale/settlement.ts` `receivableSummary` 순수 함수, `mockReceivableRows`),
+  102는 `chat/extraReceivables.ts`(봄봄상회 52,000원, 방 33). 부를 때마다 장부를 읽어 정산 탭 입금이 다음 답에 바로 쓰인다.
+  소매 앱 번들엔 정산 핸들러가 없어 늘 시드 값이다(두 탭이 같은 시드와 같은 함수를 쓰는 것까지가 목의 보장)
+- 답의 `checkedAt`은 원본 `asOf`(조회 시각)다. 판정 시각이 아니다
+- 넘김 줄(도매 응답만)에 `handoff {reason, intent, sourceSequence}`. 소매 목은 이 칸을 싣지 않는다
+- 열린 넘김 중 새 넘김: 이유가 같으면 줄 0, 다르면 새 줄(`linesToAppend`). 답 + 넘김 두 줄(재고 0, 미송 미정, 지남)은 늘 붙는다
+- 채팅 reset이 주문, 출고, 정산 목도 같이 되돌린다(배정액이 주문 목에 있다)
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 도매, 소매 | `POST /__mock/chat/fail {op: receivable, times = 1}` | 다음 n번 미수 원본 조회가 던진다. 보내기는 201, 답 대신 넘김(LOOKUP_FAILED) |
+
+골든셋 v4는 v3 59 + 미수 18(P5, R01~R17) + 넘김 7(H16~H22) = 84. v4 몫(`since: 4`)의 expect는 방에 **들어간 줄** 투영이다.
+`receivables` 표 7행과 `receivableAnomalies` 이상값 표 9행이 같이 있다.
+
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
 
 초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.

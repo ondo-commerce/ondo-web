@@ -63,6 +63,8 @@ export const RETAIL_CHAT_FAIL_OPS = [
   "read",
   "create",
   "count",
+  /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 저장소가 하나라 도매 목 계획에 건다 */
+  "receivable",
 ] as const;
 type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
 
@@ -130,9 +132,21 @@ function toRetailFacts(
   };
 }
 
+/**
+ * 저장소 메시지 → 소매 응답. 키를 골라 새 객체를 만든다(`toRetailFacts`와 같은 이유). 넘김 이유(`handoff`)는 도매
+ * 응답에만 있는 칸이라 싣지 않는다(loop-07 §3 out 4, D31②와 같은 방식: 화면에서 가리는 게 아니라 안 싣는다)
+ */
 function toRetailMessage(m: WholesaleMessage): ChatMessage {
   return {
-    ...m,
+    id: m.id,
+    roomId: m.roomId,
+    sequence: m.sequence,
+    clientMessageId: m.clientMessageId,
+    sender: m.sender,
+    kind: m.kind,
+    body: m.body,
+    sentAt: m.sentAt,
+    inquiry: m.inquiry,
     autoReply:
       m.autoReply === null
         ? null
@@ -597,7 +611,12 @@ export const retailChatHandlers = [
         "INVALID",
         `op는 ${RETAIL_CHAT_FAIL_OPS.join(" | ")}`,
       );
-    failPlan.set(op, { status: input.status ?? 500, times: input.times ?? 1 });
+    if (op === "receivable") chatStore.failReceivable(input.times ?? 1);
+    else
+      failPlan.set(op, {
+        status: input.status ?? 500,
+        times: input.times ?? 1,
+      });
     return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
   }),
 

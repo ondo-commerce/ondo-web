@@ -16,7 +16,9 @@ import {
   GOLDEN_T0,
   fullInquiry,
   projectMessages,
+  projectV4Lines,
   visibleExpect,
+  visibleV4Expect,
   type GoldenInquiry,
   type GoldenScenario,
 } from "../chat/golden.testkit";
@@ -119,17 +121,52 @@ async function replay(s: GoldenScenario) {
     enabled: s.room.autoReply,
     ...(s.room.intents === undefined ? {} : { intents: s.room.intents }),
   });
+  if (s.room.receivableFailTimes !== undefined)
+    await knob("/fail", {
+      op: "receivable",
+      times: s.room.receivableFailTimes,
+    });
   const out: { expect: unknown; actual: unknown }[] = [];
   for (const step of s.steps) {
     if (step.afterMinutes !== undefined) advance(step.afterMinutes);
     if (step.enter !== undefined) await enter(step.enter.listingId);
     const nowIso = new Date().toISOString();
+    if (step.sender === "WHOLESALER") {
+      // 사장 직접 답(v4 H22) = 도매 보내기 op. 닫힘은 소매 방 머리의 openHandoff 로 본다
+      await call(
+        "POST",
+        `${ORIGIN}/api/wholesale/chat/rooms/1/messages`,
+        { body: step.text, inquiry: null },
+        { "Idempotency-Key": newKey() },
+      );
+      const head = await call<{ data: { openHandoff: boolean } }>(
+        "GET",
+        `${RETAIL}/rooms/1`,
+      );
+      out.push({
+        expect: step.expect,
+        actual: { openHandoff: head.body.data.openHandoff },
+      });
+      continue;
+    }
     const res = await send(step.text, step.inquiry);
     expect(res.status, `${s.id} ${step.text}`).toBe(201);
-    out.push({
-      expect: visibleExpect(step.expect),
-      actual: projectMessages(res.body.data.generatedMessages, nowIso),
-    });
+    out.push(
+      (s.since ?? 0) >= 4
+        ? {
+            expect: visibleV4Expect(step.expect),
+            // 목 원본은 요청 시각에 장부를 읽는다 — 그래서 이 방 행의 asOf = 그 요청 시각이다
+            actual: projectV4Lines(res.body.data.generatedMessages, {
+              self: res.body.data.message.sequence,
+              nowMs: Date.parse(nowIso),
+              asOf: nowIso,
+            }),
+          }
+        : {
+            expect: visibleExpect(step.expect),
+            actual: projectMessages(res.body.data.generatedMessages, nowIso),
+          },
+    );
   }
   return out;
 }
@@ -150,12 +187,14 @@ async function expectScenario(id: string) {
 }
 
 describe("골든셋을 소매 목 HTTP로 — 판정 함수와 같은 결과", () => {
-  it("방 1 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다). 재고 35 + 미송 21", async () => {
+  it("방 1 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다). 재고 35 + 미송 21 + 미수 11 + 넘김 7", async () => {
     const room1 = GOLDEN.scenarios.filter(inRoom1);
-    // 방 1 밖은 대기상회(B04), 가람상회(B05) 둘뿐이다 — 판정 unit 이 받는다
+    // 방 1 밖: 미송 B04 B05, 미수 R01~R03 R05~R07(다른 소매처, 골든 전용 행), R04(방 33 = 102) — 판정 unit 이 받는다.
+    // R04 의 HTTP 몫은 `receivableReply.test.ts`(방 33 구조 단언)가 본다
     expect(
       GOLDEN.scenarios.filter((s) => !inRoom1(s)).map((s) => s.id),
-    ).toEqual(["B04", "B05"]);
+    ).toEqual(["B04", "B05", "R01", "R02", "R03", "R04", "R05", "R06", "R07"]);
+    expect(room1).toHaveLength(84 - 9);
     for (const s of room1) {
       for (const step of await replay(s))
         expect(step.actual, s.id).toEqual(step.expect);

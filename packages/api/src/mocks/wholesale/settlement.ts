@@ -1,5 +1,7 @@
 import { http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import { daysBetween, seoulDate } from "../chat/backorderCandidates";
+import type { InquiryReceivable } from "../chat/receivable";
 import {
   allocateMockPayment,
   mockOrders,
@@ -724,6 +726,133 @@ export const settlementHandlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 ];
+
+/* --- 채팅 미수 자동 답의 원본 (loop-07 §4-1, §5-4 1) ------------------------- */
+
+/** 요약이 읽는 원장 줄. 목의 `MockLedgerEntry`가 그대로 맞는다 */
+export type SummaryLedgerLine = Pick<
+  MockLedgerEntry,
+  "retailerId" | "entryType" | "balanceChange" | "occurredAt" | "orderId"
+>;
+/** 요약이 읽는 주문. `allocatedAmount` = 그 주문에 붙은 배정 합 */
+export type SummaryOrder = Pick<
+  MockOrder,
+  "id" | "retailerId" | "status" | "allocatedAmount"
+>;
+export interface SummaryPayment {
+  retailerId: number;
+  amount: number;
+  allocations: readonly { amount: number }[];
+}
+
+/**
+ * 소매처 하나의 미수 요약(순수). 채팅 판정 원본 한 줄(`InquiryReceivable`)에서 쌍 id를 뺀 모양이다.
+ * BE도 gateway 요약과 선수금 op로 같은 값을 만든다(§5-3 1).
+ *
+ *  - `balance` = −Σ 원장 증감(판매 음수, 입금 양수라 뒤집는다). 플러스 = 갚을 돈
+ *  - `unpaid` = 판매 줄이 있는 주문마다 (판매 합 − 배정액)의 합
+ *  - `prepaid` = Σ(입금액 − 그 입금의 배정 합). 목 `prepaidOf`와 같은 식
+ *  - 연체 = 미수 > 0이고 판매 줄이 **서울 날짜 하나**뿐인 주문. 일수 = 오늘 − 출고일 − 1(외상 1일, MUL-128 전).
+ *    1 이상이면 연체. 출고 다음 날은 아직 아니다. 근거는 dev 실측 1건(9/8 출고, 9/18 조회 maxDays 9)이다
+ *  - `exact` false = 금액을 보장 못 한다: 미수가 남은 주문의 판매 줄이 서울 날짜 둘 이상(배정이 어느 출고분을
+ *    갚았는지 규칙이 없다) / `PAYMENT_VOID`, `ADJUST` 줄 / 취소된 주문의 판매 줄 / 배정액이 판매 합보다 큼
+ *
+ * 연체 일수 기준 날짜 `today`(서울 `YYYY-MM-DD`)와 조회 시각 `asOf`는 부르는 쪽이 넘긴다 — 같은 호출에서 나온
+ * 값이어야 답의 금액과 조회 시각이 한 시점을 가리킨다(Codex 6).
+ */
+export function receivableSummary(input: {
+  ledger: readonly SummaryLedgerLine[];
+  orders: readonly SummaryOrder[];
+  payments: readonly SummaryPayment[];
+  retailerId: number;
+  today: string;
+  asOf: string;
+}): Omit<InquiryReceivable, "wholesalerId" | "retailerId"> {
+  const lines = input.ledger.filter((e) => e.retailerId === input.retailerId);
+  // `0 −`로 뒤집는다. 단항 `-`는 합이 0일 때 -0을 낸다(toEqual 이 0과 가른다)
+  const balance = 0 - lines.reduce((acc, e) => acc + e.balanceChange, 0);
+  let exact = !lines.some(
+    (e) => e.entryType === "PAYMENT_VOID" || e.entryType === "ADJUST",
+  );
+
+  const sales = new Map<number, { amount: number; dates: Set<string> }>();
+  for (const e of lines) {
+    if (e.entryType !== "SALE" || e.orderId === null) continue;
+    const s = sales.get(e.orderId) ?? { amount: 0, dates: new Set<string>() };
+    s.amount += -e.balanceChange;
+    s.dates.add(seoulDate(Date.parse(e.occurredAt)));
+    sales.set(e.orderId, s);
+  }
+
+  let unpaid = 0;
+  const overdue = { amount: 0, count: 0, maxDays: 0 };
+  for (const [orderId, s] of sales) {
+    const order = input.orders.find((o) => o.id === orderId);
+    if (order?.status === "CANCELLED") exact = false;
+    const left = s.amount - (order?.allocatedAmount ?? 0);
+    if (left < 0) exact = false;
+    if (left <= 0) continue;
+    unpaid += left;
+    const [only] = [...s.dates];
+    if (s.dates.size > 1 || only === undefined) {
+      exact = false;
+      continue;
+    }
+    const days = daysBetween(only, input.today) - 1;
+    if (days < 1) continue;
+    overdue.amount += left;
+    overdue.count += 1;
+    overdue.maxDays = Math.max(overdue.maxDays, days);
+  }
+
+  const prepaid = input.payments
+    .filter((p) => p.retailerId === input.retailerId)
+    .reduce(
+      (acc, p) =>
+        acc + p.amount - p.allocations.reduce((s, a) => s + a.amount, 0),
+      0,
+    );
+
+  return { balance, unpaid, prepaid, overdue, exact, asOf: input.asOf };
+}
+
+/** 정산 목은 도매처 하나("나" 101)의 장부다. 채팅 목 `CHAT_ME_WHOLESALER_ID`와 같은 값 */
+export const SETTLEMENT_WHOLESALER_ID = 101;
+
+/**
+ * 채팅 판정 원본 — 이 장부의 소매처마다 한 줄(정산 소매처 목록과 같은 기준: 확정 주문이나 원장 줄이 있는 곳).
+ * 저장소를 지금 읽는다. 그래서 정산 탭 입금이 다음 자동 답에 바로 쓰인다(S3-3). 소매 앱 번들에는 정산 핸들러가
+ * 없어 늘 시드 값이다 — 두 탭이 같은 시드와 같은 함수를 쓰는 것까지가 목의 보장이다(§2-1)
+ */
+export function mockReceivableRows(now = Date.now()): InquiryReceivable[] {
+  const asOf = new Date(now).toISOString();
+  const today = seoulDate(now);
+  return receivableRetailerIds().map((retailerId) => ({
+    wholesalerId: SETTLEMENT_WHOLESALER_ID,
+    retailerId,
+    ...receivableSummary({
+      ledger,
+      orders: mockOrders(),
+      payments,
+      retailerId,
+      today,
+      asOf,
+    }),
+  }));
+}
+
+/** 쌍 하나. 테스트가 기대값을 읽을 때 쓴다(판정은 전체를 받아 스스로 고른다) */
+export function mockReceivable(
+  wholesalerId: number,
+  retailerId: number,
+  now = Date.now(),
+): InquiryReceivable | null {
+  return (
+    mockReceivableRows(now).find(
+      (r) => r.wholesalerId === wholesalerId && r.retailerId === retailerId,
+    ) ?? null
+  );
+}
 
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다. 주문·출고 목도 같이 되돌려야 맞물린다 */
 export function resetSettlementMock() {

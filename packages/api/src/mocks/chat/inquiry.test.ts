@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import { chatStockListing } from "../wholesale/product";
 import { CHAT_EXTRA_LISTINGS } from "./extraListings";
 import { seoulDate } from "./backorderCandidates";
+import { chatExtraReceivables } from "./extraReceivables";
 import {
   GOLDEN,
   GOLDEN_T0,
   fullInquiry,
   goldenBackorders,
   goldenCatalog,
+  goldenReceivableRows,
   projectDecision,
   projectStep,
+  projectV4Lines,
   type GoldenExpect,
   type GoldenInquiry,
   type GoldenScenario,
@@ -21,11 +24,19 @@ import {
   INQUIRY_CONTEXT_MINUTES,
   decideInquiry,
   generatedLines,
+  linesToAppend,
+  openHandoffOf,
   orderLimitOf,
   stockBand,
   stockReplyBody,
   type InquiryHistoryItem,
 } from "./inquiry";
+import {
+  receivableOf,
+  type InquiryReceivable,
+  type InquiryReceivableSource,
+} from "./receivable";
+import { mockReceivable, resetSettlementMock } from "../wholesale/settlement";
 
 /**
  * 판정 규칙 unit(loop-05b S7-2 ~ S7-5). 골든셋을 순수 함수로 돌린다 — 서버도 목 저장소도 없다.
@@ -35,6 +46,8 @@ import {
 
 const CATALOG = goldenCatalog(GOLDEN.stock);
 const BACKORDERS = goldenBackorders(GOLDEN.backorders);
+const RECEIVABLE_ROWS = goldenReceivableRows();
+const RECEIVABLES: InquiryReceivableSource = () => RECEIVABLE_ROWS;
 /** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
 const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
@@ -44,6 +57,7 @@ const ROOM1 = {
   retailerId: 1,
   today: seoulDate(BASE),
   backorders: BACKORDERS,
+  receivables: RECEIVABLES,
 };
 
 interface StepResult {
@@ -53,8 +67,26 @@ interface StepResult {
   actual: GoldenExpect;
 }
 
-/** 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 생성 줄을 history에 쌓는다 */
-function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
+/**
+ * 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 **방에 들어간** 줄(`linesToAppend`)을 history에
+ * 쌓는다. v4(since 4)는 그 줄을 투영하고, v3까지는 판정을 투영한다(기대값 모양이 그때 정해졌다)
+ */
+function runScenario(
+  s: GoldenScenario,
+  backorders = BACKORDERS,
+  rows: readonly InquiryReceivable[] = RECEIVABLE_ROWS,
+): StepResult[] {
+  let failsLeft = s.room.receivableFailTimes ?? 0;
+  const receivables: InquiryReceivableSource = () => {
+    if (failsLeft > 0) {
+      failsLeft -= 1;
+      throw new Error("골든셋: 정산 조회 실패");
+    }
+    return rows;
+  };
+  const rowAsOf =
+    receivableOf(rows, s.room.wholesalerId, s.room.retailerId ?? 1)?.asOf ??
+    null;
   let now = BASE + (s.room.afterDays ?? 0) * DAY;
   let context =
     s.room.context === null
@@ -78,6 +110,21 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
           : { listingId: step.enter.listingId, at: now };
     sequence += 1;
     const mine = sequence;
+    if (step.sender === "WHOLESALER") {
+      history.push({
+        sequence: mine,
+        sender: "WHOLESALER",
+        kind: "TEXT",
+        sentAt: new Date(now).toISOString(),
+        autoReply: null,
+      });
+      return {
+        scenario: s.id,
+        required: s.required,
+        expect: step.expect,
+        actual: { openHandoff: openHandoffOf(history) !== null },
+      };
+    }
     const decision = decideInquiry({
       body: step.text,
       inquiry: fullInquiry(step.inquiry),
@@ -90,8 +137,10 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
       history: [...history],
       catalog: CATALOG,
       backorders,
+      receivables,
     });
     const sentAt = new Date(now).toISOString();
+    const before = [...history];
     history.push({
       sequence: mine,
       sender: "RETAILER",
@@ -100,7 +149,8 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
       autoReply: null,
     });
     const lines = generatedLines(decision, mine, now);
-    for (const line of lines) {
+    const kept = linesToAppend(lines, before);
+    for (const line of kept) {
       sequence += 1;
       history.push({
         sequence,
@@ -108,49 +158,79 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
         kind: line.kind,
         sentAt,
         autoReply: line.autoReply,
+        handoff: line.handoff,
       });
     }
     return {
       scenario: s.id,
       required: s.required,
       expect: step.expect,
-      actual: projectStep(decision, lines, now),
+      actual:
+        (s.since ?? 0) >= 4
+          ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
+          : projectStep(decision, lines, now),
     };
   });
 }
 
 const RESULTS = GOLDEN.scenarios.flatMap((s) => runScenario(s));
 
-const isAuto = (e: GoldenExpect) =>
-  e.kind === "AUTO_REPLY" ||
-  (Array.isArray(e.kinds) && e.kinds.includes("AUTO_REPLY"));
-const isHandoff = (e: GoldenExpect) =>
-  e.kind === "HANDOFF" ||
-  (Array.isArray(e.kinds) && e.kinds.includes("HANDOFF"));
-/** 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지 */
+/** v4 줄 투영 `{lines}`의 kind 들. v3 판정 투영은 kind 하나 또는 kinds */
+const kindsOf = (e: GoldenExpect): unknown[] =>
+  Array.isArray(e.lines)
+    ? (e.lines as { kind: unknown }[]).map((l) => l.kind)
+    : Array.isArray(e.kinds)
+      ? e.kinds
+      : [e.kind];
+const isAuto = (e: GoldenExpect) => kindsOf(e).includes("AUTO_REPLY");
+const isHandoff = (e: GoldenExpect) => kindsOf(e).includes("HANDOFF");
+const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
+/**
+ * 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지.
+ * v4(미수)는 줄 전체 — 금액, 연체, 선수금, 본문, 조회 시각 하나라도 다르면 틀린 답이다
+ */
 const sameAnswer = (a: GoldenExpect, e: GoldenExpect) =>
-  a.target === e.target &&
-  a.band === e.band &&
-  a.orderable === e.orderable &&
-  a.remainingQty === e.remainingQty &&
-  JSON.stringify(a.eta) === JSON.stringify(e.eta);
+  isV4(e)
+    ? JSON.stringify(a) === JSON.stringify(e)
+    : a.target === e.target &&
+      a.band === e.band &&
+      a.orderable === e.orderable &&
+      a.remainingQty === e.remainingQty &&
+      JSON.stringify(a.eta) === JSON.stringify(e.eta);
 
 describe("골든셋 모양", () => {
-  it("v3 시나리오 59개 = 필수 4 + 재고 답 17 + 넘김 15 + 미송 23, id 중복 없음", () => {
+  it("v4 시나리오 84개 = 필수 5 + 재고 답 17 + 넘김 22 + 미송 23 + 미수 17, id 중복 없음, v4 몫 25", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.version).toBe(3);
-    expect(GOLDEN.scenarios).toHaveLength(59);
+    expect(GOLDEN.version).toBe(4);
+    expect(GOLDEN.scenarios).toHaveLength(84);
     expect([
       count("required"),
       count("stock"),
       count("handoff"),
       count("backorder"),
-    ]).toEqual([4, 17, 15, 23]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(59);
+      count("receivable"),
+    ]).toEqual([5, 17, 22, 23, 17]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(84);
     expect(GOLDEN.scenarios.filter((s) => s.required).map((s) => s.id)).toEqual(
-      ["P1", "P2", "P3", "P4"],
+      ["P1", "P2", "P3", "P4", "P5"],
     );
+    // v4 = 미수 18(P5 + R01~R17) + 넘김 7(H16~H22). 기존 59개는 since 없이 그대로다
+    const v4 = GOLDEN.scenarios.filter((s) => (s.since ?? 0) >= 4);
+    expect(v4.map((s) => s.id)).toEqual([
+      "P5",
+      ...Array.from(
+        { length: 17 },
+        (_, i) => `R${String(i + 1).padStart(2, "0")}`,
+      ),
+      "H16",
+      "H17",
+      "H18",
+      "H19",
+      "H20",
+      "H21",
+      "H22",
+    ]);
   });
 
   it("규칙 상수가 코드와 같다(문맥 30분, 구간 경계 0 10 50, 미송 보기 8, T0 서울 2026-10-29)", () => {
@@ -161,8 +241,8 @@ describe("골든셋 모양", () => {
   });
 });
 
-describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 — 모든 단계 정확 일치", () => {
-  for (const id of ["P1", "P2", "P3", "P4"]) {
+describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 P5 — 모든 단계 정확 일치", () => {
+  for (const id of ["P1", "P2", "P3", "P4", "P5"]) {
     it(`${id} kind, intent, 대상, 구간, 주문 가능, choices`, () => {
       const steps = RESULTS.filter((r) => r.scenario === id);
       expect(steps.length).toBeGreaterThan(1);
@@ -171,7 +251,73 @@ describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 — 모든 단계 정확 일치",
   }
 });
 
-describe("S7-3, S1-2 골든셋 59개 지표", () => {
+describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
+  const v4 = RESULTS.filter((r) => isV4(r.expect) || "openHandoff" in r.expect);
+
+  it("v4 25개 시나리오 전 단계 정확 일치(금액, 연체, 선수금, 본문, 조회 시각, 넘김 이유, 의도, 원인 메시지)", () => {
+    expect(v4.length).toBeGreaterThanOrEqual(25);
+    expect(
+      v4.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+  });
+
+  it("미수 잘못된 자동 답 0: 미수 AUTO_REPLY 줄은 전부 기대와 같고, 넘겨야 할 미수 질문에 금액 줄이 없다", () => {
+    const receivableLines = (e: GoldenExpect) =>
+      Array.isArray(e.lines)
+        ? (e.lines as { kind: string; intent?: string }[]).filter(
+            (l) => l.kind === "AUTO_REPLY" && l.intent === "RECEIVABLE",
+          )
+        : [];
+    const sent = v4.filter((r) => receivableLines(r.actual).length > 0);
+    // 미수 답 10단계(P5 2, R01 R02 R03 R04 R08 R14 R16 R17)가 실제로 나갔다 — 0이면 측정 불가
+    expect(sent.length).toBe(10);
+    expect(
+      sent.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+    const shouldHandoff = v4.filter(
+      (r) => isHandoff(r.expect) && !isAuto(r.expect),
+    );
+    expect(shouldHandoff.filter((r) => isAuto(r.actual))).toEqual([]);
+  });
+
+  it("미수 표 ↔ 목: settlement.ts seed 행 = 정산 목 시드 요약(T0), extraReceivables.ts 행 = 채팅 목 표(asOf 제외)", () => {
+    resetSettlementMock();
+    const strip = (r: InquiryReceivable | null) =>
+      r === null ? null : { ...r, asOf: "-" };
+    for (const row of GOLDEN.receivables) {
+      const golden = strip(
+        receivableOf(RECEIVABLE_ROWS, row.wholesalerId, row.retailerId),
+      );
+      if (row.source === "settlement.ts seed")
+        expect(
+          strip(mockReceivable(row.wholesalerId, row.retailerId, GOLDEN_T0)),
+          `${row.wholesalerId}×${row.retailerId}`,
+        ).toEqual(golden);
+      else if (row.source === "extraReceivables.ts")
+        expect(
+          strip(
+            receivableOf(
+              chatExtraReceivables(GOLDEN.rules.t0),
+              row.wholesalerId,
+              row.retailerId,
+            ),
+          ),
+        ).toEqual(golden);
+      else expect(row.source).toBe("golden only");
+    }
+    // 목 시드 몫은 두 행뿐이다(장면 3의 방 1, 방 33)
+    expect(
+      GOLDEN.receivables
+        .filter((r) => r.source !== "golden only")
+        .map((r) => [r.wholesalerId, r.retailerId]),
+    ).toEqual([
+      [101, 1],
+      [102, 1],
+    ]);
+  });
+});
+
+describe("S7-3, S1-2 골든셋 84개 지표", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),

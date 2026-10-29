@@ -1,16 +1,23 @@
 import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
 import { CHAT_EXTRA_LISTINGS } from "../chat/extraListings";
+import { chatExtraReceivables } from "../chat/extraReceivables";
 import {
   DEFAULT_AUTO_REPLY_SETTINGS,
   decideInquiry,
   generatedLines,
+  linesToAppend,
+  openHandoffOf,
   type AutoReplySettings,
   type InquiryListing,
 } from "../chat/inquiry";
 import { seoulDate } from "../chat/backorderCandidates";
+import type { InquiryReceivable } from "../chat/receivable";
 import { inquiryBackorders, resetBackorderMock } from "./backorder";
+import { resetOrderMock } from "./order";
 import { chatStockListing } from "./product";
+import { mockReceivableRows, resetSettlementMock } from "./settlement";
+import { resetShipmentMock } from "./shipment";
 
 /**
  * 채팅 목 — 초안 op 5개(#263, 스냅샷 `x-ondo-draft`). 계약은 `01-plan.md` §5-2, 목은 §5-3.
@@ -75,6 +82,8 @@ export const CHAT_FAIL_OPS = [
   "send",
   "read",
   "settings",
+  /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 보내기는 201 이고 답 대신 넘김(LOOKUP_FAILED)이 붙는다 */
+  "receivable",
 ] as const;
 type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
 
@@ -174,6 +183,8 @@ interface SeedLine {
   clientMessageId?: string | null;
   inquiry?: ChatInquiry | null;
   autoReply?: ChatMessage["autoReply"];
+  /** HANDOFF 줄의 이유(loop-07). 다른 kind 는 비워 둔다(저장은 null) */
+  handoff?: ChatMessage["handoff"];
 }
 
 function room(
@@ -225,6 +236,9 @@ function append(r: MockRoom, line: SeedLine): ChatMessage {
     sentAt: line.sentAt,
     inquiry: line.inquiry ?? null,
     autoReply: line.autoReply ?? null,
+    // HANDOFF 면 늘 값, 그 밖 null(loop-07 §5-2). 소매 응답은 이 칸을 싣지 않는다(`../retail/chat.ts`)
+    handoff:
+      (line.kind ?? "TEXT") === "HANDOFF" ? (line.handoff ?? null) : null,
   };
   r.messages.push(message);
   return message;
@@ -376,6 +390,7 @@ function seedRooms(): MockRoom[] {
           kind: "HANDOFF",
           body: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
           sentAt: at(60 * 3),
+          handoff: { reason: "NEGOTIATION", intent: null, sourceSequence: 3 },
         },
       ],
       { wholesaler: 2, retailer: 4 },
@@ -540,6 +555,7 @@ function seedRooms(): MockRoom[] {
           kind: "HANDOFF",
           body: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
           sentAt: at(60 * 2 - 3),
+          handoff: { reason: "NEGOTIATION", intent: null, sourceSequence: 6 },
         },
       ],
       { wholesaler: 0, retailer: 7 },
@@ -586,14 +602,12 @@ function unreadCount(r: MockRoom): number {
   ).length;
 }
 
-/** HANDOFF 뒤 WHOLESALER TEXT가 없다. AUTO_REPLY, CLARIFY로는 닫히지 않는다 */
+/**
+ * HANDOFF 뒤 WHOLESALER TEXT가 없다. AUTO_REPLY, CLARIFY로는 닫히지 않는다. 닫힘 = "사장이 답했다"이고 입금 확인
+ * 완료가 아니다(loop-07 §4-2 2). 규칙은 판정 쪽 `openHandoffOf` 하나 — 자동 답의 넘김 줄 억제와 같은 기준이다
+ */
 function openHandoff(r: MockRoom): boolean {
-  let open = false;
-  for (const m of r.messages) {
-    if (m.kind === "HANDOFF") open = true;
-    else if (m.sender === "WHOLESALER" && m.kind === "TEXT") open = false;
-  }
-  return open;
+  return openHandoffOf(r.messages) !== null;
 }
 
 function lastActivityAt(r: MockRoom): string {
@@ -692,21 +706,33 @@ function settingsFor(wholesalerId: number): AutoReplySettings {
 }
 
 /**
+ * 미수 판정 원본(loop-07 §5-4 1, 2): 정산 목 장부(도매처 101) + 채팅 목 전용 표(102). 부를 때마다 저장소를
+ * 지금 읽는다 — 정산 탭 입금이 다음 답에 바로 쓰인다. `fail {op: receivable}`이 걸려 있으면 던진다(→ LOOKUP_FAILED)
+ */
+function chatReceivables(): readonly InquiryReceivable[] {
+  if (consumeFailure("receivable"))
+    throw new Error("목: 정산 조회 실패 손잡이");
+  const now = Date.now();
+  return [
+    ...mockReceivableRows(now),
+    ...chatExtraReceivables(new Date(now).toISOString()),
+  ];
+}
+
+/**
  * 방금 넣은 소매 메시지에 자동 답을 붙인다. 소매 목 보내기와 도매 `incoming` 주입이 같이 부른다.
  * 판정은 `../chat/inquiry.ts`(순수), 여기는 저장소에 줄을 넣기만 한다.
  *
- * 넘김 줄은 방에 이미 열린 넘김이 있으면 또 넣지 않는다 — 사장이 답하기 전까지 소매가 쓰는 글마다
- * "사장님께 전달했어요"가 쌓이면 대화가 그 줄로 덮인다. 자동 답(재고 구간)은 그래도 붙는다.
- * 단 답 + 넘김 두 줄(재고 0, loop-06의 미송 입고일 미정과 지남)의 넘김 줄은 예외로 늘 붙인다(D34, 디자인 결정 27,
- * loop-06 §4-2 6) — 소매 카드는 바로 아래 넘김 줄이
- * 있어야 "사장님이 미송 여부를 답한다"가 보이고, 그 줄이 없으면 담기도 막힌 채 답이 끝난 것처럼 보인다.
+ * 열린 넘김이 있을 때 넘김 줄을 넣을지는 `linesToAppend`가 정한다(골든셋도 같은 함수): 이유가 같으면 안 넣고,
+ * 다르면 새 줄(loop-07 Q3). 답 + 넘김 두 줄(재고 0, 미송 입고일 미정과 지남)의 넘김 줄은 늘 붙인다(D34,
+ * 디자인 결정 27, loop-06 §4-2 6) — 소매 카드는 바로 아래 넘김 줄이 있어야 "사장님이 답한다"가 보인다.
  *
  * 판정이 던지면(목 버그) 오류가 아니라 넘김이다(§5-2): 소매는 답 대신 "전달했어요"를 본다.
+ * 미수 원본이 던지는 건 판정 안에서 LOOKUP_FAILED 넘김이 된다(여기까지 안 온다).
  */
 function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
   const now = Date.now();
   const history = r.messages.filter((m) => m.sequence < message.sequence);
-  const alreadyOpen = openHandoff({ ...r, messages: history });
   let lines: ReturnType<typeof generatedLines>;
   try {
     lines = generatedLines(
@@ -722,6 +748,7 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
         history,
         catalog: chatCatalog,
         backorders: inquiryBackorders,
+        receivables: chatReceivables,
       }),
       message.sequence,
       now,
@@ -734,24 +761,17 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
     );
   }
   const sentAt = new Date(now).toISOString();
-  // 답 + 넘김 두 줄(재고 0, 미송 입고일 미정, 지남)은 넘김 줄이 답의 일부다 — 열린 넘김이 있어도 붙인다
-  const answerWithHandoff =
-    lines.some((line) => line.kind === "AUTO_REPLY") &&
-    lines.some((line) => line.kind === "HANDOFF");
-  return lines
-    .filter(
-      (line) => !(line.kind === "HANDOFF" && alreadyOpen && !answerWithHandoff),
-    )
-    .map((line) =>
-      append(r, {
-        sender: line.sender,
-        kind: line.kind,
-        body: line.body,
-        sentAt,
-        clientMessageId: null,
-        autoReply: line.autoReply,
-      }),
-    );
+  return linesToAppend(lines, history).map((line) =>
+    append(r, {
+      sender: line.sender,
+      kind: line.kind,
+      body: line.body,
+      sentAt,
+      clientMessageId: null,
+      autoReply: line.autoReply,
+      handoff: line.handoff,
+    }),
+  );
 }
 
 function setContext(r: MockRoom, listingId: number | null, ageMinutes = 0) {
@@ -877,10 +897,17 @@ function invalid(field: string, code: string, message: string) {
 /** `/__mock/chat/fail`로 걸어 둔 실패. 걸려 있으면 1회 소모하고 그 응답을 돌려준다 */
 function plannedFailure(op: ChatFailOp) {
   const plan = failPlan.get(op);
-  if (plan === undefined || plan.times <= 0) return null;
+  if (!consumeFailure(op) || plan === undefined) return null;
+  return fail(plan.status);
+}
+
+/** 걸어 둔 실패가 있으면 1회 소모하고 true. HTTP 응답이 아닌 실패(미수 원본 조회)도 이걸로 본다 */
+function consumeFailure(op: ChatFailOp): boolean {
+  const plan = failPlan.get(op);
+  if (plan === undefined || plan.times <= 0) return false;
   plan.times -= 1;
   if (plan.times === 0) failPlan.delete(op);
-  return fail(plan.status);
+  return true;
 }
 
 /** 쿼리 정수. 없으면 `fallback`, 정수가 아니면 `NaN` */
@@ -1280,6 +1307,11 @@ export function resetChatMock(
   rooms = seedRooms();
   // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
   resetBackorderMock({ empty: options.noBackorders === true });
+  // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는
+  // 출고는 출고 목에 있어 셋을 같이 돌린다(정산 목 reset 주석: 같이 되돌려야 맞물린다)
+  resetOrderMock();
+  resetShipmentMock();
+  resetSettlementMock();
   if (keepRooms !== undefined) {
     const keep = new Set(
       rooms
@@ -1344,6 +1376,10 @@ export const chatStore = {
   },
   append,
   runAutoReply,
+  /** 소매 `fail {op: receivable}`(loop-07 S1-9). 원본 조회 실패는 저장소 하나를 지나므로 도매 쪽 계획에 건다 */
+  failReceivable(times: number) {
+    failPlan.set("receivable", { status: 500, times });
+  },
   setContext,
   catalog: chatCatalog,
   maxSequence,

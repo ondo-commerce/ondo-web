@@ -9,9 +9,16 @@ import {
   type InquiryBackorder,
   type InquiryBackorderSource,
 } from "./backorderCandidates";
+import {
+  receivableOf,
+  receivableReplyBody,
+  toReceivableFacts,
+  type InquiryReceivableSource,
+} from "./receivable";
 
 /**
- * 재고, 미송 문의 판정 규칙과 자동 답 문장(loop-05b `01-plan.md` §4-2, §5-4, 미송은 loop-06 §4-2). **목 규칙 = BE 규칙**이다.
+ * 재고, 미송, 미수 문의 판정 규칙과 자동 답 문장(loop-05b `01-plan.md` §4-2, §5-4, 미송은 loop-06 §4-2,
+ * 미수와 넘김 이유는 loop-07 §4-1, §4-2). **목 규칙 = BE 규칙**이다.
  *
  * 순수 함수만 둔다 — msw도, 저장소도, 시계도 모른다. 부르는 쪽이 지금 시각, 방의 지난 메시지,
  * 상품 조회 함수를 넘긴다. 그래서 같은 함수를 세 곳이 쓴다:
@@ -28,6 +35,9 @@ type ChatMessage = WholesaleSchema<"ChatMessage">;
 type ChatAutoReply = NonNullable<ChatMessage["autoReply"]>;
 type StockBand = WholesaleSchema<"StockBand">;
 type Size = WholesaleSchema<"VariantResponse">["size"];
+type ChatHandoff = WholesaleSchema<"ChatHandoff">;
+type ChatHandoffReason = WholesaleSchema<"ChatHandoffReason">;
+type ChatReceivableFacts = WholesaleSchema<"ChatReceivableFacts">;
 export type AutoReplySettings = WholesaleSchema<"AutoReplySettings">;
 
 /* --- 입력 모양 ------------------------------------------------------------ */
@@ -64,6 +74,8 @@ export interface InquiryHistoryItem {
   kind: ChatMessage["kind"];
   sentAt: string;
   autoReply: Pick<ChatAutoReply, "intent" | "subject" | "choices"> | null;
+  /** 넘김 줄의 이유(loop-07). 열린 넘김과 이유가 같은지 볼 때만 읽는다. 없으면 이유 모름 */
+  handoff?: Pick<ChatHandoff, "reason"> | null;
 }
 
 export interface InquiryInput {
@@ -85,6 +97,11 @@ export interface InquiryInput {
   today: string;
   /** 미송 원본 전체(거르지 않은 것). 고르는 건 판정이 한다 */
   backorders: InquiryBackorderSource;
+  /**
+   * 미수 원본 전체(도매처 × 소매처 요약, 거르지 않은 것). 미수 가지에서만 부른다. 던지면 조회 실패로 넘긴다.
+   * 이 방 한 줄을 고르는 건 판정이 한다(`receivableOf`) — 화면이 보낸 값은 보지 않는다(loop-07 §4-1 5)
+   */
+  receivables: InquiryReceivableSource;
 }
 
 /* --- 규칙 상수 ------------------------------------------------------------ */
@@ -108,7 +125,30 @@ const NEGOTIATION_WORDS = ["깎", "할인", "네고", "교환", "반품", "환�
 const STOCK_WORDS = ["몇장", "남았", "재고", "수량", "품절"];
 const STOCK_WORDS_WITH_OPTION = ["있어요", "있나요", "되나요"];
 const BACKORDER_WORDS = ["미송", "언제와", "입고", "언제들어"];
-const RECEIVABLE_WORDS = ["미수", "외상", "잔금", "갚을"];
+/**
+ * 미수 키워드(loop-07 §4-1 2). "얼마"만으로는 미수가 아니다("이 셔츠 얼마예요?"는 값 문의, R09).
+ * "얼마 남았"을 미수로 읽는 예외는 두지 않는다 — "이 셔츠 얼마 남았어요?"가 금액 답이 된다(Codex 7, R10).
+ * "미수 얼마나 남았어요?"는 재고 낱말 "남았"과 겹쳐 의도 둘로 넘긴다(R11)
+ */
+const RECEIVABLE_WORDS = [
+  "미수",
+  "외상",
+  "잔금",
+  "갚을",
+  "잔액",
+  "갚아야",
+  "밀린",
+];
+/**
+ * 입금 알림(판정 1-2). 의도 둘보다, 미수보다 먼저 본다 — "입금했는데 미수 얼마예요?"에 입금 등록 전 잔액을
+ * 말하면 틀린 금액이다(§4-1 1, H17). 입금 확인은 정산 탭 일이라 사장에게 넘긴다
+ */
+const PAYMENT_REPORT_WORDS = ["입금했", "송금했", "이체했", "입금완료"];
+/**
+ * 기간 말. 미수 질문에 붙으면 넘긴다(Q2) — 배정이 주문 단위라 달별로 나눌 규칙이 없고, "지난달 얼마예요"에
+ * 전체 금액을 말하면 질문과 다른 답이다
+ */
+const PERIOD_WORDS = ["이번달", "지난달", "저번달", "이번주", "오늘", "어제"];
 /**
  * 배송어. 미송 의도여도 이 말이 있으면 넘긴다 — 미송 답은 "도매 입고 예정"만 말한다. 출고, 배송, 수령은 다른
  * 업무 단계라 같은 날짜로 답하면 틀린다(Codex 7). "언제받", "아직안왔"도 수령 질문이라 미송 키워드에 안 넣었다
@@ -205,7 +245,17 @@ export type HandoffReason =
   /** 미송. 이 방 도매처에 이 소매처의 열린 미송이 0개(Q1 ②) */
   | "NO_BACKORDER"
   /** 미송. 본문에 나온 상품명, 색상, 사이즈를 다 만족하는 미송이 0개("블랙 셔츠"인데 셔츠 미송이 화이트뿐) */
-  | "NO_MATCH";
+  | "NO_MATCH"
+  /** 판정 1-2. 입금했다는 말(loop-07) */
+  | "PAYMENT_REPORT"
+  /** 미수. 기간 말(이번달, 지난달 …)이 붙었다(Q2) */
+  | "PERIOD"
+  /** 미수. 이 방 도매처와 이 소매처의 정산 줄이 없다. "없어요"라고 답하지 않는다 — 원본이 다 담는지 모른다(D34) */
+  | "NO_RELATION"
+  /** 미수. 원본 금액을 보장 못 한다(`toReceivableFacts`의 이상값 7종) */
+  | "AMOUNT_UNSURE"
+  /** 미수. 원본 조회가 던졌다. 보내기는 201이고 오류가 아니라 넘김이다(S1-9) */
+  | "LOOKUP_FAILED";
 
 export type InquiryDecision =
   | { kind: "HANDOFF"; reason: HandoffReason; intent: ChatIntent | null }
@@ -241,6 +291,14 @@ export type InquiryDecision =
       backorder: InquiryBackorder;
       eta: EtaState;
       today: string;
+    }
+  | {
+      kind: "AUTO_REPLY";
+      intent: "RECEIVABLE";
+      /** 이 방 도매처 몫만. `toReceivableFacts`를 지난 값 */
+      facts: ChatReceivableFacts;
+      /** 원본의 `asOf`. 판정 시각 `now`가 아니다(§4-1 12) */
+      checkedAt: string;
     };
 
 /** 직전 유효 되묻기: 30분 안, 그 뒤 소매 메시지도 도매 사람 답(TEXT)도 없다 */
@@ -488,9 +546,39 @@ function decideBackorder(
 }
 
 /**
+ * 미수 가지(loop-07 §4-1). 의도가 미수로 정해지고 미수 설정이 켜진 뒤에 온다. 되묻기는 없다. 위에서부터:
+ *  a. 기간 말 → PERIOD(Q2)
+ *  b. 원본 조회가 던짐 → LOOKUP_FAILED
+ *  c. 이 방 도매처 + 이 방 소매처 줄 없음 → NO_RELATION
+ *  d. 이상값 7종(`toReceivableFacts`) → AMOUNT_UNSURE
+ *  e. 답. `checkedAt` = 원본 `asOf`
+ */
+function decideReceivable(input: InquiryInput, flat: string): InquiryDecision {
+  if (PERIOD_WORDS.some((w) => flat.includes(w)))
+    return handoff("PERIOD", "RECEIVABLE");
+  let rows;
+  try {
+    rows = input.receivables();
+  } catch {
+    return handoff("LOOKUP_FAILED", "RECEIVABLE");
+  }
+  const row = receivableOf(rows, input.wholesalerId, input.retailerId);
+  if (row === null) return handoff("NO_RELATION", "RECEIVABLE");
+  const converted = toReceivableFacts(row);
+  if (!converted.ok) return handoff("AMOUNT_UNSURE", "RECEIVABLE");
+  return {
+    kind: "AUTO_REPLY",
+    intent: "RECEIVABLE",
+    facts: converted.facts,
+    checkedAt: converted.checkedAt,
+  };
+}
+
+/**
  * 판정 순서 0~9(§4-2). 위에서부터 처음 걸린 것으로 정한다.
  *
  * 순서가 규칙이다 — 특히 협상어(1)가 inquiry(4)보다 먼저다. 칩을 눌러도 본문이 협상이면 넘긴다.
+ * 입금 알림(1-2, loop-07)은 협상어 바로 뒤, 의도 둘보다 먼저다.
  */
 export function decideInquiry(input: InquiryInput): InquiryDecision {
   const { settings, inquiry, now } = input;
@@ -503,6 +591,9 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   // 1. 협상어, 의도 둘 이상
   if (NEGOTIATION_WORDS.some((w) => flat.includes(w)))
     return handoff("NEGOTIATION");
+  // 1-2. 입금 알림. 미수 낱말이 같이 있어도 금액을 말하지 않는다(H17)
+  if (PAYMENT_REPORT_WORDS.some((w) => flat.includes(w)))
+    return handoff("PAYMENT_REPORT", "RECEIVABLE");
   const open = openClarify(input.history, now);
   // 재고 계승(2, 3, 7)은 재고 되묻기만 본다. 미송 되묻기는 아래 미송 가지가 따로 본다
   const prev = open?.intent === "STOCK" ? open : null;
@@ -566,6 +657,8 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
     return handoff(intent === "OTHER" ? "NOT_SUPPORTED" : "OFF", intent);
   if (intent === "BACKORDER")
     return decideBackorder(input, text, backorderPrev);
+  // 미수는 되묻기가 없고 다른 의도의 열린 되묻기를 계승하지 않는다(R14). 위 계승은 같은 의도일 때만 걸린다
+  if (intent === "RECEIVABLE") return decideReceivable(input, flat);
   if (intent !== "STOCK") return handoff("NOT_SUPPORTED", intent);
 
   // 6. 상품 문맥: inquiry.listingId > 방 문맥(30분 안)
@@ -664,11 +757,32 @@ export interface GeneratedLine {
   kind: "AUTO_REPLY" | "CLARIFY" | "HANDOFF";
   body: string;
   autoReply: ChatAutoReply | null;
+  /** HANDOFF 줄이면 늘 값, 그 밖 null(loop-07 §5-2). 도매 응답에만 실린다 — 소매 목이 지운다 */
+  handoff: ChatHandoff | null;
 }
 
 /**
- * 판정 → 메시지 줄. 재고 0이면 AUTO_REPLY + HANDOFF 두 줄(Q2). `checkedAt`은 `now`.
+ * 넘김 줄. 이유, 그때 읽은 의도, 원인 소매 메시지(`replyToSequence`)를 싣는다(S1-8).
+ * 답 + 넘김 두 줄의 넘김은 판정 이유가 아니라 답 쪽 이유다(STOCK_ZERO, ETA_UNKNOWN, ETA_PAST)
+ */
+function handoffLineOf(
+  reason: ChatHandoffReason,
+  intent: ChatIntent | null,
+  sourceSequence: number,
+): GeneratedLine {
+  return {
+    sender: "SYSTEM",
+    kind: "HANDOFF",
+    body: HANDOFF_BODY,
+    autoReply: null,
+    handoff: { reason, intent, sourceSequence },
+  };
+}
+
+/**
+ * 판정 → 메시지 줄. 재고 0이면 AUTO_REPLY + HANDOFF 두 줄(Q2). `checkedAt`은 `now`, 미수만 원본 `asOf`.
  * facts는 **도매 모양**(정확 수량 포함)이다. 소매 응답으로 바꾸는 건 소매 목의 `toRetailFacts`가 한다.
+ * 열린 넘김이 있을 때 넘김 줄을 붙일지는 여기가 아니라 {@link linesToAppend}가 정한다.
  */
 export function generatedLines(
   d: InquiryDecision,
@@ -676,20 +790,17 @@ export function generatedLines(
   now: number,
 ): GeneratedLine[] {
   const checkedAt = new Date(now).toISOString();
-  const handoffLine: GeneratedLine = {
-    sender: "SYSTEM",
-    kind: "HANDOFF",
-    body: HANDOFF_BODY,
-    autoReply: null,
-  };
-  if (d.kind === "HANDOFF") return [handoffLine];
+  if (d.kind === "HANDOFF")
+    return [handoffLineOf(d.reason, d.intent, replyToSequence)];
   if (d.intent === "BACKORDER")
-    return backorderLines(d, replyToSequence, checkedAt, handoffLine);
+    return backorderLines(d, replyToSequence, checkedAt);
+  if (d.intent === "RECEIVABLE") return [receivableLine(d, replyToSequence)];
   if (d.kind === "CLARIFY")
     return [
       {
         sender: "WHOLESALER",
         kind: "CLARIFY",
+        handoff: null,
         body: CLARIFY_BODY,
         autoReply: {
           intent: "STOCK",
@@ -715,6 +826,7 @@ export function generatedLines(
     sender: "WHOLESALER",
     kind: "AUTO_REPLY",
     body: stockReplyBody(d),
+    handoff: null,
     autoReply: {
       intent: "STOCK",
       replyToSequence,
@@ -738,7 +850,39 @@ export function generatedLines(
       choices: null,
     },
   };
-  return d.band === "NONE" ? [reply, handoffLine] : [reply];
+  return d.band === "NONE"
+    ? [reply, handoffLineOf("STOCK_ZERO", "STOCK", replyToSequence)]
+    : [reply];
+}
+
+/**
+ * 미수 답 한 줄(loop-07 §4-1 10). 넘김 줄은 붙지 않는다 — 그래서 열린 넘김 중에도 금액이 나간다(§4-2 3).
+ * `checkedAt`은 원본 `asOf`다. subject 는 전부 null(상품, 옵션, 미송 어느 것도 아니다)
+ */
+function receivableLine(
+  d: Extract<InquiryDecision, { kind: "AUTO_REPLY"; intent: "RECEIVABLE" }>,
+  replyToSequence: number,
+): GeneratedLine {
+  return {
+    sender: "WHOLESALER",
+    kind: "AUTO_REPLY",
+    body: receivableReplyBody(d.facts),
+    handoff: null,
+    autoReply: {
+      intent: "RECEIVABLE",
+      replyToSequence,
+      generatedBy: "RULE",
+      checkedAt: d.checkedAt,
+      subject: {
+        listingId: null,
+        variantId: null,
+        backorderId: null,
+        label: null,
+      },
+      facts: { stock: null, backorder: null, receivable: d.facts },
+      choices: null,
+    },
+  };
 }
 
 /**
@@ -752,13 +896,13 @@ function backorderLines(
   d: Exclude<InquiryDecision, { kind: "HANDOFF" }> & { intent: "BACKORDER" },
   replyToSequence: number,
   checkedAt: string,
-  handoffLine: GeneratedLine,
 ): GeneratedLine[] {
   if (d.kind === "CLARIFY")
     return [
       {
         sender: "WHOLESALER",
         kind: "CLARIFY",
+        handoff: null,
         body: d.truncated
           ? `${BACKORDER_CLARIFY_BODY} ${BACKORDER_TRUNCATED_NOTE}`
           : BACKORDER_CLARIFY_BODY,
@@ -798,6 +942,7 @@ function backorderLines(
     sender: "WHOLESALER",
     kind: "AUTO_REPLY",
     body: backorderReplyBody(d),
+    handoff: null,
     autoReply: {
       intent: "BACKORDER",
       replyToSequence,
@@ -821,7 +966,57 @@ function backorderLines(
       choices: null,
     },
   };
-  return d.eta === "NONE" || d.eta === "PAST" ? [reply, handoffLine] : [reply];
+  if (d.eta === "NONE")
+    return [reply, handoffLineOf("ETA_UNKNOWN", "BACKORDER", replyToSequence)];
+  if (d.eta === "PAST")
+    return [reply, handoffLineOf("ETA_PAST", "BACKORDER", replyToSequence)];
+  return [reply];
+}
+
+/* --- 열린 넘김 (loop-07 §4-2) --------------------------------------------- */
+
+/**
+ * 지금 열린 넘김. 마지막 HANDOFF 뒤에 사장이 직접 쓴 TEXT가 없으면 열려 있다 — "사장이 답했다"이지 입금 확인
+ * 완료가 아니다(§4-2 2, Codex 12). AUTO_REPLY, CLARIFY로는 닫히지 않는다.
+ * 열려 있으면 `{reason}`(마지막 넘김 줄의 이유, 모르면 null), 닫혀 있으면 null.
+ */
+export function openHandoffOf(
+  history: readonly Pick<InquiryHistoryItem, "sender" | "kind" | "handoff">[],
+): { reason: ChatHandoffReason | null } | null {
+  let open: { reason: ChatHandoffReason | null } | null = null;
+  for (const m of history) {
+    if (m.kind === "HANDOFF") open = { reason: m.handoff?.reason ?? null };
+    else if (m.sender === "WHOLESALER" && m.kind === "TEXT") open = null;
+  }
+  return open;
+}
+
+/**
+ * 생성 줄 중 실제로 방에 넣을 것. 소매 목 보내기, 도매 `incoming`, 골든셋이 같이 쓴다.
+ *
+ * 열린 넘김이 있을 때 넘김 줄은 **이유가 같으면** 넣지 않는다 — 사장이 답하기 전까지 소매 글마다 "사장님께
+ * 전달했어요"가 쌓이면 대화가 그 줄로 덮인다. **이유가 다르면 새 줄**을 넣는다(Q3, H20) — 협상으로 넘어온 방에
+ * "방금 입금했어요"가 오면 사장이 입금 확인을 놓치지 않게. 옛 줄을 고치지 않는다: 도매는 `afterSequence`로 이어
+ * 받아(앱 `types.ts`) 바뀐 옛 줄을 못 받는다. 이유를 모르는 열린 넘김(null)은 어떤 이유와도 다르다고 본다.
+ * 답 + 넘김 두 줄(재고 0, 미송 입고일 미정과 지남)의 넘김은 답의 일부라 늘 넣는다(D34, D37②).
+ */
+export function linesToAppend(
+  lines: readonly GeneratedLine[],
+  history: readonly Pick<InquiryHistoryItem, "sender" | "kind" | "handoff">[],
+): GeneratedLine[] {
+  const open = openHandoffOf(history);
+  const answerWithHandoff =
+    lines.some((l) => l.kind === "AUTO_REPLY") &&
+    lines.some((l) => l.kind === "HANDOFF");
+  return lines.filter(
+    (l) =>
+      !(
+        l.kind === "HANDOFF" &&
+        open !== null &&
+        !answerWithHandoff &&
+        l.handoff?.reason === open.reason
+      ),
+  );
 }
 
 /**
