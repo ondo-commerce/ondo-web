@@ -16,6 +16,7 @@ import {
   openEdit,
   png,
   pressWithinDragThreshold,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -69,7 +70,9 @@ test("S3-1 · S3-2 × — 8px 안 클릭으로 빠지고 대표가 다음 장으
   );
   await expect(registered(page)).toHaveCount(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(registered(page).nth(0)).toHaveAccessibleName("이미지 1, 대표");
+  await expect(handleOf(registered(page).nth(0))).toHaveAccessibleName(
+    "이미지 1, 대표",
+  );
   await expect(registered(page).nth(0).getByText("대표")).toBeVisible();
   await expect(registered(page).nth(1).getByText("대표")).toHaveCount(0);
   await expect(registered(page).nth(1).locator("img")).toHaveAttribute(

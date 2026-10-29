@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Dialog, IconButton, Notice, Table } from "@ondo/ui";
-import { Info, Printer, X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import Link from "next/link";
 import { DescList, DescRow } from "./PaymentSummary";
 import {
@@ -196,18 +196,9 @@ export function StatementDialog({
           ) : null}
         </div>
 
+        {/* 인쇄·저장 버튼은 지웠다(D32 Q5-A). 잠긴 두 버튼과 "준비 중" 한 줄은
+            시연 경로가 아닌데 평가위원에게 미완성으로 읽힌다 */}
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 p-5 pt-0">
-          {/* 잠긴 버튼 옆에 이유가 글자로 있다 */}
-          <p className="text-muted-foreground text-body mr-auto phone:mr-0 phone:w-full">
-            {STATEMENT_TEXT.disabledReason}
-          </p>
-          <Button variant="soft" disabled>
-            <Printer aria-hidden className="size-4" />
-            {STATEMENT_TEXT.print}
-          </Button>
-          <Button variant="soft" disabled>
-            {STATEMENT_TEXT.save}
-          </Button>
           <Button asChild variant="line">
             <Link href="/settlements">{STATEMENT_TEXT.toSettlement}</Link>
           </Button>

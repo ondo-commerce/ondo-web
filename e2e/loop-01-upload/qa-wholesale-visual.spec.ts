@@ -13,6 +13,7 @@ import {
   openCreateWithPost,
   openEdit,
   png,
+  handleOf,
   registered,
   saveButton,
   slotsIn,
@@ -41,6 +42,7 @@ const RED_500 = { r: 251, g: 44, b: 54, a: 1 };
 const RED_700 = { r: 193, g: 0, b: 7, a: 1 };
 const GRAY_500 = { r: 106, g: 114, b: 130, a: 1 };
 const GRAY_600 = { r: 75, g: 85, b: 99, a: 1 };
+const GRAY_900 = { r: 16, g: 24, b: 40, a: 1 };
 
 function near(a: { r: number; g: number; b: number }, b: typeof a, tol = 3) {
   return (
@@ -90,7 +92,7 @@ test("QA-V1 #state-empty — + 는 muted-foreground, hint 끝 제한 한 줄 500
   await page.screenshot({ path: shot("v1-state-empty") });
 });
 
-test("QA-V2 #state-loading — 진행 3(aria-busy·베일 60%·띠) + 대기 2, 저장 잠김 + 문구 muted", async ({
+test("QA-V2 #state-loading — 진행 3(aria-busy·베일 60%·띠) + 대기 2, 저장 잠김 + 문구 foreground", async ({
   page,
 }) => {
   await openCreateWithPost(page);
@@ -120,7 +122,8 @@ test("QA-V2 #state-loading — 진행 3(aria-busy·베일 60%·띠) + 대기 2, 
   const note = uploadNote(page);
   await expect(note).toHaveText("사진 올리는 중…");
   const noteColor = await computedColor(note, "color");
-  expect(near(noteColor, GRAY_500), `문구 색 ${noteColor.raw}`).toBe(true);
+  // #254 F8: muted 회색은 꺼진 안내로 읽혀 foreground 로 바꿨다
+  expect(near(noteColor, GRAY_900), `문구 색 ${noteColor.raw}`).toBe(true);
   expect((await styles(note, ["font-size"]))["font-size"]).toBe("14px");
 
   await page.screenshot({ path: shot("v2-state-loading") });
@@ -370,7 +373,7 @@ test("QA-V9 #state-disabled — 시즌 종료 1006: * 없음, fieldset opacity .
     page.getByRole("button", { name: "이미지 1 빼기" }),
   ).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
-  await expect(registered(page).first()).toHaveAttribute(
+  await expect(handleOf(registered(page).first())).toHaveAttribute(
     "aria-disabled",
     "true",
   );
