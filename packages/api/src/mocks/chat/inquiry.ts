@@ -365,17 +365,26 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
     wordListingId === null ? null : input.catalog(wordListingId),
   );
   if (intents.size >= 2) return handoff("MULTI_INTENT");
+  const saidIntent = (i: ChatIntent) => i !== "OTHER" && intents.has(i);
+  // 칩 의도와 본문 의도가 다르면 의도 둘로 본다. 칩만 믿으면 미송 질문에 재고 숫자가 나간다(C1)
+  if (inquiry !== null && intents.size === 1 && !saidIntent(inquiry.intent))
+    return handoff("MULTI_INTENT");
 
-  // 2. 되묻기 계승: 칩의 variantId가 보기 안이거나, 본문이 보기 하나로 읽힌다
+  // 2. 되묻기 계승: 같은 의도, 같은 상품일 때만. 칩이면 variantId가 보기 안, 아니면 본문이 보기 하나
   if (prev !== null) {
     const listing = ownListing(input, prev.listingId);
-    if (listing !== null) {
+    const sameIntent =
+      (intents.size === 0 || saidIntent(prev.intent)) &&
+      (inquiry === null || inquiry.intent === prev.intent);
+    const sameListing =
+      inquiry?.listingId == null || inquiry.listingId === prev.listingId;
+    if (listing !== null && sameIntent && sameListing) {
       const choices = listing.variants.filter((v) =>
         prev.variantIds.includes(v.variantId),
       );
+      // 칩의 variantId가 보기 밖이면 본문으로 다시 고르지 않는다 — 소매가 고른 건 그 옵션이다(→ 7에서 넘김)
       const picked =
-        inquiry?.variantId != null &&
-        prev.variantIds.includes(inquiry.variantId)
+        inquiry?.variantId != null
           ? choices.find((v) => v.variantId === inquiry.variantId)
           : (matchVariant(text, choices) ?? undefined);
       if (picked !== undefined) {
