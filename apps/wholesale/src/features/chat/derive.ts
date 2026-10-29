@@ -293,6 +293,22 @@ export function senderLabel(
 }
 
 /**
+ * 되묻기 보기 한 줄(#296 S13-1, 디자인 결정 37). 소매에게 나간 보기를 사장이 글자로 본다 — 도매에선 누를 수 없다.
+ * `orderable: false`는 뒤에 "(주문 불가)"만 붙인다(색, 취소선 없음). choices가 없거나 null이거나 비면 줄 자체가 없다.
+ * 순서는 서버 순서 그대로(색상 → 사이즈).
+ */
+export function toClarifyChoicesView(
+  autoReply: ChatAutoReply | null,
+): string | null {
+  const choices = autoReply?.choices ?? [];
+  if (choices.length === 0) return null;
+  const labels = choices.map(
+    (c) => `${c.label}${c.orderable ? "" : ROOM_TEXT.choiceNotOrderable}`,
+  );
+  return `${ROOM_TEXT.choicesPrefix}${labels.join(", ")}`;
+}
+
+/**
  * 자동 답변 근거 칸. 도매 화면에만 정확 수량이 있다 — 사장이 소매처가 본 구간과 실제 값을 같이 본다.
  * 재고 외(미송, 미수)는 이번 회차 시드에만 있고 문안이 정해지지 않아 값만 한 줄로 적는다.
  *

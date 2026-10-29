@@ -236,6 +236,33 @@ export function toListQuery(params: OrderListParams): OrderListQuery {
   };
 }
 
+/**
+ * 주문 탭 진입 인자 `?order={id}`(#295, 01-plan §4-2). 헤더 알림 행이 이 주소로 온다.
+ * 없으면 null, 숫자가 아니거나 0 이하면 "invalid"(주소만 지우고 아무것도 안 연다). 채팅 `?room=`과 같은 규칙.
+ */
+export function parseOrderParam(raw: string | null): number | null | "invalid" {
+  if (raw === null || raw === "") return null;
+  if (!/^\d+$/.test(raw)) return "invalid";
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : "invalid";
+}
+
+/**
+ * 진입 인자로 들어왔을 때의 목록 조건. 검색어, 상태, 정산 필터를 전부 풀고 1쪽이다.
+ * 검색어를 남기면 그 주문이 목록에서 빠져 펼친 행이 안 보인다(Codex plan r1 11).
+ */
+export const ENTRY_LIST_PARAMS: OrderListParams = {
+  q: "",
+  status: STATUS_FILTER_ALL,
+  settlement: STATUS_FILTER_ALL,
+  page: 1,
+};
+
+/** 주문 상세가 404로 끝났나. 우측 카드 자리에 "이 주문을 찾을 수 없어요" 한 줄만 둘 때(S11-17) */
+export function isOrderNotFound(error: unknown): boolean {
+  return describeError(error).kind === "notFound";
+}
+
 /* ------------------------------------------------------------------------
  * 라인 표의 파생값. Figma 3프레임의 숫자를 역산해 확정한 공식이다(01-pm.md §1.4).
  * `n` = `이번 출고` 입력값이고, 입력이 없으면 n = 0이라 before와 after가 같아진다.

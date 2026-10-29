@@ -1,6 +1,8 @@
 "use client";
 
 import { Button, Notice, Panel, SearchInput } from "@ondo/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { OrderRowDetail } from "./OrderRowDetail";
 import { OrderSettlementFilter } from "./OrderSettlementFilter";
@@ -12,13 +14,19 @@ import { OrderSummaryCard } from "./OrderSummaryCard";
 import { OrderTable } from "./OrderTable";
 import { PackingQueueCard } from "./PackingQueueCard";
 import { orderKeys } from "../api/keys";
-import { useOrderListQuery } from "../api/queries";
+import { useOrderDetailMissing, useOrderListQuery } from "../api/queries";
 import {
+  ORDER_NOT_FOUND_TEXT,
   STATUS_FILTER_ALL,
   type OrderFilterValue,
   type SettlementFilterValue,
 } from "../constants";
-import { toListQuery, type OrderListParams } from "../derive";
+import {
+  ENTRY_LIST_PARAMS,
+  parseOrderParam,
+  toListQuery,
+  type OrderListParams,
+} from "../derive";
 import type { ShipInputs, ShipInputsByOrder } from "../types";
 import { QueryBoundary, QueryBoundaryGroup } from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
@@ -40,7 +48,8 @@ const NO_INPUTS: ShipInputs = {};
  * 전체(`GET /orders/filters`)라 칩을 눌러 좁혀도 다른 칩 숫자는 안 줄어든다 —
  * 지금 안 보이는 게 몇 건인지 읽혀야 하기 때문이다.
  *
- * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A).
+ * 선택 상태는 URL에 두지 않는다 (docs/12-routing 규칙 3-A). 예외 하나 — 진입 인자 `?order={id}`(#295).
+ * 헤더 알림 행이 보내는 **입구**라 들어올 때 한 번 읽고 주소에서 지운다(아래 effect).
  *
  * 경계는 셋 — 칩 줄·표·우측 카드들. 실패한 자리만 그 자리에서 실패한다.
  * 재시도는 뷰 하나가 나눠 쓴다(`QueryBoundaryGroup`) — 펼친 행과 우측 주문 카드가 같은
@@ -74,6 +83,42 @@ export function OrderListView() {
   const [visibleIds, setVisibleIds] = useState<ReadonlySet<number> | null>(
     null,
   );
+
+  /*
+   * 진입 인자(01-plan §4-2). 검색, 상태, 정산 필터를 풀고 1쪽으로 간 **뒤에** 그 주문을 펼친다.
+   * 순서가 중요하다 — 필터 변경 함수(`changeStatusFilter` 등)는 펼침을 풀기 때문에 그걸 부르지 않고
+   * setter를 직접 부른다. 같은 렌더에 묶여 한 번에 반영된다. `이번 출고` 입력은 주문별 맵이라 남는다(S11-7).
+   * 이미 주문 탭에 있을 때 다시 눌러도 같다 — 주소를 `/orders`로 지워 두어 같은 주문도 다시 들어온다.
+   */
+  const entryParam = useSearchParams().get("order");
+  /* 렌더 중에 맞춘다(effect 안 setState 대신). 같은 렌더에서 모든 조건이 같이 바뀌어 한 번만 그린다 */
+  const [handledEntry, setHandledEntry] = useState<string | null>(null);
+  if (entryParam !== handledEntry) {
+    setHandledEntry(entryParam);
+    const entry = parseOrderParam(entryParam);
+    if (typeof entry === "number") {
+      setDraft(ENTRY_LIST_PARAMS.q);
+      setQ(ENTRY_LIST_PARAMS.q);
+      setStatusFilter(ENTRY_LIST_PARAMS.status);
+      setSettlementFilter(ENTRY_LIST_PARAMS.settlement);
+      setPage(ENTRY_LIST_PARAMS.page);
+      setOpenOrderId(entry);
+    }
+  }
+  /* 주소에서 지우는 것만 effect다(주소는 바깥 시스템). `router.replace`가 아니라 history API다 — 라우터 이동은
+     RSC를 다시 받는 transition이라, 그 사이 우측 카드가 404로 던지는 렌더와 겹치면 화면이 멈췄다(dev, 18회 중 3회).
+     Next는 `history.replaceState`를 받아 `useSearchParams`를 맞춘다 */
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (entryParam === null) return;
+    window.history.replaceState(null, "", "/orders");
+    /* 알림은 "새 주문이 왔다"는 뜻이다. 이미 주문 탭에 있었다면 목록 캐시(30초)에 그 주문이 없어
+       펼칠 행이 안 보인다 — 진입 때 한 번 비운다(탭 진입 `useInvalidateOnMount`와 같은 규칙) */
+    void queryClient.invalidateQueries(
+      { queryKey: orderKeys.all },
+      { cancelRefetch: false },
+    );
+  }, [entryParam, queryClient]);
 
   useEffect(() => {
     const trimmed = draft.trim();
@@ -133,6 +178,8 @@ export function OrderListView() {
      못 본다(F-06). 표를 아직 못 받았으면(null) 목록 안으로 본다 — 기다리는 동안 안내가 깜빡이지 않게 */
   const openInList =
     openOrderId === null || (visibleIds?.has(openOrderId) ?? true);
+  /** 연 주문이 없는 주문(404)이면 카드 자리 한 줄만. "목록 밖" 안내와 포장 대기열은 그리지 않는다(S11-17) */
+  const openMissing = useOrderDetailMissing(openOrderId);
 
   const changeShipInput = (orderId: number, lineId: number, value: string) =>
     setShipInputs((prev) => ({
@@ -163,12 +210,17 @@ export function OrderListView() {
                 className="mr-auto"
                 placeholder="거래처·품명 검색"
                 aria-label="거래처·품명 검색"
+                data-ac="S11-6"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />
             </div>
 
-            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            {/* 알림 진입이 둘 다 `전체`로 푼다(S11-6). data-ac는 칩마다가 아니라 칩 줄에 — 칩은 필터 컴포넌트 안이다 */}
+            <div
+              className="mb-4 flex shrink-0 flex-wrap items-center gap-3"
+              data-ac="S11-6"
+            >
               {/* 칩 건수만 서버를 기다린다. 기다리는 동안·실패했을 때도 칸은 누를 수 있어야
                 해서 fallback도 errorFallback도 스켈레톤·에러 블록이 아니라 건수 없는 같은
                 세그먼트다. 실패에는 작은 `건수 다시 시도`만 옆에 붙는다(F4) */}
@@ -233,20 +285,30 @@ export function OrderListView() {
         detail={
           openOrderId !== null ? (
             <>
-              <Panel className="shrink-0">
+              <Panel className="shrink-0" data-ac="S11-5 S11-17">
                 {/* 목록 조건 밖의 주문임을 카드 머리에서 말한다(F1, #198). 경계 밖이라 기다리는 동안·실패해도 보인다 */}
-                {!openInList ? (
+                {!openInList && !openMissing ? (
                   <Notice className="mb-4">
                     현재 목록 조건에 없는 주문이에요. 확정·포장은 이 주문에
                     붙어요.
                   </Notice>
                 ) : null}
-                <QueryBoundary>
+                <QueryBoundary
+                  notFound={
+                    <p
+                      role="status"
+                      className="text-muted-foreground text-sm"
+                      data-ac="S11-17"
+                    >
+                      {ORDER_NOT_FOUND_TEXT}
+                    </p>
+                  }
+                >
                   <OrderSummaryCard orderId={openOrderId} />
                 </QueryBoundary>
               </Panel>
               {/* 회차가 하나도 없으면 카드째 사라진다 — 패널이 경계 안에 있다 */}
-              <PackingQueueCard orderId={openOrderId} />
+              {openMissing ? null : <PackingQueueCard orderId={openOrderId} />}
             </>
           ) : undefined
         }
@@ -313,6 +375,7 @@ function OrderListBody({
       {totalPages > 1 ? (
         <nav
           aria-label="페이지 이동"
+          data-ac="S11-6"
           className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
         >
           <span className="text-muted-foreground mr-2">

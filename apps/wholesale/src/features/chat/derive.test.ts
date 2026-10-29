@@ -22,6 +22,7 @@ import {
   parseRoomParam,
   pollDelayMs,
   sendFailureOf,
+  toClarifyChoicesView,
   toFactsView,
   toggledSettings,
   toRoomRows,
@@ -608,5 +609,61 @@ describe("S9 자동 답변 스위치", () => {
     expect(autoReplyNoteOf({ ...on, enabled: false }, true)).toBe("failed");
     expect(autoReplyNoteOf(on, true)).toBe("failed");
     expect(autoReplyNoteOf(undefined, false)).toBeNull();
+  });
+});
+
+describe("#296 S13-1 되묻기 보기 줄", () => {
+  const clarify: ChatAutoReply = {
+    intent: "STOCK",
+    replyToSequence: 3,
+    generatedBy: "RULE",
+    checkedAt: "2026-10-28T01:20:00Z",
+    subject: {
+      listingId: 2001,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+  const choice = (label: string, variantId: number, orderable = true) => ({
+    label,
+    variantId,
+    orderable,
+  });
+
+  it("보기 5개 → '보기: ' + 서버 순서대로 쉼표", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          choice("레드 / S", 3001),
+          choice("레드 / M", 3002),
+          choice("레드 / L", 3003),
+          choice("네이비 / S", 3004),
+          choice("네이비 / M", 3005),
+        ],
+      }),
+    ).toBe("보기: 레드 / S, 레드 / M, 레드 / L, 네이비 / S, 네이비 / M");
+  });
+
+  it("orderable false → 뒤에 '(주문 불가)'만(와이어프레임 그대로 붙여 쓴다)", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          choice("레드 / M", 3002),
+          choice("레드 / L", 3003, false),
+          choice("네이비 / M", 3005),
+        ],
+      }),
+    ).toBe("보기: 레드 / M, 레드 / L(주문 불가), 네이비 / M");
+  });
+
+  it("choices 칸 없음, null, 빈 배열, 자동 답 없음 → 줄 없음(null)", () => {
+    expect(toClarifyChoicesView(clarify)).toBeNull();
+    expect(toClarifyChoicesView({ ...clarify, choices: null })).toBeNull();
+    expect(toClarifyChoicesView({ ...clarify, choices: [] })).toBeNull();
+    expect(toClarifyChoicesView(null)).toBeNull();
   });
 });
