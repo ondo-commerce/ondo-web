@@ -4,6 +4,7 @@ import { Button, Panel } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -14,8 +15,11 @@ import {
 } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
+import { BackorderReplyCard } from "./BackorderReplyCard";
 import { ClarifyChoices } from "./ClarifyChoices";
 import { StockReplyCard } from "./StockReplyCard";
+import { refreshHeaderCounts } from "../api/headerCounts";
+import { useMarkReadMutation } from "../api/mutations";
 import { useRoomQueries } from "../api/queries";
 import {
   isChatSessionLostError,
@@ -32,14 +36,18 @@ import {
 import {
   askChipBusy,
   askListingId,
+  backorderChoiceInquiry,
   choiceInquiry,
   choiceSendFailed,
+  confirmedReadOf,
   handoffCauses,
   liveAnnouncement,
   maxSequenceOf,
   messageAc,
+  nextReadTarget,
   returnLinkOf,
   stockAskInquiry,
+  toBackorderReplyView,
   toClarifyView,
   toStockCardView,
   toThreadItems,
@@ -47,7 +55,6 @@ import {
 } from "../derive";
 import type {
   AddToCart,
-  ChatChoice,
   ChatInquiry,
   ChatMessage,
   ChatRoomDetail,
@@ -56,6 +63,7 @@ import type {
   ReturnLink,
 } from "../types";
 import { useChatSend } from "../useChatSend";
+import { useDocumentVisible } from "../useDocumentVisible";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -180,6 +188,7 @@ function ChatBlock({
       roomId={roomId}
       room={room.data}
       thread={thread.data}
+      threadUpdatedAt={thread.dataUpdatedAt}
       from={from}
       addToCart={addToCart}
     />
@@ -190,12 +199,15 @@ function ChatRoom({
   roomId,
   room,
   thread,
+  threadUpdatedAt,
   from,
   addToCart,
 }: {
   roomId: number;
   room: ChatRoomDetail;
   thread: ChatThread;
+  /** polling 응답이 올 때마다 바뀐다. 실패한 읽음을 다음 polling 때 다시 보내는 신호다(S2-5) */
+  threadUpdatedAt: number;
   from: string | null;
   addToCart: AddToCart | null;
 }) {
@@ -207,6 +219,13 @@ function ChatRoom({
   const [baseline] = useState(maxSequenceOf(thread.messages));
   const live = liveAnnouncement(thread.messages, baseline, name);
   const sessionLost = useChatSessionLost();
+  useMarkRead(
+    roomId,
+    room.myLastReadSequence,
+    maxSequenceOf(thread.messages),
+    threadUpdatedAt,
+    sessionLost,
+  );
 
   const { pending, send, retry, remove } = useChatSend(roomId);
   const shownPending = visiblePending(pending, thread.messages);
@@ -323,9 +342,7 @@ function ChatRoom({
                     now={now}
                     sessionLost={sessionLost}
                     addToCart={addToCart}
-                    onChoose={(listingId, choice) =>
-                      sendChip(choice.label, choiceInquiry(listingId, choice))
-                    }
+                    onChoose={sendChip}
                   />
                 }
               />
@@ -370,6 +387,52 @@ function ChatRoom({
 }
 
 /**
+ * 방 읽음(loop-06 S2-5, S2-6 가). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고,
+ * 세션이 살아 있을 때 보낸다(`nextReadTarget`). 도매 `ChatRoomPanel`과 같은 규칙이다.
+ * - 확인된 위치(confirmed)와 날아가는 중인 위치(inFlight)를 나눈다. 응답 전에 다시 그려져도 POST는 1회,
+ *   실패하면 inFlight만 풀려 다음 polling 응답(`threadUpdatedAt`) 때 같은 값을 다시 보낸다
+ * - 늦게 온 작은 응답은 확인된 위치를 내리지 않는다(`confirmedReadOf`). 그 응답으로 배지도 다시 받지 않는다
+ * - 성공하면 헤더 count를 울타리 → 취소 → 다시 받기로 바로 줄인다(`refreshHeaderCounts`)
+ * - 읽음 401은 `guardSession`이 방 끊김으로 바꾼다(S2-7). 그 뒤엔 `sessionLost`라 더 보내지 않는다
+ */
+function useMarkRead(
+  roomId: number,
+  serverRead: number,
+  drawn: number,
+  threadUpdatedAt: number,
+  sessionLost: boolean,
+): void {
+  const queryClient = useQueryClient();
+  const visible = useDocumentVisible();
+  const { mutateAsync: markRead } = useMarkReadMutation(roomId);
+  const confirmed = useRef(serverRead);
+  const inFlight = useRef(0);
+
+  useEffect(() => {
+    const target = nextReadTarget({
+      drawn,
+      confirmed: confirmed.current,
+      inFlight: inFlight.current,
+      visible,
+      sessionLost,
+    });
+    if (target === null) return;
+    inFlight.current = target;
+    markRead(target).then(
+      (result) => {
+        const before = confirmed.current;
+        confirmed.current = confirmedReadOf(before, result);
+        if (inFlight.current === target) inFlight.current = 0;
+        if (confirmed.current > before) void refreshHeaderCounts(queryClient);
+      },
+      () => {
+        if (inFlight.current === target) inFlight.current = 0;
+      },
+    );
+  }, [drawn, visible, sessionLost, threadUpdatedAt, markRead, queryClient]);
+}
+
+/**
  * 지금 시각(ms). 되묻기 칩의 30분 창(`choicesActive`)을 렌더 중에 시계를 읽지 않고 보려고 state로 둔다.
  * 15초마다 갱신 — 창 끝이 15초 늦게 닫혀도 서버가 계승 여부를 다시 판정한다(넘김으로 끝날 뿐 틀린 답은 없다)
  */
@@ -385,8 +448,8 @@ function useNow(): number {
 const NOW_TICK_MS = 15_000;
 
 /**
- * 자동 답 말풍선 안 칸 하나. 되묻기면 칩 줄, 재고 답이면 카드, 그 밖이면 없음. 판정은 derive가 한다
- * (`toClarifyView` `toStockCardView`).
+ * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 그 밖이면 없음.
+ * 판정은 derive가 한다(`toClarifyView` `toStockCardView` `toBackorderReplyView`).
  */
 function AutoReplyExtra({
   message,
@@ -403,7 +466,7 @@ function AutoReplyExtra({
   now: number;
   sessionLost: boolean;
   addToCart: AddToCart | null;
-  onChoose: (listingId: number, choice: ChatChoice) => void;
+  onChoose: (body: string, inquiry: ChatInquiry) => void;
 }) {
   const clarify = toClarifyView(message, messages, pending, now);
   if (clarify !== null)
@@ -411,9 +474,17 @@ function AutoReplyExtra({
       <ClarifyChoices
         view={clarify}
         locked={sessionLost}
-        onChoose={(choice) => onChoose(clarify.listingId, choice)}
+        onChoose={(choice) => {
+          /* 미송 보기는 kind별 문맥(backorderId, notListed)으로, 재고 보기는 그 게시글로 */
+          if (clarify.mode === "backorder")
+            onChoose(choice.label, backorderChoiceInquiry(choice));
+          else if (clarify.listingId !== null)
+            onChoose(choice.label, choiceInquiry(clarify.listingId, choice));
+        }}
       />
     );
+  const backorder = toBackorderReplyView(message, messages);
+  if (backorder !== null) return <BackorderReplyCard card={backorder} />;
   const card = toStockCardView(message, messages);
   if (card !== null)
     return (
@@ -492,12 +563,14 @@ function SessionFirstState() {
   );
 }
 
-/** `‹ 상품으로 돌아가기`(뒤로 가는 말) / `도매처 홈 ›`(SellerCard와 같은 꺾쇠) */
+/**
+ * `‹ 상품으로 돌아가기`, `‹ 채팅 목록`(뒤로 가는 말, 디자인 결정 36) / `도매처 홈 ›`(SellerCard와 같은 꺾쇠)
+ */
 function ReturnLabel({ kind }: { kind: ReturnLink["kind"] }) {
-  return kind === "product" ? (
+  return kind === "product" || kind === "chats" ? (
     <>
       <ChevronLeft aria-hidden className="size-3.5" />
-      {ROOM_TEXT.backToProduct}
+      {kind === "product" ? ROOM_TEXT.backToProduct : ROOM_TEXT.backToList}
     </>
   ) : (
     <>

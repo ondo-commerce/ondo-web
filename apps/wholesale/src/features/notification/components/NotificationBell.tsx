@@ -31,6 +31,9 @@ type ListData = InfiniteData<NotificationPage, string | null>;
  *  - 안 읽은 행 → 그 행 잠김 → read `{ids}` 1회(응답 안 기다림) + 이동. 같은 틱 연타도 1회(S11-5)
  *  - 읽은 행 → POST 없이 이동. 모르는 type → 이동 없이 읽음만(S11-16)
  *  - `모두 읽음` N은 count 값(받은 행 수가 아니다, S11-8). 409면 아무것도 안 바꾸고 다시 받는다(S11-9)
+ *  - "새 알림 N개 보기"는 count 차이다. 연 뒤 다른 기기가 하나 읽고 새 것이 하나 오면 수가 같아 줄이 안 뜨고,
+ *    `모두 읽음`도 409 없이 그 새 행까지 읽는다. 계약 §5-2가 허용한 한계다 — 목록을 따로 엿보면 30초마다 GET이
+ *    늘고(§4-1⑤) 계약에 없는 차단이 생겨서 뺐다(03-review M1 M2). 06b의 latestNotificationId로 푼다
  */
 export function NotificationBell({
   counts,
@@ -165,8 +168,9 @@ export function NotificationBell({
           size="md"
           aria-label={bell.label}
           title="알림"
-          /* 열린 동안은 채팅 링크의 현재 화면 표시와 같은 면(와이어프레임 aria-expanded) */
-          className="data-[state=open]:bg-accent data-[state=open]:text-accent-foreground relative"
+          /* 열린 동안은 hover와 같은 면(와이어프레임 `.ibtn[aria-expanded]` = secondary, QA F7).
+             accent는 흰 헤더에서 거의 안 보인다(실측 L 98.3) */
+          className="data-[state=open]:bg-secondary data-[state=open]:text-foreground relative"
           data-ac="S11-2 S11-4"
         >
           <Bell aria-hidden />

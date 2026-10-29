@@ -7,6 +7,7 @@ import { CHAT_PATH } from "./queries";
 import { guardSession } from "./session";
 import type {
   ChatInquiry,
+  ChatReadResult,
   ChatRoomDetail,
   ChatSendResult,
   CreateChatRoomRequest,
@@ -25,6 +26,28 @@ export function useCreateRoomMutation() {
         method: "POST",
         body,
       });
+    },
+  });
+}
+
+/**
+ * 읽음(loop-06 S2-5). 서버가 `max(기존, 요청)`으로 저장하고 남은 수를 같이 돌려준다. 언제 다시 보낼지는
+ * 부르는 쪽(`ChatRoomView`)이 정한다 — 그래서 호출마다 결과를 받는 `mutateAsync`를 쓴다(도매와 같다).
+ *
+ * `guardSession`을 거친다(S2-7): 읽음 401에 공용 처리가 `/login`으로 보내면 쓰던 글이 사라진다. 끊김으로 바꾸면
+ * 방이 05a 끊김 상태(주소, 쓰던 글 그대로, 보내기 잠김)가 된다.
+ */
+export function useMarkReadMutation(roomId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (lastReadSequence: number) => {
+      await chatMockReady();
+      return guardSession(queryClient, () =>
+        apiFetch<ChatReadResult>(CHAT_PATH.read(roomId), {
+          method: "POST",
+          body: { lastReadSequence },
+        }),
+      );
     },
   });
 }

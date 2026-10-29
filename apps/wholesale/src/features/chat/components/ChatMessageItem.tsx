@@ -185,6 +185,7 @@ export function Bubble({
  * 값이 없는 되묻기도 근거 칸 위 선과 조회 시각 줄은 있다(디자인 결정 26).
  * 되묻기는 본문 아래, 근거 칸 위에 소매에게 나간 보기를 **그냥 글자로** 한 줄 둔다(#296 S13-1, 디자인 결정 37).
  * 소매가 고르는 것이라 도매에선 누를 수 없다 — button, 링크, 탭 정지가 없다. 05b-1의 "그리지 않음"(결정 26)을 바꿨다.
+ * 미송 되묻기 보기는 "보기" 이름표 아래 한 보기 한 줄이다(#299, 디자인 결정 38).
  */
 function AutoReplyBubble({
   message,
@@ -204,9 +205,26 @@ function AutoReplyBubble({
         {clarify ? ROOM_TEXT.clarify : null}
       </span>
       <span>{message.body}</span>
-      {choices !== null ? (
+      {choices?.mode === "inline" ? (
         <span data-ac="S13-1" className="text-secondary-foreground text-body">
-          {choices}
+          {choices.text}
+        </span>
+      ) : null}
+      {/* 미송 보기는 한 보기 한 줄(디자인 결정 38). 이름표는 한 번만 — 줄마다 붙이면 보기 글자보다 눈에 먼저 든다 */}
+      {choices?.mode === "list" ? (
+        <span data-ac="S4-1 S4-2" className="grid gap-0.5">
+          <span className="text-muted-foreground text-xs">
+            {ROOM_TEXT.choicesLabel}
+          </span>
+          {choices.items.map((item, i) => (
+            <span
+              key={`${i}-${item}`}
+              data-ac="S4-1"
+              className="text-secondary-foreground text-body"
+            >
+              {item}
+            </span>
+          ))}
         </span>
       ) : null}
       {facts ? (

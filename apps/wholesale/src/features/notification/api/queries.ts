@@ -7,6 +7,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
+import { useEffect } from "react";
 import { notificationKeys } from "./keys";
 import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_PATH } from "../constants";
 import { failedCounts, headerPollDelayMs } from "../derive";
@@ -49,9 +50,18 @@ async function fetchHeaderCounts(
  * 대시보드 갱신과 따로 돈다.
  *
  * 401 뒤엔 `enabled`가 꺼진다 — 탭 복귀나 read 뒤 다시 받기도 요청을 내지 않는다.
+ *
+ * 그 멈춤은 **셸이 새로 붙을 때** 푼다(F2). 로그아웃 → 로그인은 클라이언트 이동이라 QueryClient가 그대로고,
+ * 지우지 않으면 다시 로그인한 사장이 새로고침 전까지 배지 0을 본다. 셸(`(erp)` 레이아웃)은 `/login`에서 내려가니
+ * 마운트 한 번 = 세션 한 번이다. 같은 화면에 머무는 동안은 그대로 멈춘다(S11-13).
  */
 export function useHeaderCountsQuery() {
   const queryClient = useQueryClient();
+  useEffect(() => {
+    const key = notificationKeys.counts();
+    if (queryClient.getQueryData<HeaderCounts>(key)?.kind === "unauthorized")
+      void queryClient.resetQueries({ queryKey: key, exact: true });
+  }, [queryClient]);
   return useQuery({
     queryKey: notificationKeys.counts(),
     queryFn: () => fetchHeaderCounts(queryClient),
