@@ -825,6 +825,166 @@
         ],
         "type": "object"
       },
+      "MarkNotificationsReadRequest": {
+        "description": "고른 알림만({ids}) 또는 안 읽음 전부({all, expectedUnread}). 둘을 섞으면 400",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "ids": {
+                "items": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "ids"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "all": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "expectedUnread": {
+                "description": "화면이 버튼에 보여 준 안 읽음 수",
+                "format": "int32",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "all",
+              "expectedUnread"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "MarkNotificationsReadResult": {
+        "description": "읽음 결과",
+        "properties": {
+          "notifications": {
+            "description": "처리 뒤 남은 안 읽음 수",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notifications"
+        ],
+        "type": "object"
+      },
+      "Notification": {
+        "description": "도매 알림 한 건. 문구(title, body)는 서버가 만든다",
+        "properties": {
+          "body": {
+            "description": "예: \"빈티지 플라워 셔츠 레드 / M 외 1건, 3장\". 없으면 null",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "식별용. 순서 의미 없음",
+            "format": "int64",
+            "type": "integer"
+          },
+          "readAt": {
+            "description": "처음 읽은 시각. 안 읽었으면 null",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/NotificationTarget"
+          },
+          "title": {
+            "description": "서버가 만든 한 줄. 예: \"봄봄상회 새 주문\"",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          }
+        },
+        "required": [
+          "body",
+          "createdAt",
+          "id",
+          "readAt",
+          "target",
+          "title",
+          "type"
+        ],
+        "type": "object"
+      },
+      "NotificationTarget": {
+        "description": "알림을 누르면 갈 곳",
+        "properties": {
+          "id": {
+            "description": "도매 주문 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "ORDER"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "NotificationType": {
+        "description": "NEW_ORDER 소매 주문 접수(그 주문의 도매 주문마다 1건), ORDER_CANCELLED 확정 전 소매 취소. 값이 늘 수 있다 — 화면은 모르는 값을 title 만 그리고 이동하지 않는다",
+        "enum": [
+          "NEW_ORDER",
+          "ORDER_CANCELLED"
+        ],
+        "type": "string"
+      },
+      "NotificationUnreadCount": {
+        "description": "헤더 배지 둘",
+        "properties": {
+          "chatsNeedingReply": {
+            "description": "내 방 중 needsReply true 인 방 수. 방 목록 needsReply 와 같은 정의",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notifications": {
+            "description": "안 읽은 알림 수",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chatsNeedingReply",
+          "notifications"
+        ],
+        "type": "object"
+      },
       "SendChatMessageRequest": {
         "description": "보내기 본문",
         "properties": {
@@ -1812,6 +1972,332 @@
         "summary": "게시글 이미지 업로드 (1장)",
         "tags": [
           "02 상품·게시"
+        ],
+        "x-ondo-draft": true
+      }
+    },
+    "/api/wholesale/notifications": {
+      "get": {
+        "description": "내 알림 목록. 정렬 createdAt 내림차순, 같으면 id 내림차순(고정). keyset 커서라 첫 장을 받은 뒤 새 알림이 생겨도 다음 장에 중복, 누락이 없다(새 알림은 첫 장 앞에 붙는다). id 는 식별용이고 순서 의미가 없다.\n\n에러: 400 VALIDATION_FAILED(잘못된 cursor, size 범위 밖) / 401 / 403\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).",
+        "operationId": "notifications",
+        "parameters": [
+          {
+            "description": "직전 응답 meta.nextCursor 그대로. 첫 장은 생략. 불투명 값(서버가 마지막 행의 createdAt, id 를 넣는다)",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "한 번에 몇 개. 1~100, 범위 밖은 400. 기본 20",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorPageMeta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [],
+                  "message": "잘못된 cursor, size 범위 밖. errors[{field: cursor|size}]",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "잘못된 cursor, size 범위 밖. errors[{field: cursor|size}]"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "알림 목록 (커서)",
+        "tags": [
+          "11 알림"
+        ],
+        "x-ondo-draft": true
+      }
+    },
+    "/api/wholesale/notifications/read": {
+      "post": {
+        "description": "읽음 처리. 본문은 둘 중 하나.\n\n1. {ids} 고른 알림만. 멱등(이미 읽은 것 → 200 같은 값, readAt 은 처음 읽은 시각 그대로). 없는 id, 남의 id 는 조용히 무시한다.\n2. {all: true, expectedUnread} 내 안 읽음 전부. 한 트랜잭션에서 readAt IS NULL 인 행을 읽음으로 바꾸고, 바뀐 행 수가 expectedUnread 와 다르면 롤백하고 409 UNREAD_CHANGED. 그 사이 새 알림이 왔거나 다른 탭이 읽었다는 뜻이다. id 발급 순서와 커밋 순서가 같다는 보장은 필요 없다.\n\n한계: 화면이 count 를 받은 뒤 다른 탭이 1개 읽고 새 1개가 와 수가 같으면 못 잡는다. 그 주문은 주문 탭에 신규 주문으로 남는다.\n\n응답 notifications = 처리 뒤 남은 안 읽음 수.\n\n에러: 400 VALIDATION_FAILED(ids 와 all 이 같이 옴, 둘 다 없음, 빈 ids, ids 101개 이상, all 인데 expectedUnread 없음, expectedUnread 0 이하) / 401 / 403 / 409 UNREAD_CHANGED\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).",
+        "operationId": "markNotificationsRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MarkNotificationsReadResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [],
+                  "message": "입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}]",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}]"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNREAD_CHANGED",
+                  "errors": [],
+                  "message": "all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "알림 읽음 처리",
+        "tags": [
+          "11 알림"
+        ],
+        "x-ondo-draft": true
+      }
+    },
+    "/api/wholesale/notifications/unread-count": {
+      "get": {
+        "description": "헤더 배지 둘을 한 번에. notifications = 내 안 읽은 알림 수, chatsNeedingReply = 내 채팅방 중 needsReply 가 true 인 방 수(방 목록 chatRooms 의 needsReply 와 같은 정의). 화면은 30초마다 부른다.\n\n에러: 401 / 403\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).",
+        "operationId": "notificationUnreadCount",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NotificationUnreadCount"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "안 읽은 알림 수와 답 필요 방 수",
+        "tags": [
+          "11 알림"
         ],
         "x-ondo-draft": true
       }

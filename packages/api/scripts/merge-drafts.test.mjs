@@ -114,3 +114,82 @@ describe("S7-1 초안 병합 뒤 choices 와 설정 op", () => {
     }
   });
 });
+
+/**
+ * loop-05b2 S10-1. 알림 op 3개는 BE에 아직 없다. sync-spec 이 BE 스펙으로 스냅샷을 덮은 뒤에도
+ * 이 셋과 스키마가 살아 있어야 종 화면(#295)이 컴파일된다.
+ */
+const NOTIFICATION_OPS = [
+  ["/api/wholesale/notifications", "get", "notifications"],
+  [
+    "/api/wholesale/notifications/unread-count",
+    "get",
+    "notificationUnreadCount",
+  ],
+  ["/api/wholesale/notifications/read", "post", "markNotificationsRead"],
+];
+const NOTIFICATION_SCHEMAS = [
+  "Notification",
+  "NotificationType",
+  "NotificationTarget",
+  "NotificationUnreadCount",
+  "MarkNotificationsReadRequest",
+  "MarkNotificationsReadResult",
+];
+
+describe("S10-1 알림 초안 op 3개", () => {
+  it("도매 drafts 에 op 3개, 전부 x-ondo-draft, 스키마 6개", () => {
+    for (const [path, method, operationId] of NOTIFICATION_OPS) {
+      const op = DRAFTS.wholesale.paths[path]?.[method];
+      expect(op?.operationId).toBe(operationId);
+      expect(op?.["x-ondo-draft"]).toBe(true);
+    }
+    for (const name of NOTIFICATION_SCHEMAS) {
+      expect(DRAFTS.wholesale.components.schemas[name], name).toBeDefined();
+    }
+  });
+
+  it("알림 없는 BE 스펙과 합치면 op 3개와 스키마 6개(중첩 참조 포함)가 들어오고 검사가 빈 배열이다", () => {
+    const { merged, kept } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    for (const [path, method] of NOTIFICATION_OPS) {
+      expect(kept).toContain(`${method.toUpperCase()} ${path}`);
+    }
+    for (const name of NOTIFICATION_SCHEMAS) {
+      expect(merged.components.schemas[name], name).toBeDefined();
+    }
+    // 목록 응답이 부르는 CursorPageMeta, 오류 본문의 FieldError 도 따라 들어온다
+    expect(merged.components.schemas.CursorPageMeta).toBeDefined();
+    expect(merged.components.schemas.FieldError).toBeDefined();
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("가짜 스펙: 병합 뒤 알림 op 3개가 빠지면 검사가 셋 다 사라짐으로 실패한다", () => {
+    const { merged } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    for (const [path] of NOTIFICATION_OPS) delete merged.paths[path];
+    // 순서는 drafts 경로 순서라 정렬해서 비교한다
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale).sort()).toEqual(
+      NOTIFICATION_OPS.map(
+        ([path, method]) => `${method.toUpperCase()} ${path} 사라짐`,
+      ).sort(),
+    );
+  });
+
+  it("BE 가 목록 GET 만 먼저 내면 받은 쪽이 이기고 unread-count, read 초안은 살아남는다", () => {
+    const received = emptyReceived();
+    received.paths["/api/wholesale/notifications"] = {
+      get: { responses: {} },
+    };
+    const { merged, kept, dropped } = mergeDrafts(received, DRAFTS.wholesale);
+    expect(dropped).toContain("GET /api/wholesale/notifications");
+    expect(kept).toContain("GET /api/wholesale/notifications/unread-count");
+    expect(kept).toContain("POST /api/wholesale/notifications/read");
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("알림 op 는 기존 op 를 바꾸지 않는다: 스냅샷의 다른 경로에 notifications 가 섞이지 않는다", () => {
+    const paths = Object.keys(SNAPSHOTS.wholesale.paths).filter((p) =>
+      p.startsWith("/api/wholesale/notifications"),
+    );
+    expect(paths.sort()).toEqual(NOTIFICATION_OPS.map(([p]) => p).sort());
+  });
+});

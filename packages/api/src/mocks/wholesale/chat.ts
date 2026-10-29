@@ -1273,6 +1273,16 @@ export function resetChatMock(keepRooms?: number) {
 
 resetChatMock();
 
+/**
+ * 내 방 중 `needsReply`가 true인 방 수. 알림 목(`./notification`)의 `chatsNeedingReply`가 부른다 —
+ * 방 목록 `needsReply`와 같은 `summaryOf`를 지나게 해 두 숫자가 갈라지지 않게 한다(loop-05b2 §5-4 2)
+ */
+export function chatsNeedingReplyCount(): number {
+  return rooms.filter(
+    (r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID && summaryOf(r).needsReply,
+  ).length;
+}
+
 /* --- 소매 목이 같이 쓰는 것 (README "채팅 목": 방 id 체계는 하나다) -------- */
 
 export type { MockRoom as ChatMockRoom, IdempotencyRecord };

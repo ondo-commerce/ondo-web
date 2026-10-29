@@ -6,6 +6,7 @@ import { backorderHandlers } from "./backorder";
 import { chatHandlers } from "./chat";
 import { dashboardHandlers } from "./dashboard";
 import { inventoryHandlers } from "./inventory";
+import { notificationHandlers } from "./notification";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
 import { settlementHandlers } from "./settlement";
@@ -21,6 +22,7 @@ import { shipmentHandlers } from "./shipment";
  */
 export const wholesaleHandlers: RequestHandler[] = [
   ...chatHandlers,
+  ...notificationHandlers,
   ...dashboardHandlers,
   ...productHandlers,
   ...orderHandlers,
