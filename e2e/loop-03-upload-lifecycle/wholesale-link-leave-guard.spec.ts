@@ -105,9 +105,8 @@ test.describe("S5-1 입력이 있으면 Link 가 모달을 띄운다", () => {
     await nameInput(page).fill("가");
 
     await page.getByRole("button", { name: /계정 메뉴$|^계정$/ }).click();
-    const bankLink = page.getByRole("link", {
-      name: /정산 계좌 등록|계좌 수정/,
-    });
+    /* 계좌 등록, 수정 링크는 정산 탭으로 가는 「정산 계좌 관리」 하나가 됐다(#276) */
+    const bankLink = page.getByRole("link", { name: "정산 계좌 관리" });
     await bankLink.click();
 
     await expect(leaveDialog(page)).toBeVisible();
@@ -116,7 +115,7 @@ test.describe("S5-1 입력이 있으면 Link 가 모달을 띄운다", () => {
     await expect(nameInput(page)).toHaveValue("가");
 
     await leaveButton(page).click();
-    await page.waitForURL((url) => url.pathname !== "/products/new");
+    await page.waitForURL((url) => url.pathname === "/settlements");
   });
 });
 
