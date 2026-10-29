@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
   applyReadMark,
+  autoReplyNoteOf,
   bodyLength,
   bubbleKindOf,
   checkComposer,
@@ -21,12 +22,15 @@ import {
   pollDelayMs,
   sendFailureOf,
   toFactsView,
+  toggledSettings,
   toRoomRows,
   toThreadItems,
   upsertPending,
   visiblePending,
 } from "./derive";
+import { STOCK_BAND_LABEL } from "./constants";
 import type {
+  AutoReplySettings,
   ChatAutoReply,
   ChatMessage,
   ChatRoomPage,
@@ -228,12 +232,6 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
       "1,200장",
       "500장",
     ]);
-    expect(
-      toFactsView({
-        ...autoReply,
-        facts: { stock: null, backorder: null, receivable: null },
-      }),
-    ).toBeNull();
     expect(toFactsView(null)).toBeNull();
     expect(
       toFactsView({
@@ -469,5 +467,123 @@ describe("S4-6 보류 말풍선 합치기", () => {
     expect(messageAc(message(9, { clientMessageId: "k-1" }), 7, ids)).toBe(
       "S3-1 S3-3 S3-4 S4-6",
     );
+  });
+});
+
+describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () => {
+  const base: ChatAutoReply = {
+    intent: "STOCK",
+    replyToSequence: 3,
+    generatedBy: "RULE",
+    // UTC로 와도 서울 시각으로 읽는다(01:20Z = 서울 10:20)
+    checkedAt: "2026-10-28T01:20:00Z",
+    subject: {
+      listingId: 2001,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+
+  it("되묻기(값 없음) → 값 줄 0, 끝 줄 '10:20 조회'", () => {
+    const view = toFactsView(base);
+    expect(view?.lines).toEqual([]);
+    expect(view?.seen).toBe("10:20 조회");
+  });
+
+  it("재고 → 앞말 + 조회 시각, 구간 글자는 소매 카드와 같은 '10~49장'", () => {
+    const view = toFactsView({
+      ...base,
+      facts: {
+        stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
+        backorder: null,
+        receivable: null,
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "판매가능 35장, 주문 한도 500장",
+    ]);
+    expect(view?.seen).toBe('소매처에게는 "10~49장"으로 보였어요. 10:20 조회');
+  });
+
+  it("미송 → 값 줄 + '14:02 조회'(앞말 없음)", () => {
+    const view = toFactsView({
+      ...base,
+      intent: "BACKORDER",
+      checkedAt: "2026-10-28T14:02:00+09:00",
+      facts: {
+        stock: null,
+        backorder: {
+          qty: 20,
+          expectedInboundDate: "10/30",
+          expectedInboundReason: null,
+        },
+        receivable: null,
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미송 20장, 입고 예정 10/30",
+    ]);
+    expect(view?.seen).toBe("14:02 조회");
+  });
+
+  it("미수 → 값 두 줄 + '06:40 조회'. 서울 자정 넘김(전날 21:40Z)도 서울 날로 읽는다", () => {
+    const view = toFactsView({
+      ...base,
+      intent: "RECEIVABLE",
+      checkedAt: "2026-10-27T21:40:00Z",
+      facts: {
+        stock: null,
+        backorder: null,
+        receivable: {
+          outstandingAmount: 786_000,
+          prepaidAmount: 0,
+          overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+        },
+      },
+    });
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미결제 786,000원, 선수금 0원",
+      "연체 1건 120,000원 (최대 3일)",
+    ]);
+    expect(view?.seen).toBe("06:40 조회");
+  });
+
+  it("구간 글자 표 4개 = 소매 카드 글자(디자인 결정 20, 27)", () => {
+    expect(STOCK_BAND_LABEL).toEqual({
+      NONE: "재고 없음",
+      UNDER_10: "1~9장",
+      UNDER_50: "10~49장",
+      FIFTY_PLUS: "50장 이상",
+    });
+  });
+});
+
+describe("S9 자동 답변 스위치", () => {
+  const on: AutoReplySettings = {
+    enabled: true,
+    intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+  };
+
+  it("S9-2 끄기 PUT 본문 = {enabled: false, intents 전부 true} — 받은 intents 그대로", () => {
+    expect(toggledSettings(on, false)).toEqual({
+      enabled: false,
+      intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+    });
+    // 다른 곳에서 끈 의도를 기본값으로 덮어 다시 켜지 않는다
+    const stockOff = { ...on, intents: { ...on.intents, STOCK: false } };
+    expect(toggledSettings(stockOff, false).intents.STOCK).toBe(false);
+    // 받은 객체는 그대로(캐시 값을 고치지 않는다)
+    toggledSettings(on, false).intents.STOCK = false;
+    expect(on.intents.STOCK).toBe(true);
+  });
+
+  it("S9-2 S9-4 안내 줄: 꺼짐 → off, 실패 → failed(꺼짐보다 먼저), 켜짐이나 모름 → 없음", () => {
+    expect(autoReplyNoteOf(on, false)).toBeNull();
+    expect(autoReplyNoteOf({ ...on, enabled: false }, false)).toBe("off");
+    expect(autoReplyNoteOf({ ...on, enabled: false }, true)).toBe("failed");
+    expect(autoReplyNoteOf(on, true)).toBe("failed");
+    expect(autoReplyNoteOf(undefined, false)).toBeNull();
   });
 });

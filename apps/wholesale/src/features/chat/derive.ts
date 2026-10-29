@@ -13,6 +13,8 @@ import {
   WEEKDAY_LABEL,
 } from "./constants";
 import type {
+  AutoReplyNote,
+  AutoReplySettings,
   BubbleKind,
   ChatAutoReply,
   ChatMessage,
@@ -293,12 +295,16 @@ export function senderLabel(
 /**
  * 자동 답변 근거 칸. 도매 화면에만 정확 수량이 있다 — 사장이 소매처가 본 구간과 실제 값을 같이 본다.
  * 재고 외(미송, 미수)는 이번 회차 시드에만 있고 문안이 정해지지 않아 값만 한 줄로 적는다.
+ *
+ * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
+ * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
  */
 export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
   if (autoReply === null) return null;
   const { stock, backorder, receivable } = autoReply.facts;
   const lines: FactLine[] = [];
-  let seen: string | null = null;
+  const checked = `${formatClock(autoReply.checkedAt)} 조회`;
+  let seen = checked;
   // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
   const value = (text: string): FactPart => ({ text, strong: true });
   const label = (text: string): FactPart => ({ text, strong: false });
@@ -316,7 +322,7 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
             value(`${formatNumber(stock.orderLimit)}장`),
           ],
     );
-    seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${formatClock(autoReply.checkedAt)} 조회`;
+    seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
   }
   if (backorder !== null) {
     const qty = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
@@ -344,7 +350,31 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
           ],
     );
   }
-  return lines.length === 0 ? null : { lines, seen };
+  return { lines, seen };
+}
+
+/**
+ * 스위치를 눌렀을 때 PUT 본문. `intents`는 받은 값 그대로 돌려보낸다 — 화면은 전체 스위치 하나지만 계약은
+ * 의도별 칸이라(Q6), 여기서 기본값으로 덮으면 다른 곳에서 끈 의도가 다시 켜진다.
+ */
+export function toggledSettings(
+  settings: AutoReplySettings,
+  enabled: boolean,
+): AutoReplySettings {
+  return { enabled, intents: { ...settings.intents } };
+}
+
+/**
+ * 목록 머리 아래 한 줄. 실패가 꺼짐 안내보다 먼저다 — 실패면 스위치가 원래 값으로 돌아와 있어서
+ * 꺼짐 안내가 같이 뜨면 "꺼졌다"와 "못 바꿨다"가 함께 보인다. 설정을 아직 모르면 아무것도 없다.
+ */
+export function autoReplyNoteOf(
+  settings: AutoReplySettings | undefined,
+  failed: boolean,
+): AutoReplyNote {
+  if (failed) return "failed";
+  if (settings === undefined) return null;
+  return settings.enabled ? null : "off";
 }
 
 /** 근거 한 줄을 글자로. 테스트와 낭독용 */

@@ -181,6 +181,7 @@ export function Bubble({
 /**
  * 자동 답변과 되묻기 — 내 쪽, 흰 면 + 테두리 + `자동 답변` 칩(디자인 결정 6, 7).
  * 근거 칸은 도매 화면에만 있다: 정확 수량과 "소매처가 본 구간"을 같이 보여 사장이 소매처가 무엇을 봤는지 안다.
+ * 값이 없는 되묻기도 근거 칸 위 선과 조회 시각 줄은 있다(디자인 결정 26).
  * 되묻기의 옵션 칩은 계약에 필드가 없어 그리지 않는다(소매가 고르는 것이라 도매에선 눌리지도 않는다).
  */
 function AutoReplyBubble({
@@ -218,9 +219,9 @@ function AutoReplyBubble({
               )}
             </span>
           ))}
-          {facts.seen ? (
-            <span className="text-muted-foreground text-xs">{facts.seen}</span>
-          ) : null}
+          <span data-ac="S7-13" className="text-muted-foreground text-xs">
+            {facts.seen}
+          </span>
         </span>
       ) : null}
     </Bubble>
