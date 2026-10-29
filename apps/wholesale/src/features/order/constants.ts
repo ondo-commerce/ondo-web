@@ -168,3 +168,6 @@ export const ORDER_ERROR_TEXT: Readonly<Record<string, string>> = {
   DOCUMENT_FROZEN: "이미 출고에 묶인 포장이라 여기서는 지울 수 없어요.",
   RESOURCE_NOT_FOUND: "이미 없어진 항목이에요. 목록을 새로 불러왔어요.",
 };
+
+/** 진입 인자로 연 주문이 없을 때(404) 우측 카드 자리 한 줄(S11-17, 디자인 결정 37). 다시 시도는 없다 */
+export const ORDER_NOT_FOUND_TEXT = "이 주문을 찾을 수 없어요";

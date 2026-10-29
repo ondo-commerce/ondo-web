@@ -599,6 +599,54 @@ function applyAllocation(order: MockOrder, qtyByLine: Map<number, number>) {
   return packing;
 }
 
+/**
+ * 소매 주문 접수를 흉내 내 신규 주문 1건을 넣는다. 알림 목(`./notification`)의 `incoming` 손잡이만 부른다.
+ * id, 주문번호, 줄 id는 지금 가장 큰 값 + 1(시드 뒤 첫 주문은 7006). 줄은 시드에 있는 variant만 받는다 —
+ * 상품명, 색, 사이즈, 재고를 지어내지 않으려고 `VARIANT` 표를 그대로 쓴다
+ */
+export function addMockOrder(input: {
+  retailerId: number;
+  retailerName: string;
+  variantId: keyof typeof VARIANT;
+  qty: number;
+  unitPrice: number;
+  orderedAt: string;
+}): MockOrder {
+  const max = (pick: (o: MockOrder) => number[]) =>
+    Math.max(...orders.flatMap(pick));
+  const order: MockOrder = {
+    id: max((o) => [o.id]) + 1,
+    orderNumber: max((o) => [o.orderNumber]) + 1,
+    orderedAt: input.orderedAt,
+    retailerId: input.retailerId,
+    retailerName: input.retailerName,
+    paymentMethod: "CASH",
+    receiveBy: "AGENT",
+    status: "NEW",
+    items: [
+      line(
+        max((o) => o.items.map((l) => l.id)) + 1,
+        input.variantId,
+        input.qty,
+        input.unitPrice,
+        0,
+        0,
+        false,
+      ),
+    ],
+    allocatedAmount: 0,
+  };
+  orders.push(order);
+  return order;
+}
+
+/** 확정 전 소매 취소를 흉내 낸다. 신규 주문이 아니면 바꾸지 않고 false(취소 op의 409와 같은 규칙) */
+export function cancelMockOrder(order: MockOrder): boolean {
+  if (order.status !== "NEW") return false;
+  order.status = "CANCELLED";
+  return true;
+}
+
 function findOrder(raw: string | readonly string[] | undefined) {
   const id = Number(raw);
   return orders.find((o) => o.id === id) ?? null;

@@ -110,6 +110,24 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 
 계약 테스트는 `chat.test.ts`(vitest + `msw/node`, `pnpm test`가 돈다).
 
+## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
+
+초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.
+
+- 시드 25개: NEW_ORDER 22, ORDER_CANCELLED 2, 스펙 밖 type `PAYMENT_RECEIVED` 1. 안 읽음 3(1, 2, 22번째). 21, 22번째 createdAt 같음. 시각은 reset 시점 기준 어제~3일 전
+- 정렬 createdAt desc → id desc, cursor는 base64 `ms|id` keyset이라 페이지 사이 신규 삽입에 중복, 누락이 없다
+- `chatsNeedingReply`는 채팅 목의 `needsReply`(`chatsNeedingReplyCount`)를 그때 읽는다. 따로 세지 않는다
+- 새 주문은 주문 목(`addMockOrder`)에 실제로 넣는다. 시드 뒤 첫 주문은 7006
+
+| 종류 | 이름 | 동작 |
+|---|---|---|
+| HTTP | `POST /__mock/notifications/incoming {type = NEW_ORDER, orderId?}` | orderId 없으면 주문 목에 신규 주문(봄봄상회, 빈티지 플라워 셔츠 레드 / M 1장, 지금) + 알림. `ORDER_CANCELLED + orderId`는 그 주문 취소 + 알림. 없는 orderId 400, 신규 아닌 주문 취소 409. 응답 `{data: {notification, orderId}}` |
+| HTTP | `POST /__mock/notifications/fail {op, status = 500, times = 1}` | op(`list` `count` `read`)의 다음 n회 실패. read 실패는 읽음을 바꾸지 않는다 |
+| HTTP | `POST /__mock/notifications/delay {op, ms, times = 1}` | 다음 n회 응답을 ms만큼 늦춘다. 값은 요청 시점 것이라 "먼저 시작한 count가 read 뒤 옛 숫자로 도착"을 만든다 |
+| HTTP | `POST /__mock/notifications/reset {empty?}` | 시드로, fail과 delay 해제. `empty: true`면 0개. 주문 목, 채팅 목은 안 건드린다 |
+
+계약 테스트는 `notification.test.ts`, 초안 소실 검사는 `scripts/merge-drafts.test.mjs`의 S10-1.
+
 ### 재고 문의 자동 답 (loop-05b)
 
 소매 보내기(`retail/chat.ts`)와 도매 `incoming` 주입이 **같은 판정 함수**를 부른다.

@@ -1,9 +1,10 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { apiFetch, apiFetchPage, type PageMeta } from "@ondo/api";
 import { orderKeys } from "./keys";
 import {
+  isOrderNotFound,
   toOrderRowView,
   toOrderView,
   toPackingBatchViews,
@@ -75,6 +76,20 @@ export function useOrderDetailQuery(orderId: number) {
     queryFn: () => apiFetch<OrderDetail>(ORDER_PATH.order(orderId)),
     select: (detail): OrderView => toOrderView(detail),
   });
+}
+
+/**
+ * 그 주문 상세가 404였나 — **엿보기만 한다**(요청을 내지 않는다). 우측 카드가 이미 같은 키를 받고 있다.
+ * 진입 인자로 없는 주문(`?order=99999`)이 오면 카드 자리 한 줄만 남기고 "목록 조건 밖" 안내와
+ * 포장 대기열 카드를 그리지 않으려고 쓴다(S11-17). 그 둘은 404를 자기 모양으로 그리지 못한다.
+ */
+export function useOrderDetailMissing(orderId: number | null): boolean {
+  const { error } = useQuery({
+    queryKey: orderKeys.detail(orderId ?? 0),
+    queryFn: () => apiFetch<OrderDetail>(ORDER_PATH.order(orderId ?? 0)),
+    enabled: false,
+  });
+  return orderId !== null && error !== null && isOrderNotFound(error);
 }
 
 /** 포장 대기열. 페이징 없음. `status`·`sort`는 안 보낸다 — 기본(만든 순)이면 된다 */
