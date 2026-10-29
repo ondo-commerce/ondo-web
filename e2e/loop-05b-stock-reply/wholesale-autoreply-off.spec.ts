@@ -199,7 +199,7 @@ test.describe("S9-1 S9-2 목록 머리 스위치", () => {
     expect(put).toBe(200);
     const before = await count(page, SETTINGS_GET);
 
-    await page.getByRole("link", { name: "채팅", exact: true }).click();
+    await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
     await page.waitForURL(/\/chats$/);
     await waitCount(page, SETTINGS_GET, before + 1);
     await settled(page, SETTINGS_GET);

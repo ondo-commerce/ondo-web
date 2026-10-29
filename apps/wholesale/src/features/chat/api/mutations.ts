@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { CHAT_PATH } from "./queries";
 import { guardSession } from "./session";
+import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import type { ChatReadResult, ChatSendResult } from "../types";
 
 /**
@@ -26,6 +27,7 @@ const SESSION_LOSS_INLINE = { sessionLoss: "inline" } as const;
  * `mutate(vars, { onSuccess })`의 콜백은 마지막 호출 것만 불린다.
  */
 export function useSendMessageMutation(roomId: number) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
       clientMessageId,
@@ -41,6 +43,11 @@ export function useSendMessageMutation(roomId: number) {
       }),
     meta: SESSION_LOSS_INLINE,
     networkMode: "always",
+    /* 답을 보내면 그 방이 `답 필요`에서 빠진다 — 헤더 채팅 배지를 30초 기다리지 않고 다시 받는다(#295 S11-15).
+       진행 중 count는 취소한다. 보내기 전에 떠난 count가 늦게 와서 줄어든 배지를 되살리면 안 된다 */
+    onSuccess: () => {
+      void refreshHeaderCounts(queryClient);
+    },
   });
 }
 

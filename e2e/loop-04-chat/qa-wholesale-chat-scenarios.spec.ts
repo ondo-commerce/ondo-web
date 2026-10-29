@@ -107,7 +107,7 @@ test("(a) 헤더 채팅 → 목록 → 안 읽은 방 열기 → 배지 0, 읽�
   page,
 }) => {
   await page.goto("/orders");
-  await page.getByRole("link", { name: "채팅", exact: true }).click();
+  await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
   await page.waitForURL(/\/chats$/);
   const unread = row(page, "봄봄상회").locator("[data-unread]");
   await expect(unread).toHaveCount(1);
@@ -382,7 +382,7 @@ test.describe("키보드 계약 보강", () => {
     await openChats(page);
     await row(page, "대기상회").click();
     await page.waitForURL(/room=2$/);
-    await page.getByRole("link", { name: "채팅", exact: true }).focus();
+    await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).focus();
     let id: string | undefined;
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press("Tab");
@@ -449,8 +449,8 @@ test("디자인 실측 — 목록 폭, 말풍선 색과 반경, 보내는 중 �
       .find((n) => n.classList.contains("self-end"))
       ?.querySelector("div");
     const sendingMeta = q('[data-pending="sending"] > span:last-child');
-    const chat = q('a[aria-label="채팅"]');
-    const bell = q('button[aria-label="알림"]');
+    const chat = q('a[aria-label^="채팅"]');
+    const bell = q('button[aria-label^="알림"]');
     const card = root.getPropertyValue("--color-card").trim();
     return {
       listWidth: listPanel?.getBoundingClientRect().width,

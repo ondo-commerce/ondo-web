@@ -35,7 +35,7 @@ function rowIds(page: Page): Promise<number[]> {
 
 /** 목록 안에서 Tab으로 들어간다. 헤더 채팅 → 알림 → 계정 다음이 목록 행이다 */
 async function tabIntoList(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "채팅", exact: true }).focus();
+  await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).focus();
   for (let i = 0; i < 8; i++) {
     await page.keyboard.press("Tab");
     const inList = await page.evaluate(
@@ -55,7 +55,7 @@ function focusedRoomId(page: Page): Promise<number | null> {
 
 test("S2-1 헤더 채팅 버튼 → /chats, 주 메뉴 7개 그대로", async ({ page }) => {
   await page.goto("/orders");
-  const chat = page.getByRole("link", { name: "채팅", exact: true });
+  const chat = page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ });
   await expect(chat).not.toHaveAttribute("aria-current", "page");
   await chat.click();
   await page.waitForURL(/\/chats$/);
@@ -134,7 +134,7 @@ test.describe("S2-4 빈 상태와 목록 실패", () => {
   }) => {
     await page.goto("/orders");
     await mock(page, "fail", { op: "rooms", times: 1 });
-    await page.getByRole("link", { name: "채팅", exact: true }).click();
+    await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
     const panel = page.getByRole("region", { name: "대화 목록" });
     await expect(panel.getByRole("alert")).toContainText(
       "서버에서 문제가 생겼어요",

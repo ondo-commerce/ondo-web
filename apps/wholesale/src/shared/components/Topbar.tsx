@@ -1,14 +1,10 @@
 "use client";
 
-import { cn, IconButton } from "@ondo/ui";
-import { Bell, MessageCircle } from "lucide-react";
+import { cn } from "@ondo/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { NAV_ITEMS } from "@/shared/config/nav";
-
-/** 채팅 받은편지함(loop-04). 주 메뉴 7탭과 따로 둔다 */
-const CHAT_HREF = "/chats";
 
 /**
  * 상단 헤더 — 로고 + 주 메뉴 7탭 + 채팅·알림·계정.
@@ -28,8 +24,11 @@ export function Topbar({
   /** 계정 드롭다운. 세션을 읽는 물건이라 `features/account`에 있고, `shared`는
       그쪽을 볼 수 없다 — `app/(erp)/layout.tsx`가 조립해 넘긴다 */
   accountMenu,
+  /** 채팅 링크 + 알림 종. 헤더 count를 읽는 물건이라 `features/notification`에 있고 layout이 넘긴다 */
+  inbox,
 }: {
   accountMenu: ReactNode;
+  inbox: ReactNode;
 }) {
   const pathname = usePathname();
 
@@ -78,36 +77,8 @@ export function Topbar({
         </ul>
       </nav>
 
-      {/* 채팅은 주 메뉴 탭이 아니다 — 어느 화면에서나 여는 받은편지함이고, 탭을 늘리면 위 경고대로
-          이 줄이 무너진다(loop-04 01-plan §4-1 1). 화면 이동이라 버튼이 아니라 `<a>`다.
-          IconButton은 asChild를 막아 두어 같은 모양(ghost, size-8, 아이콘 20px)을 여기서 그린다 */}
-      <Link
-        href={CHAT_HREF}
-        aria-label="채팅"
-        title="채팅"
-        aria-current={
-          pathname === CHAT_HREF || pathname.startsWith(`${CHAT_HREF}/`)
-            ? "page"
-            : undefined
-        }
-        data-ac="S2-1"
-        className={cn(
-          "focus-visible:ring-ring inline-flex size-8 shrink-0 items-center justify-center rounded-button transition-colors focus-visible:ring-2 focus-visible:outline-hidden [&_svg]:size-5",
-          pathname === CHAT_HREF || pathname.startsWith(`${CHAT_HREF}/`)
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        )}
-      >
-        <MessageCircle aria-hidden />
-      </Link>
-
-      {/* 채팅 링크와 같은 32px(와이어프레임 .ibtn, QA F9). 기본 sm(28px)이면 나란히 놓였을 때 크기가 다르다 */}
-      <IconButton variant="ghost" size="md" aria-label="알림" title="알림">
-        <Bell aria-hidden />
-
-        {/* TODO: 안 읽은 알림이 있을 때만 점을 띄운다.
-            <span className="bg-destructive absolute top-1.5 right-1.5 size-1.5 rounded-full" /> */}
-      </IconButton>
+      {/* 채팅 링크 + 알림 종(#295). 배지 둘이 count 응답 하나에서 나와 `features/notification`이 같이 그린다 */}
+      {inbox}
 
       {accountMenu}
     </header>
