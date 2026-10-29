@@ -61,6 +61,9 @@ test("(b) 내 글은 오른쪽이고 낭독 안 함, 도매 답은 왼쪽에 1�
 }) => {
   await page.clock.install({ time: new Date("2026-10-28T10:30:00+09:00") });
   await openRoom(page, "/chats/1");
+  // 05b(#288)부터 소매 보내기에 자동 답이 붙는다. 이 테스트는 "내 글" 낭독만 보므로 이 탭의 자동 답을 끈다
+  // (꺼지면 넘김 줄만 생긴다 — SYSTEM 줄은 낭독하지 않고 말풍선 수에도 안 든다)
+  await mock(page, "auto-reply", { enabled: false });
   const live = await watchLive(page);
   const mid = await center(page);
 

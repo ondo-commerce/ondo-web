@@ -1,11 +1,13 @@
 import { delay, http, HttpResponse } from "msw";
 import type { RetailSchema } from "../../retail";
 import type { WholesaleSchema } from "../../wholesale";
+import { orderableOf } from "../chat/inquiry";
 import {
   CHAT_BODY_HOOK,
   CHAT_BODY_MAX,
   CHAT_SEND_DELAY_MS,
   CHAT_SLOW_MS,
+  chatSharedKnobs,
   chatStore,
   resetChatMock,
   type ChatMockRoom,
@@ -21,6 +23,9 @@ import {
  * - 오류 코드가 소매 어휘다(401 `UNAUTHORIZED`, 403 `ACCOUNT_NOT_APPROVED`)
  * - 응답의 `autoReply.facts`는 `ChatRetailFacts`로 바꿔 싣는다. **정확 수량(`availableQty`)은 응답 JSON에
  *   나타나지 않는다**(D31②) — 화면에서 가리는 게 아니라 싣지 않는다
+ *
+ * 05b(loop-05b §4-2): 보내기가 자동 답을 붙인다. 판정은 `../chat/inquiry.ts`, 저장은 도매 목의
+ * `chatStore.runAutoReply` — 도매 `incoming` 주입과 같은 함수다. 결과는 보내기 응답 `generatedMessages`에 실린다.
  *
  * 목은 앱마다 브라우저 안에 산다. 도매 탭과 소매 탭은 상태를 나누지 않는다 — "도매가 답한다"는
  * `/__mock/chat/rooms/{id}/incoming`(이 앱에선 sender=WHOLESALER)으로 흉내 낸다.
@@ -80,10 +85,14 @@ function unreadCount(r: ChatMockRoom): number {
   ).length;
 }
 
-/** 저장소의 도매 facts를 소매 응답 모양으로. 키를 골라 새 객체를 만든다 — 지우는 방식이면 새 필드가 샌다 */
+/**
+ * 저장소의 도매 facts를 소매 응답 모양으로. 키를 골라 새 객체를 만든다 — 지우는 방식이면 새 필드가 샌다.
+ * `orderable`은 수량과 무관하다(게시 중 + 게시된 옵션). 도매 facts에 그 칸이 없어 대상을 다시 찾는다
+ */
 function toRetailFacts(
-  facts: NonNullable<WholesaleMessage["autoReply"]>["facts"],
+  autoReply: NonNullable<WholesaleMessage["autoReply"]>,
 ): ChatRetailFacts {
+  const facts = autoReply.facts;
   return {
     stock:
       facts.stock === null
@@ -91,7 +100,7 @@ function toRetailFacts(
         : {
             band: facts.stock.band,
             orderLimit: facts.stock.orderLimit,
-            orderable: facts.stock.availableQty > 0,
+            orderable: orderableOf(chatStore.catalog, autoReply.subject),
           },
     backorder:
       facts.backorder === null
@@ -118,7 +127,11 @@ function toRetailMessage(m: WholesaleMessage): ChatMessage {
     autoReply:
       m.autoReply === null
         ? null
-        : { ...m.autoReply, facts: toRetailFacts(m.autoReply.facts) },
+        : {
+            ...m.autoReply,
+            facts: toRetailFacts(m.autoReply),
+            choices: m.autoReply.choices ?? null,
+          },
   };
 }
 
@@ -230,6 +243,7 @@ export const retailChatHandlers = [
   /**
    * 방 만들기(멱등). 쌍이 있으면 그 방 200, 없으면 다음 번호로 201(계약 §5-1). `listingId`는 방을
    * 가르지 않는다 — 다른 상품에서 같은 도매처에 물어도 같은 방이다(01-plan §4-1 3).
+   * 대신 방의 상품 문맥을 이 값과 지금 시각으로 바꾼다(200, 201 둘 다, null이면 지운다. loop-05b S7-12)
    */
   http.post("*/api/retail/chat/rooms", async ({ request }) => {
     const planned = plannedFailure("create");
@@ -251,7 +265,8 @@ export const retailChatHandlers = [
           r.wholesalerId === wholesalerId &&
           r.retailerId === CHAT_ME_RETAILER_ID,
       );
-    if (known !== undefined)
+    if (known !== undefined) {
+      chatStore.setContext(known, input.listingId);
       return HttpResponse.json(
         {
           data: {
@@ -261,7 +276,9 @@ export const retailChatHandlers = [
         },
         { status: 200 },
       );
+    }
     const created = chatStore.addRoom(wholesalerId, CHAT_ME_RETAILER_ID);
+    chatStore.setContext(created, input.listingId);
     return HttpResponse.json(
       { data: { ...summaryOf(created), counterpartLastReadSequence: 0 } },
       { status: 201 },
@@ -336,8 +353,11 @@ export const retailChatHandlers = [
 
   /**
    * 보내기. 검사 순서는 도매 목과 같다: 키 헤더 → 본문 형식 → 인증 손잡이 → 방 → 멱등 → 글자 수 →
-   * 500 손잡이 → 만들기 → `failAfterCommit` → 지연 → 201. 05a는 자동 답을 만들지 않는다
-   * (`generatedMessages` 늘 빈 배열, 자동 답 생성은 05b).
+   * 500 손잡이 → 만들기 → 자동 답 → `failAfterCommit` → 지연 → 201.
+   *
+   * 자동 답은 요청 안에서 동기로 만든다(`generation: DONE`, §4-3). 멱등 replay는 처음 결과를 그대로
+   * 돌려준다 — 자동 답의 id, sequence, `checkedAt`도 처음 값이다(S7-10). 넘김이 이미 열려 있어 붙일 줄이
+   * 없으면 `NONE`.
    */
   http.post(
     "*/api/retail/chat/rooms/:roomId/messages",
@@ -424,7 +444,12 @@ export const retailChatHandlers = [
       });
       // 내가 보낸 것까지는 읽은 것이다
       r.retailerLastRead = Math.max(r.retailerLastRead ?? 0, message.sequence);
-      record.result = { message, generatedMessages: [], generation: "NONE" };
+      const generatedMessages = chatStore.runAutoReply(r, message);
+      record.result = {
+        message,
+        generatedMessages,
+        generation: generatedMessages.length > 0 ? "DONE" : "NONE",
+      };
 
       await delay(
         text.includes(CHAT_BODY_HOOK.SLOW_5S)
@@ -541,6 +566,8 @@ export const retailChatHandlers = [
       },
     });
   }),
+
+  ...chatSharedKnobs,
 ];
 
 function toRetailResult(

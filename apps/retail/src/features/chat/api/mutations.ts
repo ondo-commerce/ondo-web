@@ -6,6 +6,7 @@ import { chatMockReady } from "./mockWorker";
 import { CHAT_PATH } from "./queries";
 import { guardSession } from "./session";
 import type {
+  ChatInquiry,
   ChatRoomDetail,
   ChatSendResult,
   CreateChatRoomRequest,
@@ -30,7 +31,8 @@ export function useCreateRoomMutation() {
 
 /**
  * 보내기. `clientMessageId`가 곧 `Idempotency-Key`다 — 다시 보내기는 같은 키라 서버가 한 번만 만든다.
- * 본문은 `{body, inquiry: null}` — 상품 문맥은 방 만들 때 `listingId`로만 간다(05b 분류기 몫, §3 out 3).
+ * 본문은 `{body, inquiry}`. 자유 문장이면 `inquiry`는 null이고, `재고 문의` 칩과 되묻기 칩만 채운다(loop-05b §4-1 2).
+ * 다시 보내기도 보류 말풍선이 들고 있던 같은 `inquiry`를 보낸다 — 키가 같은데 본문이 다르면 서버가 409를 낸다.
  *
  * `guardSession`을 거친다: 소매 공용 MutationCache가 `UNAUTHORIZED` ApiError를 `/login` 전체 이동으로
  * 바꾸는데, 보내기 401에서 그러면 쓰던 글과 실패 말풍선이 사라진다(D28). 끊김 오류로 바꿔 지나가게 한다.
@@ -48,15 +50,17 @@ export function useSendMessageMutation(roomId: number) {
     mutationFn: async ({
       clientMessageId,
       body,
+      inquiry,
     }: {
       clientMessageId: string;
       body: string;
+      inquiry: ChatInquiry | null;
     }) => {
       await chatMockReady();
       return guardSession(queryClient, () =>
         apiFetch<ChatSendResult>(CHAT_PATH.messages(roomId), {
           method: "POST",
-          body: { body, inquiry: null },
+          body: { body, inquiry },
           idempotencyKey: clientMessageId,
         }),
       );

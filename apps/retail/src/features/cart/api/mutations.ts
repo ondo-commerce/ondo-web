@@ -40,8 +40,16 @@ function removeItem(cartItemId: number): Promise<void> {
   return apiFetch<void>(CART_PATH.item(cartItemId), { method: "DELETE" });
 }
 
-/** 같은 SKU를 다시 담으면 수량이 더해진다(스펙) */
-function addItem(body: AddCartItemRequest): Promise<AddCartItemResult> {
+/**
+ * 같은 SKU를 다시 담으면 수량이 더해진다(스펙).
+ *
+ * 뮤테이션 없이 함수로도 나간다(`addCartItem`) — 채팅 재고 카드(loop-05b S8-8)가 401을 `/login` 전체 이동이
+ * 아니라 채팅 세션 끊김으로 바꿔야 하는데, 이 파일의 뮤테이션을 거치면 공용 MutationCache(`providers.tsx`)가
+ * 원래 ApiError를 먼저 보고 `/login`으로 보낸다. 채팅이 자기 뮤테이션 안에서 감싸 부른다.
+ */
+export function addCartItem(
+  body: AddCartItemRequest,
+): Promise<AddCartItemResult> {
   return apiFetch<AddCartItemResult>(CART_PATH.items, {
     method: "POST",
     body,
@@ -121,7 +129,7 @@ export function useAddCartItemMutation({
   const router = useRouter();
   return useMutation({
     mutationKey: cartKeys.add(),
-    mutationFn: addItem,
+    mutationFn: addCartItem,
     onSuccess: () => {
       if (refresh) router.refresh();
     },
@@ -141,7 +149,7 @@ export function useRestoreCartItemsMutation() {
   return useMutation({
     mutationKey: cartKeys.add(),
     mutationFn: (lines: readonly RemovedLine[]) =>
-      sendEach(lines, ({ variantId, qty }) => addItem({ variantId, qty })),
+      sendEach(lines, ({ variantId, qty }) => addCartItem({ variantId, qty })),
     onSuccess: () => router.refresh(),
   });
 }

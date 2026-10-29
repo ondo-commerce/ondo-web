@@ -5,9 +5,17 @@ import { isApiError } from "@ondo/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
+import { ClarifyChoices } from "./ClarifyChoices";
+import { StockReplyCard } from "./StockReplyCard";
 import { useRoomQueries } from "../api/queries";
 import {
   isChatSessionLostError,
@@ -19,16 +27,34 @@ import {
   LOGIN_PATH,
   ROOM_TEXT,
   SESSION_FIRST_TEXT,
+  STOCK_TEXT,
 } from "../constants";
 import {
+  askChipBusy,
+  askListingId,
+  choiceInquiry,
+  choiceSendFailed,
+  handoffCauses,
   liveAnnouncement,
   maxSequenceOf,
   messageAc,
   returnLinkOf,
+  stockAskInquiry,
+  toClarifyView,
+  toStockCardView,
   toThreadItems,
   visiblePending,
 } from "../derive";
-import type { ChatRoomDetail, ChatThread, ReturnLink } from "../types";
+import type {
+  AddToCart,
+  ChatChoice,
+  ChatInquiry,
+  ChatMessage,
+  ChatRoomDetail,
+  ChatThread,
+  PendingMessage,
+  ReturnLink,
+} from "../types";
 import { useChatSend } from "../useChatSend";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 
@@ -51,15 +77,26 @@ const BLOCK_HEIGHT = "relative h-[calc(100dvh-73px)] min-h-112";
 export function ChatRoomView({
   roomId,
   from,
+  addToCart = null,
 }: {
   roomId: number;
   /** 주소의 `?from=`. 검사는 `returnLinkOf`가 한다 — 외부 주소는 버린다 */
   from: string | null;
+  /**
+   * 재고 카드의 장바구니 담기(loop-05b S8-5). 이 feature는 `features/cart`를 모른다 — 조립부
+   * (`app/(shop)/chats/[roomId]/ChatRoomClient.tsx`)가 끼워 준다. 없으면 카드의 담기 버튼은 잠긴다
+   */
+  addToCart?: AddToCart | null;
 }) {
   useResetChatSessionOnLeave();
   return (
     <div className="mx-auto max-w-wrap">
-      <ChatBlock key={roomId} roomId={roomId} from={from} />
+      <ChatBlock
+        key={roomId}
+        roomId={roomId}
+        from={from}
+        addToCart={addToCart}
+      />
     </div>
   );
 }
@@ -68,7 +105,15 @@ function hasCode(error: unknown, code: string): boolean {
   return isApiError(error) && error.code === code;
 }
 
-function ChatBlock({ roomId, from }: { roomId: number; from: string | null }) {
+function ChatBlock({
+  roomId,
+  from,
+  addToCart,
+}: {
+  roomId: number;
+  from: string | null;
+  addToCart: AddToCart | null;
+}) {
   const router = useRouter();
   const { room, thread } = useRoomQueries(roomId);
   const errors = [room.error, thread.error];
@@ -136,6 +181,7 @@ function ChatBlock({ roomId, from }: { roomId: number; from: string | null }) {
       room={room.data}
       thread={thread.data}
       from={from}
+      addToCart={addToCart}
     />
   );
 }
@@ -145,11 +191,13 @@ function ChatRoom({
   room,
   thread,
   from,
+  addToCart,
 }: {
   roomId: number;
   room: ChatRoomDetail;
   thread: ChatThread;
   from: string | null;
+  addToCart: AddToCart | null;
 }) {
   const name = room.counterpart.name;
   const back = returnLinkOf(from, room.counterpart.id);
@@ -163,6 +211,32 @@ function ChatRoom({
   const { pending, send, retry, remove } = useChatSend(roomId);
   const shownPending = visiblePending(pending, thread.messages);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
+
+  /* 입력창 위 `재고 문의` 칩(S8-1). 상품 상세에서 연 방만. `onAsk`는 같은 함수로 남아야 입력창(memo)이
+     polling마다 다시 그려지지 않는다 */
+  const askListing = askListingId(from);
+
+  /* 칩 보내기 single-flight(QA F2). 두 칩은 보류 말풍선이 그려진 뒤에야 disabled가 된다 — 같은 틱의 두 번째,
+     세 번째 클릭은 아직 켜진 칩을 누른다. 담기(S8-7 `inflight`)처럼 ref로 그 틈만 막고, 보류 목록이 바뀌어
+     칩의 disabled가 반영되면 푼다(실패하면 칩이 다시 켜지니 다시 누를 수 있어야 한다) */
+  const chipFlight = useRef(false);
+  useEffect(() => {
+    chipFlight.current = false;
+  }, [pending]);
+  const sendChip = useCallback(
+    (body: string, inquiry: ChatInquiry) => {
+      if (chipFlight.current) return;
+      chipFlight.current = true;
+      send(body, inquiry);
+    },
+    [send],
+  );
+
+  const onAsk = useCallback(() => {
+    if (askListing !== null)
+      sendChip(STOCK_TEXT.askBody, stockAskInquiry(askListing));
+  }, [sendChip, askListing]);
+  const now = useNow();
 
   /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존은 loop-08, 도매와 같다) */
   const logRef = useRef<HTMLDivElement>(null);
@@ -193,6 +267,11 @@ function ChatRoom({
   }, []);
 
   const items = toThreadItems(thread.messages);
+  const acContext = {
+    sessionLost,
+    handoffCauses: handoffCauses(thread.messages),
+    choiceFailed: choiceSendFailed(shownPending),
+  };
 
   return (
     <Panel
@@ -235,7 +314,20 @@ function ChatRoom({
                 key={item.key}
                 message={item.message}
                 counterpartName={name}
-                ac={messageAc(item.message, baseline, pendingIds)}
+                ac={messageAc(item.message, baseline, pendingIds, acContext)}
+                extra={
+                  <AutoReplyExtra
+                    message={item.message}
+                    messages={thread.messages}
+                    pending={shownPending}
+                    now={now}
+                    sessionLost={sessionLost}
+                    addToCart={addToCart}
+                    onChoose={(listingId, choice) =>
+                      sendChip(choice.label, choiceInquiry(listingId, choice))
+                    }
+                  />
+                }
               />
             ),
           )
@@ -255,6 +347,8 @@ function ChatRoom({
         counterpartName={name}
         sessionLost={sessionLost}
         onSend={send}
+        askBusy={askListing === null ? null : askChipBusy(shownPending)}
+        onAsk={onAsk}
       />
 
       {/* 알림 통로는 이것 하나(도매 디자인 결정 20). log는 off — 내 말, 한 번에 받은 50개까지 읽지 않게.
@@ -265,10 +359,71 @@ function ChatRoom({
         className="sr-only"
         data-ac="S6-11"
       >
-        {live ? <span key={live.sequence}>{live.text}</span> : null}
+        {live ? (
+          <span key={live.sequence} data-ac="S8-12">
+            {live.text}
+          </span>
+        ) : null}
       </div>
     </Panel>
   );
+}
+
+/**
+ * 지금 시각(ms). 되묻기 칩의 30분 창(`choicesActive`)을 렌더 중에 시계를 읽지 않고 보려고 state로 둔다.
+ * 15초마다 갱신 — 창 끝이 15초 늦게 닫혀도 서버가 계승 여부를 다시 판정한다(넘김으로 끝날 뿐 틀린 답은 없다)
+ */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+const NOW_TICK_MS = 15_000;
+
+/**
+ * 자동 답 말풍선 안 칸 하나. 되묻기면 칩 줄, 재고 답이면 카드, 그 밖이면 없음. 판정은 derive가 한다
+ * (`toClarifyView` `toStockCardView`).
+ */
+function AutoReplyExtra({
+  message,
+  messages,
+  pending,
+  now,
+  sessionLost,
+  addToCart,
+  onChoose,
+}: {
+  message: ChatMessage;
+  messages: readonly ChatMessage[];
+  pending: readonly PendingMessage[];
+  now: number;
+  sessionLost: boolean;
+  addToCart: AddToCart | null;
+  onChoose: (listingId: number, choice: ChatChoice) => void;
+}) {
+  const clarify = toClarifyView(message, messages, pending, now);
+  if (clarify !== null)
+    return (
+      <ClarifyChoices
+        view={clarify}
+        locked={sessionLost}
+        onChoose={(choice) => onChoose(clarify.listingId, choice)}
+      />
+    );
+  const card = toStockCardView(message, messages);
+  if (card !== null)
+    return (
+      <StockReplyCard
+        card={card}
+        sessionLost={sessionLost}
+        addToCart={addToCart}
+      />
+    );
+  return null;
 }
 
 /**

@@ -509,6 +509,9 @@ test("S6-11 새 도매 메시지 → live '무드온: 본문', 같은 본문 두
   page,
 }) => {
   await openRoom(page, "/chats/1");
+  // 05b(#288)부터 소매 보내기에 자동 답이 붙는다. 이 테스트는 "내 글" 낭독만 보므로 이 탭의 자동 답을 끈다
+  // (꺼지면 넘김 줄만 생긴다 — SYSTEM 줄은 낭독하지 않고 말풍선 수에도 안 든다)
+  await mock(page, "auto-reply", { enabled: false });
   const live = page.locator('[aria-live="polite"][data-ac="S6-11"]');
   await expect(live).toHaveText("");
   await live.evaluate((el) => {
