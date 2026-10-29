@@ -1,9 +1,6 @@
 import {
-  ACCOUNT_NO_MAX,
-  ACCOUNT_NO_MIN,
   ACCOUNT_PATH,
   APPROVAL_STEP_LABELS,
-  BANK_MESSAGE,
   MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   VALIDATION_MESSAGE,
@@ -12,8 +9,6 @@ import { ACCOUNTS, APPLICATION } from "./fixtures";
 import type {
   Account,
   AccountStatus,
-  BankAccount,
-  BankField,
   Application,
   ApprovalStep,
   AttachedFile,
@@ -64,30 +59,11 @@ export function normalizeStoreName(
 }
 
 /**
- * 로그인 직후 도착할 화면. **상태별 목적지를 화면이 아니라 여기 한 곳에서 정한다.**
- * 계좌를 안 낸 사장은 온보딩을 **한 번만** 거친다 — 매 로그인마다 같은 화면이 뜨면
- * 사장은 내용을 안 읽고 닫는 법부터 배운다.
- */
-export function homePathFor(account: Account, bankPromptSeen: boolean): string {
-  switch (account.status) {
-    case "PENDING":
-      return ACCOUNT_PATH.approval;
-    case "REJECTED":
-      return ACCOUNT_PATH.rejected;
-    case "APPROVED":
-      return account.bankAccount === null && !bankPromptSeen
-        ? ACCOUNT_PATH.bankOnboarding
-        : ACCOUNT_PATH.erpHome;
-  }
-}
-
-/**
- * 로그인 직후 도착지. 승인 상태만 보고 정한다.
+ * 로그인 직후 도착지. **상태별 목적지를 화면이 아니라 여기 한 곳에서 정한다.**
+ * 승인 상태만 본다.
  *
- * **계좌 온보딩으로 보내지 않는다** — 계좌가 등록돼 있는지는 `GET /bank-accounts`
- * 를 불러야 알 수 있는데 로그인 응답에는 승인 상태뿐이다. 모르는 채로 온보딩에
- * 세우면 이미 계좌가 있는 사장에게 등록 화면을 다시 들이민다. 계좌 API를 붙이는
- * 회차에서 `homePathFor`로 되돌린다.
+ * **계좌 온보딩으로 보내지 않는다** — 그 화면은 브라우저 세션에만 계좌를 적는
+ * 흉내였고(`side-02` N3), 계좌는 정산 탭이 실서버(`/bank-accounts`)로 다룬다.
  */
 export function homePathForStatus(status: AccountStatus): string {
   switch (status) {
@@ -121,25 +97,23 @@ export function erpRedirectFor(account: Account | null): string | null {
 }
 
 /**
- * 계정 화면(`승인 대기`·`승인 거절`·`계좌 온보딩`)에 **설 자격**을 본다.
+ * 계정 화면(`승인 대기`·`승인 거절`)에 **설 자격**을 본다.
  * `null`이면 통과, 아니면 이 계정이 서야 할 화면 주소다 — `erpRedirectFor`의
  * 계정 화면 짝이고, 사연은 `AccountGate`에 적어 뒀다(`wholesale-account` F11).
  *
- * 보낼 곳을 `homePathFor`에 맡긴다 — "이 계정이 있어야 할 화면"을 정하는 규칙이
- * 로그인 직후와 여기서 갈리면, 같은 계정이 들어온 경로에 따라 다른 화면에 선다.
+ * 보낼 곳을 `homePathForStatus`에 맡긴다 — "이 계정이 있어야 할 화면"을 정하는
+ * 규칙이 로그인 직후와 여기서 갈리면, 같은 계정이 들어온 경로에 따라 다른 화면에 선다.
  *
- * ⚠️ **되돌아오는 짝이 없어야 한다.** `homePathFor`가 돌려주는 세 주소는 각각
- *    자기 상태를 통과시키는 화면이라(`/approval`←PENDING · `/approval/rejected`
- *    ←REJECTED · 온보딩/`/products`←APPROVED) 여기서 보낸 화면이 다시 돌려보내는
- *    일은 없다. 화면을 늘릴 때 이 대응을 같이 확인한다.
+ * ⚠️ **되돌아오는 짝이 없어야 한다.** 돌려주는 세 주소는 각각 자기 상태를
+ *    통과시키는 화면이라(`/approval`←PENDING · `/approval/rejected`←REJECTED ·
+ *    `/dashboard`←APPROVED) 여기서 보낸 화면이 다시 돌려보내는 일은 없다.
  */
 export function accountRedirectFor(
   account: Account,
-  bankPromptSeen: boolean,
   allowed: AccountStatus,
 ): string | null {
   if (account.status === allowed) return null;
-  return homePathFor(account, bankPromptSeen);
+  return homePathForStatus(account.status);
 }
 
 export interface LoginValues {
@@ -442,76 +416,4 @@ export function validateReapply(
   return documents.license || documents.idCard
     ? {}
     : { license: VALIDATION_MESSAGE.reapply };
-}
-
-/* ── 정산 계좌 ────────────────────────────────────────────────────────── */
-
-/**
- * 계좌번호에 들어갈 수 있는 글자. **숫자와 `-`뿐이다.**
- *
- * ⚠️ 칸을 `type="number"`로 두지 않는 이유가 여기 있다 — 브라우저가
- *    `45.5`·`-3`·`1e3`을 스스로 받아 주고, 값이 유효하지 않으면 `value`를
- *    **빈 문자열로 준다.** 친 글자가 말없이 사라진다. `type="text"` +
- *    `inputMode="numeric"`으로 받고 판정을 이 한 자리에서 한다.
- */
-const ACCOUNT_NO_SHAPE = /^[\d-]+$/;
-
-export interface BankAccountValues {
-  bankName: string;
-  accountNo: string;
-  holder: string;
-}
-
-export const EMPTY_BANK_ACCOUNT: BankAccountValues = {
-  bankName: "",
-  accountNo: "",
-  holder: "",
-};
-
-/**
- * 계좌 폼 검증. **계좌번호에 아무 보정도 하지 않는다** — Figma `2334:2721`의
- * 저장값이 `110-482-948102`로 구분자를 담고 있고, 반대로 은행마다 자릿수가 달라
- * 규칙 없이 끼워 넣으면 진짜 번호가 망가진다. `normalizePhone`·
- * `normalizeBusinessNo`를 태우지 않는 이유도 같다 — 그 둘은 국가 표준이 있어
- * 보정하지만 계좌번호에는 그런 표준이 없다.
- */
-export function validateBankAccount(
-  values: BankAccountValues,
-): FieldErrors<BankField> {
-  const errors: FieldErrors<BankField> = {};
-
-  if (!values.bankName) errors.bankName = BANK_MESSAGE.bankName;
-
-  const accountNo = values.accountNo.trim();
-  if (!accountNo) errors.accountNo = BANK_MESSAGE.accountNo;
-  else if (!ACCOUNT_NO_SHAPE.test(accountNo))
-    errors.accountNo = BANK_MESSAGE.accountNoShape;
-  else if (
-    accountNo.length < ACCOUNT_NO_MIN ||
-    accountNo.length > ACCOUNT_NO_MAX
-  )
-    errors.accountNo = BANK_MESSAGE.accountNoLength;
-
-  /* 상호명으로 미리 채우지 않는다 — 개인 통장일 수 있고(Figma 더미도 `서울유통`과
-     `김서울`이 섞여 있다), 틀린 예금주는 송금 반송으로 이어진다 */
-  if (!values.holder.trim()) errors.holder = BANK_MESSAGE.holder;
-
-  return errors;
-}
-
-/** 저장할 모양으로 다듬는다. 앞뒤 공백만 뗀다 — 가운데 글자는 손대지 않는다 */
-export function toBankAccount(values: BankAccountValues): BankAccount {
-  return {
-    bankName: values.bankName,
-    accountNo: values.accountNo.trim(),
-    holder: values.holder.trim(),
-  };
-}
-
-/**
- * 계정 메뉴가 읽는 한 줄. 소매 `BankAccountRow`와 같은 순서다 — 두 앱이 같은 값을
- * 같은 얼굴로 말해야 사장이 "내가 준 계좌가 이거 맞나"를 눈으로 대조할 수 있다.
- */
-export function bankAccountSummary(account: BankAccount): string {
-  return `${account.bankName} ${account.accountNo}`;
 }

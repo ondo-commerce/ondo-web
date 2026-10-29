@@ -16,8 +16,8 @@ import { storeInitial } from "../derive";
  * `app/(shop)/layout.tsx`가 이 컴포넌트를 헤더에 끼워 넣는다(`CartButton`과 같은
  * 방식). 그래야 import가 `app → features → shared` 한 방향으로 남는다.
  *
- * TODO(#150) 설정 화면은 아직 더미 보관소(`store.ts`)를 본다. 상호명 수정 API가
- * 붙는 회차에 보관소를 `/me`로 갈아 끼우고 이 칩도 그걸 읽는다.
+ * 설정 화면과 주문 상세 수령 상호도 같은 `/me.shopName`을 `storeNameLabel`로
+ * 세운다 — 세 자리가 같은 이름을 말한다.
  *
  * 이니셜을 여기서 한 번에 뽑아 같이 넘긴다 — 메뉴가 따로 계산하면 이름과
  * 이니셜이 서로 다른 값을 보게 된다.
