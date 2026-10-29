@@ -84,10 +84,16 @@ export function StockReplyCard({
       data-variant-id={card.variantId}
       className="border-border grid gap-2 border-t pt-2"
     >
-      <span data-ac={card.band === "NONE" ? "S8-9" : "S8-4"}>
+      {/* 와이어프레임 .scard .fl — 본문 13px 보조색, 옵션 이름과 값만 500 + 본문색(QA F3) */}
+      <span
+        data-ac={card.band === "NONE" ? "S8-9" : "S8-4"}
+        className="text-secondary-foreground text-body"
+      >
         {stockCardLine(card).map((part, i) =>
           part.strong ? (
-            <b key={i}>{part.text}</b>
+            <b key={i} className="text-foreground font-medium">
+              {part.text}
+            </b>
           ) : (
             <span key={i}>{part.text}</span>
           ),
@@ -126,7 +132,7 @@ export function StockReplyCard({
         <span
           id={noteId}
           data-ac="S8-6"
-          className="text-destructive-strong text-xs"
+          className="text-destructive-strong text-body"
         >
           {reason}
         </span>
@@ -135,7 +141,7 @@ export function StockReplyCard({
           role="status"
           id={noteId}
           data-ac="S8-5"
-          className="flex flex-wrap items-center gap-1.5 text-xs"
+          className="text-body flex flex-wrap items-center gap-1.5"
         >
           <Check aria-hidden className="size-3.5" />
           {cardAddedText(note.qty)}
@@ -152,7 +158,7 @@ export function StockReplyCard({
           role="alert"
           id={noteId}
           data-ac="S8-7"
-          className="text-destructive-strong text-xs"
+          className="text-destructive-strong text-body"
         >
           {note.message}
         </span>

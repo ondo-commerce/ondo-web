@@ -6,6 +6,7 @@ import {
   bubbleKindOf,
   failureText,
   formatClock,
+  pendingAc,
   senderLabel,
   systemLineText,
 } from "../derive";
@@ -111,7 +112,7 @@ export function PendingItem({
       aria-busy={sending || undefined}
       data-client-id={item.clientMessageId}
       data-pending={item.status}
-      data-ac={sending ? "S6-1" : "S6-4"}
+      data-ac={pendingAc(item)}
       className={cn(
         "flex min-w-0 flex-col items-end gap-1 self-end",
         BUBBLE_WIDTH,
