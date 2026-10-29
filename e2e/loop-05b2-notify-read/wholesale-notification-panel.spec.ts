@@ -214,6 +214,73 @@ test("S11-9 그 사이 새 알림 → 409 안내, 점 그대로, 첫 행 새 주
   await expect(panel(page).getByRole("status")).toHaveCount(0);
 });
 
+/**
+ * 계약 한계(§5-2) 기록. 03-review M1 M2로 엿보기를 뺐다 — 이 경우 줄은 안 뜨고 모두 읽음은 POST 1회로 본 적 없는
+ * 새 행까지 읽는다. F3는 accept, 06b의 latestNotificationId로 푼다. 그때 이 테스트를 409 쪽으로 바꾼다
+ */
+test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 줄 0, 모두 읽음 POST 1회 200", async ({
+  page,
+}) => {
+  await openPanel(page);
+  /* 다른 기기 흉내: 같은 사업체가 1025 를 읽는다(읽음 범위는 사업체) */
+  await page.evaluate(() =>
+    fetch("/api/wholesale/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [1025] }),
+    }),
+  );
+  await notify(page, "incoming", { type: "NEW_ORDER" });
+  const counts = await count(page, COUNT_GET);
+  const lists = await count(page, LIST_GET);
+  await page.clock.fastForward(30_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+
+  await expect(markAllButton(page)).toHaveText("안 읽은 알림 3개 모두 읽음");
+  await expect(
+    panel(page).getByRole("button", { name: /^새 알림 \d+개 보기$/ }),
+  ).toHaveCount(0);
+  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(
+    lists,
+  );
+
+  await markAllButton(page).click();
+  await expect(markAllButton(page)).toHaveCount(0);
+  expect(await readBodies(page)).toEqual([
+    { ids: [1025] },
+    { all: true, expectedUnread: 3 },
+  ]);
+  await expect(panel(page).getByRole("status")).toHaveCount(0);
+  await expect(bell(page)).toHaveAccessibleName("알림");
+  expect(await rowIds(page)).not.toContain(NEW_ID);
+});
+
+test("S11-16 안 읽은 모르는 type → read {ids} 1회, 이동 0, 점 사라짐, 배지 −1(03-review M3)", async ({
+  page,
+}) => {
+  const created = (await notify(page, "incoming", {
+    type: "PAYMENT_RECEIVED",
+  })) as { data: { notification: { id: number } } };
+  const id = created.data.notification.id;
+  await page.clock.fastForward(30_000);
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 4개");
+  await openPanel(page);
+
+  const unknown = rowById(page, id);
+  await expect(unknown).toHaveJSProperty("tagName", "BUTTON");
+  await expect(unknown).toHaveAttribute("data-unread", "true");
+  await expect(unknown).toContainText("입금이 확인됐어요");
+  const history = await historyLength(page);
+  await unknown.click();
+
+  await expect(unknown).toHaveAttribute("data-unread", "false");
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 3개");
+  expect(await readBodies(page)).toEqual([{ ids: [id] }]);
+  await expect(page).toHaveURL(/\/products$/);
+  await expect(panel(page)).toBeVisible();
+  expect(await historyLength(page), "이동 0").toBe(history);
+});
+
 test("S11-10 열린 패널은 저절로 안 바뀌고 '새 알림 1개 보기'로만 첫 장 다시", async ({
   page,
 }) => {

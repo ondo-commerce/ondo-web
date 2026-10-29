@@ -210,12 +210,17 @@ export function OrderListView() {
                 className="mr-auto"
                 placeholder="거래처·품명 검색"
                 aria-label="거래처·품명 검색"
+                data-ac="S11-6"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />
             </div>
 
-            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            {/* 알림 진입이 둘 다 `전체`로 푼다(S11-6). data-ac는 칩마다가 아니라 칩 줄에 — 칩은 필터 컴포넌트 안이다 */}
+            <div
+              className="mb-4 flex shrink-0 flex-wrap items-center gap-3"
+              data-ac="S11-6"
+            >
               {/* 칩 건수만 서버를 기다린다. 기다리는 동안·실패했을 때도 칸은 누를 수 있어야
                 해서 fallback도 errorFallback도 스켈레톤·에러 블록이 아니라 건수 없는 같은
                 세그먼트다. 실패에는 작은 `건수 다시 시도`만 옆에 붙는다(F4) */}
@@ -370,6 +375,7 @@ function OrderListBody({
       {totalPages > 1 ? (
         <nav
           aria-label="페이지 이동"
+          data-ac="S11-6"
           className="mt-3 flex shrink-0 items-center justify-end gap-2 text-sm"
         >
           <span className="text-muted-foreground mr-2">

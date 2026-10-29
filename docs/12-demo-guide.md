@@ -83,3 +83,61 @@ PUBLIC_PW=… pnpm e2e:public     # 로그인 뒤 18화면까지. 비밀번호�
 - 로그인 뒤: 앱마다 한 번 로그인하고 그 세션(`e2e/.auth/`, git에 안 올라간다)을 재사용한다. 로그인이 실패하면 그 앱 점검은 돌지 않는다. 이메일은 위 계정이 기본값이고 `PUBLIC_W_EMAIL`, `PUBLIC_R_EMAIL`로 바꾼다
 - 실패해도 비밀번호가 남지 않게 trace를 끄고, 실패한 로그인 칸은 비운 뒤 실패시킨다
 - 다른 주소를 보려면 `PUBLIC_BASE_W`, `PUBLIC_BASE_R`
+
+## 7. 발표자용 장면 1 (목 모드)
+
+평가위원용이 아니라 발표 노트북용이다. 장면 1은 "소매가 채팅으로 재고를 묻고 → 자동 답 → 담고 → 주문 → 도매가 알림으로 그 주문을 연다"다. BE 없이 목(MSW)으로 돌리고, 같은 순서가 e2e `e2e/loop-05b2-notify-read/wholesale-scene1.spec.ts`(도매 절반), `e2e/loop-05b-stock-reply/scene1-retail.spec.ts`(소매 절반)에 있다.
+
+준비(탭 2개):
+
+```bash
+# 터미널 1 — 도매(목). 브라우저 탭 A: http://localhost:3000/login, 아무 이메일로 로그인
+NEXT_PUBLIC_API_MOCK=1 pnpm --filter wholesale dev
+# 터미널 2, 3 — 소매(가짜 API 3199 + 목). 브라우저 탭 B: http://localhost:3001
+node --no-warnings e2e/side-02/retail/stub-server.ts
+NEXT_PUBLIC_API_MOCK=1 API_ORIGIN=http://localhost:3199 pnpm --filter retail exec next dev -p 3001
+```
+
+목 저장소는 탭마다 따로다. 새로고침하면 그 탭의 목이 시드로 돌아간다. 도매 탭 안에서는 주 메뉴로만 옮긴다(주소창 이동도 새로고침이다).
+
+초기화(도매 탭 콘솔, 한 줄씩):
+
+```js
+await fetch("/__mock/chat/reset",{method:"POST",body:"{}"})
+await fetch("/__mock/notifications/reset",{method:"POST",body:"{}"})
+```
+
+순서:
+
+1. 소매 탭 B: 빈티지 플라워 셔츠 상세 → `재고 문의` → 되묻기 칩 → 자동 답 카드 → 장바구니 담기(05b-1 소매 절반)
+2. 도매 탭 A `/chats`: 소매 문의가 도매 목에 닿지 않으므로 같은 문의를 넣는다. 방 6(라온상점)에 재고 문장 + 상품 문맥
+
+   ```js
+   await fetch("/__mock/chat/rooms/6/incoming",{method:"POST",body:JSON.stringify({body:"레드 M 몇 장 있어요",contextListingId:2001})})
+   ```
+
+   자동 답 말풍선과 근거 칸("판매가능 35장, 주문 한도 500장")을 보여 준다. 소매에게 나간 보기를 보여 주려면 옵션 없이 먼저 묻는다 — 되묻기 말풍선에 "보기: 레드 / S, 레드 / M, …" 한 줄이 생긴다(누를 수 없는 글자)
+
+   ```js
+   await fetch("/__mock/chat/rooms/6/incoming",{method:"POST",body:JSON.stringify({body:"이 셔츠 몇 장 남았어요?",contextListingId:2001})})
+   ```
+3. `자동 답변` 스위치를 끄고 위 명령을 한 번 더 → 가운데 넘김 줄. 30초 안에 헤더 채팅 배지가 1 오른다
+4. 스위치를 다시 켠다. 주 메뉴 `상품`으로 옮긴다
+5. 새 주문(소매 주문 접수 대신):
+
+   ```js
+   await fetch("/__mock/notifications/incoming",{method:"POST",body:JSON.stringify({type:"NEW_ORDER"})})
+   ```
+
+   30초 안에 헤더 종 배지 3 → 4
+6. 종 → 맨 위 "봄봄상회 새 주문 · 방금" → 주문 탭으로 가서 그 주문(7006)이 펼쳐지고 우측 카드 `신규 주문`. 종 배지 4 → 3
+
+BE 모드와 다른 점:
+
+| | 목 모드(지금) | BE 모드(BE 알림 구현 뒤) |
+|---|---|---|
+| 소매 주문 → 도매 | 소매 탭의 주문 접수가 도매에 안 닿는다. 5번 주입이 대신한다. "주문 접수는 실서버에서 이어진다"고 말한다 | 소매 주문 커밋이 알림을 만든다. 주입 없음 |
+| 소매 문의 → 도매 채팅 | 2번 주입이 대신한다 | 같은 방에 바로 보인다 |
+| 초기화 | 위 reset 두 줄, 또는 새로고침 | 운영자가 시드 리셋 |
+
+소매 헤더의 "답 왔음" 배지(장면 1의 8단계)는 아직 없다. loop-06(#297)에서 소매 알림과 같이 붙는다.

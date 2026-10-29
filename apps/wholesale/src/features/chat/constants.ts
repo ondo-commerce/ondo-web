@@ -47,6 +47,10 @@ export const ROOM_TEXT = {
   system: "시스템",
   autoReply: "자동 답변",
   clarify: "되묻기",
+  /** 되묻기 보기 줄 머리(#296 S13-1) */
+  choicesPrefix: "보기: ",
+  /** 게시가 내려간 보기 뒤에 붙는 글자. 와이어프레임 `#state-clarify` 그대로 띄어 쓰지 않는다 */
+  choiceNotOrderable: "(주문 불가)",
 } as const;
 
 /**

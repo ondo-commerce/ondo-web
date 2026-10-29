@@ -7,6 +7,7 @@ import {
   failureText,
   formatClock,
   senderLabel,
+  toClarifyChoicesView,
   toFactsView,
 } from "../derive";
 import type { ChatMessage, PendingMessage } from "../types";
@@ -182,7 +183,8 @@ export function Bubble({
  * 자동 답변과 되묻기 — 내 쪽, 흰 면 + 테두리 + `자동 답변` 칩(디자인 결정 6, 7).
  * 근거 칸은 도매 화면에만 있다: 정확 수량과 "소매처가 본 구간"을 같이 보여 사장이 소매처가 무엇을 봤는지 안다.
  * 값이 없는 되묻기도 근거 칸 위 선과 조회 시각 줄은 있다(디자인 결정 26).
- * 되묻기의 옵션 칩은 계약에 필드가 없어 그리지 않는다(소매가 고르는 것이라 도매에선 눌리지도 않는다).
+ * 되묻기는 본문 아래, 근거 칸 위에 소매에게 나간 보기를 **그냥 글자로** 한 줄 둔다(#296 S13-1, 디자인 결정 37).
+ * 소매가 고르는 것이라 도매에선 누를 수 없다 — button, 링크, 탭 정지가 없다. 05b-1의 "그리지 않음"(결정 26)을 바꿨다.
  */
 function AutoReplyBubble({
   message,
@@ -192,6 +194,7 @@ function AutoReplyBubble({
   clarify: boolean;
 }) {
   const facts = toFactsView(message.autoReply);
+  const choices = clarify ? toClarifyChoicesView(message.autoReply) : null;
   return (
     <Bubble tone="plain" className="grid gap-2">
       <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
@@ -201,6 +204,11 @@ function AutoReplyBubble({
         {clarify ? ROOM_TEXT.clarify : null}
       </span>
       <span>{message.body}</span>
+      {choices !== null ? (
+        <span data-ac="S13-1" className="text-secondary-foreground text-body">
+          {choices}
+        </span>
+      ) : null}
       {facts ? (
         <span className="border-border text-secondary-foreground text-body grid gap-0.5 border-t pt-2">
           {facts.lines.map((line) => (
