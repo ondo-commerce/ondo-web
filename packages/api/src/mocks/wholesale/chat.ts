@@ -695,6 +695,8 @@ function settingsFor(wholesalerId: number): AutoReplySettings {
  *
  * 넘김 줄은 방에 이미 열린 넘김이 있으면 또 넣지 않는다 — 사장이 답하기 전까지 소매가 쓰는 글마다
  * "사장님께 전달했어요"가 쌓이면 대화가 그 줄로 덮인다. 자동 답(재고 구간)은 그래도 붙는다.
+ * 단 재고 0 답의 넘김 줄은 예외로 늘 붙인다(D34, 디자인 결정 27) — 소매 카드는 바로 아래 넘김 줄이
+ * 있어야 "사장님이 미송 여부를 답한다"가 보이고, 그 줄이 없으면 담기도 막힌 채 답이 끝난 것처럼 보인다.
  *
  * 판정이 던지면(목 버그) 오류가 아니라 넘김이다(§5-2): 소매는 답 대신 "전달했어요"를 본다.
  */
@@ -726,8 +728,13 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
     );
   }
   const sentAt = new Date(now).toISOString();
+  const zeroStock = lines.some(
+    (line) =>
+      line.kind === "AUTO_REPLY" &&
+      line.autoReply?.facts.stock?.band === "NONE",
+  );
   return lines
-    .filter((line) => !(line.kind === "HANDOFF" && alreadyOpen))
+    .filter((line) => !(line.kind === "HANDOFF" && alreadyOpen && !zeroStock))
     .map((line) =>
       append(r, {
         sender: line.sender,

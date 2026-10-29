@@ -229,23 +229,38 @@ function openClarify(
   return null;
 }
 
-/** 본문의 색상 + 사이즈가 가리키는 옵션이 **하나**면 그것. 옵션어가 없거나 여럿이면 null */
+/**
+ * 본문의 색상 **과** 사이즈가 가리키는 옵션이 **하나**면 그것. 그 밖엔 null.
+ *
+ * 한쪽만으로 좁히지 않는다(§4-2 2, 7) — "빨강 L"(빨강은 옵션어가 아님)이 "L"로만 읽혀 후보 하나에
+ * 맞으면, 소매가 말하지 않은 색의 재고를 답하게 된다. 잘못된 자동 답 0이 목표라 되묻기나 넘김이 낫다.
+ * 예외 하나: 보기 전체에서 값이 하나뿐인 칸(전부 FREE인 상품의 사이즈)은 말하지 않아도 읽은 것으로
+ * 친다. 고를 게 없는 칸이라 틀릴 수 없다("베이지 몇 장", 골든셋 S13).
+ * 게시 옵션이 1개뿐인 상품은 이 함수가 아니라 판정 7의 "게시 옵션 1개면 그것"이 받는다.
+ */
 function matchVariant(
   normalized: string,
   variants: readonly InquiryVariant[],
 ): InquiryVariant | null {
   const flat = compact(normalized);
-  const colors = [...new Set(variants.map((v) => v.color))].filter((c) =>
-    flat.includes(c),
-  );
-  const sizes = [...normalized.matchAll(SIZE_TOKEN)]
+  const allColors = [...new Set(variants.map((v) => v.color))];
+  const allSizes = [...new Set(variants.map((v) => v.size))];
+  const saidColors = allColors.filter((c) => flat.includes(c));
+  const saidSizes = [...normalized.matchAll(SIZE_TOKEN)]
     .map((m) => m[1] as Size)
-    .filter((s) => variants.some((v) => v.size === s));
-  if (colors.length === 0 && sizes.length === 0) return null;
+    .filter((s) => allSizes.includes(s));
+  // 둘 다 말하지 않았으면 옵션어가 없는 문장이다 — 값이 하나뿐인 칸으로 채우지 않는다
+  if (saidColors.length === 0 && saidSizes.length === 0) return null;
+  const colors =
+    saidColors.length > 0
+      ? saidColors
+      : allColors.length === 1
+        ? allColors
+        : [];
+  const sizes =
+    saidSizes.length > 0 ? saidSizes : allSizes.length === 1 ? allSizes : [];
   const hits = variants.filter(
-    (v) =>
-      (colors.length === 0 || colors.includes(v.color)) &&
-      (sizes.length === 0 || sizes.includes(v.size)),
+    (v) => colors.includes(v.color) && sizes.includes(v.size),
   );
   return hits.length === 1 ? (hits[0] ?? null) : null;
 }

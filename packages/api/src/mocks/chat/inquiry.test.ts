@@ -214,6 +214,70 @@ describe("S7-3 골든셋 35개 지표", () => {
   });
 });
 
+/** 골든셋 밖 시나리오. 골든셋 파일은 계약 stage에서만 바꾼다 — 그래서 여기 unit으로 둔다 */
+function adhoc(
+  id: string,
+  listingId: number,
+  steps: { text: string; expect: GoldenExpect }[],
+): StepResult[] {
+  return runScenario({
+    id,
+    title: id,
+    required: false,
+    group: "handoff",
+    room: {
+      wholesalerId: 101,
+      context: { listingId, ageMinutes: 2 },
+      autoReply: true,
+    },
+    steps: steps.map((st) => ({ ...st, inquiry: null })),
+  });
+}
+
+const CLARIFY_2001 = {
+  kind: "CLARIFY",
+  intent: "STOCK",
+  choices: [3001, 3002, 3003, 3004, 3005],
+};
+
+describe("옵션 확정은 색상과 사이즈 둘 다(§4-2 2, 7, codex-meta M1)", () => {
+  it('되묻기 뒤 "빨강 L 몇 장 있어요?" → 넘김(CLARIFY_AGAIN), "L이요" → 넘김. L이 레드뿐이어도 레드 L로 답하지 않는다', () => {
+    for (const [text, reason] of [
+      ["빨강 L 몇 장 있어요?", "CLARIFY_AGAIN"],
+      ["빨강 L", "NO_INTENT"],
+      ["L이요", "NO_INTENT"],
+    ] as const) {
+      const [, second] = adhoc("M1-inherit", 2001, [
+        { text: "이 셔츠 몇 장 남았어요?", expect: CLARIFY_2001 },
+        { text, expect: { kind: "HANDOFF", reason } },
+      ]);
+      expect(second?.actual, text).toEqual({ kind: "HANDOFF", reason });
+    }
+  });
+
+  it("첫 문장에 사이즈만, 색상만 있으면 답하지 않고 되묻는다", () => {
+    for (const text of [
+      "L 몇 장 있어요?",
+      "빨강 L 몇 장 있어요?",
+      "레드 몇 장 남았어요?",
+    ]) {
+      const [first] = adhoc("M1-fresh", 2001, [{ text, expect: CLARIFY_2001 }]);
+      expect(first?.actual, text).toEqual(CLARIFY_2001);
+    }
+  });
+
+  it("값이 하나뿐인 칸은 말하지 않아도 된다(FREE 상품의 색상만), 게시 옵션 1개면 옵션어 없이 답(S7-7)", () => {
+    const [beige] = adhoc("M1-free", 2002, [
+      { text: "베이지 몇 장 남았어요?", expect: {} },
+    ]);
+    expect(beige?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3007 });
+    const [single] = adhoc("M1-single", 2901, [
+      { text: "FREE 몇 장 남았어요?", expect: {} },
+    ]);
+    expect(single?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3901 });
+  });
+});
+
 describe("S7-4 정규화 표 6행", () => {
   for (const row of GOLDEN.normalization) {
     it(row.rule, () => {
