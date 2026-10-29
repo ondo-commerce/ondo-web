@@ -37,6 +37,7 @@ import {
   askChipBusy,
   askListingId,
   backorderChoiceInquiry,
+  backorderGuardSequences,
   choiceInquiry,
   choiceSendFailed,
   confirmedReadOf,
@@ -290,6 +291,7 @@ function ChatRoom({
     sessionLost,
     handoffCauses: handoffCauses(thread.messages),
     choiceFailed: choiceSendFailed(shownPending),
+    backorderGuard: backorderGuardSequences(thread.messages),
   };
 
   return (

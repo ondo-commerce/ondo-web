@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { apiFetch, isApiError } from "@ondo/api";
+import { useEffect } from "react";
 import { chatKeys } from "./keys";
 import { chatMockReady } from "./mockWorker";
 import { failedCounts, headerPollDelayMs, isStaleCount } from "../derive";
@@ -62,9 +63,19 @@ async function fetchHeaderCounts(
  * 헤더 count(S2-3). 셸에 하나. 30초마다, 실패하면 60 → 120 → 300초, 401과 403이면 멈춘다.
  * 탭이 숨으면 묻지 않고(`refetchIntervalInBackground: false`), 다시 보이면 즉시 1회(`"always"`).
  * 멈춘 뒤엔 `enabled`가 꺼진다 — 탭 복귀나 읽음 뒤 다시 받기도 요청을 내지 않는다.
+ *
+ * 그 멈춤은 **셸이 새로 붙을 때** 푼다(loop-06 QA F1, 도매 c21c590과 같은 방식). 로그아웃 → 로그인은
+ * `router.replace`라 QueryClient가 그대로고, 지우지 않으면 다시 로그인한 사장이 새로고침 전까지 배지 0을 본다.
+ * 셸(`(shop)` 레이아웃)은 `/login`(`(account)`)에서 내려가니 마운트 한 번 = 세션 한 번이다. 같은 화면에
+ * 머무는 동안은 그대로 멈춘다.
  */
 export function useHeaderCountsQuery() {
   const queryClient = useQueryClient();
+  useEffect(() => {
+    const key = chatKeys.headerCounts();
+    if (queryClient.getQueryData<HeaderCounts>(key)?.kind === "stopped")
+      void queryClient.resetQueries({ queryKey: key, exact: true });
+  }, [queryClient]);
   return useQuery({
     queryKey: chatKeys.headerCounts(),
     queryFn: () => fetchHeaderCounts(queryClient),
