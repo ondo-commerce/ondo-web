@@ -28,6 +28,7 @@ import type {
   ProductCreateRequest,
   ProductDetail,
   ProductField,
+  ProductFormSnapshot,
   ProductFormValue,
   ProductRowView,
   ProductSummary,
@@ -36,6 +37,7 @@ import type {
   SkuSize,
   SkuView,
   UploadFailure,
+  UploadSlot,
   UploadSlotStatus,
 } from "./types";
 import { formatNumber } from "@/shared/lib/format";
@@ -223,6 +225,100 @@ export function orderCompleted<T extends { status: UploadSlotStatus }>(
     ready.push(slot);
   }
   return ready;
+}
+
+/**
+ * 실패 칸 재시도. 대기로 되돌리면서 **큐 끝으로 옮긴다**(§4-4 "그때의 끝에 붙는다").
+ *
+ * 원래 자리에서 대기로만 바꾸면 `orderCompleted`가 그 칸 앞에서 멈춰, 실패로 이미
+ * 건너뛰었던 뒤쪽 완료분이 다시 보류되고 대표 순서까지 바뀐다(F1). 실패한 칸은
+ * 선택 순서에서 빠진 것이고, 재시도는 "지금 다시 고른 것"과 같은 순서다.
+ * 같은 파일·같은 멱등키는 그대로다 — 자리만 바뀐다. 못 찾으면 그대로 돌려준다.
+ */
+export function requeueForRetry<
+  T extends { slotId: string; status: UploadSlotStatus; failure: unknown },
+>(slots: readonly T[], slotId: string): T[] {
+  const target = slots.find((s) => s.slotId === slotId);
+  if (target === undefined) return [...slots];
+  return [
+    ...slots.filter((s) => s.slotId !== slotId),
+    { ...target, status: "queued", failure: null },
+  ];
+}
+
+/**
+ * 업로드 401/403 중 세션이 끊긴 쪽인가(S4-3). 401이면 화면이 저장을 잠그고, 403(승인 안 됨)은
+ * 세션은 살아 있어 서버 문구만 보여 주고 저장은 기존 경로에 맡긴다.
+ */
+export function isSessionLostError(error: unknown): boolean {
+  return (
+    isApiError(error) && error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED
+  );
+}
+
+/**
+ * 업로드 칸을 거둘 때 할 일(S4-2). 격자가 사라지거나(언마운트) 세션이 끊겨 큐를 멈출 때 쓴다.
+ *
+ * - `abort`: 진행 칸만. 대기 칸은 요청이 아직 없고, 보류·실패 칸은 요청이 이미 끝났다.
+ * - `revoke`: 넘겨받은 칸의 미리보기 **전부**. 격자가 `createObjectURL`로 만든 것만 여기 있다 —
+ *   서버(목)가 준 `url`은 등록 칸이 그리는 중일 수 있어 절대 넣지 않는다(S4-5).
+ *
+ * 순수 함수라 실제 abort·revoke는 부르는 쪽이 한다. 늦게 온 응답은 칸이 이미 없어서
+ * 아무것도 바꾸지 않는다 — 그건 격자의 몫이다.
+ */
+export function cancelUploads(
+  slots: readonly Pick<UploadSlot, "slotId" | "status" | "previewUrl">[],
+): { abort: string[]; revoke: string[] } {
+  return {
+    abort: slots.filter((s) => s.status === "uploading").map((s) => s.slotId),
+    revoke: slots.map((s) => s.previewUrl),
+  };
+}
+
+/**
+ * 앱 안 Link 클릭을 이탈 가드가 붙잡을지(S5). 붙잡으면 이동할 경로(`pathname+search+hash`),
+ * 아니면 `null`. 브라우저·Next가 원래 하던 일을 그대로 둬야 하는 클릭은 전부 `null`이다:
+ *
+ * - 이미 누가 막은 클릭, 왼쪽 버튼이 아닌 클릭, ⌘·Ctrl·Shift·Alt 클릭 — 새 탭·새 창·다운로드다.
+ *   원래 탭의 폼은 그대로 남는다(S5-3).
+ * - `_self`가 아닌 `target`, `download` 링크.
+ * - http(s)가 아닌 스킴(`mailto:` 등), 다른 origin — 문서 전체 이동이라 beforeunload가 받는다.
+ *   여기서도 잡으면 경고가 두 번 뜬다.
+ * - pathname과 search가 지금과 같은 링크 — 떠나는 게 아니다. pathname만 비교하면 query만
+ *   바뀌는 이동을 놓친다.
+ */
+export function linkLeaveTarget(
+  click: {
+    defaultPrevented: boolean;
+    button: number;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    /** `<a target>`. 없으면 빈 문자열 */
+    target: string;
+    download: boolean;
+    /** `<a>.href` — 브라우저가 절대 URL로 풀어 준 값 */
+    href: string;
+  },
+  current: { origin: string; pathname: string; search: string },
+): string | null {
+  if (click.defaultPrevented || click.button !== 0) return null;
+  if (click.metaKey || click.ctrlKey || click.shiftKey || click.altKey)
+    return null;
+  if (click.target !== "" && click.target !== "_self") return null;
+  if (click.download) return null;
+  let url: URL;
+  try {
+    url = new URL(click.href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.origin !== current.origin) return null;
+  if (url.pathname === current.pathname && url.search === current.search)
+    return null;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 /**
@@ -691,10 +787,16 @@ export type ProductFormErrors = FormErrors<ProductField> & {
  *
  * 가격표 오류는 한 번에 하나만 말한다. 정수 아님 → 자릿수 → 판매가 없음 순서다 —
  * 앞의 것을 못 고치면 뒤의 판정이 의미가 없다.
+ *
+ * `requireImages`(D21): **판매 중 상태로 저장되는 게시글**은 사진이 1장 이상이어야 한다 —
+ * 마켓에 오르는 순간 썸네일이 있어야 해서다. 등록 화면은 `함께 게시`면 항상(새 게시글은
+ * `ON_SALE`로 만들어진다), 수정 화면은 저장 시점 상태 토글이 정한다. 시즌 종료로 저장되면
+ * 면제 — 옛 0장 게시글이 격자가 잠긴 채 막다른 길에 갇히지 않게(§9-11).
  */
 export function validateProductForm(
   product: ProductFormValue,
   post: PostFormValue | null,
+  { requireImages = false }: { requireImages?: boolean } = {},
 ): ProductFormErrors {
   const errors: ProductFormErrors = {};
   if (product.name.trim() === "") errors.name = "품명을 입력해 주세요.";
@@ -706,11 +808,69 @@ export function validateProductForm(
       "사이즈를 켜지 않은 색상이 있어요. 사이즈를 켜거나 그 색상을 빼 주세요.";
   if (post && post.name.trim() === "")
     errors["listing.title"] = "게시글 이름을 입력해 주세요.";
+  if (post && requireImages && post.images.length === 0)
+    errors["listing.images"] = LISTING_IMAGES_REQUIRED_MESSAGE;
   if (post) {
     const priceError = priceTableError(product, post);
     if (priceError) errors["listing.variantPrices"] = priceError;
   }
   return errors;
+}
+
+/** `validateProductForm`의 이미지 필수 문구. 수정 화면이 게시글을 안 보내는 저장에서도 같은 말을 쓴다 */
+export const LISTING_IMAGES_REQUIRED_MESSAGE =
+  "대표 이미지를 1장 이상 올려 주세요.";
+
+/**
+ * 폼이 초기값에서 벗어났는가(S3-15, D22). `취소` 확인 모달과 `beforeunload` 경고의 조건이다.
+ *
+ * **값으로 비교한다.** 참조 비교면 같은 값을 다시 친 뒤(품명 한 글자 넣고 지움) "바뀌었다"가
+ * 되어 아무것도 안 바꾼 사장에게 되묻는다. 가격표는 키 순서가 달라도 같은 값이면 같다 —
+ * `toPostForm`이 만든 순서와 사장이 고친 순서가 다를 수 있다.
+ *
+ * 업로드 슬롯은 격자가 드는 상태라 인자가 아니다 — 호출부가 `isProductFormDirty(...) || uploading`
+ * 으로 합친다. `publishToMarket`(등록)·`status`(수정)는 화면마다 한쪽만 있다.
+ */
+export function isProductFormDirty(
+  initial: ProductFormSnapshot,
+  current: ProductFormSnapshot,
+): boolean {
+  if (initial.publishToMarket !== current.publishToMarket) return true;
+  if (initial.status !== current.status) return true;
+  const a = initial.product;
+  const b = current.product;
+  if (
+    a.name !== b.name ||
+    a.category.join("\n") !== b.category.join("\n") ||
+    a.options.length !== b.options.length ||
+    a.options.some((o, i) => {
+      const p = b.options[i];
+      return (
+        p === undefined ||
+        o.id !== p.id ||
+        o.color.id !== p.color.id ||
+        o.sizes.join(",") !== p.sizes.join(",")
+      );
+    })
+  )
+    return true;
+  const x = initial.post;
+  const y = current.post;
+  if (
+    x.name !== y.name ||
+    x.description !== y.description ||
+    x.allowSinglePiece !== y.allowSinglePiece ||
+    x.images.join("\n") !== y.images.join("\n")
+  )
+    return true;
+  const xKeys = Object.keys(x.prices).sort();
+  const yKeys = Object.keys(y.prices).sort();
+  if (xKeys.join("\n") !== yKeys.join("\n")) return true;
+  return xKeys.some((key) => {
+    const p = x.prices[key];
+    const q = y.prices[key];
+    return p?.price !== q?.price || p?.orderLimit !== q?.orderLimit;
+  });
 }
 
 /**
@@ -768,6 +928,18 @@ export function clearPostErrors(
     delete rest["listing.variantPrices"];
     delete rest.priceRowIds;
   }
+  return rest;
+}
+
+/**
+ * 이미지 채널(`onImagesChange`)은 값을 받지 않고 **갱신 함수**를 받는다 — 업로드 응답은
+ * 사장의 입력이 아니라 뒤늦게 오는 콜백이라 그 시점의 `images`를 닫은 값으로 만들면 앞 장을
+ * 덮어쓴다(#250 §4-2). 값이 없으니 `clearPostErrors`의 참조 비교를 못 하고, 그 칸 오류만 지운다.
+ */
+export function clearImagesError(errors: ProductFormErrors): ProductFormErrors {
+  const rest: ProductFormErrors = { ...errors };
+  delete rest._form;
+  delete rest["listing.images"];
   return rest;
 }
 

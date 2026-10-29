@@ -3,9 +3,10 @@
 import { Button, Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { StatCards, type StatCard } from "@/shared/components/StatCards";
 import { CatalogSection } from "./CatalogSection";
-import { TRADE_STATS_PENDING, WHOLESALER_HOME_AXES } from "../constants";
+import { TRADE_STATS_UNAVAILABLE, WHOLESALER_HOME_AXES } from "../constants";
 import { formatUnpaid } from "../derive";
 import { useFavorites } from "../useFavorites";
 import type {
@@ -36,8 +37,16 @@ export function WholesalerHomeView({
   filter,
   options,
   paging,
+  inquiryAction,
+  inquiryNotice,
 }: {
   wholesaler: Wholesaler;
+  /**
+   * 머리의 `문의하기`(loop-05a)와 실패 한 줄 자리. 거래 이력과 상관없이 선다(Q2) — 첫 주문 전에
+   * 재고를 묻는 사장에게 거래 이력이 있을 리 없다. 채팅은 다른 feature라 `app/`이 끼운다
+   */
+  inquiryAction?: ReactNode;
+  inquiryNotice?: ReactNode;
   /**
    * 거래 지표. 원본은 `features/settlement`의 `GET /settlements`이고 `app/`이 이
    * 도매처 줄을 찾아 넘긴다(F1). **거래한 적 없는 것(`null`)과 아직 알 수 없는 것
@@ -82,14 +91,16 @@ export function WholesalerHomeView({
           {/* 거래한 적 없는 도매처에서는 이 버튼을 감춘다. `/wholesalers`는 거래
               이력이 있는 곳만 서는 목록이라(§3-0 A), 누르면 방금 보던 도매처가
               없는 표로 떨어진다 — 사장이 목록을 뒤지다 만다(F9) */}
-          {traded ? (
-            <div className="ml-auto phone:ml-0">
+          <div className="ml-auto flex items-center gap-2 phone:ml-0">
+            {traded ? (
               <Button asChild variant="line" size="sm">
                 <Link href="/wholesalers">거래처에서 보기</Link>
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+            {inquiryAction}
+          </div>
         </div>
+        {inquiryNotice}
 
         <StatCards cards={statCardsOf(tradeStats)} />
       </Panel>
@@ -117,15 +128,15 @@ export function WholesalerHomeView({
 }
 
 /**
- * 통계 2칸이 쓸 값. fixtures 시절의 `누적 주문`은 스펙에 없어 뺐다.
+ * 통계 칸이 쓸 값. fixtures 시절의 `누적 주문`은 스펙에 없어 뺐다.
  *
  * `미결제 잔액`은 `features/settlement`의 `GET /settlements`에서 온 값이라, 거래처
  * 관리 표·정산 표와 글자 그대로 같은 말을 한다. 예전에는 여기서 따로 적어서
  * 무드온이 두 화면에서 다르게 읽혔다(F1 · #128).
  *
- * `진행 중`은 **늘 `준비 중`이다** — 확정 대기·미송 건수를 도매처별로 주는 소매
- * API가 없다(#240). 0건으로 세우면 진행 중인 주문이 있는 도매처가 한가해 보인다.
- * 서버가 주면 이 카드만 실값으로 바꾼다.
+ * `진행 중` 카드는 없다 — 확정 대기·미송 건수를 도매처별로 주는 소매 API가 없어
+ * 늘 "준비 중"이었다(#240). 0건으로 세우면 진행 중인 주문이 있는 도매처가 한가해
+ * 보이므로 칸째 뺐다. 서버가 주면(B8) 이 배열 앞에 다시 단다.
  *
  * `stats`가 null이면 **거래한 적 없는 도매처**다. 0원으로 세우되 그건 계산
  * 결과가 아니라 "거래가 없다"는 뜻이다(#122 AC19).
@@ -134,16 +145,13 @@ export function WholesalerHomeView({
  * 아니다. 0으로 세우면 거래 없음으로 읽힌다(#183).
  */
 function statCardsOf(slot: TradeStatsSlot): StatCard[] {
-  const ongoing: StatCard = { label: "진행 중", ...TRADE_STATS_PENDING };
-
   if (slot.status === "unavailable") {
-    return [ongoing, { label: "미결제 잔액", ...TRADE_STATS_PENDING }];
+    return [{ label: "미결제 잔액", ...TRADE_STATS_UNAVAILABLE }];
   }
 
   const { stats: tradeStats } = slot;
 
   return [
-    ongoing,
     {
       label: "미결제 잔액",
       value: formatUnpaid(tradeStats?.balance ?? 0),

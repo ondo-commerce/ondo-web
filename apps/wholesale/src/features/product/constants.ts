@@ -192,8 +192,24 @@ export const IMAGE_REJECT_MESSAGE = {
   SIZE: "4MB까지 올릴 수 있어요 — 사진 앱에서 크기를 줄여 주세요",
 } as const;
 
+/**
+ * 업로드 중 세션이 끊겼을 때 저장 버튼 옆 한 줄(#252 S4-3). 다시 로그인해 이어 저장하는 길은
+ * 아직 없어서(다음 회차) 지금 보장할 수 있는 것만 말한다 — 화면은 남고, 저장은 잠긴다.
+ */
+export const SESSION_LOST_MESSAGE =
+  "로그인이 끊겼어요. 다시 로그인하기 전엔 저장할 수 없어요.";
+
 /** 격자가 없거나 비었을 때의 업로드 요약. 등록 화면이 `함께 게시`를 끄면 여기로 돌아온다 */
 export const IDLE_UPLOAD_STATE: UploadState = {
   uploading: false,
   failedCount: 0,
 };
+
+/**
+ * 격자 칸·`+`·`×`에 붙이는 포커스 표시. `packages/ui`의 `Button`·`AddSlot`은 포커스 링이
+ * 꺼져 있고 그 파일은 읽기 전용이다(#254 F6). `account`에 같은 값이 있지만 feature끼리
+ * import 하지 않으므로 복제한다. **`outline-hidden`을 걸지 않는다** — 기본 링을 지운 채
+ * 아무것도 안 그리는 것이 `account` 앞 회차 결함이었다.
+ */
+export const FOCUS_RING_CLASS =
+  "focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-2";

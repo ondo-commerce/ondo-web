@@ -96,11 +96,28 @@ export const EMAIL_TAKEN_MESSAGE =
   "이미 가입된 이메일이에요. 로그인하거나 다른 이메일을 써 주세요.";
 
 /**
+ * "준비 중" 대신 서는 문의 한 줄. 비밀번호 찾기, 승인 대기·거절의 문의하기,
+ * 재신청 안내가 **전부 이 상수 하나**를 본다 — 연락처가 바뀌면 여기만 고친다.
+ * 막다른 안내("준비 중이에요")는 눌러 본 사람에게 다음 걸음을 주지 않는다
+ * (`side-02` N7). 도매 `features/account/constants.ts`에 같은 값이 따로 있다 —
+ * 앱끼리 import하지 않는다.
+ *
+ * TODO(#276): 운영 문의 이메일을 받으면 이 값만 그 주소가 든 문장으로 바꾼다.
+ */
+export const CONTACT_LINE = "담당자에게 문의해 주세요";
+
+/**
+ * 상호가 비어 내려온 계정의 표시. `/me.shopName`은 스펙상 필수가 아니다
+ * (`required` 없음) — 빈 칸으로 두면 "상호 없는 가게"가 아니라 화면이 덜 그려진
+ * 것으로 읽힌다. 더미 상호로 채우면 남의 이름이 된다(`side-02` N5).
+ */
+export const STORE_NAME_FALLBACK = "상호 미등록";
+
+/**
  * 재신청(등록증 다시 올리기) 접수 API가 스냅샷에 없다. 파일까지 골라 눌렀는데
  * 아무 일도 없으면 안 되므로, 못 보내는 이유를 화면이 글자로 말한다.
  */
-export const REAPPLY_UNAVAILABLE_MESSAGE =
-  "재신청 접수는 아직 준비 중이에요. 고른 파일은 보내지지 않았어요 — 운영자에게 문의해 주세요.";
+export const REAPPLY_UNAVAILABLE_MESSAGE = `재신청은 아직 온라인으로 받지 않아요. 고른 파일은 보내지지 않았어요 — ${CONTACT_LINE}.`;
 
 /** 상태 한글 이름. 배지·안내 문구가 같은 말을 쓰게 한다 */
 export const ACCOUNT_STATUS_LABEL = {
@@ -263,30 +280,6 @@ export function separatorNote(normalized: string): string {
 }
 
 /* ── 설정 ─────────────────────────────────────────────────────────────── */
-
-/**
- * 설정은 패널마다 `저장`이 따로다 — 검증 대상도 그 패널의 칸뿐이다.
- *
- * 화면 전체를 한 번에 보면 `가게 정보`의 저장이 아직 손도 안 댄 계정 칸 때문에
- * 막히고, 포커스가 다른 패널로 튄다. 순서는 각 패널에 놓인 순서 그대로다.
- */
-export const STORE_PANEL_FIELDS = ["storeName"] as const;
-export const ACCOUNT_PANEL_FIELDS = ["ownerName", "phone"] as const;
-
-/** 비밀번호 변경 다이얼로그에서 오류를 훑는 순서 = 칸이 놓인 순서 */
-export const PASSWORD_FIELD_ORDER = [
-  "currentPassword",
-  "newPassword",
-  "newPasswordConfirm",
-] as const;
-
-/**
- * 비밀번호 자리의 가림 문자. 확정 와이어프레임의 `••••••••` 그대로다.
- *
- * 실제 비밀번호 길이를 흉내 내지 않는다 — 계정 더미에 비밀번호가 없고(`types.ts`),
- * 길이를 보이면 그 자체가 정보다.
- */
-export const PASSWORD_MASK = "••••••••";
 
 /**
  * 잠긴 값 상자(`.f.lock`) — 회색 면 + **gray-600** 글자.

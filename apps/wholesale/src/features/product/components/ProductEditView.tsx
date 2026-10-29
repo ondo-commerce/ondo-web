@@ -4,6 +4,7 @@ import { Button, cn, Dialog, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
+import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
 import {
@@ -12,11 +13,19 @@ import {
   useUpdateProductMutation,
 } from "../api/mutations";
 import { useProductDetailQuery } from "../api/queries";
-import { IDLE_UPLOAD_STATE, LIST_PARAM } from "../constants";
 import {
+  IDLE_UPLOAD_STATE,
+  SESSION_LOST_MESSAGE,
+  LIST_PARAM,
+} from "../constants";
+import {
+  clearImagesError,
   clearPostErrors,
   clearProductErrors,
   firstInvalidField,
+  isProductFormDirty,
+  isSessionLostError,
+  LISTING_IMAGES_REQUIRED_MESSAGE,
   shouldSendListing,
   toPostForm,
   toProductForm,
@@ -27,6 +36,8 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView, UploadState } from "../types";
+import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
+import { useLinkLeaveGuard } from "../useLinkLeaveGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
 import { describeError } from "@/shared/api/describeError";
 import {
@@ -116,12 +127,84 @@ function ProductEditForm({ product }: { product: ProductView }) {
     useState<UploadState>(IDLE_UPLOAD_STATE);
   const note = uploadNote(uploadState);
   const noteId = useId();
+  /*
+   * 업로드가 401을 받았다(S4-3). 화면은 그대로 두고 저장과 `+`만 잠근다 — 지금 저장하면 저장도
+   * 401이라 전역 핸들러가 `/login`으로 보내 폼이 날아간다. `errors._form`에 넣지 않는 이유:
+   * 칸을 고칠 때마다 `_form`이 지워지는데 잠금은 남으면 버튼이 왜 잠겼는지 사라진다.
+   */
+  const [sessionLost, setSessionLost] = useState(false);
+  const formAlertId = useId();
+  const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  const handleUploadAuthFailure = (error: unknown) => {
+    if (isSessionLostError(error)) {
+      setSessionLost(true);
+      return;
+    }
+    // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다
+    const described = describeError(error);
+    setErrors((prev) => ({
+      ...prev,
+      _form: described.detail ?? described.title,
+    }));
+  };
+  const saveDescribedBy =
+    [sessionLost ? formAlertId : null, note ? noteId : null]
+      .filter((id) => id !== null)
+      .join(" ") || undefined;
 
   const update = useUpdateProductMutation(product.id);
   const listingStatus = useListingStatusMutation();
   const remove = useDeleteProductMutation();
   const saving =
-    update.isPending || listingStatus.isPending || uploadState.uploading;
+    update.isPending ||
+    listingStatus.isPending ||
+    uploadState.uploading ||
+    sessionLost;
+
+  /** 저장과 취소가 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채 */
+  const detailPath = `/products?${LIST_PARAM.productId}=${product.id}`;
+
+  /*
+   * 이미지 필수(D21)는 **저장 시점 상태**가 정한다. 판매 중이면 필수, 시즌 종료면 면제 —
+   * 게시글이 없는 상품도 게시글을 만들면 판매 중으로 만들어지니 같은 기준이다.
+   */
+  const requireImages = status === "ON_SALE";
+
+  /*
+   * 이탈 확인(D22). 서버 값으로 만든 폼과 지금 폼을 값으로 비교한다 — 저장 뒤 refetch 로
+   * `product`가 바뀌면 그게 새 기준이다. `leaving`은 저장 성공과 `나가기` 뒤.
+   */
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const dirty =
+    isProductFormDirty(
+      {
+        product: toProductForm(product),
+        post: toPostForm(product),
+        status: product.post?.status,
+      },
+      {
+        product: productForm,
+        post: postForm,
+        status: product.post ? status : undefined,
+      },
+    ) || uploadState.uploading;
+  useBeforeUnloadGuard(dirty && !leaving);
+
+  /*
+   * 모달이 열린 이유. `null`이면 `취소`(→ detailPath), 경로가 있으면 앱 안 Link가 가려던 곳(S5).
+   * 모달은 하나다 — 문구가 같고, 닫히면 포커스는 트리거인 `취소`로 돌아간다(S5-4).
+   */
+  const [linkHref, setLinkHref] = useState<string | null>(null);
+  useLinkLeaveGuard(dirty && !leaving, (href) => {
+    setLinkHref(href);
+    setLeaveOpen(true);
+  });
+
+  const leave = () => {
+    setLeaving(true);
+    router.push(linkHref ?? detailPath);
+  };
 
   /**
    * 저장 = `PATCH /products/{id}` + (상태가 바뀌었으면) 시즌 종료/재개 호출.
@@ -134,7 +217,20 @@ function ProductEditForm({ product }: { product: ProductView }) {
     const found = validateProductForm(
       productForm,
       sendListing ? postForm : null,
+      { requireImages },
     );
+    /*
+     * 게시글을 안 보내는 저장(`시즌 종료 → 판매 중` 토글만)도 판매 중으로 오르는 순간이라
+     * 이미지는 본다(D21). `post: null`은 "게시글 칸은 검사 안 함"이라 이 한 칸만 따로 —
+     * 제목·가격표는 서버가 이미 받아 준 값이다.
+     */
+    if (
+      !sendListing &&
+      product.post &&
+      requireImages &&
+      postForm.images.length === 0
+    )
+      found["listing.images"] = LISTING_IMAGES_REQUIRED_MESSAGE;
     showErrors(found);
     if (firstInvalidField(found)) return;
 
@@ -147,7 +243,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
           next: status,
         });
       }
-      router.push(`/products?${LIST_PARAM.productId}=${product.id}`);
+      setLeaving(true);
+      router.push(detailPath);
     } catch (error) {
       const mapped = toProductFormErrors(error, productForm);
       if (mapped) {
@@ -205,20 +302,33 @@ function ProductEditForm({ product }: { product: ProductView }) {
             setErrors((prev) => clearPostErrors(prev, postForm, next));
             setPostForm(next);
           }}
+          /* 갱신 함수로 — 업로드 응답은 이 렌더의 `postForm`을 믿으면 안 된다(`PostFormPanel` 주석) */
+          onImagesChange={(update) => {
+            setErrors(clearImagesError);
+            setPostForm((prev) => ({ ...prev, images: update(prev.images) }));
+          }}
           /* 현재고·평균원가는 서버가 준 SKU에서. 새로 켠 색×사이즈는 아직 0이다 */
           priceRows={priceRowsFromOptions(productForm.options, product.skus)}
           /* 게시글이 없으면 끝낼 것도 없다 — 세그먼트 자체가 안 나온다 */
           status={product.post ? status : undefined}
           onStatusChange={product.post ? setStatus : undefined}
           errors={errors}
+          requireImages={requireImages}
           onUploadStateChange={setUploadState}
+          onUploadAuthFailure={handleUploadAuthFailure}
+          uploadLocked={sessionLost}
         />
       }
       actions={
         <>
-          {errors._form ? (
-            <p role="alert" className="text-destructive-strong mr-auto text-sm">
-              {errors._form}
+          {formMessage ? (
+            <p
+              id={formAlertId}
+              role="alert"
+              data-ac={sessionLost ? "S4-3 S4-7" : undefined}
+              className="text-destructive-strong mr-auto text-sm"
+            >
+              {formMessage}
             </p>
           ) : null}
           {note ? (
@@ -230,24 +340,43 @@ function ProductEditForm({ product }: { product: ProductView }) {
                 "mr-auto text-sm",
                 note.danger
                   ? "text-destructive-strong"
-                  : "text-muted-foreground",
+                  : /* 회색이면 잠긴 저장 버튼 옆에서 꺼진 안내로 읽힌다(#254 F8) */
+                    "text-foreground",
               )}
             >
               {note.text}
             </p>
           ) : null}
-          {/* 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
-              100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7) */}
-          <Button asChild variant="line" size="lg">
-            <Link href={`/products?${LIST_PARAM.productId}=${product.id}`}>
+          {/*
+           * 저장과 같은 자리로 돌아간다 — 보던 상품이 우측에 열린 채. `/products`로만 가면
+           * 100행 목록에서 그 상품을 다시 찾아야 한다(wire-product F7).
+           * `<a>`가 아니라 버튼인 이유(D22): 값을 바꿨으면 되물어야 하는데 링크는 누르는 순간
+           * 떠난다. 안 바꿨으면 바로 간다.
+           */}
+          <LeaveConfirmDialog
+            open={leaveOpen}
+            /* 트리거(취소)가 열자고 할 때 더티가 아니면 열지 않고 바로 떠난다 */
+            onOpenChange={(open) => {
+              if (open && !dirty) return leave();
+              setLeaveOpen(open);
+              if (!open) setLinkHref(null);
+            }}
+            onLeave={leave}
+          >
+            <Button
+              type="button"
+              variant="line"
+              size="lg"
+              data-ac="S3-11 S3-12"
+            >
               취소
-            </Link>
-          </Button>
+            </Button>
+          </LeaveConfirmDialog>
           <Button
             size="lg"
             onClick={submit}
             disabled={saving}
-            aria-describedby={note ? noteId : undefined}
+            aria-describedby={saveDescribedBy}
             data-ac="S2-3 S2-4"
           >
             저장하기

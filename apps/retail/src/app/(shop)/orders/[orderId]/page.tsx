@@ -9,8 +9,9 @@ import {
   type OrderDetailWire,
   type OrderRecord,
 } from "@/features/order";
+import { storeNameLabel } from "@/features/account";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
-import { serverApi } from "@/shared/api/server";
+import { requireSession, serverApi } from "@/shared/api/server";
 
 type PageProps = { params: Promise<{ orderId: string }> };
 
@@ -65,5 +66,14 @@ export default async function Page({ params }: PageProps) {
   const order = await fetchOrder((await params).orderId);
   if (!order) return <OrderNotFound />;
 
-  return <OrderDetailClient order={order} />;
+  /* 수령 상호는 로그인한 계정의 `/me.shopName`이다. 셸 레이아웃도 같은 요청을
+     부르지만 레이아웃 값은 page로 내려오지 않는다 — 한 번 더 읽는다 */
+  const me = await requireSession();
+
+  return (
+    <OrderDetailClient
+      order={order}
+      receiverStore={storeNameLabel(me.shopName)}
+    />
+  );
 }

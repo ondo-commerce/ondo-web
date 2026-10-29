@@ -1,5 +1,6 @@
 import { delay, http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import type { InquiryListing } from "../chat/inquiry";
 import {
   IMAGE_MAGIC_LENGTH,
   IMAGE_MAX_BYTES,
@@ -551,6 +552,36 @@ export function findMockProduct(productId: number) {
   return products.find((p) => p.id === productId) ?? null;
 }
 
+/**
+ * 채팅 자동 답(`../chat/inquiry.ts`)이 읽는 게시글 하나. **읽기만 한다** — 채팅은 재고를 바꾸지 않는다.
+ * 판매가능은 상세와 같은 식(현재고 − 주문처리중 − 미송, 음수 그대로). 옵션은 등록 순서(variantNumber)다 —
+ * 상세는 색상 마스터 id 순이라 네이비(11)가 레드(17)보다 앞이지만 되묻기 보기는 등록 순서를 따른다.
+ * 시드 variant는 전부 `listing_variant`에 있어서 게시 옵션 = 그 상품 옵션 전부다.
+ */
+export function chatStockListing(listingId: number): InquiryListing | null {
+  const listing = listings.find((l) => l.id === listingId);
+  const product =
+    listing === undefined ? null : findMockProduct(listing.productId);
+  if (listing === undefined || product === null) return null;
+  return {
+    listingId: listing.id,
+    wholesalerId: product.wholesalerId,
+    title: listing.title,
+    published: listing.status === "ON_SALE",
+    variants: variants
+      .filter((v) => v.productId === product.id)
+      .sort((a, b) => a.variantNumber - b.variantNumber)
+      .map((v) => ({
+        variantId: v.id,
+        color: colorOf(v.colorId).name,
+        size: v.size,
+        availableQty: v.stockQty - v.allocatedQty - v.backorderQty,
+        orderLimit: v.orderLimit,
+        published: true,
+      })),
+  };
+}
+
 /* --- 응답 조립 ------------------------------------------------------------ */
 
 /** 스펙 enum 순서. 서버가 variant를 사이즈 순으로 정렬해 준다 */
@@ -924,7 +955,16 @@ export const productHandlers = [
    */
   http.post("*/api/wholesale/listing-images", async ({ request }) => {
     countListingImageRequest();
-    const parts = (await request.formData()).getAll("file");
+    // multipart 가 아니거나 boundary 가 없으면 formData() 가 던진다. 그것도 "파일 파트를 읽을
+    // 수 없는 요청"이라 계약의 400 이지, MSW 가 대신 내는 500 이 아니다(F2)
+    let parts: FormDataEntryValue[];
+    try {
+      parts = (await request.formData()).getAll("file");
+    } catch {
+      return validationFailed([
+        { field: "file", reason: "multipart/form-data 본문이 아닙니다." },
+      ]);
+    }
     if (parts.length === 0)
       return validationFailed([
         { field: "file", reason: "file 파트가 없습니다." },

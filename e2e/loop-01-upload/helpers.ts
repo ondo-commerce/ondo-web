@@ -65,6 +65,14 @@ export function registered(page: Page): Locator {
   return slotsIn(page, "registered");
 }
 
+/**
+ * 등록 칸의 집기 손잡이. 칸 이름("이미지 N, 대표")과 잠김(aria-disabled)은 여기에만 있다 —
+ * 바깥 칸은 자리만 받는다(#254 F5, side-01 F1)
+ */
+export function handleOf(cell: Locator): Locator {
+  return cell.locator('[aria-roledescription="sortable"]');
+}
+
 export function slotsIn(page: Page, state: string): Locator {
   return grid(page).locator(`> [data-state="${state}"]`);
 }
@@ -123,10 +131,17 @@ export function uploadNote(page: Page): Locator {
 
 /**
  * 등록에 필요한 최소 상품 폼. 품명 · 카테고리 리프 · 색상 1 + 사이즈 1 · 게시글 이름 · 판매가.
- * 게시글 이미지는 호출부가 올린다.
+ * 게시글 이미지는 호출부가 올린다. 좌(상품)·우(게시글) 패널을 따로 채울 수 있게 둘로 나눴다 —
+ * S3-9 가 "상품 → 함께 게시 → 사진 → 판매가" 순서를 그대로 밟는다.
  */
 export async function fillProductForm(page: Page): Promise<void> {
-  await page.getByLabel("품명").fill("e2e 업로드 상품");
+  await fillProductPanel(page);
+  await fillPostPanel(page);
+}
+
+/** 좌측 상품 패널. 카테고리·색상·사이즈는 시드 값(여성 > 상의 > 티셔츠, 블랙 M) */
+export async function fillProductPanel(page: Page): Promise<void> {
+  await page.getByLabel("품명", { exact: true }).fill("e2e 업로드 상품");
 
   await page.getByRole("combobox", { name: "카테고리 대분류" }).click();
   await page.getByRole("option", { name: "여성" }).click();
@@ -139,7 +154,10 @@ export async function fillProductForm(page: Page): Promise<void> {
   await page.getByRole("button", { name: "블랙" }).click();
   await page.getByRole("button", { name: /^확인/ }).click();
   await page.getByRole("checkbox", { name: "블랙 M" }).click();
+}
 
+/** 우측 게시글 패널(`함께 게시` 뒤). 게시글 이름 + 블랙 M 판매가 */
+export async function fillPostPanel(page: Page): Promise<void> {
   await page.getByLabel("게시글 이름").fill("e2e 게시글");
   await page.getByRole("textbox", { name: "블랙 M 판매가" }).fill("12000");
 }
@@ -151,4 +169,80 @@ export async function submitCreate(page: Page): Promise<{
   await saveButton(page).click();
   await page.waitForURL(/\/products\?productId=\d+/);
   return (await lastProductRequest(page)) as { listing: { images: string[] } };
+}
+
+/* ------------------------------------------------------------------------
+ * S3 (#251) — 수정 화면 · 취소 모달 · 상세
+ * ------------------------------------------------------------------------ */
+
+/** 시드의 수정 화면. 게시글 패널이 그려질 때까지 기다린다 */
+export async function openEdit(page: Page, productId: number): Promise<void> {
+  await page.goto(`/products/${productId}/edit`);
+  await expect(
+    page.getByRole("heading", { name: "게시글 수정" }),
+  ).toBeVisible();
+}
+
+/** 수정 화면의 상태 토글(`Segmented` = radix ToggleGroup single → `radio`) */
+export function statusRadio(
+  page: Page,
+  label: "판매중" | "시즌 종료",
+): Locator {
+  return page.getByRole("radio", { name: label });
+}
+
+/** 하단 바의 `취소`. 모달 안 버튼·색상 팝오버와 섞이지 않게 `data-ac` 로 짚는다 */
+export function cancelButton(page: Page): Locator {
+  return page.locator('button[data-ac~="S3-12"]');
+}
+
+/** 취소 확인 모달(D22) */
+export function leaveDialog(page: Page): Locator {
+  return page.getByRole("dialog", {
+    name: "작성 중인 내용이 사라져요. 나갈까요?",
+  });
+}
+
+/** 하단 바의 `_form` 한 줄(서버 장애 등 칸에 못 붙인 실패) */
+export function formAlert(page: Page): Locator {
+  return page.locator('p[role="alert"]');
+}
+
+/** 필드 아래 오류 줄. id 는 `errorId(field)` 규칙 그대로 */
+export function fieldError(page: Page, field: string): Locator {
+  return page.locator(`#product-${field.replace(".", "-")}-error`);
+}
+
+/** 목록 우측 상세의 `게시글 이미지` 칸들. `ImageSlot` 은 role 이 없어 구조로 센다 */
+export function detailImageSlots(page: Page): Locator {
+  return page
+    .locator("section", {
+      has: page.getByRole("heading", { name: "게시글 이미지" }),
+    })
+    .locator("> div > div");
+}
+
+/** 마지막 PATCH 본문. `listing` 은 생략될 수 있다(무변경) */
+export function lastUpdateRequest(page: Page): Promise<{
+  listing?: { images: string[] };
+}> {
+  return lastProductRequest(page) as Promise<{
+    listing?: { images: string[] };
+  }>;
+}
+
+/**
+ * `×` 를 드래그 문턱(8px) **안**에서 누른다 — 누른 채 3px 움직였다가 뗀다. 손떨림에도 클릭이
+ * 먹어야 한다는 S3-1 의 조건이라 `click()` 대신 마우스를 직접 움직인다.
+ */
+export async function pressWithinDragThreshold(button: Locator): Promise<void> {
+  const box = await button.boundingBox();
+  if (!box) throw new Error("버튼이 보이지 않는다");
+  const page = button.page();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 3, y + 3);
+  await page.mouse.up();
 }
