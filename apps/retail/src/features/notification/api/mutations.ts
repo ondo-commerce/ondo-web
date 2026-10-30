@@ -19,6 +19,7 @@ import {
   HEADER_COUNTS_KEY,
   refreshHeaderCounts,
   SESSION_LOSS_INLINE,
+  sessionGeneration,
   stopHeaderCounts,
 } from "@/shared/api/headerCounts";
 import { mockReady } from "@/shared/api/mockReady";
@@ -26,9 +27,11 @@ import { withUnreadNotifications } from "@/shared/headerCounts";
 
 type ListData = InfiniteData<FetchedNotificationPage, string | null>;
 
-/** 읽음 보내기 전에 목록 요청을 취소했는지. 했으면 성공 뒤 다시 받는다 */
 interface ReadContext {
+  /** 읽음 보내기 전에 목록 요청을 취소했는지. 했으면 성공 뒤 다시 받는다 */
   listCancelled: boolean;
+  /** 보낼 때의 세션 세대. 응답 때 다르면 계정이 바뀐 것이라 콜백이 아무것도 안 한다(codex-meta M1) */
+  session: number;
 }
 
 /**
@@ -61,12 +64,15 @@ export function useMarkNotificationsReadMutation() {
     },
     meta: SESSION_LOSS_INLINE,
     onMutate: async (): Promise<ReadContext> => {
+      /* 세대는 await 전에 적는다 — 취소를 기다리는 사이 로그아웃이 끼어도 보낸 계정 기준이다 */
+      const session = sessionGeneration();
       const listKey = notificationKeys.list();
       const listCancelled = queryClient.isFetching({ queryKey: listKey }) > 0;
       if (listCancelled) await queryClient.cancelQueries({ queryKey: listKey });
-      return { listCancelled };
+      return { listCancelled, session };
     },
     onSuccess: async (result, request, context) => {
+      if (context.session !== sessionGeneration()) return;
       const listKey = notificationKeys.list();
       const all = "all" in request;
       const listStale =
@@ -87,7 +93,10 @@ export function useMarkNotificationsReadMutation() {
         ),
       );
     },
-    onError: async (error) => {
+    onError: async (error, _request, context) => {
+      /* 앞 계정의 늦은 401이 새 계정 count를 멈추지 않게(codex-meta M1). onMutate 전에 실패했으면 context가 없다 */
+      if (context === undefined || context.session !== sessionGeneration())
+        return;
       /* 성공 경로와 같은 취소와 울타리(`stopHeaderCounts`). 값만 넣으면 늦은 count가 덮는다(03-review R1) */
       if (isApiError(error) && error.status === 401)
         await stopHeaderCounts(queryClient);

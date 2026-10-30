@@ -62,6 +62,17 @@ export function isSessionLossInline(
 let issued = 0;
 let fence = 0;
 
+/**
+ * 세션 세대. 로그인, 로그아웃 때(`clearHeaderSession`) 올린다(codex-meta M1). 쿼리는 `cancelQueries`로 끊지만
+ * mutation 콜백은 끊을 수 없다 — 앞 계정의 늦은 읽음 401이 새 계정의 count를 `stopped`로 만들면 안 된다.
+ * 요청 시작 때 세대를 적어 두고, 응답 때 다르면 콜백이 아무것도 안 한다
+ */
+let session = 0;
+
+export function sessionGeneration(): number {
+  return session;
+}
+
 /** 지금까지 나간 count 순번. 알림 목록이 첫 장을 보낼 때 적어 둔다 — 그보다 먼저 떠난 count는 새 알림 판단에서 뺀다 */
 export function countsIssued(): number {
   return issued;
@@ -182,6 +193,7 @@ export async function stopHeaderCounts(
 export async function clearHeaderSession(
   queryClient: QueryClient,
 ): Promise<void> {
+  session += 1;
   fence = issued;
   await Promise.all([
     queryClient.cancelQueries({ queryKey: HEADER_COUNTS_KEY }),

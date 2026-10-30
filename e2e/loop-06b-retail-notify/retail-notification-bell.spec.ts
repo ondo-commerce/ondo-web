@@ -308,6 +308,42 @@ test("S2-3 늦은 count(지연 5초) 중 모두 읽음 401 → 배지 0, 늦은 
   await expect(bellBadge(page)).toHaveCount(0);
 });
 
+/* codex-meta M1. bombom이 보낸 모두 읽음이 401로 늦게 오는 사이 로그아웃 → miso 로그인. 그 응답이 miso 셸이 붙은
+   뒤에 도착해도 miso count를 멈추면 안 된다. mutation 콜백은 `clearHeaderSession`이 끊지 못해서 세션 세대로 거른다.
+   세대 검사를 빼면 늦은 401이 `stopped`를 넣어 31초 count가 안 나가 실패한다.
+   지연 20초: 로그아웃, 로그인이 흐르는 시계로 몇 초 걸리니 그 뒤에 도착하게 넉넉히 둔다 */
+test("S2-3 모두 읽음 401 지연 20초 중 로그아웃 → miso 로그인 → 늦은 401 도착 뒤에도 31초 안에 count 다시 돈다", async ({
+  page,
+}) => {
+  await routeAuth(page);
+  await startNotify(page, "/");
+  await openPanel(page);
+  await firstPageShown(page);
+  await notifyMock(page, "fail", { op: "read", status: 401 });
+  await notifyMock(page, "delay", { op: "read", ms: 20_000 });
+  await markAllButton(page).click();
+  await waitCount(page, NREAD_POST, 1);
+  await page.keyboard.press("Escape");
+
+  await logoutThenLogin(page, "miso");
+  await pauseClock(page);
+  expect(
+    (await requests(page, NREAD_POST))[0]?.status,
+    "로그인이 끝날 때까지 읽음 응답은 아직",
+  ).toBeNull();
+  await page.clock.runFor(20_000);
+  await flushUntil(
+    page,
+    async () => (await requests(page, NREAD_POST))[0]?.status === 401,
+  );
+  /* 콜백(onError)이 돌 틈 */
+  await page.clock.runFor(100);
+  const counts = await count(page, COUNT_GET);
+  await page.clock.runFor(31_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+  await expect(bell(page)).toBeVisible();
+});
+
 test("S2-4 닫혀 있으면 목록 0, 열면 1회. 첫 행 title, body, 어제 시각, 점. 더 보기 22개 중복 0. Esc → 종으로 포커스", async ({
   page,
 }) => {
