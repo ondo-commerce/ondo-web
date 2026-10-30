@@ -16,6 +16,9 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * `reuseExistingServer: false` — 3101에 다른 `API_ORIGIN`으로 뜬 서버(기본 설정의
  * 소매 서버)를 재사용하면 dev API를 본다. 포트가 차 있으면 시작 단계에서 실패시킨다.
+ *
+ * 06b 장면 2(`loop-06b-retail-notify/scene2-retail.spec.ts`, QA 리허설)는 도매 탭도 쓴다. 이 설정은 도매를 안 띄우니
+ * 도매 3100 mock 서버를 먼저 띄운다: `NEXT_PUBLIC_API_MOCK=1 pnpm --filter wholesale exec next dev -p 3100`
  */
 export default defineConfig({
   testDir: "./e2e",

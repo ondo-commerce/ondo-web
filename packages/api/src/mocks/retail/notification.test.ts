@@ -468,6 +468,22 @@ describe("S1-6 incoming 과 손잡이", () => {
     expect((await knob("/fail", { op: "count" })).status).toBe(400);
   }, 10_000);
 
+  it("delay {read, 300, beforeApply} → 기다리는 동안 목록과 count 는 읽음 전(2022 안 읽음, 2), 응답 뒤 읽음. list 에 beforeApply → 400", async () => {
+    await knob("/delay", { op: "read", ms: 300, beforeApply: true });
+    const pending = read({ ids: [2022] });
+    const during = await list();
+    expect(during.body.data.find((n) => n.id === 2022)?.readAt).toBeNull();
+    expect((await count()).body.data.notifications).toBe(2);
+    expect((await pending).body.data.notifications).toBe(1);
+    expect(
+      (await list()).body.data.find((n) => n.id === 2022)?.readAt,
+    ).not.toBeNull();
+
+    expect(
+      (await knob("/delay", { op: "list", ms: 10, beforeApply: true })).status,
+    ).toBe(400);
+  }, 10_000);
+
   it("reset 은 fail 과 delay 를 지우고 시드(안 읽음 2)로", async () => {
     await read({ all: true, expectedUnread: 2 });
     await knob("/fail", { op: "list", status: 500, times: 3 });

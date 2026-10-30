@@ -215,10 +215,12 @@ test("S11-9 그 사이 새 알림 → 409 안내, 점 그대로, 첫 행 새 주
 });
 
 /**
- * 계약 한계(§5-2) 기록. 03-review M1 M2로 엿보기를 뺐다 — 이 경우 줄은 안 뜨고 모두 읽음은 POST 1회로 본 적 없는
- * 새 행까지 읽는다. F3는 accept, 06b의 latestNotificationId로 푼다. 그때 이 테스트를 409 쪽으로 바꾼다
+ * 05b-2 F3. 03-review M1 M2로 엿보기를 뺐고, loop-06b #306이 count `latestNotificationId` 비교로 줄을 띄운다
+ * (목록 GET 0 그대로). 모두 읽음은 수가 같아 409가 안 나므로, 줄이 떠 있으면 POST 없이 첫 장을 다시 받는다
+ * (loop-06b F2, 소매 S2-6과 같은 규칙). 그전 기대값(줄이 뜬 채 POST 200, 새 행은 화면에 없이 읽힘)을 F2가 바꿨다.
+ * 확인한 뒤 다시 누르면 계약대로 POST 1회 200
  */
-test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 줄 0, 모두 읽음 POST 1회 200", async ({
+test("F3: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → '새 알림 1개 보기', 목록 GET 0, 모두 읽음 → POST 0 + 첫 장 다시, 다시 누르면 POST 1회 200", async ({
   page,
 }) => {
   await openPanel(page);
@@ -238,12 +240,23 @@ test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음)
 
   await expect(markAllButton(page)).toHaveText("안 읽은 알림 3개 모두 읽음");
   await expect(
-    panel(page).getByRole("button", { name: /^새 알림 \d+개 보기$/ }),
-  ).toHaveCount(0);
-  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(
-    lists,
-  );
+    panel(page).getByRole("button", { name: "새 알림 1개 보기", exact: true }),
+  ).toBeVisible();
+  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(lists);
 
+  /* 줄이 떠 있다 → POST 0, 안내 한 줄, 첫 장 다시(새 행이 맨 위), 줄 0 */
+  await markAllButton(page).click();
+  await expect(panel(page).getByRole("status")).toHaveText(
+    "새 알림이 왔어요. 확인하고 다시 눌러 주세요",
+  );
+  await waitCount(page, LIST_GET, lists + 1);
+  await expect(rows(page).first()).toHaveAttribute("data-id", String(NEW_ID));
+  await expect(
+    panel(page).getByRole("button", { name: "새 알림 1개 보기", exact: true }),
+  ).toHaveCount(0);
+  expect(await readBodies(page)).toEqual([{ ids: [1025] }]);
+
+  /* 확인한 뒤 다시 누름 → 계약대로 POST 1회 200 */
   await markAllButton(page).click();
   await expect(markAllButton(page)).toHaveCount(0);
   expect(await readBodies(page)).toEqual([
@@ -252,7 +265,7 @@ test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음)
   ]);
   await expect(panel(page).getByRole("status")).toHaveCount(0);
   await expect(bell(page)).toHaveAccessibleName("알림");
-  expect(await rowIds(page)).not.toContain(NEW_ID);
+  await expect(rowById(page, NEW_ID)).toHaveAttribute("data-unread", "false");
 });
 
 test("S11-16 안 읽은 모르는 type → read {ids} 1회, 이동 0, 점 사라짐, 배지 −1(03-review M3)", async ({

@@ -4,6 +4,7 @@ import {
   chatBadge,
   failedCounts,
   flattenPages,
+  hasNewer,
   headerBackoffMs,
   headerPollDelayMs,
   markPagesRead,
@@ -15,10 +16,23 @@ import {
 } from "./derive";
 import type { HeaderCounts, Notification, NotificationPage } from "./types";
 
-const ok = (notifications: number, chatsNeedingReply = 0): HeaderCounts => ({
+const ok = (
+  notifications: number,
+  chatsNeedingReply = 0,
+  latestNotificationId: number | null | undefined = null,
+  started = 1,
+): HeaderCounts => ({
   kind: "ok",
   notifications,
   chatsNeedingReply,
+  latestNotificationId,
+  started,
+});
+
+/** 첫 장. `countsIssued` = 이 장을 보낼 때까지 나간 count 순번 */
+const fetched = (ids: number[], countsIssued: number) => ({
+  ...page(ids),
+  countsIssued,
 });
 
 /** 서울 2026-10-29(목) 15:00 */
@@ -124,19 +138,45 @@ describe("S11-12 read 응답을 배지에 먼저", () => {
   });
 });
 
-describe("S11-10 새 알림 N개 보기", () => {
-  it("연 때보다 늘어난 수만. 줄었거나 모르면 0", () => {
-    expect(newerCount(3, 4)).toBe(1);
-    expect(newerCount(3, 3)).toBe(0);
-    expect(newerCount(3, 0)).toBe(0);
-    expect(newerCount(null, 4)).toBe(0);
-    expect(newerCount(3, null)).toBe(0);
+describe("loop-06b hasNewer: 새 알림 줄은 수가 아니라 latestNotificationId로", () => {
+  const first = fetched([1025, 1024], 1);
+  it("count id가 첫 행과 다르면 true, 같으면 false", () => {
+    expect(hasNewer(ok(4, 0, 1026, 2), first)).toBe(true);
+    expect(hasNewer(ok(4, 0, 1025, 2), first)).toBe(false);
+  });
+  it("칸 없음(구버전 서버) → 끔, null(알림 0) → false", () => {
+    expect(hasNewer(ok(4, 0, undefined, 2), first)).toBe(false);
+    expect(hasNewer(ok(0, 0, null, 2), first)).toBe(false);
+  });
+  it("빈 첫 장 + 숫자 id → true", () => {
+    expect(hasNewer(ok(1, 0, 1026, 2), fetched([], 1))).toBe(true);
+  });
+  it("첫 장 요청 전에 떠난 count는 늦게 와도 비교에서 뺀다", () => {
+    expect(hasNewer(ok(4, 0, 1020, 1), first)).toBe(false);
+    expect(hasNewer(ok(4, 0, 1020, 0), first)).toBe(false);
+  });
+  it("count를 모르거나 첫 장이 아직 없으면 false", () => {
+    expect(hasNewer(undefined, first)).toBe(false);
+    expect(hasNewer({ kind: "failed", failures: 1 }, first)).toBe(false);
+    expect(hasNewer({ kind: "unauthorized" }, first)).toBe(false);
+    expect(hasNewer(ok(4, 0, 1026, 2), undefined)).toBe(false);
   });
 });
 
-describe("계약 한계(§5-2, 03-review M1 M2): 새 알림 줄은 수만 본다", () => {
-  it("연 뒤 다른 기기가 1개 읽고 새 1개 → count 같아 줄 0. 06b latestNotificationId 전까지 이대로다", () => {
-    expect(newerCount(3, 3)).toBe(0);
+describe("S11-10 새 알림 N개 보기 — N", () => {
+  const first = fetched([1025, 1024], 1);
+  it("id가 바뀌었으면 연 때보다 늘어난 수", () => {
+    expect(newerCount(3, ok(8, 0, 1030, 2), first)).toBe(5);
+    expect(newerCount(3, ok(4, 0, 1026, 2), first)).toBe(1);
+  });
+  it("05b-2 F3: 연 뒤 다른 기기가 1개 읽고 새 1개 → 수 같아도 1", () => {
+    expect(newerCount(3, ok(3, 0, 1026, 2), first)).toBe(1);
+  });
+  it("id가 그대로면 수가 늘어도 0(새 알림이 아니다)", () => {
+    expect(newerCount(3, ok(4, 0, 1025, 2), first)).toBe(0);
+  });
+  it("연 때 수를 모르면 id만 보고 1", () => {
+    expect(newerCount(null, ok(4, 0, 1026, 2), first)).toBe(1);
   });
 });
 
