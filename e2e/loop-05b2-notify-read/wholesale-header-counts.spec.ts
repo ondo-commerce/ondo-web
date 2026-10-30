@@ -14,8 +14,10 @@ import {
   rows,
   runToNextCount,
   setVisibility,
+  settled,
   start,
   waitCount,
+  yieldToPage,
 } from "./helpers";
 
 /**
@@ -113,9 +115,17 @@ test("S11-12 늦게 온 count 가 read 뒤 배지를 되살리지 않는다", as
       (await bell(page).getAttribute("aria-label")) === "알림, 안 읽음 2개",
   );
 
-  /* 늦은 count(3) 도착 */
-  await page.clock.runFor(5_000);
-  await page.clock.runFor(100);
+  /* 늦은 count(3) 도착 구간. 한 번에 5초를 밀고 바로 보면 늦은 응답이 그려지기 전에 통과한다(QA F4,
+     변이 a 에서 실측). 100ms 씩 밀고 React 가 그릴 틈(yieldToPage)을 준 뒤 매번 본다 */
+  for (let elapsed = 0; elapsed < 6_000; elapsed += 100) {
+    await page.clock.runFor(100);
+    await yieldToPage(page);
+    expect(await bell(page).getAttribute("aria-label")).toBe(
+      "알림, 안 읽음 2개",
+    );
+  }
+  await settled(page, COUNT_GET);
+  await yieldToPage(page);
   await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 2개");
 
   /* 다음 count 도 2 */

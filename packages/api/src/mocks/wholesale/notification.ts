@@ -385,7 +385,9 @@ export const notificationHandlers = [
    * 소매 주문 접수(또는 취소)를 흉내 낸다. `{type = NEW_ORDER, orderId?}`.
    * NEW_ORDER + orderId 없음 → 주문 목에 신규 주문 1건(`INCOMING_ORDER`, 지금)을 만들고 그걸 target으로.
    * NEW_ORDER + orderId → 그 주문으로 알림만. ORDER_CANCELLED + orderId → 그 주문을 취소하고 알림.
-   * 없는 orderId, ORDER_CANCELLED인데 orderId 없음, 모르는 type → 400. 신규가 아닌 주문 취소 → 409
+   * `PAYMENT_RECEIVED`(스펙 밖 type) → 주문은 안 만들고 안 읽은 모르는 type 알림만(S11-16 읽음 경로 시험, 03-review M3).
+   * 시드의 모르는 행은 읽은 행이라 누름 → 읽음 POST 경로를 못 본다.
+   * 없는 orderId, ORDER_CANCELLED인데 orderId 없음, 그 밖의 type → 400. 신규가 아닌 주문 취소 → 409
    */
   http.post("*/__mock/notifications/incoming", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
@@ -393,9 +395,33 @@ export const notificationHandlers = [
       orderId?: number;
     };
     const type = input.type ?? "NEW_ORDER";
-    if (type !== "NEW_ORDER" && type !== "ORDER_CANCELLED")
-      return invalid("type", "INVALID", "type은 NEW_ORDER | ORDER_CANCELLED");
     const now = Date.now();
+    if (type === UNKNOWN_NOTIFICATION_TYPE) {
+      /* target은 필수 칸이라 아무 주문이나 건다. 화면은 모르는 type 의 target 을 보지 않는다 */
+      const target = mockOrders()[0];
+      if (target === undefined)
+        return invalid("type", "NO_ORDER", "주문 목이 비어 있습니다.");
+      const notification: Notification = {
+        id: nextId(),
+        type: UNKNOWN_NOTIFICATION_TYPE as unknown as NotificationType,
+        title: "입금이 확인됐어요",
+        body: null,
+        target: { kind: "ORDER", id: target.id },
+        createdAt: kstIso(now),
+        readAt: null,
+      };
+      notifications.push(notification);
+      return HttpResponse.json(
+        { data: { notification, orderId: target.id } },
+        { status: 201 },
+      );
+    }
+    if (type !== "NEW_ORDER" && type !== "ORDER_CANCELLED")
+      return invalid(
+        "type",
+        "INVALID",
+        `type은 NEW_ORDER | ORDER_CANCELLED | ${UNKNOWN_NOTIFICATION_TYPE}`,
+      );
 
     let order: MockOrder | undefined;
     if (input.orderId === undefined) {

@@ -121,6 +121,15 @@ export interface ComposerCheck {
   overMessage: string | null;
 }
 
+/**
+ * 되묻기 보기 줄(#296 S13-1, #299 S4-1).
+ * - `inline` 재고 보기(VARIANT만) — `보기: A, B, C` 한 줄(디자인 결정 37)
+ * - `list` 미송 보기가 섞이면 — "보기" 이름표 한 번 + 보기마다 한 줄(디자인 결정 38). 미송 보기 글자 안에
+ *   쉼표("…레드/L, 남은 4장, 9/4 주문 #7001")가 있어 쉼표로 이으면 보기 경계가 안 보인다
+ */
+export type ClarifyChoicesView =
+  { mode: "inline"; text: string } | { mode: "list"; items: string[] };
+
 /** 자동 답변 아래 근거 칸. 도매에만 정확 수량이 온다 */
 export interface FactPart {
   text: string;

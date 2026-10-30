@@ -5,6 +5,7 @@ import {
   onlineManager,
   queryOptions,
   useQueries,
+  useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
@@ -12,23 +13,25 @@ import { apiFetch, apiFetchBody } from "@ondo/api";
 import { chatKeys } from "./keys";
 import { chatMockReady } from "./mockWorker";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
-import { MESSAGE_PAGE_SIZE } from "../constants";
+import { MESSAGE_PAGE_SIZE, ROOM_LIST_SIZE } from "../constants";
 import { advanceCursor, mergeMessages, pollDelayMs } from "../derive";
 import type {
   ChatMessage,
   ChatMessagePage,
   ChatRoomDetail,
+  ChatRoomPage,
   ChatThread,
 } from "../types";
 
 /**
  * 채팅 경로(초안 op, #263). 훅 1개 = 엔드포인트 1개. 여기 없는 경로는 이 feature가 부르지 않는다.
- * 목록(`GET /rooms`)과 읽음(`POST /read`)은 05b다.
+ * 목록(`GET /rooms`)과 읽음(`POST /read`)은 loop-06 S2부터 부른다.
  */
 export const CHAT_PATH = {
   rooms: "/api/retail/chat/rooms",
   room: (roomId: number) => `/api/retail/chat/rooms/${roomId}`,
   messages: (roomId: number) => `/api/retail/chat/rooms/${roomId}/messages`,
+  read: (roomId: number) => `/api/retail/chat/rooms/${roomId}/read`,
 } as const;
 
 /*
@@ -98,6 +101,31 @@ export function useRoomQueries(roomId: number) {
     ],
   });
   return { room, thread };
+}
+
+/**
+ * `/chats` 첫 장(loop-06 S2-4). 30개만 받고 `더 보기`는 없다(06b). 진입 때(`refetchOnMount: "always"`)와
+ * 탭이 다시 보일 때 1회, 그 밖엔 다시 받지 않는다(15초 갱신은 06b).
+ *
+ * `guardSession`을 거치지 않는다: 목록엔 입력창이 없어 401에 공용 처리가 `/login`으로 보내도 잃는 게 없고,
+ * 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에 연 방이 잠긴 채 시작한다.
+ * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4). 앱 기본(2번 더)이면 실패가 안 보인다.
+ */
+export function useRoomListQuery() {
+  return useQuery({
+    queryKey: chatKeys.rooms(),
+    queryFn: async () => {
+      await chatMockReady();
+      return apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
+        searchParams: { size: ROOM_LIST_SIZE },
+      });
+    },
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: false,
+  });
 }
 
 /**

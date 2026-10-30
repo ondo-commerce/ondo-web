@@ -191,6 +191,28 @@ describe("S1-4 미송 답 누출(소매 응답 전부)", () => {
       expectedInboundReason: null,
     });
   });
+
+  it("방 33 시드 미송 답의 입고일도 reset 기준 상대값 — 이틀 뒤 reset 해도 새 답과 같은 날짜(M5)", async () => {
+    vi.setSystemTime(GOLDEN_T0 + 2 * 86_400_000);
+    resetRetailChatMock();
+    const list = await call<{ data: Message[] }>(
+      "GET",
+      `${RETAIL}/chat/rooms/33/messages?size=100`,
+    );
+    const seeded = list.body.data.find(
+      (m) => m.kind === "AUTO_REPLY" && m.autoReply?.intent === "BACKORDER",
+    );
+    const fresh = (await send("블랙 L 미송 언제 와요?", null, 33)).body.data
+      .generatedMessages[0];
+    // T0(10/29) + 2일 = 10/31, 801 입고일 = reset 날짜 + 5 = 11/5
+    expect(fresh?.autoReply?.facts.backorder?.expectedInboundDate).toBe(
+      "2026-11-05",
+    );
+    expect(seeded?.autoReply?.facts.backorder?.expectedInboundDate).toBe(
+      "2026-11-05",
+    );
+    expect(seeded?.body).toContain("11월 5일");
+  });
 });
 
 describe("S1-5 unread-count", () => {

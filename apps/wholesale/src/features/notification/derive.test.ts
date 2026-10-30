@@ -134,6 +134,12 @@ describe("S11-10 새 알림 N개 보기", () => {
   });
 });
 
+describe("계약 한계(§5-2, 03-review M1 M2): 새 알림 줄은 수만 본다", () => {
+  it("연 뒤 다른 기기가 1개 읽고 새 1개 → count 같아 줄 0. 06b latestNotificationId 전까지 이대로다", () => {
+    expect(newerCount(3, 3)).toBe(0);
+  });
+});
+
 describe("상대 시각(서울)", () => {
   it("1분 안 '방금', 1시간 안 'N분 전', 같은 날 'N시간 전'", () => {
     expect(relativeTime("2026-10-29T14:59:30+09:00", NOW)).toBe("방금");

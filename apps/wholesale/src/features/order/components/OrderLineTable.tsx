@@ -84,6 +84,7 @@ export function OrderLineTable({
         size="sm"
         className="w-20"
         aria-label={`${line.productName} ${line.color} ${line.size} SKU ${line.sku} 이번 출고`}
+        data-ac="S11-7"
         disabled={blocked}
         value={inputs[line.id] ?? ""}
         onChange={(e) => onInputChange(line.id, e.target.value)}
