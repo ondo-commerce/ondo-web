@@ -737,6 +737,50 @@ test("S2-11 ① 더 보기 지연 중 첫 장 안 읽은 행 누름 → 배지�
   );
 });
 
+/* codex-meta M2. 아래 ②는 목이 읽음을 먼저 저장하고 응답만 늦춰서, 다시 연 목록이 이미 읽음 행을 받는다 — 목록 보정
+   (`mutations.ts` onSuccess의 `markPagesRead`)을 지워도 통과했다. 여기선 목이 **저장 전에** 기다린다(`beforeApply`).
+   다시 연 목록은 읽음 전 행(점 있음)을 받아 먼저 끝나고, 그 뒤 read 200이 온다. 목록 요청이 끝난 뒤라 다시 받지
+   않으니 점을 지우는 건 보정 하나다. 보정을 지우면 마지막 단언에서 실패한다 */
+test("S2-11 ③ read 저장 전 지연 3초 중 다시 엶 → 목록은 읽음 전 행(점), read 도착 뒤 목록 GET 없이 점 0, 배지 1", async ({
+  page,
+}) => {
+  await startNotify(page, "/backorders?wholesaler=101");
+  await openPanel(page);
+  await firstPageShown(page);
+  await notifyMock(page, "delay", { op: "read", ms: 3_000, beforeApply: true });
+  await pauseClock(page);
+  await rowById(page, SEED_FIRST).click();
+  await waitCount(page, NREAD_POST, 1);
+  const lists = await count(page, LIST_GET);
+  await openPanel(page);
+  await waitCount(page, LIST_GET, lists + 1);
+  await flushUntil(page, async () => (await rows(page).count()) === 20);
+  await settled(page, LIST_GET);
+  expect(
+    (await requests(page, NREAD_POST))[0]?.status,
+    "목록이 read보다 먼저 끝났다",
+  ).toBeNull();
+  await expect(rowById(page, SEED_FIRST), "읽음 전 스냅샷").toHaveAttribute(
+    "data-unread",
+    "true",
+  );
+
+  await page.clock.runFor(3_000);
+  await flushUntil(
+    page,
+    async () => (await requests(page, NREAD_POST))[0]?.status === 200,
+  );
+  await page.clock.runFor(100);
+  expect(await count(page, LIST_GET), "read 뒤 목록 다시 받기 0").toBe(
+    lists + 1,
+  );
+  await expect(rowById(page, SEED_FIRST)).toHaveAttribute(
+    "data-unread",
+    "false",
+  );
+  await expect(bellBadge(page)).toHaveText("1");
+});
+
 test("S2-11 ② read 지연 3초 중 패널 닫고 다시 엶 → 그 사이 목록이 먼저 와도 read 도착 뒤 누른 행 점 0", async ({
   page,
 }) => {
