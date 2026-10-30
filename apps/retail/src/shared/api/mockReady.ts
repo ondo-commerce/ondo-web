@@ -1,8 +1,9 @@
 /**
- * 소매 채팅 목 worker 준비(01-plan §5-2 8, Codex plan r1 1).
+ * 소매 브라우저 목 worker 준비(loop-05a 01-plan §5-2 8, Codex plan r1 1). 채팅과 헤더(count, 알림 패널)가
+ * 같이 쓴다 — 06b 알림 종이 두 번째 사용처라 `features/chat`에서 여기로 내렸다.
  *
  * 소매는 도매식 MockGate를 쓰지 않는다 — 셸과 상품 상세는 서버가 그린 HTML이라 worker가 뜰 때까지
- * 가리면 첫 화면이 빈다. 대신 **채팅 요청만** 이 Promise를 먼저 기다린다. 입구 버튼과 방 블록이 같은
+ * 가리면 첫 화면이 빈다. 대신 **목이 받는 요청만** 이 Promise를 먼저 기다린다. 입구 버튼과 방 블록이 같은
  * Promise 하나를 나눠 쓴다(모듈 안에서 한 번만 시작한다). 기다리는 동안 버튼은 `여는 중`이다.
  *
  * 안 기다리면: 새 브라우저로 상품 상세에 바로 들어와 `문의하기`를 누를 때 worker가 아직 없어 POST가
@@ -17,7 +18,7 @@
  */
 let ready: Promise<void> | null = null;
 
-export function chatMockReady(): Promise<void> {
+export function mockReady(): Promise<void> {
   if (process.env.NEXT_PUBLIC_API_MOCK !== "1") return Promise.resolve();
   /* 실패하면 기억을 비운다(리뷰 F2) — 거절된 Promise를 남기면 worker 파일 다운로드가 한 번 실패한 뒤로
      `문의하기`를 다시 눌러도 영영 즉시 실패한다. 오류는 그대로 부른 쪽에 넘긴다 */

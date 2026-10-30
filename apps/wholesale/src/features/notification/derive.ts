@@ -6,6 +6,7 @@ import {
 } from "./constants";
 import type {
   BadgeView,
+  FetchedNotificationPage,
   HeaderCounts,
   Notification,
   NotificationPage,
@@ -91,14 +92,40 @@ export function unreadOf(counts: HeaderCounts | undefined): number | null {
 }
 
 /**
- * 패널을 연 뒤 늘어난 수(S11-10 "새 알림 N개 보기"). 연 때 값을 모르거나 줄었으면 0.
+ * "새 알림 N개 보기" 줄을 띄울까(S11-10). **수가 아니라 가장 최근 id**로 본다(loop-06b, 05b-2 F3) — 연 뒤 다른
+ * 기기가 하나 읽고 새 것이 하나 오면 수는 같아도 id가 다르다. 목록을 엿보지 않는다(GET 0, 03-review M1 M2).
+ *  - count를 모르거나 첫 장이 아직 없으면 false
+ *  - 칸이 없음(`undefined`, 구버전 서버) → false(기능 끔). `null`(알림 0개) → false
+ *  - 그 count가 첫 장 요청보다 **먼저** 떠났으면 false — 늦게 와도 첫 장보다 옛 값이다
+ *  - 그 밖에는 첫 장이 비었거나 첫 행 id가 다르면 true
+ */
+export function hasNewer(
+  counts: HeaderCounts | undefined,
+  firstPage: FetchedNotificationPage | undefined,
+): boolean {
+  if (counts?.kind !== "ok" || firstPage === undefined) return false;
+  const latest = counts.latestNotificationId;
+  if (latest === undefined || latest === null) return false;
+  if (counts.started <= firstPage.countsIssued) return false;
+  const first = firstPage.data[0];
+  return first === undefined || first.id !== latest;
+}
+
+/**
+ * 줄의 N. 띄울지는 `hasNewer`가 정하고, N은 연 때보다 늘어난 안 읽음 수다. 다른 기기가 그 사이 읽어
+ * 수가 안 늘었어도 id가 바뀌었으면 새 것은 적어도 1개라 1로 쓴다(F3 장면 "새 알림 1개 보기").
+ * 그래서 N은 하한이다 — 연 뒤 2개 읽히고 3개 오면 1로 보인다. 0이면 줄이 없다.
  */
 export function newerCount(
   openedUnread: number | null,
-  latestUnread: number | null,
+  counts: HeaderCounts | undefined,
+  firstPage: FetchedNotificationPage | undefined,
 ): number {
-  if (openedUnread === null || latestUnread === null) return 0;
-  return Math.max(latestUnread - openedUnread, 0);
+  if (!hasNewer(counts, firstPage)) return 0;
+  const latest = unreadOf(counts);
+  const grown =
+    openedUnread === null || latest === null ? 0 : latest - openedUnread;
+  return Math.max(grown, 1);
 }
 
 /* ------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { useCreateRoomMutation } from "../api/mutations";
-import { chatMockReady } from "../api/mockWorker";
+import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { APPROVAL_PATH, ENTRY_TEXT } from "../constants";
 import { chatRoomHref, entryFailureOf } from "../derive";
 

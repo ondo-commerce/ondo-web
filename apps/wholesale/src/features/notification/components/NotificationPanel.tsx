@@ -6,8 +6,13 @@ import Link from "next/link";
 import type { MouseEvent, ReactNode, RefObject } from "react";
 import { useNotificationListQuery } from "../api/queries";
 import { markAllText, newerText, PANEL_TEXT } from "../constants";
-import { flattenPages, toNotificationRow } from "../derive";
-import type { NotificationRowView, PanelNotice } from "../types";
+import {
+  flattenPages,
+  newerCount,
+  toNotificationRow,
+  unreadOf,
+} from "../derive";
+import type { HeaderCounts, NotificationRowView, PanelNotice } from "../types";
 
 /** 버튼 안 작은 회전 표시. 채팅 보내는 중, 자동 답 스위치와 같은 모양 */
 function Spinner() {
@@ -29,8 +34,8 @@ export function NotificationPanel({
   titleId,
   titleRef,
   scrollRef,
-  unread,
-  newer,
+  counts,
+  openedUnread,
   notice,
   marking,
   lockedIds,
@@ -41,10 +46,10 @@ export function NotificationPanel({
   titleId: string;
   titleRef: RefObject<HTMLHeadingElement | null>;
   scrollRef: RefObject<HTMLDivElement | null>;
-  /** 최신 count의 안 읽음 수. 모르면 null */
-  unread: number | null;
-  /** 연 뒤 늘어난 수. 0이면 "새 알림 N개 보기" 줄이 없다 */
-  newer: number;
+  /** 최신 count. 안 읽음 수와 새 알림 판단(`latestNotificationId`)이 여기서 나온다 */
+  counts: HeaderCounts | undefined;
+  /** 연 때(또는 첫 장을 다시 받은 때)의 안 읽음 수. "새 알림 N개 보기"의 N 기준 */
+  openedUnread: number | null;
   notice: PanelNotice;
   marking: boolean;
   lockedIds: ReadonlySet<number>;
@@ -53,6 +58,10 @@ export function NotificationPanel({
   /** `true`면 이동을 막는다 */
   onRowActivate: (row: NotificationRowView) => boolean;
 }) {
+  const query = useNotificationListQuery();
+  const unread = unreadOf(counts);
+  /* 띄울지는 첫 장 첫 행 id와 count id 비교(`hasNewer`), N은 수 차이 하한. 0이면 줄 없음 */
+  const newer = newerCount(openedUnread, counts, query.data?.pages[0]);
   return (
     <>
       <div className="flex shrink-0 items-center justify-between gap-3">
@@ -88,14 +97,14 @@ export function NotificationPanel({
       </div>
 
       {/* 409는 사장 잘못이 아니라 빨강을 안 쓴다(디자인 결정 33). 500은 오류 한 줄 */}
-      {notice === "changed" ? (
+      {notice === "changed" || notice === "newerFirst" ? (
         <Notice
           role="status"
           /* 떠 있는 작은 표면이라 Notice 기본(12 16, 14)보다 작게 — 와이어프레임 `.pop .notice` 8 12, 13 */
           className="mt-3 shrink-0 px-3 py-2 text-body"
           data-ac="S11-9"
         >
-          {PANEL_TEXT.changed}
+          {notice === "changed" ? PANEL_TEXT.changed : PANEL_TEXT.newerFirst}
         </Notice>
       ) : null}
       {notice === "markFailed" ? (

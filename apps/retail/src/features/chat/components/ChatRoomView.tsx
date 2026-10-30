@@ -19,7 +19,7 @@ import { BackorderReplyCard } from "./BackorderReplyCard";
 import { ClarifyChoices } from "./ClarifyChoices";
 import { ReceivableReplyCard } from "./ReceivableReplyCard";
 import { StockReplyCard } from "./StockReplyCard";
-import { refreshHeaderCounts } from "../api/headerCounts";
+import { refreshHeaderCounts } from "@/shared/api/headerCounts";
 import { useMarkReadMutation } from "../api/mutations";
 import { useRoomQueries } from "../api/queries";
 import {

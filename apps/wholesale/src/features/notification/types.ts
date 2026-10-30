@@ -21,6 +21,14 @@ export interface NotificationPage {
   meta: CursorPageMeta;
 }
 
+/**
+ * 캐시에 넣는 한 장. 그 장을 **보낼 때** 헤더 count가 몇 번째까지 나갔는지(`countsIssued`)를 같이 둔다 —
+ * 그보다 먼저 떠난 count는 이 장보다 옛 `latestNotificationId`일 수 있어 새 알림 판단에서 뺀다(`hasNewer`)
+ */
+export interface FetchedNotificationPage extends NotificationPage {
+  countsIssued: number;
+}
+
 /* ------------------------------------------------------------------------
  * 헤더 count 상태. 쿼리 하나에 이 값이 산다.
  * ------------------------------------------------------------------------ */
@@ -39,6 +47,13 @@ export type HeaderCounts =
       notifications: number;
       /** 답 필요 방 수. 채팅 링크 배지(Q2) */
       chatsNeedingReply: number;
+      /**
+       * 가장 최근 알림(목록 첫 행) id. 06b 초안 칸. "새 알림 N개 보기"를 수가 아니라 이 값으로 판단한다(05b-2 F3).
+       * `undefined` = 칸이 없는 서버(판단 끔), `null` = 알림 0개
+       */
+      latestNotificationId: number | null | undefined;
+      /** 이 응답을 낸 요청의 시작 순번. 목록 첫 장보다 먼저 떠난 count를 거른다(`hasNewer`) */
+      started: number;
     }
   /**
    * 세션이 끊겼다. 배지 없이 멈춘다(그 화면에 있는 동안). 다시 도는 건 새로고침, 또는 셸이 다시 그려질 때 —
@@ -74,4 +89,4 @@ export interface NotificationRowView {
 }
 
 /** 패널 위쪽 한 줄 안내. 다음 누름에서 사라진다 */
-export type PanelNotice = "changed" | "markFailed" | null;
+export type PanelNotice = "changed" | "newerFirst" | "markFailed" | null;

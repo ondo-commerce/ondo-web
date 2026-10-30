@@ -12,6 +12,7 @@ import { notificationKeys } from "./keys";
 import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_PATH } from "../constants";
 import { failedCounts, headerPollDelayMs } from "../derive";
 import type {
+  FetchedNotificationPage,
   HeaderCounts,
   NotificationPage,
   NotificationUnreadCount,
@@ -26,15 +27,29 @@ import type {
  *  - `signal`을 넘기지 않는다(채팅 쿼리와 같은 이유). 취소는 응답을 버리는 것으로 충분하다
  */
 
+/**
+ * count 시작 순번. 탭 하나에 헤더 하나라 모듈에 둔다. 목록 첫 장이 보낼 때 이 값을 적어 두고, 그보다 먼저 떠난
+ * count는 첫 장보다 옛 `latestNotificationId`를 들고 올 수 있어 새 알림 판단에서 뺀다(소매 06b S2-7과 같은 규칙)
+ */
+let issued = 0;
+
 /** count 1회. 던지지 않는다 — 실패도 값으로 돌려준다(`HeaderCounts` 주석) */
 async function fetchHeaderCounts(
   queryClient: QueryClient,
 ): Promise<HeaderCounts> {
+  const started = ++issued;
   try {
     const counts = await apiFetch<NotificationUnreadCount>(
       NOTIFICATION_PATH.unreadCount,
     );
-    return { kind: "ok", ...counts };
+    return {
+      kind: "ok",
+      notifications: counts.notifications,
+      chatsNeedingReply: counts.chatsNeedingReply,
+      /* 칸이 없으면 `undefined` 그대로 — `?? null`로 접으면 "구버전 서버"와 "알림 0개"가 섞인다 */
+      latestNotificationId: counts.latestNotificationId,
+      started,
+    };
   } catch (error) {
     if (isApiError(error) && error.status === 401)
       return { kind: "unauthorized" };
@@ -98,15 +113,19 @@ async function headerSafe<T>(run: () => Promise<T>): Promise<T> {
 export function useNotificationListQuery() {
   return useInfiniteQuery({
     queryKey: notificationKeys.list(),
-    queryFn: ({ pageParam }) =>
-      headerSafe(() =>
+    queryFn: async ({ pageParam }): Promise<FetchedNotificationPage> => {
+      /* 보내기 직전에 적는다. 이 장보다 먼저 떠난 count는 새 알림 판단에서 빠진다(`hasNewer`) */
+      const countsIssued = issued;
+      const page = await headerSafe(() =>
         apiFetchBody<NotificationPage>(NOTIFICATION_PATH.list, {
           searchParams: {
             size: NOTIFICATION_PAGE_SIZE,
             cursor: pageParam ?? undefined,
           },
         }),
-      ),
+      );
+      return { ...page, countsIssued };
+    },
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.meta.nextCursor,
     staleTime: Infinity,

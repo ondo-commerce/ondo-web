@@ -55,3 +55,8 @@
 @custom-variant laptop (@media (width <= 75rem));
 @custom-variant tablet (@media (width <= 60rem));
 @custom-variant phone (@media (width <= 40rem));
+
+/* 360 미만(320 폰). 헤더에 아이콘 넷(채팅, 알림 종, 장바구니, 계정)이 들어서면 검색칸이 25px 남짓이라 칠 수 없다 —
+   이 폭에서만 검색칸을 돋보기 버튼으로 접는다(loop-06b 디자인 결정 49). 경계 360은 접지 않는 쪽이라 `<`다
+   (360에서 검색칸 58px, S2-8 하한). 위 셋보다 좁아 마지막에 둔다 */
+@custom-variant narrow (@media (width < 22.5rem));
