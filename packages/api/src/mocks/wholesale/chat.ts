@@ -11,9 +11,13 @@ import {
   type AutoReplySettings,
   type InquiryListing,
 } from "../chat/inquiry";
-import { seoulDate } from "../chat/backorderCandidates";
+import { addDays, koreanDate, seoulDate } from "../chat/backorderCandidates";
 import type { InquiryReceivable } from "../chat/receivable";
-import { inquiryBackorders, resetBackorderMock } from "./backorder";
+import {
+  BACKORDER_SEED_ETA_DAYS,
+  inquiryBackorders,
+  resetBackorderMock,
+} from "./backorder";
 import { resetOrderMock } from "./order";
 import { chatStockListing } from "./product";
 import { mockReceivableRows, resetSettlementMock } from "./settlement";
@@ -475,7 +479,11 @@ function seedRooms(): MockRoom[] {
 
   // 방 33 — 다른 도매처(102)와 봄봄상회의 방. 101에게는 없는 방이다(404).
   // 소매 목(봄봄상회 = 나)이 보는 두 번째 방이라 소매 화면이 시험할 것을 여기 둔다(loop-05a S5-6 S5-7):
-  // 미송, 미수 자동 답(정확 수량 검사가 빈 검사가 되지 않게)과 사람 넘김 줄
+  // 미송, 미수 자동 답(정확 수량 검사가 빈 검사가 되지 않게)과 사람 넘김 줄.
+  // 미송 답의 입고일은 미송 목 시드(801 = SKU 3801)와 같은 reset 기준 상대값이다 — 날짜를 박아 두면 날이 바뀐 뒤
+  // 같은 미송에 날짜가 둘(시드 답과 새 답) 보인다(리뷰 M5)
+  const seedToday = seoulDate(Date.now());
+  const room33Eta = addDays(seedToday, BACKORDER_SEED_ETA_DAYS[3801]);
   list.push(
     room(
       33,
@@ -491,7 +499,7 @@ function seedRooms(): MockRoom[] {
         {
           sender: "WHOLESALER",
           kind: "AUTO_REPLY",
-          body: "블랙 L 미송 20장은 11월 3일 입고 예정이에요",
+          body: `블랙 L 미송 20장은 ${koreanDate(room33Eta, seedToday)} 입고 예정이에요`,
           sentAt: at(60 * 2 - 1),
           autoReply: {
             intent: "BACKORDER",
@@ -508,7 +516,7 @@ function seedRooms(): MockRoom[] {
               stock: null,
               backorder: {
                 qty: 20,
-                expectedInboundDate: "2026-11-03",
+                expectedInboundDate: room33Eta,
                 expectedInboundReason: null,
               },
               receivable: null,
