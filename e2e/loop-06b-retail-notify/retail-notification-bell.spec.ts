@@ -200,6 +200,29 @@ test("S2-3 패널을 연 뒤 로그아웃 → miso 로그인 + 목록 지연 3�
   await flushUntil(page, async () => (await rows(page).count()) === 20);
 });
 
+/* 04-qa F3. 위 테스트는 패널을 열 때 목록을 지우는 규칙만으로도 통과한다. 이 테스트는 세션 전환 캐시 비우기
+   (`AccountChip` 로그아웃, `LoginView` 로그인의 `clearHeaderSession`)를 지킨다 — 둘 다 빼면 miso 첫 count가 오기 전
+   구간에 bombom 배지 2가 셸에 남아 실패한다(0ms 단계). 첫 count를 4초 늦춰 그 구간을 연다.
+   하나만 빼면 통과한다: 클라이언트 이동으로 다른 계정이 들어오는 길은 로그아웃 → 로그인 하나뿐이라 두 호출이 같은 길에
+   겹친다(채팅 끊김의 로그인 링크는 `<a>` 전체 이동이라 QueryClient가 새로 뜬다). 둘은 서로의 안전망이다 */
+test("S2-3 bombom 배지 2 → 로그아웃 → miso 로그인 + count 지연 4초 → 그 구간 매 단계 배지 0, 이름 '알림'", async ({
+  page,
+}) => {
+  await routeAuth(page);
+  await startNotify(page, "/");
+  await expect(bellBadge(page)).toHaveText("2");
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 2개");
+
+  await chatMock(page, "delay", { op: "count", ms: 4_000 });
+  await logoutThenLogin(page, "miso");
+  await pauseClock(page);
+  for (let t = 0; t < 3_500; t += 500) {
+    await expect(bellBadge(page), `${t}ms 옛 배지 0`).toHaveCount(0);
+    await expect(bell(page)).toHaveAccessibleName("알림");
+    await page.clock.runFor(500);
+  }
+});
+
 test("S2-3 /chats/1 에서 '가나다' 쓰는 중 목록 401 → 패널 안 '로그인이 끊겼어요', 이동 0, 글 그대로", async ({
   page,
 }) => {
