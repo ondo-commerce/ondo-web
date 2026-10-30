@@ -1,7 +1,17 @@
 import type { WholesaleSchema } from "../../wholesale";
+import {
+  backorderChoiceLabel,
+  candidatesOf,
+  etaState,
+  koreanDate,
+  narrowBackorders,
+  type EtaState,
+  type InquiryBackorder,
+  type InquiryBackorderSource,
+} from "./backorderCandidates";
 
 /**
- * 재고 문의 판정 규칙과 자동 답 문장(loop-05b `01-plan.md` §4-2, §5-4). **목 규칙 = BE 규칙**이다.
+ * 재고, 미송 문의 판정 규칙과 자동 답 문장(loop-05b `01-plan.md` §4-2, §5-4, 미송은 loop-06 §4-2). **목 규칙 = BE 규칙**이다.
  *
  * 순수 함수만 둔다 — msw도, 저장소도, 시계도 모른다. 부르는 쪽이 지금 시각, 방의 지난 메시지,
  * 상품 조회 함수를 넘긴다. 그래서 같은 함수를 세 곳이 쓴다:
@@ -69,6 +79,12 @@ export interface InquiryInput {
   /** 이번 메시지보다 **앞** 메시지들(sequence 오름차순). 이번 메시지는 넣지 않는다 */
   history: readonly InquiryHistoryItem[];
   catalog: InquiryCatalog;
+  /** 이 방의 소매처. 미송 후보를 이 값과 `wholesalerId`로 고른다(화면이 보낸 값이 아니라 방의 값) */
+  retailerId: number;
+  /** 서울 날짜 `YYYY-MM-DD`. 입고일이 오늘인지, 지났는지를 이 값으로 잰다. `now`에서 만들지 않고 받는다(골든셋, 경계 unit) */
+  today: string;
+  /** 미송 원본 전체(거르지 않은 것). 고르는 건 판정이 한다 */
+  backorders: InquiryBackorderSource;
 }
 
 /* --- 규칙 상수 ------------------------------------------------------------ */
@@ -91,8 +107,16 @@ const NEGOTIATION_WORDS = ["깎", "할인", "네고", "교환", "반품", "환�
 /** 의도 키워드. 공백을 지운 본문에서 찾는다. 재고의 `있어요` 무리는 옵션어가 같이 있을 때만 */
 const STOCK_WORDS = ["몇장", "남았", "재고", "수량", "품절"];
 const STOCK_WORDS_WITH_OPTION = ["있어요", "있나요", "되나요"];
-const BACKORDER_WORDS = ["미송", "언제와", "입고"];
+const BACKORDER_WORDS = ["미송", "언제와", "입고", "언제들어"];
 const RECEIVABLE_WORDS = ["미수", "외상", "잔금", "갚을"];
+/**
+ * 배송어. 미송 의도여도 이 말이 있으면 넘긴다 — 미송 답은 "도매 입고 예정"만 말한다. 출고, 배송, 수령은 다른
+ * 업무 단계라 같은 날짜로 답하면 틀린다(Codex 7). "언제받", "아직안왔"도 수령 질문이라 미송 키워드에 안 넣었다
+ */
+const DELIVERY_WORDS = ["출고", "배송", "택배", "도착", "보내", "받"];
+
+/** 미송 되묻기 보기 상한(D34⑤). 넘치면 오래된 것부터 이만큼 */
+export const BACKORDER_CHOICE_MAX = 8;
 
 /** 오타 사전. **목록에 있는 것만** 고친다 — 넓히면 엉뚱한 말이 재고 문의가 된다 */
 const TYPO_FIXES: readonly [from: string, to: string][] = [
@@ -166,7 +190,7 @@ export type HandoffReason =
   | "MULTI_INTENT"
   /** 판정 5. 의도를 못 찾았다 */
   | "NO_INTENT"
-  /** 판정 5. 재고가 아닌 의도(미송, 미수는 loop-06, 07 전까지 넘김) */
+  /** 판정 5. 미수(loop-07 전까지), OTHER, 미송 질문에 배송어가 섞임 */
   | "NOT_SUPPORTED"
   /** 판정 6. 상품 문맥이 없거나 30분 지났다 */
   | "NO_CONTEXT"
@@ -174,8 +198,14 @@ export type HandoffReason =
   | "NO_OPTIONS"
   /** 판정 8. 남의 도매처 상품, 없는 상품, 게시 안 된 옵션 */
   | "INVALID_TARGET"
-  /** 판정 3. 되묻기 뒤 또 옵션 불명 — 두 번 묻지 않는다(Q1) */
-  | "CLARIFY_AGAIN";
+  /** 판정 3. 되묻기 뒤 또 옵션 불명 — 두 번 묻지 않는다(Q1). 미송도 같다(D34①) */
+  | "CLARIFY_AGAIN"
+  /** 미송. `다른 주문이에요` 보기(inquiry.notListed) */
+  | "NOT_LISTED"
+  /** 미송. 이 방 도매처에 이 소매처의 열린 미송이 0개(Q1 ②) */
+  | "NO_BACKORDER"
+  /** 미송. 본문에 나온 상품명, 색상, 사이즈를 다 만족하는 미송이 0개("블랙 셔츠"인데 셔츠 미송이 화이트뿐) */
+  | "NO_MATCH";
 
 export type InquiryDecision =
   | { kind: "HANDOFF"; reason: HandoffReason; intent: ChatIntent | null }
@@ -195,13 +225,74 @@ export type InquiryDecision =
       orderLimit: number | null;
       /** 문장에 "10장" 같은 수량이 있었다 → 답 끝에 "수량은 주문서에서 확인돼요" */
       qtyNote: boolean;
+    }
+  | {
+      kind: "CLARIFY";
+      intent: "BACKORDER";
+      /** 보기에 싣는 미송(오래된 순, 최대 8). 끝의 NOT_LISTED 보기는 문장 단계가 붙인다 */
+      choices: InquiryBackorder[];
+      /** 후보가 8개를 넘어 잘랐다 → 되묻기 끝에 "오래된 8개만 보여요" */
+      truncated: boolean;
+      today: string;
+    }
+  | {
+      kind: "AUTO_REPLY";
+      intent: "BACKORDER";
+      backorder: InquiryBackorder;
+      eta: EtaState;
+      today: string;
     };
 
 /** 직전 유효 되묻기: 30분 안, 그 뒤 소매 메시지도 도매 사람 답(TEXT)도 없다 */
 interface OpenClarify {
   intent: ChatIntent;
-  listingId: number;
+  /** 재고 되묻기의 상품. 미송 되묻기는 null */
+  listingId: number | null;
   variantIds: number[];
+  /** 미송 되묻기 보기의 backorderId(NOT_LISTED 제외). 재고 되묻기는 빈 배열 — 두 목록을 섞지 않는다(C1) */
+  backorderIds: number[];
+}
+
+function clarifyOf(m: InquiryHistoryItem): OpenClarify | null {
+  if (m.autoReply === null) return null;
+  const choices = m.autoReply.choices ?? [];
+  if (m.autoReply.intent === "BACKORDER")
+    return {
+      intent: "BACKORDER",
+      listingId: null,
+      variantIds: [],
+      backorderIds: choices.flatMap((c) =>
+        c.kind === "BACKORDER" && c.backorderId != null ? [c.backorderId] : [],
+      ),
+    };
+  const listingId = m.autoReply.subject.listingId;
+  if (listingId === null) return null;
+  return {
+    intent: m.autoReply.intent,
+    listingId,
+    variantIds: choices.map((c) => c.variantId),
+    backorderIds: [],
+  };
+}
+
+const expired = (m: InquiryHistoryItem, now: number) =>
+  now - Date.parse(m.sentAt) > INQUIRY_CONTEXT_MINUTES * MINUTE_MS;
+
+/**
+ * 칩 검증용(§4-2 2): 이 방에서 30분 안에 연 **가장 최근** 미송 되묻기의 보기. 그 뒤에 소매가 다른 글을
+ * 썼어도 칩은 그 보기에서 고른 것이라 본다(열린 되묻기만 보는 계승과 다르다)
+ */
+function latestBackorderClarify(
+  history: readonly InquiryHistoryItem[],
+  now: number,
+): number[] | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m === undefined) continue;
+    if (m.kind === "CLARIFY" && m.autoReply?.intent === "BACKORDER")
+      return expired(m, now) ? null : (clarifyOf(m)?.backorderIds ?? null);
+  }
+  return null;
 }
 
 function openClarify(
@@ -212,15 +303,8 @@ function openClarify(
     const m = history[i];
     if (m === undefined) continue;
     if (m.kind === "CLARIFY") {
-      const listingId = m.autoReply?.subject.listingId ?? null;
-      if (m.autoReply === null || listingId === null) return null;
-      if (now - Date.parse(m.sentAt) > INQUIRY_CONTEXT_MINUTES * MINUTE_MS)
-        return null;
-      return {
-        intent: m.autoReply.intent,
-        listingId,
-        variantIds: (m.autoReply.choices ?? []).map((c) => c.variantId),
-      };
+      if (expired(m, now)) return null;
+      return clarifyOf(m);
     }
     // 되묻기보다 뒤에 온 소매 메시지나 사장이 직접 쓴 답이 있으면 그 되묻기는 끝났다
     if (m.sender === "RETAILER") return null;
@@ -336,6 +420,76 @@ function ownListing(input: InquiryInput, listingId: number) {
     : null;
 }
 
+function backorderAnswer(b: InquiryBackorder, today: string): InquiryDecision {
+  return {
+    kind: "AUTO_REPLY",
+    intent: "BACKORDER",
+    backorder: b,
+    eta: etaState(b.expectedInboundDate, today),
+    today,
+  };
+}
+
+/**
+ * 미송 가지(loop-06 §4-2 1~6). 의도가 미송으로 정해지고 미송 설정이 켜진 뒤에 온다. 위에서부터:
+ *  a. `다른 주문이에요`(notListed) → NOT_LISTED. 본문은 안 본다
+ *  b. 칩(backorderId) → 30분 안 가장 최근 미송 되묻기의 보기 안이고 지금도 후보면 답, 아니면 INVALID_TARGET.
+ *     계승도 본문도 안 본다
+ *  c. 배송어 → NOT_SUPPORTED
+ *  d. 열린 미송 되묻기 계승 → 그 보기 안에서 본문이 확정하면 답, 아니면 CLARIFY_AGAIN(되묻기 1회)
+ *  e. 후보 0 → NO_BACKORDER
+ *  f. 본문 좁히기: 말했는데 0개 → NO_MATCH, 확정 → 답, 그 밖 → 되묻기(1개여도 칩 1개로 묻는다, Codex 1)
+ */
+function decideBackorder(
+  input: InquiryInput,
+  text: string,
+  prev: OpenClarify | null,
+): InquiryDecision {
+  const { inquiry, today } = input;
+  if (inquiry?.notListed === true) return handoff("NOT_LISTED", "BACKORDER");
+  const all = candidatesOf(
+    input.backorders,
+    input.wholesalerId,
+    input.retailerId,
+  );
+
+  if (inquiry?.backorderId != null) {
+    const shown = latestBackorderClarify(input.history, input.now);
+    const target = shown?.includes(inquiry.backorderId)
+      ? all.find((b) => b.backorderId === inquiry.backorderId)
+      : undefined;
+    return target === undefined
+      ? handoff("INVALID_TARGET", "BACKORDER")
+      : backorderAnswer(target, today);
+  }
+
+  if (DELIVERY_WORDS.some((w) => compact(text).includes(w)))
+    return handoff("NOT_SUPPORTED", "BACKORDER");
+
+  if (prev !== null) {
+    const pool = all.filter((b) => prev.backorderIds.includes(b.backorderId));
+    const { confirmed } = narrowBackorders(text, pool);
+    return confirmed === null
+      ? handoff("CLARIFY_AGAIN", "BACKORDER")
+      : backorderAnswer(confirmed, today);
+  }
+
+  if (all.length === 0) return handoff("NO_BACKORDER", "BACKORDER");
+  const { said, left, confirmed, blocked } = narrowBackorders(text, all);
+  // blocked: 후보 하나로 좁혀졌지만 본문에 모르는 말(후보에 없는 상품명일 수 있다)이 있다. 그 칩 하나로 되물으면
+  // 소매가 말하지 않은 상품을 내미는 셈이라 넘긴다(리뷰 M1)
+  if (said && (left.length === 0 || blocked))
+    return handoff("NO_MATCH", "BACKORDER");
+  if (confirmed !== null) return backorderAnswer(confirmed, today);
+  return {
+    kind: "CLARIFY",
+    intent: "BACKORDER",
+    choices: left.slice(0, BACKORDER_CHOICE_MAX),
+    truncated: left.length > BACKORDER_CHOICE_MAX,
+    today,
+  };
+}
+
 /**
  * 판정 순서 0~9(§4-2). 위에서부터 처음 걸린 것으로 정한다.
  *
@@ -352,7 +506,9 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   // 1. 협상어, 의도 둘 이상
   if (NEGOTIATION_WORDS.some((w) => flat.includes(w)))
     return handoff("NEGOTIATION");
-  const prev = openClarify(input.history, now);
+  const open = openClarify(input.history, now);
+  // 재고 계승(2, 3, 7)은 재고 되묻기만 본다. 미송 되묻기는 아래 미송 가지가 따로 본다
+  const prev = open?.intent === "STOCK" ? open : null;
   const freshContext =
     input.context !== null &&
     now - input.context.at <= INQUIRY_CONTEXT_MINUTES * MINUTE_MS
@@ -371,7 +527,7 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
     return handoff("MULTI_INTENT");
 
   // 2. 되묻기 계승: 같은 의도, 같은 상품일 때만. 칩이면 variantId가 보기 안, 아니면 본문이 보기 하나
-  if (prev !== null) {
+  if (prev !== null && prev.listingId !== null) {
     const listing = ownListing(input, prev.listingId);
     const sameIntent =
       (intents.size === 0 || saidIntent(prev.intent)) &&
@@ -396,12 +552,23 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
     // 3. 계승 안 됨 → 끊고 4부터 새로. 끝이 같은 상품 옵션 불명이면 또 묻지 않는다(아래 7)
   }
 
+  // 미송 되묻기 계승(§4-2 3): 이번 의도가 없거나 미송일 때만. 재고 질문이면 끊고 새로 판정한다(B20)
+  const backorderPrev =
+    open?.intent === "BACKORDER" &&
+    (intents.size === 0 || saidIntent("BACKORDER")) &&
+    (inquiry === null || inquiry.intent === "BACKORDER")
+      ? open
+      : null;
+
   // 4, 5. 의도
   const [keyword] = [...intents];
-  const intent: ChatIntent | null = inquiry?.intent ?? keyword ?? null;
+  const intent: ChatIntent | null =
+    backorderPrev !== null ? "BACKORDER" : (inquiry?.intent ?? keyword ?? null);
   if (intent === null) return handoff("NO_INTENT");
   if (!intentOn(settings, intent))
     return handoff(intent === "OTHER" ? "NOT_SUPPORTED" : "OFF", intent);
+  if (intent === "BACKORDER")
+    return decideBackorder(input, text, backorderPrev);
   if (intent !== "STOCK") return handoff("NOT_SUPPORTED", intent);
 
   // 6. 상품 문맥: inquiry.listingId > 방 문맥(30분 안)
@@ -447,10 +614,42 @@ const BAND_TEXT: Record<Exclude<StockBand, "NONE">, string> = {
   FIFTY_PLUS: "50장 이상",
 };
 
+export const BACKORDER_CLARIFY_BODY = "어느 주문이요?";
+export const BACKORDER_TRUNCATED_NOTE = "오래된 8개만 보여요";
+export const NOT_LISTED_LABEL = "다른 주문이에요";
+
+type StockAuto = Extract<
+  InquiryDecision,
+  { kind: "AUTO_REPLY"; intent: "STOCK" }
+>;
+type BackorderAuto = Extract<
+  InquiryDecision,
+  { kind: "AUTO_REPLY"; intent: "BACKORDER" }
+>;
+
+/**
+ * 미송 답 본문(§4-2 7). 수량은 그 소매처 자기 미송의 **남은** 수량뿐이다. "도매 입고"를 박아 출고, 도착일로
+ * 읽히지 않게 한다. 지난 날짜는 "지연"이라 쓰지 않는다(입고됐는데 날짜를 안 고쳤을 수 있다, Q2).
+ * 사유는 예정, 오늘일 때만 붙인다(미정, 지남은 넘김 줄이 따라온다. 디자인 결정 40)
+ */
+export function backorderReplyBody(d: BackorderAuto): string {
+  const b = d.backorder;
+  const head = `${b.title} ${b.color} ${b.size} 남은 미송 ${b.remainingQty}장은`;
+  const reason =
+    b.expectedInboundReason === null || b.expectedInboundReason === ""
+      ? ""
+      : `(${b.expectedInboundReason})`;
+  const date = b.expectedInboundDate;
+  if (d.eta === "NONE" || date === null)
+    return `${head} 아직 도매 입고일이 정해지지 않았어요`;
+  if (d.eta === "PAST")
+    return `${head} 등록된 입고 예정일 ${koreanDate(date, d.today)}이 지났어요`;
+  const when = d.eta === "TODAY" ? "오늘" : koreanDate(date, d.today);
+  return `${head} ${when} 도매 입고 예정이에요${reason}`;
+}
+
 /** 자동 답 본문. **구간만** 쓴다 — 이 글이 소매에게 그대로 간다 */
-export function stockReplyBody(
-  d: Extract<InquiryDecision, { kind: "AUTO_REPLY" }>,
-): string {
+export function stockReplyBody(d: StockAuto): string {
   let body: string;
   if (d.band === "NONE") body = `${topicOf(d.variant)} 지금은 재고가 없어요`;
   else if (!d.orderable)
@@ -487,6 +686,8 @@ export function generatedLines(
     autoReply: null,
   };
   if (d.kind === "HANDOFF") return [handoffLine];
+  if (d.intent === "BACKORDER")
+    return backorderLines(d, replyToSequence, checkedAt, handoffLine);
   if (d.kind === "CLARIFY")
     return [
       {
@@ -541,6 +742,89 @@ export function generatedLines(
     },
   };
   return d.band === "NONE" ? [reply, handoffLine] : [reply];
+}
+
+/**
+ * 미송 줄. 되묻기 보기 끝에 늘 `다른 주문이에요`(kind NOT_LISTED)를 싣는다 — 빠져나갈 보기가 없으면 소매가 아무
+ * 칩이나 눌러 틀린 답을 받는다(Q3). 미송, NOT_LISTED 보기의 orderable 은 false 로 둔다(VARIANT만 읽는 칸,
+ * 모르면 주문 가능이라 말하지 않는다). NOT_LISTED 의 variantId 는 required 라 0.
+ *
+ * 입고일 미정, 지남 답은 AUTO_REPLY + HANDOFF 두 줄(Q2). facts.backorder.qty 는 **남은** 수량이다.
+ */
+function backorderLines(
+  d: Exclude<InquiryDecision, { kind: "HANDOFF" }> & { intent: "BACKORDER" },
+  replyToSequence: number,
+  checkedAt: string,
+  handoffLine: GeneratedLine,
+): GeneratedLine[] {
+  if (d.kind === "CLARIFY")
+    return [
+      {
+        sender: "WHOLESALER",
+        kind: "CLARIFY",
+        body: d.truncated
+          ? `${BACKORDER_CLARIFY_BODY} ${BACKORDER_TRUNCATED_NOTE}`
+          : BACKORDER_CLARIFY_BODY,
+        autoReply: {
+          intent: "BACKORDER",
+          replyToSequence,
+          generatedBy: "RULE",
+          checkedAt,
+          subject: {
+            listingId: null,
+            variantId: null,
+            backorderId: null,
+            label: null,
+          },
+          facts: { stock: null, backorder: null, receivable: null },
+          choices: [
+            ...d.choices.map((b) => ({
+              variantId: b.variantId,
+              label: backorderChoiceLabel(b, d.today),
+              orderable: false,
+              kind: "BACKORDER" as const,
+              backorderId: b.backorderId,
+            })),
+            {
+              variantId: 0,
+              label: NOT_LISTED_LABEL,
+              orderable: false,
+              kind: "NOT_LISTED" as const,
+              backorderId: null,
+            },
+          ],
+        },
+      },
+    ];
+  const b = d.backorder;
+  const reply: GeneratedLine = {
+    sender: "WHOLESALER",
+    kind: "AUTO_REPLY",
+    body: backorderReplyBody(d),
+    autoReply: {
+      intent: "BACKORDER",
+      replyToSequence,
+      generatedBy: "RULE",
+      checkedAt,
+      subject: {
+        listingId: null,
+        variantId: b.variantId,
+        backorderId: b.backorderId,
+        label: `${b.title} ${b.color} / ${b.size}`,
+      },
+      facts: {
+        stock: null,
+        backorder: {
+          qty: b.remainingQty,
+          expectedInboundDate: b.expectedInboundDate,
+          expectedInboundReason: b.expectedInboundReason,
+        },
+        receivable: null,
+      },
+      choices: null,
+    },
+  };
+  return d.eta === "NONE" || d.eta === "PAST" ? [reply, handoffLine] : [reply];
 }
 
 /**

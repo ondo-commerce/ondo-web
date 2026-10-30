@@ -1852,6 +1852,16 @@ export interface components {
         };
         /** @description 되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다 */
         ChatChoice: {
+            /**
+             * Format: int64
+             * @description kind BACKORDER 에만 미송 id. 고르면 inquiry.backorderId 가 된다(그때 variantId 는 그 미송의 SKU). 그 밖엔 null 이거나 칸이 없다. NOT_LISTED 보기는 variantId 가 required 라 0 을 싣는다(BE 가 nullable 로 바꾸면 따라간다)
+             */
+            backorderId?: number | null;
+            /**
+             * @description 보기 종류. VARIANT = 재고 되묻기의 옵션, BACKORDER = 미송 되묻기의 미송 한 건, NOT_LISTED = 미송 되묻기 끝의 `다른 주문이에요`. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? VARIANT`). orderable 은 VARIANT 일 때만 읽는다
+             * @enum {string}
+             */
+            kind?: "VARIANT" | "BACKORDER" | "NOT_LISTED";
             /** @description 칩 글자. 예: "레드 / M". 고르면 이 글자가 메시지 본문이 된다 */
             label: string;
             /** @description 게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다) */
@@ -1892,6 +1902,8 @@ export interface components {
              * @description 상품 문맥(게시글 id). 없으면 null
              */
             listingId: number | null;
+            /** @description kind NOT_LISTED 보기를 골랐다. required 아님(`?? false`). true 면 서버는 본문을 읽지 않고 사장에게 넘긴다(본문 글자를 명령으로 쓰지 않는다) */
+            notListed?: boolean;
             /**
              * Format: int64
              * @description 옵션(SKU) id. 없으면 null

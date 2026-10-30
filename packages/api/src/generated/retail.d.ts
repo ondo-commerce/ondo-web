@@ -419,6 +419,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retail/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 헤더 배지 둘(안 읽은 알림 수, 안 읽은 채팅 메시지 수)
+         * @description 헤더 배지 둘을 한 번에. 화면은 셸이 뜰 때 1회, 이후 30초마다 부른다(탭이 숨으면 멈춘다).
+         *
+         *     notifications = 내 안 읽은 알림 수(알림 목록 op 는 06b. 그 전 목은 늘 0). chats = 내 방 unreadCount 의 합. 방 목록 chatRooms 의 unreadCount 와 같은 정의다(도매가 보낸 TEXT, AUTO_REPLY, CLARIFY 중 내 읽음 위치 초과분, SYSTEM 제외).
+         *
+         *     에러: 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. 읽음 범위는 소매 사업체다.
+         */
+        get: operations["notificationUnreadCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retail/orders": {
         parameters: {
             query?: never;
@@ -920,6 +946,16 @@ export interface components {
         };
         /** @description 되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다 */
         ChatChoice: {
+            /**
+             * Format: int64
+             * @description kind BACKORDER 에만 미송 id. 고르면 inquiry.backorderId 가 된다(그때 variantId 는 그 미송의 SKU). 그 밖엔 null 이거나 칸이 없다. NOT_LISTED 보기는 variantId 가 required 라 0 을 싣는다(BE 가 nullable 로 바꾸면 따라간다)
+             */
+            backorderId?: number | null;
+            /**
+             * @description 보기 종류. VARIANT = 재고 되묻기의 옵션, BACKORDER = 미송 되묻기의 미송 한 건, NOT_LISTED = 미송 되묻기 끝의 `다른 주문이에요`. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? VARIANT`). orderable 은 VARIANT 일 때만 읽는다
+             * @enum {string}
+             */
+            kind?: "VARIANT" | "BACKORDER" | "NOT_LISTED";
             /** @description 칩 글자. 예: "레드 / M". 고르면 이 글자가 메시지 본문이 된다 */
             label: string;
             /** @description 게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다) */
@@ -960,6 +996,8 @@ export interface components {
              * @description 상품 문맥(게시글 id). 없으면 null
              */
             listingId: number | null;
+            /** @description kind NOT_LISTED 보기를 골랐다. required 아님(`?? false`). true 면 서버는 본문을 읽지 않고 사장에게 넘긴다(본문 글자를 명령으로 쓰지 않는다) */
+            notListed?: boolean;
             /**
              * Format: int64
              * @description 옵션(SKU) id. 없으면 null
@@ -1827,6 +1865,24 @@ export interface components {
              * @description 거절 시각
              */
             rejectedAt: string;
+        };
+        /** @description 소매 헤더 배지 둘 */
+        RetailUnreadCount: {
+            /**
+             * Format: int32
+             * @description 내 방 unreadCount 합. 방 목록 unreadCount 와 같은 정의(SYSTEM 제외)
+             */
+            chats: number;
+            /**
+             * Format: int64
+             * @description 내 알림 중 가장 최근 것의 id. 없으면 null. 화면은 개수가 아니라 이 값이 바뀌었는지로 새 알림을 안다(읽고 새로 와서 수가 같아도 잡힌다). required 아님(읽는 쪽은 `?? null`). 06a 목은 알림이 없어 늘 null
+             */
+            latestNotificationId?: number | null;
+            /**
+             * Format: int32
+             * @description 안 읽은 알림 수. 알림 목록은 06b. 그 전 목은 0
+             */
+            notifications: number;
         };
         /**
          * @description 로그인 · 내 정보 조회의 응답 본문. 명세상 두 API 가 같은 모양을 쓴다.
@@ -4001,6 +4057,79 @@ export interface operations {
                      *       "code": "INTERNAL_ERROR",
                      *       "errors": [],
                      *       "message": "잠시 후 다시 시도해주세요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    notificationUnreadCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RetailUnreadCount"];
+                    };
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHORIZED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ACCOUNT_NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
                      *       "traceId": null
                      *     }
                      */

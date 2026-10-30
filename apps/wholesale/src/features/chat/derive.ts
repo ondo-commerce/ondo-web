@@ -23,6 +23,7 @@ import type {
   ChatRoomRowView,
   ChatRoomSummary,
   ChatThread,
+  ClarifyChoicesView,
   ComposerCheck,
   FactLine,
   FactPart,
@@ -293,19 +294,31 @@ export function senderLabel(
 }
 
 /**
- * 되묻기 보기 한 줄(#296 S13-1, 디자인 결정 37). 소매에게 나간 보기를 사장이 글자로 본다 — 도매에선 누를 수 없다.
- * `orderable: false`는 뒤에 "(주문 불가)"만 붙인다(색, 취소선 없음). choices가 없거나 null이거나 비면 줄 자체가 없다.
- * 순서는 서버 순서 그대로(색상 → 사이즈).
+ * 되묻기 보기 줄(#296 S13-1 디자인 결정 37, #299 S4-1 디자인 결정 38). 소매에게 나간 보기를 사장이 글자로 본다 —
+ * 도매에선 누를 수 없다. choices가 없거나 null이거나 비면 줄 자체가 없다. 순서는 서버 순서 그대로.
+ *
+ * "(주문 불가)"는 **kind VARIANT + `orderable: false`**만 붙인다(색, 취소선 없음). 미송 보기와 `다른 주문이에요`
+ * 보기도 계약상 orderable 칸이 있지만(NOT_LISTED는 늘 false) 주문 가능 여부를 뜻하지 않는다 — 읽으면
+ * 사장이 "주문 불가 미송"으로 잘못 읽는다. kind가 없으면 VARIANT(계약 `?? VARIANT`, 05b 서버 그대로).
+ *
+ * 미송 보기가 하나라도 있으면 목록 모양(`list`)이다. 재고 보기만이면 05b-2 그대로 한 줄.
  */
 export function toClarifyChoicesView(
   autoReply: ChatAutoReply | null,
-): string | null {
+): ClarifyChoicesView | null {
   const choices = autoReply?.choices ?? [];
   if (choices.length === 0) return null;
-  const labels = choices.map(
-    (c) => `${c.label}${c.orderable ? "" : ROOM_TEXT.choiceNotOrderable}`,
+  const labels = choices.map((c) =>
+    (c.kind ?? "VARIANT") === "VARIANT" && !c.orderable
+      ? `${c.label}${ROOM_TEXT.choiceNotOrderable}`
+      : c.label,
   );
-  return `${ROOM_TEXT.choicesPrefix}${labels.join(", ")}`;
+  if (choices.some((c) => (c.kind ?? "VARIANT") !== "VARIANT"))
+    return { mode: "list", items: labels };
+  return {
+    mode: "inline",
+    text: `${ROOM_TEXT.choicesPrefix}${labels.join(", ")}`,
+  };
 }
 
 /**

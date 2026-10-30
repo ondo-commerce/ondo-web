@@ -13,6 +13,7 @@ import type { RetailSchema } from "../../retail";
 import type { WholesaleSchema } from "../../wholesale";
 import {
   GOLDEN,
+  GOLDEN_T0,
   fullInquiry,
   projectMessages,
   visibleExpect,
@@ -106,25 +107,36 @@ function advance(minutes: number) {
 
 /** 골든셋 시나리오 하나를 방 1에서 HTTP로 돌린다. 단계마다 응답 `generatedMessages`를 투영해 돌려준다 */
 async function replay(s: GoldenScenario) {
+  // 미송 입고일은 reset 시각 기준 상대값이라 T0에서 reset 한 뒤 시나리오 날짜(afterDays)로 옮긴다
+  vi.setSystemTime(GOLDEN_T0);
   resetRetailChatMock();
+  advance((s.room.afterDays ?? 0) * 24 * 60);
   await knob("/rooms/1/context", {
     listingId: s.room.context?.listingId ?? null,
     ageMinutes: s.room.context?.ageMinutes ?? 0,
   });
-  await knob("/auto-reply", { enabled: s.room.autoReply });
+  await knob("/auto-reply", {
+    enabled: s.room.autoReply,
+    ...(s.room.intents === undefined ? {} : { intents: s.room.intents }),
+  });
   const out: { expect: unknown; actual: unknown }[] = [];
   for (const step of s.steps) {
     if (step.afterMinutes !== undefined) advance(step.afterMinutes);
     if (step.enter !== undefined) await enter(step.enter.listingId);
+    const nowIso = new Date().toISOString();
     const res = await send(step.text, step.inquiry);
     expect(res.status, `${s.id} ${step.text}`).toBe(201);
     out.push({
       expect: visibleExpect(step.expect),
-      actual: projectMessages(res.body.data.generatedMessages),
+      actual: projectMessages(res.body.data.generatedMessages, nowIso),
     });
   }
   return out;
 }
+
+/** 소매 목의 "나"는 봄봄상회 하나라 HTTP로는 방 1(무드온 101, 봄봄상회) 시나리오만 돌 수 있다 */
+const inRoom1 = (s: GoldenScenario) =>
+  s.room.wholesalerId === 101 && (s.room.retailerId ?? 1) === 1;
 
 const scenario = (id: string) => {
   const s = GOLDEN.scenarios.find((x) => x.id === id);
@@ -137,9 +149,14 @@ async function expectScenario(id: string) {
     expect(step.actual, id).toEqual(step.expect);
 }
 
-describe("골든셋 35개를 소매 목 HTTP로 — 판정 함수와 같은 결과", () => {
-  it("전 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다)", async () => {
-    for (const s of GOLDEN.scenarios) {
+describe("골든셋을 소매 목 HTTP로 — 판정 함수와 같은 결과", () => {
+  it("방 1 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다). 재고 35 + 미송 21", async () => {
+    const room1 = GOLDEN.scenarios.filter(inRoom1);
+    // 방 1 밖은 대기상회(B04), 가람상회(B05) 둘뿐이다 — 판정 unit 이 받는다
+    expect(
+      GOLDEN.scenarios.filter((s) => !inRoom1(s)).map((s) => s.id),
+    ).toEqual(["B04", "B05"]);
+    for (const s of room1) {
       for (const step of await replay(s))
         expect(step.actual, s.id).toEqual(step.expect);
     }

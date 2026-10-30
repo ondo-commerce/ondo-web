@@ -51,7 +51,10 @@ export const CHAT_WHOLESALERS: Readonly<Record<number, string>> = {
   103: "코튼클럽 동대문 신평화패션타운 삼층 본점 직영 도매상회",
 };
 
-/** `/__mock/chat/fail`이 고르는 op. 도매 목과 같은 이름 + `create`(방 만들기) */
+/**
+ * `/__mock/chat/fail`이 고르는 op. 도매 목과 같은 이름 + `create`(방 만들기) + `count`(헤더 배지
+ * `notificationUnreadCount`, loop-06)
+ */
 export const RETAIL_CHAT_FAIL_OPS = [
   "rooms",
   "room",
@@ -59,10 +62,16 @@ export const RETAIL_CHAT_FAIL_OPS = [
   "send",
   "read",
   "create",
+  "count",
 ] as const;
 type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
 
+/** `/__mock/chat/delay`가 고르는 op. 응답 순서 역전(늦은 count가 읽음 뒤에 도착)을 만드는 둘 */
+export const RETAIL_CHAT_DELAY_OPS = ["count", "read"] as const;
+type DelayOp = (typeof RETAIL_CHAT_DELAY_OPS)[number];
+
 const failPlan = new Map<FailOp, { status: number; times: number }>();
+const delayPlan = new Map<DelayOp, { ms: number; times: number }>();
 const failedOnceKeys = new Set<string>();
 
 /* --- 계산 --------------------------------------------------------------- */
@@ -212,6 +221,26 @@ function plannedFailure(op: FailOp) {
   return fail(plan.status);
 }
 
+/**
+ * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 "먼저 시작한 count가 읽음 뒤에 옛 숫자로 도착"을
+ * 만들 수 있다(S2-6). 도매 알림 목(`../wholesale/notification.ts`)과 같은 규칙
+ */
+async function plannedDelay(op: DelayOp) {
+  const plan = delayPlan.get(op);
+  if (plan === undefined || plan.times <= 0) return;
+  plan.times -= 1;
+  if (plan.times === 0) delayPlan.delete(op);
+  await delay(plan.ms);
+}
+
+/** 헤더 채팅 배지 = 내 방 unreadCount 합. 방 목록과 같은 `unreadCount`를 지나 두 숫자가 갈라지지 않는다 */
+function myUnreadChats(): number {
+  return chatStore
+    .rooms()
+    .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID)
+    .reduce((sum, r) => sum + unreadCount(r), 0);
+}
+
 /* --- 핸들러 ------------------------------------------------------------- */
 
 /**
@@ -219,6 +248,23 @@ function plannedFailure(op: FailOp) {
  * 서버 컴포넌트가 부르거나 프록시를 지나 실서버(e2e에선 가짜 API 3199)로 간다.
  */
 export const retailChatHandlers = [
+  /**
+   * 헤더 배지 둘(초안 op `notificationUnreadCount`, loop-06). `notifications`는 알림 목이 06b라 늘 0.
+   * 소매 worker에 올라가야 해서 알림 목이 아니라 여기 둔다(`../browser.ts`는 채팅 핸들러만 올린다)
+   */
+  http.get("*/api/retail/notifications/unread-count", async () => {
+    const planned = plannedFailure("count");
+    if (planned) return planned;
+    const data: RetailSchema<"RetailUnreadCount"> = {
+      notifications: 0,
+      chats: myUnreadChats(),
+      // 06b 가 새 알림을 이 id 로 안다. 06a 목에는 알림이 없다
+      latestNotificationId: null,
+    };
+    await plannedDelay("count");
+    return HttpResponse.json({ data });
+  }),
+
   /** 목록. 05a 화면은 안 부른다(방 목록은 05b). "나"의 방이 두세 개라 한 장으로 끝낸다(nextCursor null) */
   http.get("*/api/retail/chat/rooms", ({ request }) => {
     const planned = plannedFailure("rooms");
@@ -489,13 +535,13 @@ export const retailChatHandlers = [
           "방에 없는 sequence입니다.",
         );
       r.retailerLastRead = Math.max(r.retailerLastRead ?? 0, seq);
-      return HttpResponse.json({
-        data: {
-          roomId: r.roomId,
-          lastReadSequence: r.retailerLastRead,
-          unreadCount: unreadCount(r),
-        },
-      });
+      const data = {
+        roomId: r.roomId,
+        lastReadSequence: r.retailerLastRead,
+        unreadCount: unreadCount(r),
+      };
+      await plannedDelay("read");
+      return HttpResponse.json({ data });
     },
   ),
 
@@ -555,9 +601,39 @@ export const retailChatHandlers = [
     return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
   }),
 
-  /** 시드로 되돌린다(도매 목의 시드와 같이). 소매 쪽 실패 계획도 비운다 */
-  http.post("*/__mock/chat/reset", () => {
-    resetRetailChatMock();
+  /** 다음 n회 응답을 ms 늦춘다. `{op: count|read, ms, times = 1}`. 값은 요청 시점에 정한다 */
+  http.post("*/__mock/chat/delay", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      op?: string;
+      ms?: number;
+      times?: number;
+    };
+    const op = RETAIL_CHAT_DELAY_OPS.find((o) => o === input.op);
+    if (op === undefined)
+      return invalid(
+        "op",
+        "INVALID",
+        `op는 ${RETAIL_CHAT_DELAY_OPS.join(" | ")}`,
+      );
+    if (typeof input.ms !== "number" || input.ms < 0)
+      return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
+    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1 });
+    return HttpResponse.json({ data: { op, ...delayPlan.get(op) } });
+  }),
+
+  /**
+   * 시드로 되돌린다(도매 목의 시드와 미송 목도 같이). 소매 쪽 실패, 지연 계획도 비운다.
+   * `{empty: true}` 내 방 0개(목록 빈 상태), `{noBackorders: true}` 미송 0건(자동 답 후보 0개)
+   */
+  http.post("*/__mock/chat/reset", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      empty?: boolean;
+      noBackorders?: boolean;
+    };
+    resetRetailChatMock({
+      empty: input.empty === true,
+      noBackorders: input.noBackorders === true,
+    });
     return HttpResponse.json({
       data: {
         rooms: chatStore
@@ -580,8 +656,13 @@ function toRetailResult(
   };
 }
 
-export function resetRetailChatMock() {
-  resetChatMock();
+export function resetRetailChatMock(
+  options: { empty?: boolean; noBackorders?: boolean } = {},
+) {
+  resetChatMock(undefined, { noBackorders: options.noBackorders === true });
+  if (options.empty === true)
+    chatStore.removeRetailerRooms(CHAT_ME_RETAILER_ID);
   failPlan.clear();
+  delayPlan.clear();
   failedOnceKeys.clear();
 }

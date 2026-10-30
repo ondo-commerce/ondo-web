@@ -1,11 +1,14 @@
 {
-  "version": 2,
-  "about": "재고 문의 자동 답 골든셋(loop-05b §5-4). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 3(P1~P3)은 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지), HANDOFF 는 kind reason. 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. reason 은 골든셋 안 표시이고 API 칸이 아니다. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. inquiry 의 backorderId, label 은 null 로 채운다.",
+  "version": 3,
+  "about": "재고, 미송 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 4(P1~P4)는 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다. 재고: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지). 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. 미송: AUTO_REPLY 는 kind intent target(backorderId) remainingQty(facts.backorder.qty) eta{date: D±n | null, state: FUTURE TODAY NONE PAST(본문 문장으로 읽는다)} reason checkedAt(now = 그 단계 시각), 입고일 미정, 지남은 kinds [AUTO_REPLY, HANDOFF]. CLARIFY 는 kind intent choices[{kind, backorderId}](순서까지, 끝은 NOT_LISTED) labels(칩 글자). HANDOFF 는 kind reason. reason 은 골든셋 안 표시이고 API 칸이 아니다. 시각: 첫 단계는 rules.t0 + room.afterDays 일. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. today 는 그 단계 시각의 서울 날짜. 날짜 D±n 은 rules.t0 의 서울 날짜(D+0) 기준이다. room.retailerId 가 없으면 1. room.intents 는 의도별 자동 답 설정(없으면 전부 켜짐). inquiry 의 빠진 칸(backorderId, label)은 null, notListed 는 없으면 칸을 안 싣는다. backorders 표는 도매 미송 목 시드(backorder.ts)와 같아야 하고 판정에는 거르지 않은 채 전부 넘긴다(이 방 도매처, 이 소매처 것만 고르는 건 판정이 한다).",
   "rules": {
     "contextMinutes": 30,
     "bands": [0, 10, 50],
     "orderLimitZero": "한도 없음. 답의 orderLimit 은 null",
-    "bandNames": ["NONE", "UNDER_10", "UNDER_50", "FIFTY_PLUS"]
+    "bandNames": ["NONE", "UNDER_10", "UNDER_50", "FIFTY_PLUS"],
+    "t0": "2026-10-29T14:20:00+09:00",
+    "today": "D+0",
+    "backorderChoiceMax": 8
   },
   "normalization": [
     {
@@ -84,6 +87,15 @@
     {"listingId": 2901, "wholesalerId": 101, "listingTitle": "무지 캔버스 에코백", "listingPublished": true, "variantId": 3902, "color": "화이트", "size": "FREE", "availableQty": 5, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"},
     {"listingId": 2902, "wholesalerId": 101, "listingTitle": "샘플 반팔 티셔츠", "listingPublished": true, "variantId": 3903, "color": "그레이", "size": "M", "availableQty": 10, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"}
   ],
+  "backorders": [
+    {"backorderId": 9001, "orderId": 7001, "wholesalerId": 101, "retailerId": 1, "variantId": 3003, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "L", "qty": 4, "remainingQty": 4, "orderedAt": "2026-09-04T10:00:00+09:00", "expectedInboundDate": "D-3", "expectedInboundReason": "공장 재입고 예정", "status": "OPEN", "source": "backorder.ts seed"},
+    {"backorderId": 9002, "orderId": 7002, "wholesalerId": 101, "retailerId": 1, "variantId": 3011, "title": "와이드 데님 팬츠", "color": "소라", "size": "M", "qty": 1, "remainingQty": 1, "orderedAt": "2026-09-06T10:00:00+09:00", "expectedInboundDate": null, "expectedInboundReason": null, "status": "OPEN", "source": "backorder.ts seed"},
+    {"backorderId": 9003, "orderId": 7003, "wholesalerId": 101, "retailerId": 1, "variantId": 3019, "title": "린넨 셋업 자켓", "color": "베이지", "size": "L", "qty": 2, "remainingQty": 2, "orderedAt": "2026-09-07T08:00:00+09:00", "expectedInboundDate": "D+7", "expectedInboundReason": "원단 수급 지연", "status": "OPEN", "source": "backorder.ts seed"},
+    {"backorderId": 9005, "orderId": 7005, "wholesalerId": 101, "retailerId": 2, "variantId": 3003, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "L", "qty": 9, "remainingQty": 9, "orderedAt": "2026-09-05T10:00:00+09:00", "expectedInboundDate": "D-3", "expectedInboundReason": "공장 재입고 예정", "status": "OPEN", "source": "backorder.ts seed"},
+    {"backorderId": 9004, "orderId": 7004, "wholesalerId": 101, "retailerId": 1, "variantId": 3002, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "M", "qty": 1, "remainingQty": 0, "orderedAt": "2026-09-05T15:00:00+09:00", "expectedInboundDate": null, "expectedInboundReason": null, "status": "RESOLVED", "source": "backorder.ts seed"},
+    {"backorderId": 9006, "orderId": 7006, "wholesalerId": 101, "retailerId": 1, "variantId": 3003, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "L", "qty": 4, "remainingQty": 2, "orderedAt": "2026-09-06T15:00:00+09:00", "expectedInboundDate": "D-3", "expectedInboundReason": "공장 재입고 예정", "status": "OPEN", "source": "backorder.ts seed"},
+    {"backorderId": 801, "orderId": 7801, "wholesalerId": 102, "retailerId": 1, "variantId": 3801, "title": "코튼 셔츠", "color": "블랙", "size": "L", "qty": 20, "remainingQty": 20, "orderedAt": "2026-10-24T11:00:00+09:00", "expectedInboundDate": "D+5", "expectedInboundReason": null, "status": "OPEN", "source": "backorder.ts seed"}
+  ],
   "scenarios": [
     {
       "id": "P1",
@@ -137,6 +149,22 @@
       "steps": [
         {"text": "레드 M 10장 되나요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "STOCK", "target": 3002, "band": "UNDER_50", "orderable": true, "orderLimit": 500, "qtyNote": true}},
         {"text": "10장이면 좀 깎아 주세요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "P4",
+      "title": "자유 문장 \"지난주 주문한 거 언제 와요?\" → 미송 되묻기 4개 → 칩 9003 → 남은 2장 입고 예정 (시연 장면 2)",
+      "required": true,
+      "group": "required",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "지난주 주문한 거 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3019, "backorderId": 9003}, "expect": {"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": 9003, "remainingQty": 2, "eta": {"date": "D+7", "state": "FUTURE"}, "reason": "원단 수급 지연", "checkedAt": "now"}}
       ]
     },
     {
@@ -685,6 +713,376 @@
       },
       "steps": [
         {"text": "레드 M 몇 장 있어요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "OFF"}}
+      ]
+    },
+    {
+      "id": "B01",
+      "title": "색상 + 사이즈가 같은 미송 둘(9001, 9006) → 둘 다 되묻기",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 L 미송 언제 와요", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "B02",
+      "title": "상품명만(데님 팬츠) → 후보 1개여도 칩 1개로 되묻기(Codex 1)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "데님 팬츠 언제 와요", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9002}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "B03",
+      "title": "칩 9001 → 등록된 입고 예정일 지남 + 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3003, "backorderId": 9001}, "expect": {"kinds": ["AUTO_REPLY", "HANDOFF"], "intent": "BACKORDER", "target": 9001, "remainingQty": 4, "eta": {"date": "D-3", "state": "PAST"}, "reason": "공장 재입고 예정", "checkedAt": "now"}}
+      ]
+    },
+    {
+      "id": "B04",
+      "title": "대기상회 방: 후보 1개(9005) + \"미송 언제 와요\" → 칩 1개 되묻기",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 2,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9005}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 9장, 9/5 주문 #7005", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "B05",
+      "title": "기다리는 미송이 없는 소매처(가람상회) → 넘김(Q1 ②)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 3,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_BACKORDER"}}
+      ]
+    },
+    {
+      "id": "B06",
+      "title": "남의 도매처(102) 미송 801 을 방 1(101)에서 칩으로 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "코튼 셔츠 블랙/L, 남은 20장, 10/24 주문 #7801", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3801, "backorderId": 801}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "B07",
+      "title": "다른 소매처(대기상회) 미송 9005 를 칩으로 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "빈티지 플라워 셔츠 레드/L, 남은 9장, 9/5 주문 #7005", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3003, "backorderId": 9005}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "B08",
+      "title": "해소된 미송 9004 를 칩으로 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "빈티지 플라워 셔츠 레드/M, 남은 1장, 9/5 주문 #7004", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3002, "backorderId": 9004}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "B09",
+      "title": "되묻기 뒤 색상만(\"베이지요\") → 확정 아님 → 두 번 묻지 않고 넘김(M1)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "베이지요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "CLARIFY_AGAIN"}}
+      ]
+    },
+    {
+      "id": "B10",
+      "title": "되묻기 뒤 \"아까 그거요\" → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "아까 그거요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "CLARIFY_AGAIN"}}
+      ]
+    },
+    {
+      "id": "B11",
+      "title": "되묻기 31분 뒤 \"베이지 L이요\" → 계승 안 함 → 의도 없음",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "베이지 L이요", "inquiry": null, "afterMinutes": 31, "expect": {"kind": "HANDOFF", "reason": "NO_INTENT"}}
+      ]
+    },
+    {
+      "id": "B12",
+      "title": "`다른 주문이에요` 보기(notListed) → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "다른 주문이에요", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 0, "backorderId": null, "notListed": true}, "expect": {"kind": "HANDOFF", "reason": "NOT_LISTED"}}
+      ]
+    },
+    {
+      "id": "B13",
+      "title": "재고 되묻기가 열린 채 미송 질문 → 재고 계승 안 하고 미송 되묻기(C1)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}},
+        {"text": "레드 L 미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "B14",
+      "title": "미송 자동 답만 꺼짐 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true,
+        "intents": {
+          "STOCK": true,
+          "BACKORDER": false,
+          "RECEIVABLE": true
+        }
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "OFF"}}
+      ]
+    },
+    {
+      "id": "B15",
+      "title": "미송 질문 + 협상어(환불) → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요? 늦으면 환불해 주세요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NEGOTIATION"}}
+      ]
+    },
+    {
+      "id": "B16",
+      "title": "되묻기 뒤 색상 + 사이즈(\"베이지 L이요\") → 보기 안에서 확정 → 9003",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "베이지 L이요", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": 9003, "remainingQty": 2, "eta": {"date": "D+7", "state": "FUTURE"}, "reason": "원단 수급 지연", "checkedAt": "now"}}
+      ]
+    },
+    {
+      "id": "B17",
+      "title": "\"블랙 셔츠\"인데 이 방 셔츠 미송은 레드뿐 → 넘김(충돌)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "블랙 셔츠 미송 언제 와요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_MATCH"}}
+      ]
+    },
+    {
+      "id": "B18",
+      "title": "상품(린넨 자켓)과 옵션(레드 L) 충돌 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "린넨 자켓 레드 L 언제 와요", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NO_MATCH"}}
+      ]
+    },
+    {
+      "id": "B19",
+      "title": "B01 되묻기 뒤 보기 밖 칩 9002 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "레드 L 미송 언제 와요", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "다른 주문이에요"]}},
+        {"text": "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3011, "backorderId": 9002}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+      ]
+    },
+    {
+      "id": "B20",
+      "title": "미송 되묻기가 열린 채 재고 질문 → 미송 계승 안 하고 재고 판정",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": {
+          "listingId": 2001,
+          "ageMinutes": 2
+        },
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "레드 L 재고 있어요?", "inquiry": null, "expect": {"kinds": ["AUTO_REPLY", "HANDOFF"], "intent": "STOCK", "target": 3003, "band": "NONE", "orderable": true, "orderLimit": null, "qtyNote": false}}
+      ]
+    },
+    {
+      "id": "B21",
+      "title": "칩 9006 → 남은 2장(원래 4장 아님) + 지남 넘김",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9002}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "BACKORDER", "backorderId": 9003}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003", "다른 주문이에요"]}},
+        {"text": "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "inquiry": {"intent": "BACKORDER", "listingId": null, "variantId": 3003, "backorderId": 9006}, "expect": {"kinds": ["AUTO_REPLY", "HANDOFF"], "intent": "BACKORDER", "target": 9006, "remainingQty": 2, "eta": {"date": "D-3", "state": "PAST"}, "reason": "공장 재입고 예정", "checkedAt": "now"}}
+      ]
+    },
+    {
+      "id": "B22",
+      "title": "7일 뒤(오늘 = 3019 입고일) 문장으로 확정 → \"오늘\" 도매 입고 예정",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true,
+        "afterDays": 7
+      },
+      "steps": [
+        {"text": "린넨 셋업 자켓 베이지 L 미송 언제 와요?", "inquiry": null, "expect": {"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": 9003, "remainingQty": 2, "eta": {"date": "D+7", "state": "TODAY"}, "reason": "원단 수급 지연", "checkedAt": "now"}}
+      ]
+    },
+    {
+      "id": "B23",
+      "title": "미송 의도 + 배송어(택배) → 넘김(출고, 수령은 다른 단계)",
+      "required": false,
+      "group": "backorder",
+      "room": {
+        "wholesalerId": 101,
+        "retailerId": 1,
+        "context": null,
+        "autoReply": true
+      },
+      "steps": [
+        {"text": "택배 언제 와요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NOT_SUPPORTED"}}
       ]
     }
   ]
