@@ -14,20 +14,21 @@ import { GlobalSearch } from "@/shared/components/GlobalSearch";
  * 규격은 확정 와이어프레임 `15_retail-hallmark/_base.css` 실측값이다 —
  * 높이 56 · 좌우 20 · 간격 20 · 아이콘 버튼 32 · 검색 340×36(SearchInput 기본값) ·
  * 로고 14(본문 크기 그대로).
- * 알림 아이콘은 채팅 하나만 있다(loop-06 06a). 알림 종은 06b에 생긴다.
- * 아이콘이 하나 늘어 390에서 검색칸이 143 → 95px로 준다(디자인 결정 33, 헤더 구조는 그대로).
+ * 알림 아이콘은 채팅(loop-06 06a)과 알림 종(06b) 둘이다. 종은 채팅 오른쪽, 장바구니 왼쪽(디자인 결정 47).
  *
- * **채팅 배지, 장바구니 뱃지, 계정 칩은 이 파일이 만들지 않는다.** 안 읽은 수를 아는 것은
- * `features/chat`, 담긴 수를 아는 것은 `features/cart`, 로그인한 상호명을 아는 것은
+ * **채팅 배지, 알림 종, 장바구니 뱃지, 계정 칩은 이 파일이 만들지 않는다.** 안 읽은 수를 아는 것은
+ * `features/chat`과 `features/notification`, 담긴 수를 아는 것은 `features/cart`, 로그인한 상호명을 아는 것은
  * `features/account`인데, 셸은 `shared/`라 그쪽을 읽을 수 없다(import 한 방향). 자리만
  * 비워 두고 부모 `app/(shop)/layout.tsx`가 실물을 끼워 넣는다.
  */
 export function Header({
   chat,
+  notifications,
   cart,
   account,
 }: {
   chat: ReactNode;
+  notifications: ReactNode;
   cart: ReactNode;
   account: ReactNode;
 }) {
@@ -72,8 +73,9 @@ export function Header({
             </Link>
           </Button>
 
-          {/* 채팅은 장바구니 왼쪽(디자인 결정 30) */}
+          {/* 채팅은 장바구니 왼쪽(디자인 결정 30), 종은 그 둘 사이(결정 47) */}
           {chat}
+          {notifications}
           {cart}
           {account}
         </div>

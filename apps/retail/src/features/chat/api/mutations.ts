@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
-import { chatMockReady } from "./mockWorker";
+import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { CHAT_PATH } from "./queries";
 import { guardSession } from "./session";
 import type {

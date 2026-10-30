@@ -9,14 +9,22 @@ import {
 } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
+import { isSessionLossInline } from "@/shared/api/headerCounts";
 
 /**
  * 브라우저에서 세션이 끊긴 걸 알아채는 유일한 지점. 서버 쪽은
  * `shared/api/server.ts`의 `requireSession`이 같은 일을 한다.
  *
  * 전체 새로고침으로 보내는 이유는 남아 있는 캐시·상태를 한 번에 버리기 위해서다.
+ *
+ * `meta.sessionLoss: "inline"`인 요청은 건너뛴다(06b §4-1 3 ②). 헤더 알림 패널 목록과 읽음이 그렇다 —
+ * 셸 어디서든 열리는 패널의 401이 뒤 화면의 쓰던 글을 버리면 안 되고, 패널이 자기 자리에서 알린다.
  */
-function handleSessionLoss(error: unknown): void {
+function handleSessionLoss(
+  error: unknown,
+  meta: Record<string, unknown> | undefined,
+): void {
+  if (isSessionLossInline(meta)) return;
   if (!isApiError(error) || error.code !== RETAIL_ERROR_CODE.UNAUTHORIZED) {
     return;
   }
@@ -34,8 +42,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        queryCache: new QueryCache({ onError: handleSessionLoss }),
-        mutationCache: new MutationCache({ onError: handleSessionLoss }),
+        queryCache: new QueryCache({
+          onError: (error, query) => handleSessionLoss(error, query.meta),
+        }),
+        mutationCache: new MutationCache({
+          onError: (error, _variables, _context, mutation) =>
+            handleSessionLoss(error, mutation.meta),
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30_000,

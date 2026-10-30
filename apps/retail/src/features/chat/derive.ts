@@ -8,8 +8,6 @@ import {
   CHATS_HREF,
   CLARIFY_WINDOW_MS,
   ENTRY_TEXT,
-  HEADER_BACKOFF_MS,
-  HEADER_POLL_MS,
   IDEMPOTENCY_KEY_REUSED,
   LIST_TEXT,
   NAV_TEXT,
@@ -497,8 +495,8 @@ export function pollDelayMs(failures: number, random: number): number {
 }
 
 /* ------------------------------------------------------------------------
- * 헤더 채팅 링크(loop-06 S2). 규칙은 도매 `features/notification/derive.ts`와 같다 — 앱 사이 import가
- * 금지라 복제했고, 같은 이름(`headerBackoffMs`)과 같은 경계값 테스트를 쓴다
+ * 헤더 채팅 링크(loop-06 S2). count 주기와 울타리 규칙은 06b 알림 종과 같이 써서 `shared/headerCounts.ts`로
+ * 내렸다. 여기엔 채팅 링크 글자만 남는다
  * ------------------------------------------------------------------------ */
 
 /**
@@ -512,39 +510,6 @@ export function chatBadgeLabel(counts: HeaderCounts | undefined): BadgeView {
     label: NAV_TEXT.unreadLabel(n),
     badge: n > BADGE_MAX ? `${BADGE_MAX}+` : String(n),
   };
-}
-
-/** 연속 실패 n번 뒤 다음 간격. 0이면 평소 30초, 1 → 60초, 2 → 120초, 3 이상 → 300초 */
-export function headerBackoffMs(failures: number): number {
-  if (failures <= 0) return HEADER_POLL_MS;
-  const index = Math.min(failures, HEADER_BACKOFF_MS.length) - 1;
-  return HEADER_BACKOFF_MS[index] ?? HEADER_POLL_MS;
-}
-
-/** count 쿼리의 다음 간격. 401, 403이면 멈춘다(false) */
-export function headerPollDelayMs(
-  counts: HeaderCounts | undefined,
-): number | false {
-  if (counts === undefined || counts.kind === "ok") return HEADER_POLL_MS;
-  if (counts.kind === "stopped") return false;
-  return headerBackoffMs(counts.failures);
-}
-
-/** 실패 하나를 더한 값. 직전이 성공이었거나 처음이면 1부터 센다 */
-export function failedCounts(prev: HeaderCounts | undefined): HeaderCounts {
-  return {
-    kind: "failed",
-    failures: prev?.kind === "failed" ? prev.failures + 1 : 1,
-  };
-}
-
-/**
- * 이 count 응답을 버려야 하나(S2-6 나). count마다 시작 순번(`started`)을 달고, 읽음이 성공할 때 그때까지
- * 나간 마지막 순번을 울타리(`fence`)로 세운다. 울타리 안쪽에서 시작한 응답은 읽기 **전** 숫자를 들고 오므로
- * 늦게 도착하면 방금 사라진 배지를 되살린다. 같은 순번도 버린다 — 읽음과 같은 틱에 떠난 count다.
- */
-export function isStaleCount(started: number, fence: number): boolean {
-  return started <= fence;
 }
 
 /* ------------------------------------------------------------------------

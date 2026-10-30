@@ -3,42 +3,47 @@ import {
   chatBadgeLabel,
   chatRoomHref,
   confirmedReadOf,
-  failedCounts,
   formatListTime,
-  headerBackoffMs,
-  headerPollDelayMs,
-  isStaleCount,
   nextReadTarget,
   returnLinkOf,
   toRoomRows,
 } from "./derive";
-import type { ChatRoomSummary, ReadState } from "./types";
+import type { ChatRoomSummary, HeaderCounts, ReadState } from "./types";
 
 /*
- * loop-06 S2 — 헤더 채팅 링크, `/chats` 목록, 방 읽음. 도매 `features/notification/derive.test.ts`의
- * `headerBackoffMs` 경계값과 같은 케이스를 쓴다(복제한 규칙이라 한쪽을 고치면 다른 쪽도 고친다).
+ * loop-06 S2 — 헤더 채팅 링크, `/chats` 목록, 방 읽음. count 주기와 울타리 테스트는 06b에 규칙과 함께
+ * `shared/headerCounts.test.ts`로 옮겼다.
  */
 
 const T0 = Date.parse("2026-10-29T14:20:00+09:00");
 
+/** 성공한 count. 알림 칸은 채팅 링크가 안 읽는다 */
+const ok = (chats: number): HeaderCounts => ({
+  kind: "ok",
+  chats,
+  notifications: 0,
+  latestNotificationId: null,
+  started: 1,
+});
+
 describe("S2-2 chatBadgeLabel — 배지와 접근 이름", () => {
   it("3 → 이름 '채팅, 안 읽은 메시지 3개', 배지 3", () => {
-    expect(chatBadgeLabel({ kind: "ok", chats: 3 })).toEqual({
+    expect(chatBadgeLabel(ok(3))).toEqual({
       label: "채팅, 안 읽은 메시지 3개",
       badge: "3",
     });
   });
 
   it("0 → 배지 없음, 이름 '채팅'", () => {
-    expect(chatBadgeLabel({ kind: "ok", chats: 0 })).toEqual({
+    expect(chatBadgeLabel(ok(0))).toEqual({
       label: "채팅",
       badge: null,
     });
   });
 
   it("99는 그대로, 100 → 배지 99+, 이름은 실제 수", () => {
-    expect(chatBadgeLabel({ kind: "ok", chats: 99 }).badge).toBe("99");
-    expect(chatBadgeLabel({ kind: "ok", chats: 100 })).toEqual({
+    expect(chatBadgeLabel(ok(99)).badge).toBe("99");
+    expect(chatBadgeLabel(ok(100))).toEqual({
       label: "채팅, 안 읽은 메시지 100개",
       badge: "99+",
     });
@@ -51,48 +56,6 @@ describe("S2-2 chatBadgeLabel — 배지와 접근 이름", () => {
       { kind: "stopped" } as const,
     ])
       expect(chatBadgeLabel(counts)).toEqual({ label: "채팅", badge: null });
-  });
-});
-
-describe("S2-3 headerBackoffMs, headerPollDelayMs — 주기와 멈춤", () => {
-  it("실패 0 → 30초, 1 → 60초, 2 → 120초, 3 이상 → 300초", () => {
-    expect(headerBackoffMs(0)).toBe(30_000);
-    expect(headerBackoffMs(1)).toBe(60_000);
-    expect(headerBackoffMs(2)).toBe(120_000);
-    expect(headerBackoffMs(3)).toBe(300_000);
-    expect(headerBackoffMs(10)).toBe(300_000);
-  });
-
-  it("성공과 처음은 30초, 실패는 연속 수만큼, 401/403 멈춤은 false", () => {
-    expect(headerPollDelayMs(undefined)).toBe(30_000);
-    expect(headerPollDelayMs({ kind: "ok", chats: 1 })).toBe(30_000);
-    expect(headerPollDelayMs({ kind: "failed", failures: 2 })).toBe(120_000);
-    expect(headerPollDelayMs({ kind: "stopped" })).toBe(false);
-  });
-
-  it("failedCounts — 성공 뒤 첫 실패는 1, 실패가 이어지면 +1", () => {
-    expect(failedCounts(undefined)).toEqual({ kind: "failed", failures: 1 });
-    expect(failedCounts({ kind: "ok", chats: 4 })).toEqual({
-      kind: "failed",
-      failures: 1,
-    });
-    expect(failedCounts({ kind: "failed", failures: 2 })).toEqual({
-      kind: "failed",
-      failures: 3,
-    });
-  });
-});
-
-describe("S2-6 (나) isStaleCount — 읽음 전에 떠난 count", () => {
-  it("울타리 안쪽(같은 순번 포함)에서 시작한 응답은 버리고 밖은 받는다", () => {
-    // 1번 count 시작 → 읽음 성공(울타리 = 1) → 2번 count 시작
-    expect(isStaleCount(1, 1)).toBe(true);
-    expect(isStaleCount(0, 1)).toBe(true);
-    expect(isStaleCount(2, 1)).toBe(false);
-  });
-
-  it("읽음이 한 번도 없으면(울타리 0) 전부 받는다", () => {
-    expect(isStaleCount(1, 0)).toBe(false);
   });
 });
 

@@ -11,7 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { apiFetch, apiFetchBody } from "@ondo/api";
 import { chatKeys } from "./keys";
-import { chatMockReady } from "./mockWorker";
+import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
 import { MESSAGE_PAGE_SIZE, ROOM_LIST_SIZE } from "../constants";
 import { advanceCursor, mergeMessages, pollDelayMs } from "../derive";
