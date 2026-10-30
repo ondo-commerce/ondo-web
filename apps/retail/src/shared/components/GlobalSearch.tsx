@@ -44,6 +44,8 @@ function SearchForm({
       action="/search"
       method="get"
       onSubmit={handleSubmit}
+      /* 헤더 검색칸과 360 미만 펼친 검색 줄 둘 다 이 form이다(와이어프레임 `.search`, `.sform`의 S2-8) */
+      data-ac="S2-8"
       /* min-w-0: flex 자식의 기본 min-width는 auto라 안쪽 340px이 그대로 하한이 된다.
          이걸 풀지 않으면 헤더가 781px 아래로 줄지 않아 페이지 전체가 가로로 밀린다(F14).
          ≤60rem에서 남은 폭을 채우는 건 확정 와이어프레임 `_base.css:329`의 `.search`

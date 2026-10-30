@@ -53,6 +53,11 @@ export function EtaCell({
     );
   }
 
-  /* 날짜가 잡혔고 아직 안 지났다. 배지를 씌우면 `지연`·`확인 중`과 한 덩어리로 읽힌다 */
-  return <span>{line.etaDate === null ? "" : formatDate(line.etaDate)}</span>;
+  /* 날짜가 잡혔고 아직 안 지났다. 배지를 씌우면 `지연`·`확인 중`과 한 덩어리로 읽힌다.
+     data-ac: 입고일 변경 알림을 누르고 와서 새 날짜를 보는 칸(06b 와이어프레임 `#state-arrive`) */
+  return (
+    <span data-ac="S2-5 S4-2">
+      {line.etaDate === null ? "" : formatDate(line.etaDate)}
+    </span>
+  );
 }

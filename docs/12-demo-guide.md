@@ -166,10 +166,15 @@ NEXT_PUBLIC_API_MOCK=1 API_ORIGIN=http://localhost:3199 pnpm --filter retail exe
 await fetch("/__mock/chat/reset",{method:"POST",body:"{}"})
 ```
 
-소매 탭 B 콘솔(봄봄상회로 들어가기, 채팅 목, 알림 0개):
+소매 탭 B 콘솔. 블록 두 개를 따로 붙여 넣는다. 먼저 봄봄상회로 들어가기(새로고침된다):
 
 ```js
 document.cookie="stub_retailer=bombom; path=/"; location.reload()
+```
+
+새로고침이 끝난 뒤 채팅 목, 알림 0개(같이 붙여 넣으면 reset이 새로고침 전 페이지에서 돌고, 새로고침이 목을 시드 알림 22개로 되돌린다):
+
+```js
 await fetch("/__mock/chat/reset",{method:"POST",body:"{}"})
 await fetch("/__mock/notifications/reset",{method:"POST",body:JSON.stringify({empty:true})})
 ```
