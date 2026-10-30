@@ -19,6 +19,7 @@ import {
   HEADER_COUNTS_KEY,
   refreshHeaderCounts,
   SESSION_LOSS_INLINE,
+  stopHeaderCounts,
 } from "@/shared/api/headerCounts";
 import { mockReady } from "@/shared/api/mockReady";
 import { withUnreadNotifications } from "@/shared/headerCounts";
@@ -86,11 +87,10 @@ export function useMarkNotificationsReadMutation() {
         ),
       );
     },
-    onError: (error) => {
+    onError: async (error) => {
+      /* 성공 경로와 같은 취소와 울타리(`stopHeaderCounts`). 값만 넣으면 늦은 count가 덮는다(03-review R1) */
       if (isApiError(error) && error.status === 401)
-        queryClient.setQueryData<HeaderCounts>(HEADER_COUNTS_KEY, {
-          kind: "stopped",
-        });
+        await stopHeaderCounts(queryClient);
     },
   });
 }

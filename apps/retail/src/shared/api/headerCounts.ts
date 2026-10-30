@@ -159,6 +159,22 @@ export async function refreshHeaderCounts(
 }
 
 /**
+ * 다른 요청이 401을 받아 헤더 count를 멈춘다(06b 알림 읽음 401, 03-review R1). `refreshHeaderCounts`와 같은 순서 —
+ * 울타리 → 진행 중 count 취소 → 값 넣기. 취소 없이 `stopped`만 넣으면 그 전에 떠난 count가 늦게 성공해 `ok`로 덮고,
+ * 배지가 되살아나며 `enabled`가 다시 켜져 30초 polling이 돈다. 울타리는 취소를 빠져나온 응답까지 막는다
+ * (`fetchHeaderCounts`가 울타리 안쪽 응답이면 캐시의 `stopped`를 그대로 돌려준다).
+ */
+export async function stopHeaderCounts(
+  queryClient: QueryClient,
+): Promise<void> {
+  fence = issued;
+  await queryClient.cancelQueries({ queryKey: HEADER_COUNTS_KEY });
+  queryClient.setQueryData<HeaderCounts>(HEADER_COUNTS_KEY, {
+    kind: "stopped",
+  });
+}
+
+/**
  * 세션이 바뀐다(로그아웃 누름, 로그인 성공, 06b §4-1 3 ①). 둘 다 `router.replace` 클라이언트 이동이라 QueryClient가
  * 산다 — 지우지 않으면 다음 계정이 앞 계정의 배지와 알림 행을 잠깐 본다(05b-2 F2). 진행 중 요청을 취소하고
  * 헤더 count와 알림 캐시를 버린다(멈춤 상태 포함). 그 사이 떠난 count는 울타리로 막는다.

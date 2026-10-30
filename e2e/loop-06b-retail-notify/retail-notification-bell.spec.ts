@@ -249,6 +249,42 @@ test("S2-3 /chats/1 에서 모두 읽음 401 → 오류 한 줄, 이동 0, 글 �
   expect(loginNavs()).toBe(0);
 });
 
+/* 03-review R1. 읽음 401이 count를 멈출 때 진행 중 count를 취소하지 않으면, 그 count가 늦게 성공해 `stopped`를 `ok`로
+   덮고 배지 2가 되살아나며 polling이 다시 돈다. `stopHeaderCounts`의 취소와 울타리를 빼면 이 테스트가 실패한다 */
+test("S2-3 늦은 count(지연 5초) 중 모두 읽음 401 → 배지 0, 늦은 count 도착 뒤에도 0, 그 뒤 60초 count 요청 0", async ({
+  page,
+}) => {
+  await startNotify(page, "/");
+  await openPanel(page);
+  await firstPageShown(page);
+  await chatMock(page, "delay", { op: "count", ms: 5_000 });
+  await pauseClock(page);
+  const counts = await count(page, COUNT_GET);
+  await page.clock.runFor(30_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+
+  await notifyMock(page, "fail", { op: "read", status: 401 });
+  await markAllButton(page).click();
+  await expect(
+    appAlert(page).filter({
+      hasText: "로그인이 끊겼어요. 다시 로그인한 뒤 눌러 주세요",
+    }),
+  ).toBeVisible();
+  await expect(bellBadge(page)).toHaveCount(0);
+  for (let t = 0; t <= 6_000; t += 500) {
+    await expect(bellBadge(page)).toHaveCount(0);
+    await page.clock.runFor(500);
+  }
+  const late = (await requests(page, COUNT_GET))[counts];
+  expect(late?.status, "늦은 count가 도착했다").not.toBeNull();
+  await expect(bell(page)).toHaveAccessibleName("알림");
+
+  const after = await count(page, COUNT_GET);
+  await page.clock.runFor(60_000);
+  expect(await count(page, COUNT_GET), "멈춘 뒤 count 요청 0").toBe(after);
+  await expect(bellBadge(page)).toHaveCount(0);
+});
+
 test("S2-4 닫혀 있으면 목록 0, 열면 1회. 첫 행 title, body, 어제 시각, 점. 더 보기 22개 중복 0. Esc → 종으로 포커스", async ({
   page,
 }) => {
