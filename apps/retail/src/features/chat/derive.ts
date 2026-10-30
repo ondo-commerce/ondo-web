@@ -14,11 +14,13 @@ import {
   LIST_TEXT,
   NAV_TEXT,
   PENDING_TEXT,
+  RECEIVABLE_TEXT,
   RETURN_PATH_PATTERN,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
   ROOM_POLL_MS,
   ROOM_TEXT,
+  SETTLEMENTS_HREF,
   STOCK_BAND_LABEL,
   STOCK_TEXT,
   WEEKDAY_LABEL,
@@ -40,9 +42,11 @@ import type {
   HeaderCounts,
   PendingMessage,
   ReadState,
+  ReceivableCardView,
   ReturnLink,
   SendFailure,
   StockCardView,
+  TextPart,
   ThreadItem,
 } from "./types";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
@@ -295,12 +299,29 @@ export function systemLineText(message: Pick<ChatMessage, "kind" | "body">) {
   return message.kind === "HANDOFF" ? ROOM_TEXT.handoff : message.body;
 }
 
-/** 자동 답변 말풍선 안 `10:22 조회`(checkedAt, 서울). 모든 자동 답에 조회 시각을 단다(D31①). 근거가 없으면 null */
+/**
+ * 조회 시각 글자(loop-07 Q4, 디자인 결정 45). `checkedAt`의 서울 날짜가 오늘이면 `14:20 조회`, 아니면
+ * `10/28 14:20 조회`(M/D, 앞 0 없음). 다음 날 같은 방을 열면 "14:20"이 오늘 값처럼 보이기 때문이다.
+ * 해가 바뀌어도 M/D다 — 도매 목록 시각(`10/27`)과 같은 꼴이고, 1년 넘은 답을 다시 볼 일은 드물다.
+ */
+export function checkedLabel(checkedAt: string, nowMs: number): string {
+  const time = `${formatClock(checkedAt)}${ROOM_TEXT.checkedSuffix}`;
+  if (seoulDateKey(checkedAt) === seoulDateKey(new Date(nowMs).toISOString()))
+    return time;
+  const p = seoulParts(Date.parse(checkedAt));
+  return `${p.month}/${p.day} ${time}`;
+}
+
+/**
+ * 자동 답변 말풍선 안 조회 시각(checkedAt, 서울). 모든 자동 답에 단다(D31①). 근거가 없으면 null.
+ * `nowMs`는 방이 15초마다 갱신하는 지금 시각 — 자정을 넘기면 다시 그릴 때 날짜가 붙는다(S2-5).
+ */
 export function autoReplySeen(
   message: Pick<ChatMessage, "autoReply">,
+  nowMs: number,
 ): string | null {
   if (message.autoReply === null) return null;
-  return `${formatClock(message.autoReply.checkedAt)}${ROOM_TEXT.checkedSuffix}`;
+  return checkedLabel(message.autoReply.checkedAt, nowMs);
 }
 
 /** `messageAc`가 말풍선 하나만 봐서는 모르는 방 상태(loop-05b 와이어프레임 상태별 data-ac) */
@@ -340,9 +361,14 @@ export function messageAc(
   const kind = bubbleKindOf(message);
   const ac = [kind === "auto" || kind === "system" ? "S5-6" : "S5-5"];
   // 06a 와이어프레임: 미송 되묻기는 S3-1, 미송 답은 S3-3. 05b: 되묻기는 S8-3, 재고 답은 S8-4
-  const backorder = message.autoReply?.intent === "BACKORDER";
+  // 07 와이어프레임(data-loop="07"): 미수 답은 S2-1 S2-4
+  const intent = message.autoReply?.intent;
+  const backorder = intent === "BACKORDER";
   if (message.kind === "CLARIFY") ac.push(backorder ? "S3-1" : "S8-3");
-  if (message.kind === "AUTO_REPLY") ac.push(backorder ? "S3-3" : "S8-4");
+  if (message.kind === "AUTO_REPLY")
+    ac.push(
+      backorder ? "S3-3" : intent === "RECEIVABLE" ? "S2-1 S2-4" : "S8-4",
+    );
   if (message.kind === "AUTO_REPLY" && context.sessionLost) ac.push("S8-8");
   if (message.kind === "CLARIFY" && context.choiceFailed) ac.push("S8-15");
   if (message.kind === "HANDOFF" || context.handoffCauses.has(message.sequence))
@@ -1054,6 +1080,74 @@ export function toBackorderReplyView(
         ? (facts.expectedInboundReason ?? null)
         : null,
   };
+}
+
+/* ------------------------------------------------------------------------
+ * 미수 자동 답 카드(loop-07 S2, 디자인 결정 41 42 43)
+ * ------------------------------------------------------------------------ */
+
+/** `37,500원`. 서버 본문과 같은 꼴 — 원 단위 정수, 세 자리 쉼표, 반올림과 줄임 없음(§4-1 10) */
+function formatWon(value: number): string {
+  return `${formatCount(value)}원`;
+}
+
+/**
+ * 미수 자동 답(AUTO_REPLY, RECEIVABLE)의 카드 칸(S2-1 S2-2). 미수 답이 아니거나 근거가 없으면 null — 본문만 그린다.
+ *
+ * - 갚을 돈 > 0: `갚을 돈 37,500원` + 기한 줄(`기한 지남 1건 37,500원 (최대 54일)` 또는 `기한 지난 것 없음`)
+ * - 갚을 돈 0: `갚을 돈 없음` 한 줄. 기한 줄은 그리지 않는다(결정 42) — 0원이면 기한 지난 돈도 0이라 같은 말을 두 번 한다
+ * - 선수금 > 0이면 마지막에 `선수금 30,000원`
+ *
+ * 링크의 도매처는 facts가 아니라 방 상대(`counterpart.id`)다 — 소매 응답 facts엔 도매처 칸이 없고, 서버가 이 방
+ * 도매처 몫만 답한다(§4-1 5).
+ */
+export function toReceivableReplyView(
+  message: ChatMessage,
+  wholesalerId: number,
+): ReceivableCardView | null {
+  if (message.kind !== "AUTO_REPLY") return null;
+  const reply = message.autoReply;
+  if (reply === null || reply.intent !== "RECEIVABLE") return null;
+  const facts = reply.facts.receivable;
+  if (facts === null) return null;
+
+  const lines: TextPart[][] = [];
+  if (facts.outstandingAmount > 0) {
+    lines.push([
+      { text: RECEIVABLE_TEXT.outstanding, strong: false },
+      { text: formatWon(facts.outstandingAmount), strong: true },
+    ]);
+    const { count, amount, maxDaysOverdue } = facts.overdue;
+    lines.push(
+      count > 0
+        ? [
+            { text: RECEIVABLE_TEXT.overdue, strong: false },
+            {
+              text: `${formatCount(count)}건 ${formatWon(amount)}`,
+              strong: true,
+            },
+            { text: ` (최대 ${formatCount(maxDaysOverdue)}일)`, strong: false },
+          ]
+        : [{ text: RECEIVABLE_TEXT.overdueNone, strong: false }],
+    );
+  } else {
+    lines.push([{ text: RECEIVABLE_TEXT.nothing, strong: true }]);
+  }
+  if (facts.prepaidAmount > 0)
+    lines.push([
+      { text: RECEIVABLE_TEXT.prepaid, strong: false },
+      { text: formatWon(facts.prepaidAmount), strong: true },
+    ]);
+
+  return {
+    lines,
+    settlementHref: `${SETTLEMENTS_HREF}?wholesaler=${wholesalerId}`,
+  };
+}
+
+/** 카드 줄을 화면 글자로(e2e와 unit이 같은 글을 본다) */
+export function partsText(parts: readonly TextPart[]): string {
+  return parts.map((part) => part.text).join("");
 }
 
 /**

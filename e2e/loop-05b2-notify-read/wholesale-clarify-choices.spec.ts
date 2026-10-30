@@ -58,7 +58,7 @@ test("S13-1 보기 5개가 글자 한 줄 — button 0, a 0, 탭 정지 0", asyn
     return parts.map((p) =>
       p.getAttribute("data-ac") === "S13-1"
         ? "choices"
-        : p.querySelector('[data-ac="S7-13"]')
+        : p.querySelector('[data-ac~="S7-13"]')
           ? "facts"
           : "other",
     );

@@ -1887,6 +1887,22 @@ export interface components {
          * @enum {string}
          */
         ChatGeneration: "NONE" | "DONE" | "PENDING";
+        /** @description 넘김 줄(kind HANDOFF)이 왜 생겼는지. 도매 응답에만 싣는다. 소매 응답의 ChatMessage 에는 이 칸이 없다 */
+        ChatHandoff: {
+            /** @description 넘길 때 읽은 의도. 못 읽었으면(협상어, 의도 둘, 의도 없음) null */
+            intent: components["schemas"]["ChatIntent"] | null;
+            reason: components["schemas"]["ChatHandoffReason"];
+            /**
+             * Format: int64
+             * @description 넘김을 일으킨 소매 메시지의 sequence
+             */
+            sourceSequence: number;
+        };
+        /**
+         * @description 넘긴 이유. 값이 늘 수 있다. 모르는 값은 이유 줄 없이 그린다. OFF 자동 답 꺼짐 / NEGOTIATION 가격, 외상, 교환, 반품 / MULTI_INTENT 한 번에 두 가지 / NO_INTENT 의도 못 읽음 / NOT_SUPPORTED 자동 답 없는 질문 / NO_CONTEXT 상품 문맥 없음 / NO_OPTIONS 게시 옵션 0개 / INVALID_TARGET 남의 것, 없는 것 / CLARIFY_AGAIN 되묻기 뒤 또 불명 / NOT_LISTED 다른 주문이에요 / NO_BACKORDER 열린 미송 0개 / NO_MATCH 말한 미송 없음 / STOCK_ZERO 재고 0 답 뒤 / ETA_UNKNOWN 입고일 미정 답 뒤 / ETA_PAST 입고일 지남 답 뒤 / PAYMENT_REPORT 입금했다는 말 / PERIOD 기간을 정한 미수 질문 / NO_RELATION 정산 기록 없음 / AMOUNT_UNSURE 잔액, 연체 확인 필요 / LOOKUP_FAILED 정산 조회 실패
+         * @enum {string}
+         */
+        ChatHandoffReason: "OFF" | "NEGOTIATION" | "MULTI_INTENT" | "NO_INTENT" | "NOT_SUPPORTED" | "NO_CONTEXT" | "NO_OPTIONS" | "INVALID_TARGET" | "CLARIFY_AGAIN" | "NOT_LISTED" | "NO_BACKORDER" | "NO_MATCH" | "STOCK_ZERO" | "ETA_UNKNOWN" | "ETA_PAST" | "PAYMENT_REPORT" | "PERIOD" | "NO_RELATION" | "AMOUNT_UNSURE" | "LOOKUP_FAILED";
         /** @description 소매가 칩으로 고른 문의 문맥. 자유 문장이면 메시지에 null 이다 */
         ChatInquiry: {
             /**
@@ -1926,6 +1942,8 @@ export interface components {
              * @description 보낸 쪽이 만든 uuid(= Idempotency-Key). 사람이 보낸 TEXT 에만 있고 자동 답, 시스템 줄은 null. 보류 말풍선과 합칠 때 쓴다
              */
             clientMessageId: string | null;
+            /** @description kind HANDOFF 면 늘 값, 그 밖 kind 면 null. required 아님(읽는 쪽 `?? null`). 소매 응답엔 칸이 없다 */
+            handoff?: components["schemas"]["ChatHandoff"] | null;
             /**
              * Format: int64
              * @description 전역 식별자. **순서에 쓰지 않는다**

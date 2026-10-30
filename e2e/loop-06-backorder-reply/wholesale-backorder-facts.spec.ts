@@ -103,7 +103,7 @@ function choiceItems(bubble: Locator): Locator {
 
 /** 근거 칸 끝 줄 */
 function seenLine(bubble: Locator): Locator {
-  return bubble.locator('[data-ac="S7-13"]');
+  return bubble.locator('[data-ac~="S7-13"]');
 }
 
 function handoffs(page: Page): Locator {
@@ -121,10 +121,7 @@ async function askWhen(page: Page): Promise<Locator> {
 
 /** 헤더 채팅 → 방 1. 클라이언트 이동 */
 async function openRoom1(page: Page): Promise<void> {
-  await page
-    .getByRole("banner")
-    .getByRole("link", { name: /^채팅/ })
-    .click();
+  await page.getByRole("banner").getByRole("link", { name: /^채팅/ }).click();
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
   await row(page, "봄봄상회").click();
   await expect(page).toHaveURL(/room=1$/);
@@ -213,7 +210,9 @@ test("S4-3 미송 탭에서 3019 입고일을 T0+10일로 저장 → 같은 주�
   await expect(eta).toHaveValue("2026.11.05");
   await eta.fill("2026.11.08");
   await page.getByRole("button", { name: "저장", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "저장했어요" })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "저장했어요" }),
+  ).toBeVisible();
 
   await openRoom1(page);
   await askWhen(page);
@@ -246,10 +245,14 @@ test("S4-4 9003 1장 배분 → 칩 9003 근거 줄 미송 1장. 되묻기 뒤 �
   await expect(choiceItems(clarify).nth(3)).toHaveText(
     "린넨 셋업 자켓 베이지/L, 남은 1장, 9/7 주문 #7003",
   );
-  const [part] = await inject(page, "린넨 셋업 자켓 베이지/L, 남은 1장, 9/7 주문 #7003", {
-    backorderId: 9003,
-    variantId: 3019,
-  });
+  const [part] = await inject(
+    page,
+    "린넨 셋업 자켓 베이지/L, 남은 1장, 9/7 주문 #7003",
+    {
+      backorderId: 9003,
+      variantId: 3019,
+    },
+  );
   expect(part?.kind).toBe("AUTO_REPLY");
   const bubble = bubbleOf(page, part);
   await expect(bubble).toContainText("남은 미송 1장은 11월 5일");

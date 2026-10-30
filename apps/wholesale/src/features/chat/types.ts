@@ -13,6 +13,9 @@ export type ChatReadResult = WholesaleSchema<"ChatReadResult">;
 export type CursorPageMeta = WholesaleSchema<"CursorPageMeta">;
 export type ChatAutoReply = WholesaleSchema<"ChatAutoReply">;
 export type StockBand = WholesaleSchema<"StockBand">;
+/** 넘김 줄의 이유(초안 칸 `handoff`, #301). 값이 늘 수 있다 — 모르는 값은 이유 줄 없이 그린다 */
+export type ChatHandoff = WholesaleSchema<"ChatHandoff">;
+export type ChatHandoffReason = WholesaleSchema<"ChatHandoffReason">;
 /** 자동 답 설정(초안 op `autoReplySettings`, #266). 도매처 하나에 한 벌 */
 export type AutoReplySettings = WholesaleSchema<"AutoReplySettings">;
 
@@ -147,6 +150,10 @@ export interface FactsView {
    * 근거 칸 끝 줄. 모든 자동 답에 "HH:mm 조회"(F12, S7-13). 재고 답만 앞에 "소매처에게는 …으로 보였어요."
    */
   seen: string;
+  /** `lines`와 같은 순서의 `data-ac`. 미결제 줄만 "S3-3"(QA F1), 나머지 null */
+  lineAc: (string | null)[];
+  /** 끝 줄 `data-ac`. "S7-13 S3-5", 미수 답이면 "S7-13 S3-5 S3-3"(와이어프레임 17 `.seen`, QA F1) */
+  seenAc: string;
 }
 
 /**

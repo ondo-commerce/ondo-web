@@ -158,8 +158,11 @@ describe("S5-6 자동 답변, 사람 넘김, 모르는 kind", () => {
   });
 
   it("S5-6 조회 시각은 checkedAt을 서울 HH:mm으로 + ' 조회'. 근거가 없으면 없음", () => {
-    expect(autoReplySeen({ autoReply: AUTO_REPLY })).toBe("10:22 조회");
-    expect(autoReplySeen({ autoReply: null })).toBeNull();
+    const sameDay = Date.parse(AUTO_REPLY.checkedAt);
+    expect(autoReplySeen({ autoReply: AUTO_REPLY }, sameDay)).toBe(
+      "10:22 조회",
+    );
+    expect(autoReplySeen({ autoReply: null }, sameDay)).toBeNull();
   });
 
   it("S5-6 HANDOFF는 서버 body(도매에게 하는 말) 대신 '사장님께 전달했어요'", () => {
@@ -681,17 +684,24 @@ function pendingOf(patch: Partial<PendingMessage> = {}): PendingMessage {
 describe("S7-13 소매 조회 시각 — 모든 자동 답", () => {
   it("S7-13 재고, 되묻기, 미송, 미수 자동 답 전부 checkedAt 서울 HH:mm + ' 조회'", () => {
     const checkedAt = "2026-10-28T01:20:00Z";
+    const sameDay = Date.parse(checkedAt) + 60_000;
     for (const intent of ["STOCK", "BACKORDER", "RECEIVABLE"] as const) {
       expect(
-        autoReplySeen({ autoReply: { ...AUTO_REPLY, intent, checkedAt } }),
+        autoReplySeen(
+          { autoReply: { ...AUTO_REPLY, intent, checkedAt } },
+          sameDay,
+        ),
       ).toBe("10:20 조회");
     }
-    expect(autoReplySeen(clarify(4, { checkedAt }))).toBe("10:20 조회");
-    // 자정 넘는 UTC → 서울 시각
+    expect(autoReplySeen(clarify(4, { checkedAt }), sameDay)).toBe(
+      "10:20 조회",
+    );
+    // 자정 넘는 UTC → 서울 시각. 지금도 같은 서울 날짜(10/28)라 날짜가 붙지 않는다
     expect(
-      autoReplySeen({
-        autoReply: { ...AUTO_REPLY, checkedAt: "2026-10-27T15:05:00Z" },
-      }),
+      autoReplySeen(
+        { autoReply: { ...AUTO_REPLY, checkedAt: "2026-10-27T15:05:00Z" } },
+        Date.parse("2026-10-27T15:30:00Z"),
+      ),
     ).toBe("00:05 조회");
   });
 });

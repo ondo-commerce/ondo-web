@@ -14,6 +14,7 @@ import {
   type InquiryDecision,
   type InquiryListing,
 } from "./inquiry";
+import type { InquiryReceivable } from "./receivable";
 
 /**
  * 골든셋(`openapi/golden/inquiry-golden.json`)을 읽는 테스트 도구. 판정 unit(`inquiry.test.ts`)과
@@ -69,6 +70,8 @@ export interface GoldenInquiry {
 export type GoldenExpect = Record<string, unknown>;
 
 export interface GoldenStep {
+  /** 없으면 소매. WHOLESALER 는 사장이 직접 쓴 TEXT(판정 안 함, expect 는 `{openHandoff}`, v4) */
+  sender?: "WHOLESALER";
   text: string;
   inquiry: GoldenInquiry | null;
   afterMinutes?: number;
@@ -80,7 +83,9 @@ export interface GoldenScenario {
   id: string;
   title: string;
   required: boolean;
-  group: "required" | "stock" | "handoff" | "backorder";
+  group: "required" | "stock" | "handoff" | "backorder" | "receivable";
+  /** 4 이상이면 expect 가 방에 들어간 줄 투영(`{lines}`)이다(loop-07). 없으면 판정 투영(v3까지) */
+  since?: number;
   room: {
     wholesalerId: number;
     /** 없으면 1(봄봄상회) */
@@ -90,8 +95,33 @@ export interface GoldenScenario {
     intents?: WholesaleSchema<"AutoReplyIntentSettings">;
     /** 첫 단계 시각 = rules.t0 + n일 */
     afterDays?: number;
+    /** 미수 원본 조회가 이 횟수만큼 던진다(LOOKUP_FAILED, R16) */
+    receivableFailTimes?: number;
   };
   steps: GoldenStep[];
+}
+
+/** 미수 표 한 줄 = 판정 원본 한 줄 + 출처, 메모. `asOf`는 ISO(오프셋 포함) */
+export type GoldenReceivableRow = InquiryReceivable & {
+  source: "settlement.ts seed" | "extraReceivables.ts" | "golden only";
+  note: string;
+};
+
+/** 이상값 한 줄. 숫자 칸에 "NaN" 글자가 오면 NaN(JSON에 NaN이 없다) */
+export interface GoldenAnomalyCase {
+  anomaly: string;
+  rule: string;
+  row: {
+    balance: number | "NaN";
+    unpaid: number | "NaN";
+    prepaid: number | "NaN";
+    overdue: {
+      amount: number | "NaN";
+      count: number | "NaN";
+      maxDays: number | "NaN";
+    };
+    exact: boolean;
+  };
 }
 
 export interface GoldenCase {
@@ -112,6 +142,8 @@ export interface GoldenDoc {
   normalization: { rule: string; cases: GoldenCase[] }[];
   stock: GoldenStockRow[];
   backorders: GoldenBackorderRow[];
+  receivables: GoldenReceivableRow[];
+  receivableAnomalies: GoldenAnomalyCase[];
   scenarios: GoldenScenario[];
 }
 
@@ -193,6 +225,138 @@ export function goldenBackorders(
   return () => list;
 }
 
+/** `receivables` 표 → 판정 원본(거르지 않은 전부). 출처, 메모 칸은 넘기지 않는다 */
+export function goldenReceivableRows(
+  rows: readonly GoldenReceivableRow[] = GOLDEN.receivables,
+): InquiryReceivable[] {
+  return rows.map((r) => ({
+    wholesalerId: r.wholesalerId,
+    retailerId: r.retailerId,
+    balance: r.balance,
+    unpaid: r.unpaid,
+    prepaid: r.prepaid,
+    overdue: { ...r.overdue },
+    exact: r.exact,
+    asOf: r.asOf,
+  }));
+}
+
+const num = (n: number | "NaN") => (n === "NaN" ? Number.NaN : n);
+
+/** 이상값 표 한 줄 → 판정 원본. 쌍은 (101, 1), asOf 는 rules.t0 */
+export function anomalyRow(c: GoldenAnomalyCase): InquiryReceivable {
+  return {
+    wholesalerId: 101,
+    retailerId: 1,
+    balance: num(c.row.balance),
+    unpaid: num(c.row.unpaid),
+    prepaid: num(c.row.prepaid),
+    overdue: {
+      amount: num(c.row.overdue.amount),
+      count: num(c.row.overdue.count),
+      maxDays: num(c.row.overdue.maxDays),
+    },
+    exact: c.row.exact,
+    asOf: GOLDEN.rules.t0,
+  };
+}
+
+/** v4 줄 투영이 읽는 모양. 판정 unit의 `GeneratedLine`, 도매 HTTP 메시지, 소매 HTTP 메시지(`handoff` 칸 없음)가 다 맞는다 */
+interface V4Line {
+  kind: string;
+  body: string;
+  handoff?: {
+    reason: string;
+    intent: string | null;
+    sourceSequence: number;
+  } | null;
+  autoReply: {
+    intent: string;
+    checkedAt: string;
+    subject: { variantId: number | null; backorderId: number | null };
+    choices?: { variantId: number }[] | null;
+    facts: {
+      receivable: {
+        outstandingAmount: number;
+        prepaidAmount: number;
+        overdue: { count: number; amount: number; maxDaysOverdue: number };
+      } | null;
+    };
+  } | null;
+}
+
+/**
+ * v4 투영(loop-07): 방에 **들어간** 줄 전부. 넘김 줄 억제가 규칙이라 판정이 아니라 줄을 본다(H21 줄 0).
+ * - `self`: 그 단계 소매 메시지 sequence. sourceSequence 가 같으면 "self"(방마다 시드 길이가 달라 번호를 박지 않는다)
+ * - `asOf`: 그 방 원본 행의 조회 시각. checkedAt 이 같으면 "asOf", 단계 시각이면 "now"
+ * 소매 응답에는 `handoff` 칸이 없다 — 그때 HANDOFF 줄은 `{kind}`뿐이다({@link visibleV4Expect}가 기대를 맞춘다)
+ */
+export function projectV4Lines(
+  lines: readonly V4Line[],
+  ctx: { self: number; nowMs: number; asOf: string | null },
+): GoldenExpect {
+  const at = (iso: string) => {
+    const ms = Date.parse(iso);
+    if (ctx.asOf !== null && ms === Date.parse(ctx.asOf)) return "asOf";
+    return ms === ctx.nowMs ? "now" : iso;
+  };
+  return {
+    lines: lines.map((l) => {
+      if (l.kind === "HANDOFF")
+        return l.handoff === undefined
+          ? { kind: l.kind }
+          : {
+              kind: l.kind,
+              reason: l.handoff?.reason ?? null,
+              intent: l.handoff?.intent ?? null,
+              sourceSequence:
+                l.handoff?.sourceSequence === ctx.self
+                  ? "self"
+                  : (l.handoff?.sourceSequence ?? null),
+            };
+      const a = l.autoReply;
+      if (l.kind === "CLARIFY")
+        return {
+          kind: l.kind,
+          intent: a?.intent,
+          choices: (a?.choices ?? []).map((c) => c.variantId),
+        };
+      const r = a?.facts.receivable ?? null;
+      if (a?.intent === "RECEIVABLE" && r !== null)
+        return {
+          kind: l.kind,
+          intent: a.intent,
+          outstanding: r.outstandingAmount,
+          prepaid: r.prepaidAmount,
+          overdue: {
+            count: r.overdue.count,
+            amount: r.overdue.amount,
+            maxDaysOverdue: r.overdue.maxDaysOverdue,
+          },
+          body: l.body,
+          checkedAt: at(a.checkedAt),
+        };
+      return {
+        kind: l.kind,
+        intent: a?.intent,
+        target: a?.subject.backorderId ?? a?.subject.variantId ?? null,
+        body: l.body,
+      };
+    }),
+  };
+}
+
+/** 소매 HTTP 비교용 v4 기대: HANDOFF 줄은 `{kind}`만(이유, 의도, 원인 메시지는 도매 응답에만 있다) */
+export function visibleV4Expect(e: GoldenExpect): GoldenExpect {
+  if (!Array.isArray(e.lines)) return e;
+  return {
+    ...e,
+    lines: (e.lines as Record<string, unknown>[]).map((l) =>
+      l.kind === "HANDOFF" ? { kind: l.kind } : l,
+    ),
+  };
+}
+
 export function fullInquiry(i: GoldenInquiry | null) {
   return i === null
     ? null
@@ -211,6 +375,8 @@ export function projectDecision(d: InquiryDecision): GoldenExpect {
   if (d.kind === "HANDOFF") return { kind: "HANDOFF", reason: d.reason };
   if (d.intent === "BACKORDER")
     throw new Error("미송 판정은 projectStep 으로 투영한다");
+  if (d.intent === "RECEIVABLE")
+    throw new Error("미수 판정은 projectV4Lines 로 투영한다");
   if (d.kind === "CLARIFY")
     return {
       kind: "CLARIFY",

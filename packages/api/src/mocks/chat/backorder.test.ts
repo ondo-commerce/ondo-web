@@ -83,6 +83,10 @@ function decide(
     history: opts.history ?? [],
     catalog: CATALOG,
     backorders: () => rows,
+    // 미송 unit 은 미수 가지에 안 간다. 가면 LOOKUP_FAILED 넘김이 돼 기대값과 갈린다
+    receivables: () => {
+      throw new Error("미송 unit 이 미수 원본을 읽었다");
+    },
   });
 }
 

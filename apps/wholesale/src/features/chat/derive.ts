@@ -3,6 +3,7 @@ import {
   BODY_COUNTER_FROM,
   BODY_MAX,
   CHAT_TIME_ZONE,
+  HANDOFF_REASON_TEXT,
   PENDING_TEXT,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
@@ -17,6 +18,7 @@ import type {
   AutoReplySettings,
   BubbleKind,
   ChatAutoReply,
+  ChatHandoffReason,
   ChatMessage,
   ChatReadResult,
   ChatRoomPage,
@@ -109,6 +111,19 @@ export function formatListTime(iso: string, nowMs: number): string {
   }
   if (at.year === now.year) return `${at.month}/${at.day}`;
   return `${String(at.year % 100).padStart(2, "0")}.${at.month}.${at.day}`;
+}
+
+/**
+ * 근거 칸 조회 시각(#302 S3-5, 디자인 결정 43). `checkedAt`의 서울 날짜가 오늘이면 `14:20 조회`, 아니면
+ * `10/28 14:20 조회`(M/D, 앞 0 없음). 다음 날 같은 방을 열면 "14:20"이 오늘 값처럼 보여서 날짜를 붙인다(기획 Q4).
+ * 해가 달라도 `M/D`만 쓴다 — 소매 `checkedLabel`과 같은 규칙(앱끼리 복제, 한쪽을 바꾸면 다른 쪽도).
+ */
+export function checkedLabel(checkedAt: string, nowMs: number): string {
+  const time = `${formatClock(checkedAt)}${ROOM_TEXT.checkedSuffix}`;
+  if (seoulDateKey(checkedAt) === seoulDateKey(new Date(nowMs).toISOString()))
+    return time;
+  const p = seoulParts(Date.parse(checkedAt));
+  return `${p.month}/${p.day} ${time}`;
 }
 
 /** 서울 달력 날짜 키. 날짜 구분선을 가르는 기준이다 */
@@ -327,12 +342,20 @@ export function toClarifyChoicesView(
  *
  * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
  * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
+ * 오늘이 아니면 날짜가 붙는다(`checkedLabel`, #302 S3-5). `nowMs`는 방이 1분마다 갱신하는 지금 시각이다(리뷰 M4).
+ *
+ * `data-ac`도 여기서 정한다(QA F1). 끝 줄은 loop-04 번호 S7-13에 07 번호 S3-5, 미수 답이면 S3-3이 더 붙는다
+ * (와이어프레임 17 `#state-rc-latest` `.seen data-ac="S3-5 S3-3"`). 값 줄은 미결제 줄만 S3-3이다.
  */
-export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
+export function toFactsView(
+  autoReply: ChatAutoReply | null,
+  nowMs: number,
+): FactsView | null {
   if (autoReply === null) return null;
   const { stock, backorder, receivable } = autoReply.facts;
   const lines: FactLine[] = [];
-  const checked = `${formatClock(autoReply.checkedAt)} 조회`;
+  const lineAc: (string | null)[] = [];
+  const checked = checkedLabel(autoReply.checkedAt, nowMs);
   let seen = checked;
   // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
   const value = (text: string): FactPart => ({ text, strong: true });
@@ -351,6 +374,7 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
             value(`${formatNumber(stock.orderLimit)}장`),
           ],
     );
+    lineAc.push(null);
     seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
   }
   if (backorder !== null) {
@@ -360,6 +384,7 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
         ? [...qty, label(", 입고일 미정")]
         : [...qty, label(", 입고 예정 "), value(backorder.expectedInboundDate)],
     );
+    lineAc.push(null);
   }
   if (receivable !== null) {
     lines.push([
@@ -368,6 +393,7 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
       label(", 선수금 "),
       value(`${formatNumber(receivable.prepaidAmount)}원`),
     ]);
+    lineAc.push("S3-3");
     const { count, amount, maxDaysOverdue } = receivable.overdue;
     lines.push(
       count === 0
@@ -378,8 +404,34 @@ export function toFactsView(autoReply: ChatAutoReply | null): FactsView | null {
             label(` (최대 ${maxDaysOverdue}일)`),
           ],
     );
+    lineAc.push(null);
   }
-  return { lines, seen };
+  const seenAc = receivable === null ? "S7-13 S3-5" : "S7-13 S3-5 S3-3";
+  return { lines, lineAc, seen, seenAc };
+}
+
+/**
+ * 넘김 이유 한 줄 글(#302 S3-1). 이번 회차 8개 이유만 글이 있고, 그 밖 값(이번 회차 밖, 서버가 새로 늘린 값)과
+ * 이유 없음은 null — 이유 줄을 그리지 않는다(디자인 결정 42). 인자가 `string`인 이유: 서버 enum은 FE 배포보다
+ * 먼저 늘어난다(가이드 §9). 생성 타입 밖 값도 여기서 걸러진다.
+ */
+export function handoffReasonText(
+  reason: string | null | undefined,
+): string | null {
+  if (reason === null || reason === undefined) return null;
+  if (!Object.hasOwn(HANDOFF_REASON_TEXT, reason)) return null;
+  return HANDOFF_REASON_TEXT[reason as ChatHandoffReason] ?? null;
+}
+
+/**
+ * 시스템 줄 아래 이유 글. HANDOFF 줄만 — 계약상 `handoff`는 HANDOFF면 늘 값, 그 밖 kind면 null이지만
+ * 다른 kind에 값이 실려 와도 넘김 줄이 아니면 이유를 달지 않는다. 칸이 없으면(옛 서버, `?? null`) 이유 없음.
+ */
+export function handoffReasonOf(
+  message: Pick<ChatMessage, "kind" | "handoff">,
+): string | null {
+  if (message.kind !== "HANDOFF") return null;
+  return handoffReasonText(message.handoff?.reason);
 }
 
 /**

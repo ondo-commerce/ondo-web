@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import { chatStockListing } from "../wholesale/product";
 import { CHAT_EXTRA_LISTINGS } from "./extraListings";
 import { seoulDate } from "./backorderCandidates";
+import { chatExtraReceivables } from "./extraReceivables";
 import {
   GOLDEN,
   GOLDEN_T0,
   fullInquiry,
   goldenBackorders,
   goldenCatalog,
+  goldenReceivableRows,
   projectDecision,
   projectStep,
+  projectV4Lines,
   type GoldenExpect,
   type GoldenInquiry,
   type GoldenScenario,
@@ -19,13 +22,24 @@ import {
   DEFAULT_AUTO_REPLY_SETTINGS,
   INQUIRY_BAND_EDGES,
   INQUIRY_CONTEXT_MINUTES,
+  RECEIVABLE_AMOUNT_QUESTIONS,
   decideInquiry,
   generatedLines,
+  hasPeriodWord,
+  isReceivableAmountQuestion,
+  linesToAppend,
+  openHandoffOf,
   orderLimitOf,
   stockBand,
   stockReplyBody,
   type InquiryHistoryItem,
 } from "./inquiry";
+import {
+  receivableOf,
+  type InquiryReceivable,
+  type InquiryReceivableSource,
+} from "./receivable";
+import { mockReceivable, resetSettlementMock } from "../wholesale/settlement";
 
 /**
  * 판정 규칙 unit(loop-05b S7-2 ~ S7-5). 골든셋을 순수 함수로 돌린다 — 서버도 목 저장소도 없다.
@@ -35,6 +49,8 @@ import {
 
 const CATALOG = goldenCatalog(GOLDEN.stock);
 const BACKORDERS = goldenBackorders(GOLDEN.backorders);
+const RECEIVABLE_ROWS = goldenReceivableRows();
+const RECEIVABLES: InquiryReceivableSource = () => RECEIVABLE_ROWS;
 /** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
 const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
@@ -44,6 +60,7 @@ const ROOM1 = {
   retailerId: 1,
   today: seoulDate(BASE),
   backorders: BACKORDERS,
+  receivables: RECEIVABLES,
 };
 
 interface StepResult {
@@ -53,8 +70,26 @@ interface StepResult {
   actual: GoldenExpect;
 }
 
-/** 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 생성 줄을 history에 쌓는다 */
-function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
+/**
+ * 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 **방에 들어간** 줄(`linesToAppend`)을 history에
+ * 쌓는다. v4(since 4)는 그 줄을 투영하고, v3까지는 판정을 투영한다(기대값 모양이 그때 정해졌다)
+ */
+function runScenario(
+  s: GoldenScenario,
+  backorders = BACKORDERS,
+  rows: readonly InquiryReceivable[] = RECEIVABLE_ROWS,
+): StepResult[] {
+  let failsLeft = s.room.receivableFailTimes ?? 0;
+  const receivables: InquiryReceivableSource = () => {
+    if (failsLeft > 0) {
+      failsLeft -= 1;
+      throw new Error("골든셋: 정산 조회 실패");
+    }
+    return rows;
+  };
+  const rowAsOf =
+    receivableOf(rows, s.room.wholesalerId, s.room.retailerId ?? 1)?.asOf ??
+    null;
   let now = BASE + (s.room.afterDays ?? 0) * DAY;
   let context =
     s.room.context === null
@@ -78,6 +113,21 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
           : { listingId: step.enter.listingId, at: now };
     sequence += 1;
     const mine = sequence;
+    if (step.sender === "WHOLESALER") {
+      history.push({
+        sequence: mine,
+        sender: "WHOLESALER",
+        kind: "TEXT",
+        sentAt: new Date(now).toISOString(),
+        autoReply: null,
+      });
+      return {
+        scenario: s.id,
+        required: s.required,
+        expect: step.expect,
+        actual: { openHandoff: openHandoffOf(history) !== null },
+      };
+    }
     const decision = decideInquiry({
       body: step.text,
       inquiry: fullInquiry(step.inquiry),
@@ -90,8 +140,10 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
       history: [...history],
       catalog: CATALOG,
       backorders,
+      receivables,
     });
     const sentAt = new Date(now).toISOString();
+    const before = [...history];
     history.push({
       sequence: mine,
       sender: "RETAILER",
@@ -100,7 +152,8 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
       autoReply: null,
     });
     const lines = generatedLines(decision, mine, now);
-    for (const line of lines) {
+    const kept = linesToAppend(lines, before);
+    for (const line of kept) {
       sequence += 1;
       history.push({
         sequence,
@@ -108,49 +161,79 @@ function runScenario(s: GoldenScenario, backorders = BACKORDERS): StepResult[] {
         kind: line.kind,
         sentAt,
         autoReply: line.autoReply,
+        handoff: line.handoff,
       });
     }
     return {
       scenario: s.id,
       required: s.required,
       expect: step.expect,
-      actual: projectStep(decision, lines, now),
+      actual:
+        (s.since ?? 0) >= 4
+          ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
+          : projectStep(decision, lines, now),
     };
   });
 }
 
 const RESULTS = GOLDEN.scenarios.flatMap((s) => runScenario(s));
 
-const isAuto = (e: GoldenExpect) =>
-  e.kind === "AUTO_REPLY" ||
-  (Array.isArray(e.kinds) && e.kinds.includes("AUTO_REPLY"));
-const isHandoff = (e: GoldenExpect) =>
-  e.kind === "HANDOFF" ||
-  (Array.isArray(e.kinds) && e.kinds.includes("HANDOFF"));
-/** 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지 */
+/** v4 줄 투영 `{lines}`의 kind 들. v3 판정 투영은 kind 하나 또는 kinds */
+const kindsOf = (e: GoldenExpect): unknown[] =>
+  Array.isArray(e.lines)
+    ? (e.lines as { kind: unknown }[]).map((l) => l.kind)
+    : Array.isArray(e.kinds)
+      ? e.kinds
+      : [e.kind];
+const isAuto = (e: GoldenExpect) => kindsOf(e).includes("AUTO_REPLY");
+const isHandoff = (e: GoldenExpect) => kindsOf(e).includes("HANDOFF");
+const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
+/**
+ * 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지.
+ * v4(미수)는 줄 전체 — 금액, 연체, 선수금, 본문, 조회 시각 하나라도 다르면 틀린 답이다
+ */
 const sameAnswer = (a: GoldenExpect, e: GoldenExpect) =>
-  a.target === e.target &&
-  a.band === e.band &&
-  a.orderable === e.orderable &&
-  a.remainingQty === e.remainingQty &&
-  JSON.stringify(a.eta) === JSON.stringify(e.eta);
+  isV4(e)
+    ? JSON.stringify(a) === JSON.stringify(e)
+    : a.target === e.target &&
+      a.band === e.band &&
+      a.orderable === e.orderable &&
+      a.remainingQty === e.remainingQty &&
+      JSON.stringify(a.eta) === JSON.stringify(e.eta);
 
 describe("골든셋 모양", () => {
-  it("v3 시나리오 59개 = 필수 4 + 재고 답 17 + 넘김 15 + 미송 23, id 중복 없음", () => {
+  it("v4 시나리오 84개 = 필수 5 + 재고 답 17 + 넘김 22 + 미송 23 + 미수 17, id 중복 없음, v4 몫 25", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.version).toBe(3);
-    expect(GOLDEN.scenarios).toHaveLength(59);
+    expect(GOLDEN.version).toBe(4);
+    expect(GOLDEN.scenarios).toHaveLength(84);
     expect([
       count("required"),
       count("stock"),
       count("handoff"),
       count("backorder"),
-    ]).toEqual([4, 17, 15, 23]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(59);
+      count("receivable"),
+    ]).toEqual([5, 17, 22, 23, 17]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(84);
     expect(GOLDEN.scenarios.filter((s) => s.required).map((s) => s.id)).toEqual(
-      ["P1", "P2", "P3", "P4"],
+      ["P1", "P2", "P3", "P4", "P5"],
     );
+    // v4 = 미수 18(P5 + R01~R17) + 넘김 7(H16~H22). 기존 59개는 since 없이 그대로다
+    const v4 = GOLDEN.scenarios.filter((s) => (s.since ?? 0) >= 4);
+    expect(v4.map((s) => s.id)).toEqual([
+      "P5",
+      ...Array.from(
+        { length: 17 },
+        (_, i) => `R${String(i + 1).padStart(2, "0")}`,
+      ),
+      "H16",
+      "H17",
+      "H18",
+      "H19",
+      "H20",
+      "H21",
+      "H22",
+    ]);
   });
 
   it("규칙 상수가 코드와 같다(문맥 30분, 구간 경계 0 10 50, 미송 보기 8, T0 서울 2026-10-29)", () => {
@@ -161,8 +244,8 @@ describe("골든셋 모양", () => {
   });
 });
 
-describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 — 모든 단계 정확 일치", () => {
-  for (const id of ["P1", "P2", "P3", "P4"]) {
+describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 P5 — 모든 단계 정확 일치", () => {
+  for (const id of ["P1", "P2", "P3", "P4", "P5"]) {
     it(`${id} kind, intent, 대상, 구간, 주문 가능, choices`, () => {
       const steps = RESULTS.filter((r) => r.scenario === id);
       expect(steps.length).toBeGreaterThan(1);
@@ -171,7 +254,74 @@ describe("S7-2, S1-2 필수 경로 P1 P2 P3 P4 — 모든 단계 정확 일치",
   }
 });
 
-describe("S7-3, S1-2 골든셋 59개 지표", () => {
+describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
+  const v4 = RESULTS.filter((r) => isV4(r.expect) || "openHandoff" in r.expect);
+
+  it("v4 25개 시나리오 전 단계 정확 일치(금액, 연체, 선수금, 본문, 조회 시각, 넘김 이유, 의도, 원인 메시지)", () => {
+    expect(v4.length).toBeGreaterThanOrEqual(25);
+    expect(
+      v4.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+  });
+
+  it("미수 잘못된 자동 답 0: 미수 AUTO_REPLY 줄은 전부 기대와 같고, 넘겨야 할 미수 질문에 금액 줄이 없다", () => {
+    const receivableLines = (e: GoldenExpect) =>
+      Array.isArray(e.lines)
+        ? (e.lines as { kind: string; intent?: string }[]).filter(
+            (l) => l.kind === "AUTO_REPLY" && l.intent === "RECEIVABLE",
+          )
+        : [];
+    const sent = v4.filter((r) => receivableLines(r.actual).length > 0);
+    // 미수 답 9단계(P5 2, R01 R02 R03 R04 R14 R16 R17)가 실제로 나갔다 — 0이면 측정 불가.
+    // R08 "잔액 얼마예요"는 C4로 넘김이 됐다
+    expect(sent.length).toBe(9);
+    expect(
+      sent.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+    const shouldHandoff = v4.filter(
+      (r) => isHandoff(r.expect) && !isAuto(r.expect),
+    );
+    expect(shouldHandoff.filter((r) => isAuto(r.actual))).toEqual([]);
+  });
+
+  it("미수 표 ↔ 목: settlement.ts seed 행 = 정산 목 시드 요약(T0), extraReceivables.ts 행 = 채팅 목 표(asOf 제외)", () => {
+    resetSettlementMock();
+    const strip = (r: InquiryReceivable | null) =>
+      r === null ? null : { ...r, asOf: "-" };
+    for (const row of GOLDEN.receivables) {
+      const golden = strip(
+        receivableOf(RECEIVABLE_ROWS, row.wholesalerId, row.retailerId),
+      );
+      if (row.source === "settlement.ts seed")
+        expect(
+          strip(mockReceivable(row.wholesalerId, row.retailerId, GOLDEN_T0)),
+          `${row.wholesalerId}×${row.retailerId}`,
+        ).toEqual(golden);
+      else if (row.source === "extraReceivables.ts")
+        expect(
+          strip(
+            receivableOf(
+              chatExtraReceivables(GOLDEN.rules.t0),
+              row.wholesalerId,
+              row.retailerId,
+            ),
+          ),
+        ).toEqual(golden);
+      else expect(row.source).toBe("golden only");
+    }
+    // 목 시드 몫은 두 행뿐이다(장면 3의 방 1, 방 33)
+    expect(
+      GOLDEN.receivables
+        .filter((r) => r.source !== "golden only")
+        .map((r) => [r.wholesalerId, r.retailerId]),
+    ).toEqual([
+      [101, 1],
+      [102, 1],
+    ]);
+  });
+});
+
+describe("S7-3, S1-2 골든셋 84개 지표", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),
@@ -306,6 +456,277 @@ describe("옵션 확정은 색상과 사이즈 둘 다(§4-2 2, 7, codex-meta M1
       { text: "FREE 몇 장 남았어요?", expect: {} },
     ]);
     expect(single?.actual).toMatchObject({ kind: "AUTO_REPLY", target: 3901 });
+  });
+});
+
+/** 방 1 한 번 판정. 상품 문맥 2001(2분 전)을 줄지 고른다 */
+function decideOnce(body: string, withContext = false) {
+  return decideInquiry({
+    body,
+    inquiry: null,
+    now: BASE,
+    wholesalerId: 101,
+    settings: DEFAULT_AUTO_REPLY_SETTINGS,
+    context: withContext ? { listingId: 2001, at: BASE - 2 * MINUTE } : null,
+    history: [],
+    catalog: CATALOG,
+    ...ROOM1,
+  });
+}
+
+const PERIOD_HANDOFF = {
+  kind: "HANDOFF",
+  reason: "PERIOD",
+  intent: "RECEIVABLE",
+} as const;
+
+describe("미수 기간 말은 넓게 잡는다(loop-07 codex-meta M1, QA F4)", () => {
+  it("달, 주, 날, 해, 지난번, 날짜 모양이 붙은 미수 질문 → 금액 없이 PERIOD 넘김", () => {
+    for (const body of [
+      "9월 미수 얼마예요?",
+      "10 월 외상 얼마예요",
+      "시월 미수 얼마예요?",
+      "지난주 미수 얼마예요?",
+      "이번 주 미수 얼마예요?",
+      "저번 주 외상 얼마예요",
+      "다음 주까지 갚을 돈 얼마예요?",
+      "다음달 잔금 얼마예요",
+      "월말 미수 얼마예요?",
+      "지난번 미수 얼마예요?",
+      "저번에 가져간 거 외상 얼마예요",
+      "어제 미수 얼마예요?",
+      "오늘 미수 얼마예요?",
+      "그저께 외상 얼마예요",
+      "엊그제 잔액 얼마예요",
+      "9/7 미수 얼마예요?",
+      "10.29 외상 얼마예요",
+      "9-15 잔금 얼마예요",
+      "15일 미수 얼마예요?",
+      "2주 동안 외상 얼마예요",
+      "3개월 미수 얼마예요?",
+      "두 달 밀린 거 얼마예요",
+      "상반기 미수 얼마예요?",
+      "하반기 외상 얼마예요",
+      "올해 미수 얼마예요",
+      "작년 외상 얼마예요",
+      "1분기 잔액 얼마예요",
+      "최근 미수 얼마예요?",
+      "월요일 외상 얼마예요",
+    ]) {
+      expect(decideOnce(body), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
+  it("기간 말 없는 미수 질문은 그대로 금액 답(지금은 기간이 아니다)", () => {
+    for (const body of [
+      "지금 미수 얼마예요?",
+      "미수 얼마예요?",
+      "제 외상 얼마 있어요?",
+    ]) {
+      expect(decideOnce(body), body).toMatchObject({
+        kind: "AUTO_REPLY",
+        intent: "RECEIVABLE",
+      });
+    }
+  });
+
+  it('상품 문맥이 있는 방의 "이번 달 얼마 남았어요?"는 재고 되묻기가 아니라 PERIOD 넘김(F4)', () => {
+    for (const body of [
+      "이번 달 얼마 남았어요?",
+      "지난주 얼마 남았어요",
+      "9월 얼마 남았나요?",
+    ]) {
+      expect(decideOnce(body, true), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
+  it('기간 말 없는 "이 셔츠 얼마 남았어요?"(R10), "얼마" 없는 "오늘 몇 장 남았어요?"는 재고 되묻기 그대로', () => {
+    for (const body of ["이 셔츠 얼마 남았어요?", "오늘 몇 장 남았어요?"]) {
+      expect(decideOnce(body, true), body).toMatchObject({
+        kind: "CLARIFY",
+        intent: "STOCK",
+      });
+    }
+  });
+
+  it("한자어, 축약, 붙여쓰기 기간 말 + 미수 → PERIOD 넘김(Codex C1 전월)", () => {
+    for (const word of [
+      "전월",
+      "당월",
+      "금월",
+      "익월",
+      "전전월",
+      "차월",
+      "이달",
+      "지지난달",
+      "다다음달",
+      "전년",
+      "작년",
+      "재작년",
+      "금년",
+      "올해",
+      "내년",
+      "명년",
+      "당해",
+      "전분기",
+      "상순",
+      "중순",
+      "하순",
+      "월초",
+      "월중",
+      "월말",
+      "연초",
+      "연말",
+      "연중",
+      "상반기",
+      "하반기",
+      "금주",
+      "차주",
+      "전주",
+      "이번달",
+      "지난달",
+      "저번달",
+      "금일",
+      "당일",
+      "전일",
+      "익일",
+    ]) {
+      const body = `${word} 미수 얼마예요?`;
+      expect(hasPeriodWord(body), body).toBe(true);
+      expect(decideOnce(body), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
+  it("hasPeriodWord 는 원문 날짜 모양을 본다(정규화가 / 를 공백으로 바꾸기 전)", () => {
+    expect(hasPeriodWord("9/7 주문분")).toBe(true);
+    expect(hasPeriodWord("37,500원")).toBe(false);
+    expect(hasPeriodWord("지금 미수 얼마예요?")).toBe(false);
+  });
+});
+
+const UNKNOWN_WORD_HANDOFF = {
+  kind: "HANDOFF",
+  reason: "AMOUNT_UNSURE",
+  intent: "RECEIVABLE",
+} as const;
+
+/** 골든셋에서 미수 금액 답(AUTO_REPLY RECEIVABLE)을 기대하는 단계의 본문 */
+const GOLDEN_RECEIVABLE_AUTO_TEXTS = GOLDEN.scenarios.flatMap((s) =>
+  s.steps.flatMap((st) =>
+    JSON.stringify(st.expect).includes('"intent":"RECEIVABLE"') &&
+    JSON.stringify(st.expect).includes('"kind":"AUTO_REPLY"')
+      ? [st.text]
+      : [],
+  ),
+);
+
+describe("미수 금액은 정해 둔 문장일 때만(D41, Codex C2 C3)", () => {
+  it("C2 반례 8개: 목록에 없는 기간 말이 붙은 미수 질문 → 금액 없이 넘김", () => {
+    for (const period of [
+      "보름 동안",
+      "열흘간",
+      "일주일 전",
+      "이틀 전",
+      "3일 전",
+      "석 달",
+      "두어 주",
+      "요 며칠",
+    ]) {
+      for (const body of [
+        `${period} 미수 얼마예요?`,
+        `${period} 외상 얼마 있어요?`,
+      ]) {
+        expect(isReceivableAmountQuestion(body), body).toBe(false);
+        expect(decideOnce(body), body).toMatchObject({
+          kind: "HANDOFF",
+          intent: "RECEIVABLE",
+        });
+      }
+      // hasPeriodWord 가 못 잡는 것은 문장 검사가 받는다
+      const body = `${period} 미수 얼마예요?`;
+      if (!hasPeriodWord(body))
+        expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+  });
+
+  it("C3 반례: 허용 조각으로 만든 다른 뜻(방향 반대, 기한), 누가 누구에게인지 모호한 문장 → 넘김", () => {
+    for (const body of [
+      "사장님이 저희에게 갚을 돈은 얼마예요?",
+      "미수 얼마만에 갚아야 되나요?",
+      "사장님 미수 얼마예요",
+    ]) {
+      expect(isReceivableAmountQuestion(body), body).toBe(false);
+      expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+  });
+
+  it("숫자가 붙은 금액 확인, 붙여 쓴 기간 말(이주)도 넘긴다", () => {
+    for (const body of [
+      "미수 37,500원 맞아요?",
+      "외상 2만원 맞죠",
+      "이주 미수 얼마예요",
+    ]) {
+      expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+  });
+
+  it("허용 문장은 전부 금액 답. 띄어쓰기, 문장부호 차이는 같은 문장이다", () => {
+    for (const sentence of RECEIVABLE_AMOUNT_QUESTIONS) {
+      for (const body of [
+        sentence,
+        sentence.replace(/[?,]/g, ""),
+        `${sentence.replace(/\s/g, "")}!!`,
+      ]) {
+        expect(isReceivableAmountQuestion(body), body).toBe(true);
+        expect(decideOnce(body), body).toMatchObject({
+          kind: "AUTO_REPLY",
+          intent: "RECEIVABLE",
+        });
+      }
+    }
+  });
+
+  it('"외상 얼마 남았어요?"는 문장 검사 전에 재고 낱말 "남았"과 겹쳐 의도 둘이다(R11과 같다)', () => {
+    expect(decideOnce("외상 얼마 남았어요?")).toEqual({
+      kind: "HANDOFF",
+      reason: "MULTI_INTENT",
+      intent: null,
+    });
+  });
+
+  it("C4: '잔액'이 든 문장은 선수금 잔액으로도 읽혀 금액 없이 넘긴다. 장면 문장은 그대로 금액", () => {
+    for (const body of [
+      "잔액 얼마예요",
+      "잔액 얼마예요?",
+      "제 잔액 얼마예요?",
+    ]) {
+      expect(isReceivableAmountQuestion(body), body).toBe(false);
+      expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+    expect(
+      RECEIVABLE_AMOUNT_QUESTIONS.filter((s) => s.includes("잔액")),
+    ).toEqual([]);
+    expect(decideOnce("지금 미수 얼마예요?")).toMatchObject({
+      kind: "AUTO_REPLY",
+      intent: "RECEIVABLE",
+    });
+  });
+
+  it("골든셋 미수 금액 답 9단계 본문은 전부 허용 문장이다", () => {
+    expect(GOLDEN_RECEIVABLE_AUTO_TEXTS).toHaveLength(9);
+    for (const text of GOLDEN_RECEIVABLE_AUTO_TEXTS)
+      expect(isReceivableAmountQuestion(text), text).toBe(true);
+  });
+
+  it("재고 문장은 이 검사를 타지 않는다", () => {
+    expect(decideOnce("이 셔츠 몇 장 남았어요?", true)).toMatchObject({
+      kind: "CLARIFY",
+      intent: "STOCK",
+    });
+    expect(decideOnce("레드 M 몇 장 남았어요?", true)).toMatchObject({
+      kind: "AUTO_REPLY",
+      intent: "STOCK",
+    });
   });
 });
 

@@ -13,6 +13,7 @@ import {
   type ChatMockRoom,
   type IdempotencyRecord,
 } from "../wholesale/chat";
+import { recordMockPayment } from "../wholesale/settlement";
 
 /**
  * 소매 채팅 목 — 초안 op 6개(#263, `openapi/retail.json` `x-ondo-draft`). loop-05a `01-plan.md` §5-2.
@@ -63,6 +64,8 @@ export const RETAIL_CHAT_FAIL_OPS = [
   "read",
   "create",
   "count",
+  /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 저장소가 하나라 도매 목 계획에 건다 */
+  "receivable",
 ] as const;
 type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
 
@@ -130,9 +133,21 @@ function toRetailFacts(
   };
 }
 
+/**
+ * 저장소 메시지 → 소매 응답. 키를 골라 새 객체를 만든다(`toRetailFacts`와 같은 이유). 넘김 이유(`handoff`)는 도매
+ * 응답에만 있는 칸이라 싣지 않는다(loop-07 §3 out 4, D31②와 같은 방식: 화면에서 가리는 게 아니라 안 싣는다)
+ */
 function toRetailMessage(m: WholesaleMessage): ChatMessage {
   return {
-    ...m,
+    id: m.id,
+    roomId: m.roomId,
+    sequence: m.sequence,
+    clientMessageId: m.clientMessageId,
+    sender: m.sender,
+    kind: m.kind,
+    body: m.body,
+    sentAt: m.sentAt,
+    inquiry: m.inquiry,
     autoReply:
       m.autoReply === null
         ? null
@@ -597,8 +612,37 @@ export const retailChatHandlers = [
         "INVALID",
         `op는 ${RETAIL_CHAT_FAIL_OPS.join(" | ")}`,
       );
-    failPlan.set(op, { status: input.status ?? 500, times: input.times ?? 1 });
+    if (op === "receivable") chatStore.failReceivable(input.times ?? 1);
+    else
+      failPlan.set(op, {
+        status: input.status ?? 500,
+        times: input.times ?? 1,
+      });
     return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
+  }),
+
+  /**
+   * 정산 장부에 입금 한 건 `{amount, allocations: [{orderId, amount}]}`(loop-07 M5). "나"(봄봄상회)의 도매처 101
+   * 장부다. 소매 화면에서 미수 답 C(갚을 돈 0), D(선수금)를 보려고 둔다 — 소매 번들엔 정산 핸들러가 없다.
+   * reset이 정산 목까지 되돌린다
+   */
+  http.post("*/__mock/chat/payment", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      amount?: number;
+      allocations?: { orderId: number; amount: number }[];
+    };
+    if (typeof input.amount !== "number" || input.amount <= 0)
+      return invalid("amount", "INVALID", "amount(1 이상 숫자)가 필요합니다.");
+    try {
+      recordMockPayment({
+        retailerId: CHAT_ME_RETAILER_ID,
+        amount: input.amount,
+        allocations: input.allocations ?? [],
+      });
+    } catch (e) {
+      return invalid("allocations", "INVALID", String(e));
+    }
+    return HttpResponse.json({ data: { ok: true } }, { status: 201 });
   }),
 
   /** 다음 n회 응답을 ms 늦춘다. `{op: count|read, ms, times = 1}`. 값은 요청 시점에 정한다 */

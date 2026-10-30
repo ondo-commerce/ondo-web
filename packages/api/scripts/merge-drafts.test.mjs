@@ -326,3 +326,98 @@ describe("S1-1 loop-06 초안: 소매 unread-count op, 보기 kind, backorderId,
     ).toEqual([]);
   });
 });
+
+/** loop-07 초안: 도매 넘김 이유. 새 op 0, 도매에만 */
+const HANDOFF_REASONS = [
+  "OFF",
+  "NEGOTIATION",
+  "MULTI_INTENT",
+  "NO_INTENT",
+  "NOT_SUPPORTED",
+  "NO_CONTEXT",
+  "NO_OPTIONS",
+  "INVALID_TARGET",
+  "CLARIFY_AGAIN",
+  "NOT_LISTED",
+  "NO_BACKORDER",
+  "NO_MATCH",
+  "STOCK_ZERO",
+  "ETA_UNKNOWN",
+  "ETA_PAST",
+  "PAYMENT_REPORT",
+  "PERIOD",
+  "NO_RELATION",
+  "AMOUNT_UNSURE",
+  "LOOKUP_FAILED",
+];
+
+describe("S1-1 loop-07 초안: ChatHandoffReason, ChatHandoff, ChatMessage.handoff (도매만)", () => {
+  it("도매 drafts 와 스냅샷에 같은 모양: 이유 enum 20개, ChatHandoff 필수 3칸, ChatMessage.handoff 는 x-ondo-draft + required 아님 + null 허용", () => {
+    for (const doc of [DRAFTS.wholesale, SNAPSHOTS.wholesale]) {
+      const s = doc.components.schemas;
+      expect(s.ChatHandoffReason.enum).toEqual(HANDOFF_REASONS);
+      expect(s.ChatHandoffReason["x-ondo-draft"]).toBe(true);
+      expect(s.ChatHandoff["x-ondo-draft"]).toBe(true);
+      expect(s.ChatHandoff.required).toEqual([
+        "intent",
+        "reason",
+        "sourceSequence",
+      ]);
+      expect(s.ChatHandoff.properties.reason.$ref).toBe(
+        "#/components/schemas/ChatHandoffReason",
+      );
+      expect(s.ChatHandoff.properties.intent.oneOf).toEqual([
+        { $ref: "#/components/schemas/ChatIntent" },
+        { type: "null" },
+      ]);
+      const handoff = s.ChatMessage.properties.handoff;
+      expect(handoff["x-ondo-draft"]).toBe(true);
+      expect(handoff.oneOf).toEqual([
+        { $ref: "#/components/schemas/ChatHandoff" },
+        { type: "null" },
+      ]);
+      expect(s.ChatMessage.required).not.toContain("handoff");
+    }
+    for (const name of ["ChatHandoff", "ChatHandoffReason", "ChatMessage"])
+      expect(SNAPSHOTS.wholesale.components.schemas[name]).toEqual(
+        DRAFTS.wholesale.components.schemas[name],
+      );
+  });
+
+  it("소매 drafts 와 스냅샷엔 없다(넘김 이유는 소매에게 보이지 않는다, §3 out 4)", () => {
+    for (const doc of [DRAFTS.retail, SNAPSHOTS.retail]) {
+      const s = doc.components.schemas;
+      expect(s.ChatHandoff).toBeUndefined();
+      expect(s.ChatHandoffReason).toBeUndefined();
+      expect(s.ChatMessage.properties.handoff).toBeUndefined();
+    }
+  });
+
+  it("빈 BE 스펙과 합치면 ChatMessage 참조를 따라 ChatHandoff, ChatHandoffReason 까지 들어오고 검사가 빈 배열이다", () => {
+    const { merged } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    expect(merged.components.schemas.ChatHandoff).toBeDefined();
+    expect(merged.components.schemas.ChatHandoffReason).toBeDefined();
+    expect(
+      merged.components.schemas.ChatMessage.properties.handoff,
+    ).toBeDefined();
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("가짜 스펙: BE 가 handoff 없는 ChatMessage 를 먼저 내면 `ChatMessage.handoff` 사라짐으로 실패한다", () => {
+    // BE 가 채팅 스키마를 다 낸 상황(받은 쪽이 이긴다). 그중 ChatMessage 에서 handoff 만 빠졌다
+    const received = emptyReceived();
+    received.components.schemas = JSON.parse(
+      JSON.stringify(DRAFTS.wholesale.components.schemas),
+    );
+    delete received.components.schemas.ChatMessage.properties.handoff;
+    const { merged } = mergeDrafts(received, DRAFTS.wholesale);
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([
+      "`ChatMessage.handoff` 사라짐",
+    ]);
+  });
+
+  it("새 op 0: 도매 drafts 경로 9개, 스냅샷 경로 59개 그대로(06a 와 같다)", () => {
+    expect(Object.keys(DRAFTS.wholesale.paths)).toHaveLength(9);
+    expect(Object.keys(SNAPSHOTS.wholesale.paths)).toHaveLength(59);
+  });
+});

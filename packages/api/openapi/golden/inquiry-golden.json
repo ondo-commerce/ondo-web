@@ -1,6 +1,7 @@
 {
-  "version": 3,
-  "about": "재고, 미송 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 4(P1~P4)는 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다. 재고: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지). 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. 미송: AUTO_REPLY 는 kind intent target(backorderId) remainingQty(facts.backorder.qty) eta{date: D±n | null, state: FUTURE TODAY NONE PAST(본문 문장으로 읽는다)} reason checkedAt(now = 그 단계 시각), 입고일 미정, 지남은 kinds [AUTO_REPLY, HANDOFF]. CLARIFY 는 kind intent choices[{kind, backorderId}](순서까지, 끝은 NOT_LISTED) labels(칩 글자). HANDOFF 는 kind reason. reason 은 골든셋 안 표시이고 API 칸이 아니다. 시각: 첫 단계는 rules.t0 + room.afterDays 일. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. today 는 그 단계 시각의 서울 날짜. 날짜 D±n 은 rules.t0 의 서울 날짜(D+0) 기준이다. room.retailerId 가 없으면 1. room.intents 는 의도별 자동 답 설정(없으면 전부 켜짐). inquiry 의 빠진 칸(backorderId, label)은 null, notListed 는 없으면 칸을 안 싣는다. backorders 표는 도매 미송 목 시드(backorder.ts)와 같아야 하고 판정에는 거르지 않은 채 전부 넘긴다(이 방 도매처, 이 소매처 것만 고르는 건 판정이 한다).",
+  "version": 4,
+  "about": "재고, 미송, 미수 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6, loop-07 §5-4 5). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 5(P1~P5)는 모든 단계가 정확히 일치해야 한다. v4(since 4 인 시나리오)의 expect 는 판정이 아니라 **방에 들어간 줄** 투영이다: {lines: [...]} 이고 열린 넘김과 이유가 같은 넘김 줄은 빠진다(줄 0 = lines []). 미수 AUTO_REPLY 줄은 kind intent outstanding prepaid overdue{count amount maxDaysOverdue} body checkedAt(asOf = 그 행의 asOf, now = 그 단계 시각). HANDOFF 줄은 kind reason intent sourceSequence(self = 그 단계 소매 메시지). 재고 CLARIFY 줄은 kind intent choices. step.sender WHOLESALER 는 사장이 직접 쓴 글이고 expect 는 {openHandoff}. room.receivableFailTimes 는 미수 원본 조회가 그 횟수만큼 던진다(LOOKUP_FAILED). receivables 표는 도매처 × 소매처 정산 요약 원본 한 줄이고(balance 플러스 = 갚을 돈) 판정에는 거르지 않은 채 전부 넘긴다. source 가 settlement.ts seed, extraReceivables.ts 인 행은 목 시드와 같아야 한다(asOf 제외). receivableAnomalies 는 toReceivableFacts 이상값 표다(\"NaN\" 글자는 NaN). 아래 aboutV3 은 v3 설명 그대로다.",
+  "aboutV3": "필수 4(P1~P4)는 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다. 재고: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지). 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. 미송: AUTO_REPLY 는 kind intent target(backorderId) remainingQty(facts.backorder.qty) eta{date: D±n | null, state: FUTURE TODAY NONE PAST(본문 문장으로 읽는다)} reason checkedAt(now = 그 단계 시각), 입고일 미정, 지남은 kinds [AUTO_REPLY, HANDOFF]. CLARIFY 는 kind intent choices[{kind, backorderId}](순서까지, 끝은 NOT_LISTED) labels(칩 글자). HANDOFF 는 kind reason. reason 은 골든셋 안 표시이고 API 칸이 아니다. 시각: 첫 단계는 rules.t0 + room.afterDays 일. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. today 는 그 단계 시각의 서울 날짜. 날짜 D±n 은 rules.t0 의 서울 날짜(D+0) 기준이다. room.retailerId 가 없으면 1. room.intents 는 의도별 자동 답 설정(없으면 전부 켜짐). inquiry 의 빠진 칸(backorderId, label)은 null, notListed 는 없으면 칸을 안 싣는다. backorders 표는 도매 미송 목 시드(backorder.ts)와 같아야 하고 판정에는 거르지 않은 채 전부 넘긴다(이 방 도매처, 이 소매처 것만 고르는 건 판정이 한다).",
   "rules": {
     "contextMinutes": 30,
     "bands": [0, 10, 50],
@@ -95,6 +96,26 @@
     {"backorderId": 9004, "orderId": 7004, "wholesalerId": 101, "retailerId": 1, "variantId": 3002, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "M", "qty": 1, "remainingQty": 0, "orderedAt": "2026-09-05T15:00:00+09:00", "expectedInboundDate": null, "expectedInboundReason": null, "status": "RESOLVED", "source": "backorder.ts seed"},
     {"backorderId": 9006, "orderId": 7006, "wholesalerId": 101, "retailerId": 1, "variantId": 3003, "title": "빈티지 플라워 셔츠", "color": "레드", "size": "L", "qty": 4, "remainingQty": 2, "orderedAt": "2026-09-06T15:00:00+09:00", "expectedInboundDate": "D-3", "expectedInboundReason": "공장 재입고 예정", "status": "OPEN", "source": "backorder.ts seed"},
     {"backorderId": 801, "orderId": 7801, "wholesalerId": 102, "retailerId": 1, "variantId": 3801, "title": "코튼 셔츠", "color": "블랙", "size": "L", "qty": 20, "remainingQty": 20, "orderedAt": "2026-10-24T11:00:00+09:00", "expectedInboundDate": "D+5", "expectedInboundReason": null, "status": "OPEN", "source": "backorder.ts seed"}
+  ],
+  "receivables": [
+    {"wholesalerId": 101, "retailerId": 1, "balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 37500, "count": 1, "maxDays": 54}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "settlement.ts seed", "note": "무드온 × 봄봄상회. 주문 7004, 9/4 출고 37,500원, 입금 0. T0 연체 = 10/29 − 9/4 − 외상 1일 = 54일 (장면 3)"},
+    {"wholesalerId": 102, "retailerId": 1, "balance": 52000, "unpaid": 52000, "prepaid": 0, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "extraReceivables.ts", "note": "라온 × 봄봄상회(방 33). 연체 없음"},
+    {"wholesalerId": 101, "retailerId": 2, "balance": 786000, "unpaid": 786000, "prepaid": 0, "overdue": {"amount": 120000, "count": 1, "maxDays": 3}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "golden only", "note": "중간발표 슬라이드 22~25장 예시 금액"},
+    {"wholesalerId": 101, "retailerId": 3, "balance": -30000, "unpaid": 0, "prepaid": 30000, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "golden only", "note": "선수금만"},
+    {"wholesalerId": 101, "retailerId": 4, "balance": 0, "unpaid": 0, "prepaid": 0, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "golden only", "note": "다 갚음"},
+    {"wholesalerId": 101, "retailerId": 5, "balance": 17500, "unpaid": 37500, "prepaid": 20000, "overdue": {"amount": 37500, "count": 1, "maxDays": 54}, "exact": true, "asOf": "2026-10-29T14:19:00+09:00", "source": "golden only", "note": "배분 안 된 입금 20,000원(Codex 1). 17,500원이라 답하면 틀릴 수 있다"},
+    {"wholesalerId": 101, "retailerId": 7, "balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": false, "asOf": "2026-10-29T14:19:00+09:00", "source": "golden only", "note": "나눠 출고(9/4, 9/10)라 배정이 어느 출고분을 갚았는지 모른다"}
+  ],
+  "receivableAnomalies": [
+    {"anomaly": "NOT_EXACT", "rule": "exact false", "row": {"balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 37500, "count": 1, "maxDays": 54}, "exact": false}},
+    {"anomaly": "NOT_INTEGER", "rule": "정수 아닌 값", "row": {"balance": 37500.5, "unpaid": 37500.5, "prepaid": 0, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true}},
+    {"anomaly": "NOT_INTEGER", "rule": "NaN", "row": {"balance": "NaN", "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true}},
+    {"anomaly": "NEGATIVE", "rule": "음수(balance 밖)", "row": {"balance": 38000, "unpaid": 37500, "prepaid": -500, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true}},
+    {"anomaly": "SIGN_MISMATCH", "rule": "unpaid − prepaid ≠ balance (부호 뒤집힘)", "row": {"balance": -37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 37500, "count": 1, "maxDays": 54}, "exact": true}},
+    {"anomaly": "MIXED_BALANCE", "rule": "unpaid > 0 이고 prepaid > 0 (미배분 입금)", "row": {"balance": 17500, "unpaid": 37500, "prepaid": 20000, "overdue": {"amount": 0, "count": 0, "maxDays": 0}, "exact": true}},
+    {"anomaly": "OVERDUE_COUNT_AMOUNT", "rule": "연체 건수와 금액 중 하나만 0", "row": {"balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 0, "count": 1, "maxDays": 54}, "exact": true}},
+    {"anomaly": "OVERDUE_DAYS", "rule": "연체 건수 > 0 인데 최대 일수 < 1", "row": {"balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 37500, "count": 1, "maxDays": 0}, "exact": true}},
+    {"anomaly": "OVERDUE_OVER_UNPAID", "rule": "연체 금액 > 갚을 돈", "row": {"balance": 37500, "unpaid": 37500, "prepaid": 0, "overdue": {"amount": 40000, "count": 1, "maxDays": 54}, "exact": true}}
   ],
   "scenarios": [
     {
@@ -1083,6 +1104,290 @@
       },
       "steps": [
         {"text": "택배 언제 와요?", "inquiry": null, "expect": {"kind": "HANDOFF", "reason": "NOT_SUPPORTED"}}
+      ]
+    },
+    {
+      "id": "P5",
+      "title": "\"지금 미수 얼마예요?\" → 갚을 돈 37,500원, 기한 지난 것 1건 → \"조금 깎아 주세요\" → 넘김 → 다시 물으면 금액은 그대로 나간다 (시연 장면 3)",
+      "required": true,
+      "group": "required",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "지금 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}},
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}},
+        {"text": "지금 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R01",
+      "title": "다 갚은 소매처(101, 4) → C 지금 갚을 돈은 없어요",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 4, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 0, "prepaid": 0, "overdue": {"count": 0, "amount": 0, "maxDaysOverdue": 0}, "body": "지금 갚을 돈은 없어요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R02",
+      "title": "선수금만 있는 소매처(101, 3) → D 선수금 30,000원",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "외상 얼마 있어요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 0, "prepaid": 30000, "overdue": {"count": 0, "amount": 0, "maxDaysOverdue": 0}, "body": "지금 갚을 돈은 없어요. 미리 낸 돈(선수금) 30,000원이 남아 있어요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R03",
+      "title": "슬라이드 예시(101, 2) → B 786,000원, 기한 지난 것 1건 120,000원",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 2, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "제 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 786000, "prepaid": 0, "overdue": {"count": 1, "amount": 120000, "maxDaysOverdue": 3}, "body": "갚을 돈은 786,000원이에요. 그중 기한 지난 것 1건, 120,000원이에요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R04",
+      "title": "방 33(라온 102 × 봄봄상회) → A 52,000원, 기한 지난 것 없음. 무드온 몫 37,500원이 섞이지 않는다",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 102, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "지금 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 52000, "prepaid": 0, "overdue": {"count": 0, "amount": 0, "maxDaysOverdue": 0}, "body": "갚을 돈은 52,000원이에요. 기한 지난 것은 없어요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R05",
+      "title": "배분 안 된 입금(101, 5) → 금액 답 없이 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 5, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "AMOUNT_UNSURE", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R06",
+      "title": "정산 줄 없는 소매처(101, 6) → \"없어요\"가 아니라 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 6, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_RELATION", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R07",
+      "title": "나눠 출고(exact false, 101, 7) → 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 7, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "AMOUNT_UNSURE", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R08",
+      "title": "\"잔액 얼마예요\" → 선수금 잔액으로도 읽혀 금액 없이 넘김(D41, Codex C4. 전에는 B)",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "잔액 얼마예요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "AMOUNT_UNSURE", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R09",
+      "title": "상품 문맥 + \"이 셔츠 얼마예요?\" → 값 문의라 미수가 아니다(의도 없음 넘김)",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": {"listingId": 2001, "ageMinutes": 2}, "autoReply": true},
+      "steps": [
+        {"text": "이 셔츠 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_INTENT", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R10",
+      "title": "상품 문맥 + \"이 셔츠 얼마 남았어요?\" → 재고 판정 그대로(미수 답 0)",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": {"listingId": 2001, "ageMinutes": 2}, "autoReply": true},
+      "steps": [
+        {"text": "이 셔츠 얼마 남았어요?", "inquiry": null, "expect": {"lines": [{"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}]}}
+      ]
+    },
+    {
+      "id": "R11",
+      "title": "\"미수 얼마나 남았어요?\" → 재고 낱말과 겹쳐 의도 둘 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마나 남았어요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "MULTI_INTENT", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R12",
+      "title": "\"이번 달 미수 얼마예요?\" → 기간 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "이번 달 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PERIOD", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R13",
+      "title": "\"지난달 외상 얼마예요\" → 기간 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "지난달 외상 얼마예요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PERIOD", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R14",
+      "title": "재고 되묻기가 열린 채 \"미수 얼마예요\" → 계승하지 않고 미수 답",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": {"listingId": 2001, "ageMinutes": 2}, "autoReply": true},
+      "steps": [
+        {"text": "이 셔츠 몇 장 남았어요?", "inquiry": null, "expect": {"lines": [{"kind": "CLARIFY", "intent": "STOCK", "choices": [3001, 3002, 3003, 3004, 3005]}]}},
+        {"text": "미수 얼마예요", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R15",
+      "title": "미수 자동 답만 꺼짐 → OFF 넘김",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true, "intents": {"STOCK": true, "BACKORDER": true, "RECEIVABLE": false}},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "R16",
+      "title": "정산 조회 실패 1회 → LOOKUP_FAILED 넘김, 다음 질문은 정상 답",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true, "receivableFailTimes": 1},
+      "steps": [
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "LOOKUP_FAILED", "intent": "RECEIVABLE", "sourceSequence": "self"}]}},
+        {"text": "미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "R17",
+      "title": "\"사장님, 제 미수 얼마예요?\" → B",
+      "required": false,
+      "group": "receivable",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "사장님, 제 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}}
+      ]
+    },
+    {
+      "id": "H16",
+      "title": "\"방금 입금했어요\" → 입금 알림 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "방금 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "H17",
+      "title": "\"입금했는데 미수 얼마예요?\" → 입금 등록 전 잔액을 말하지 않는다",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "입금했는데 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "H18",
+      "title": "\"미수랑 미송 같이 알려 주세요\" → 의도 둘",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수랑 미송 같이 알려 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "MULTI_INTENT", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "H19",
+      "title": "\"미수 얼마예요? 좀 깎아 주세요\" → 협상 넘김(금액 답 없음)",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "미수 얼마예요? 좀 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "H20",
+      "title": "협상 넘김이 열린 채 \"방금 입금했어요\" → 이유가 달라 새 넘김 줄",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}},
+        {"text": "방금 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "H21",
+      "title": "협상 넘김이 열린 채 \"더 깎아 주세요\" → 같은 이유라 줄 0",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}},
+        {"text": "더 깎아 주세요", "inquiry": null, "expect": {"lines": []}}
+      ]
+    },
+    {
+      "id": "H22",
+      "title": "H20 뒤 사장이 직접 답함 → 닫힘. 그 뒤 협상은 새 넘김 줄",
+      "required": false,
+      "group": "handoff",
+      "since": 4,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}},
+        {"text": "방금 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}},
+        {"sender": "WHOLESALER", "text": "확인하고 연락드릴게요", "inquiry": null, "expect": {"openHandoff": false}},
+        {"text": "더 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
       ]
     }
   ]

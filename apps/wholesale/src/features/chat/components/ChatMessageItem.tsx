@@ -6,6 +6,7 @@ import {
   factLineText,
   failureText,
   formatClock,
+  handoffReasonOf,
   senderLabel,
   toClarifyChoicesView,
   toFactsView,
@@ -23,28 +24,61 @@ export function ChatMessageItem({
   message,
   counterpartName,
   ac = "S3-1",
+  nowMs,
 }: {
   message: ChatMessage;
   counterpartName: string;
   /** 와이어프레임 `data-ac`. polling으로 새로 붙은 말풍선은 S3-3 S3-4가 더 붙는다(QA F7) */
   ac?: string;
+  /** 조회 시각이 오늘인지 가르는 지금 시각(#302 S3-5). 방이 1분 tick 시각을 넘긴다(리뷰 M4) */
+  nowMs: number;
 }) {
   const kind = bubbleKindOf(message);
   const time = formatClock(message.sentAt);
   const who = senderLabel(message, counterpartName);
 
   if (kind === "system") {
-    return (
-      <div
-        role="note"
-        data-kind={message.kind}
-        data-ac={ac}
-        className="border-border-strong text-secondary-foreground text-body flex items-center gap-2 self-center rounded-full border px-3 py-1"
-      >
+    const reason = handoffReasonOf(message);
+    const pill = (
+      <>
         <span className="sr-only">{`${who}, ${time}: `}</span>
         {message.body}
         <span aria-hidden className="text-muted-foreground text-xs">
           {time}
+        </span>
+      </>
+    );
+    const pillClass =
+      "border-border-strong text-secondary-foreground text-body flex items-center gap-2 rounded-full border px-3 py-1";
+    /* 이유가 없으면 지금 화면 그대로 — 알약 하나(디자인 결정 42) */
+    if (reason === null)
+      return (
+        <div
+          role="note"
+          data-kind={message.kind}
+          data-ac={ac}
+          className={cn(pillClass, "self-center")}
+        >
+          {pill}
+        </div>
+      );
+    /* 알약 + 아래 이유 한 줄을 note 하나로 묶는다 — 낭독은 한 번(결정 39). 폭을 70%로 막으면 좁은 방에서
+       알약이 두 줄로 접혀 묶음은 방 폭까지 연다. 이유가 길어도 줄바꿈만, 말줄임 없음 */
+    return (
+      <div
+        role="note"
+        data-kind={message.kind}
+        data-reason={message.handoff?.reason}
+        data-ac={ac}
+        className="flex max-w-full flex-col items-center gap-1 self-center"
+      >
+        <span className={pillClass}>{pill}</span>
+        <span
+          data-ac="S3-1"
+          data-reason-text
+          className="text-secondary-foreground text-body text-center wrap-anywhere"
+        >
+          {reason}
         </span>
       </div>
     );
@@ -64,7 +98,11 @@ export function ChatMessageItem({
     >
       <span className="sr-only">{`${who}, ${time}: `}</span>
       {kind === "auto" || kind === "clarify" ? (
-        <AutoReplyBubble message={message} clarify={kind === "clarify"} />
+        <AutoReplyBubble
+          message={message}
+          clarify={kind === "clarify"}
+          nowMs={nowMs}
+        />
       ) : (
         <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
       )}
@@ -190,11 +228,13 @@ export function Bubble({
 function AutoReplyBubble({
   message,
   clarify,
+  nowMs,
 }: {
   message: ChatMessage;
   clarify: boolean;
+  nowMs: number;
 }) {
-  const facts = toFactsView(message.autoReply);
+  const facts = toFactsView(message.autoReply, nowMs);
   const choices = clarify ? toClarifyChoicesView(message.autoReply) : null;
   return (
     <Bubble tone="plain" className="grid gap-2">
@@ -229,8 +269,11 @@ function AutoReplyBubble({
       ) : null}
       {facts ? (
         <span className="border-border text-secondary-foreground text-body grid gap-0.5 border-t pt-2">
-          {facts.lines.map((line) => (
-            <span key={factLineText(line)}>
+          {facts.lines.map((line, n) => (
+            <span
+              key={factLineText(line)}
+              data-ac={facts.lineAc[n] ?? undefined}
+            >
               {line.map((part, i) =>
                 part.strong ? (
                   <b
@@ -245,7 +288,10 @@ function AutoReplyBubble({
               )}
             </span>
           ))}
-          <span data-ac="S7-13" className="text-muted-foreground text-xs">
+          <span
+            data-ac={facts.seenAc}
+            className="text-muted-foreground text-xs"
+          >
             {facts.seen}
           </span>
         </span>
