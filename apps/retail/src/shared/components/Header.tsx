@@ -38,8 +38,10 @@ export function Header({
        이 레이아웃의 자식이라 prop을 올려 보낼 수 없어 선택자로 알아본다 */
     <header className="bg-card border-border sticky top-0 z-30 border-b has-[~main_[data-category-bar]]:border-b-0">
       {/* 간격 20→12는 확정 와이어프레임 `_base.css:330`(`.topbar__row{gap:12px}`) 그대로다.
-          1512px에서는 이 규칙이 걸리지 않으므로 회차 이전 렌더와 같다 */}
-      <div className="flex h-14 items-center gap-5 px-5 tablet:gap-3">
+          1512px에서는 이 규칙이 걸리지 않으므로 회차 이전 렌더와 같다.
+          ≤40rem 10px: 결정 33의 검색칸 95px(390)는 와이어프레임 로고 폭 51로 잰 값이고 실제 로고는 55다.
+          모자란 4px를 간격 둘에서 2px씩 받는다(나머지 18px는 계정 칩 화살표, `AccountMenu`) */}
+      <div className="flex h-14 items-center gap-5 px-5 tablet:gap-3 phone:gap-2.5">
         <Link href="/" className="flex shrink-0 items-baseline gap-1.5">
           {/* 원본은 `On`이 파랑이지만 게이트 D1로 색을 쓰지 않는다 — 굵기로만 가른다 */}
           {/* 크기를 따로 주지 않는다 — 와이어프레임 `.brand`도 본문 14px 그대로다 */}

@@ -539,7 +539,11 @@ test("디자인 실측 2 — 실패 말풍선, 선택 행, 시스템 줄, 근거
     );
     const selPreview = selected?.querySelectorAll(":scope > span")[2];
     const selBg = cs(selected)?.backgroundColor ?? "";
-    const note = document.querySelector('[role="note"]');
+    /* 넘김 이유가 있으면(#302) note 는 알약 + 이유 줄 묶음이고 선은 첫 자식 알약에 있다. 시드 방 2 넘김은 NEGOTIATION */
+    const group = document.querySelector('[role="note"]');
+    const note = group?.matches("[data-reason]")
+      ? group.firstElementChild
+      : group;
     return {
       failedBorder: rgb(cs(failedBubble)?.borderTopColor ?? "").join(","),
       tokenDestructive: token("--color-destructive"),

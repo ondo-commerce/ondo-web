@@ -83,13 +83,20 @@ test("S3-1 390 에서 보기 글자 잘림 0(scrollWidth ≤ clientWidth), 말�
         .map((n) => n.textContent),
     );
   expect(cut).toEqual([]);
-  /* 두 줄로 접힌 보기가 있다(말줄임 대신 줄바꿈) */
-  const tallest = await group
+  /* 두 줄로 접힌 보기가 있다(말줄임 대신 줄바꿈). 버튼 높이로 재지 않는다 — 390은 phone:min-h-11이라
+     한 줄이어도 44px다(QA F4). 글자 span 높이 / line-height 가 실제 줄 수다 */
+  const lines = await group
     .locator("button[data-backorder-id]")
     .evaluateAll((nodes) =>
-      Math.max(...nodes.map((n) => n.getBoundingClientRect().height)),
+      nodes.map((n) => {
+        const label = n.querySelector("span:not(.sr-only)") as HTMLElement;
+        const lineHeight = parseFloat(getComputedStyle(label).lineHeight);
+        return Math.round(label.getBoundingClientRect().height / lineHeight);
+      }),
     );
-  expect(tallest).toBeGreaterThanOrEqual(44);
+  expect(lines).toHaveLength(4);
+  expect(lines.every((n) => Number.isFinite(n) && n >= 1)).toBe(true);
+  expect(Math.max(...lines)).toBeGreaterThanOrEqual(2);
 });
 
 test("S3-2 같은 틱 3연타 → POST 1회 {BACKORDER, 9003, listingId null}, 고른 보기 표시, 나머지 잠김", async ({
@@ -295,6 +302,19 @@ test("S3-5 남의 미송 9005, 801 직접 POST → 넘김만, 카드 0, 화면�
   ).toHaveCount(2);
   await expect(orderCards(page)).toHaveCount(0);
   await expect(log(page)).not.toContainText(/(^|[^\d~])(9|20)장/);
+  /* 와이어프레임 #state-bo-guard data-ac S3-5(QA F5): 칩 메시지와 그 넘김 줄. 두 번째 넘김 줄은 열린 넘김
+     억제로 안 붙을 수 있어 응답이 준 넘김 수로 센다. 첫 칩 메시지는 다음 말이 어느 쪽이든 미송 답이 아니라 늘 단다 */
+  const handoffs = results.filter((r) => r.kinds.includes("HANDOFF")).length;
+  expect(handoffs).toBeGreaterThanOrEqual(1);
+  const secondHandoff = results[1]?.kinds.includes("HANDOFF") ? 1 : 0;
+  await expect(
+    log(page).locator('[data-sender="RETAILER"][data-ac~="S3-5"]', {
+      hasText: /: 언제 와요\?/,
+    }),
+  ).toHaveCount(1 + secondHandoff);
+  await expect(
+    log(page).locator('[data-kind="HANDOFF"][data-ac~="S3-5"]'),
+  ).toHaveCount(handoffs);
 });
 
 test("S3-6 장면 2 소매 절반 — 도매 답 → 배지 → /chats → 방 → 배지 없음 → 질문 → 칩 → 카드 11월 5일", async ({

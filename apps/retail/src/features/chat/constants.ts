@@ -220,6 +220,23 @@ export const BACKORDER_TEXT = {
   passed: "등록 예정일 지남",
 } as const;
 
+/**
+ * 미수 답 카드 글자(loop-07 S2, 와이어프레임 `#state-rc-card`, 디자인 결정 41 42 43). "연체" 낱말은 소매 화면에
+ * 쓰지 않는다(결정 41) — 경고 색 없음과 같은 뜻이다.
+ */
+export const RECEIVABLE_TEXT = {
+  outstanding: "갚을 돈 ",
+  /** 갚을 돈 0. 이때는 기한 줄을 그리지 않는다(결정 42) */
+  nothing: "갚을 돈 없음",
+  overdue: "기한 지남 ",
+  overdueNone: "기한 지난 것 없음",
+  prepaid: "선수금 ",
+  settlementLink: "정산 화면에서 보기",
+} as const;
+
+/** 소매 정산 화면. `?wholesaler=`가 그 도매처 원장을 연다(`app/(shop)/settlements/page.tsx`) */
+export const SETTLEMENTS_HREF = "/settlements";
+
 /** 담기 결과의 `장바구니 보기` */
 export const CART_HREF = "/cart";
 

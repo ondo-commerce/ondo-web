@@ -222,7 +222,7 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
         receivable: null,
       },
     };
-    const view = toFactsView(autoReply);
+    const view = toFactsView(autoReply, NOW);
     expect(view?.lines.map(factLineText)).toEqual([
       "판매가능 1,200장, 주문 한도 500장",
     ]);
@@ -234,20 +234,23 @@ describe("S3-1 날짜 구분선과 말풍선 모양", () => {
       "1,200장",
       "500장",
     ]);
-    expect(toFactsView(null)).toBeNull();
+    expect(toFactsView(null, NOW)).toBeNull();
     expect(
-      toFactsView({
-        ...autoReply,
-        facts: {
-          stock: null,
-          backorder: null,
-          receivable: {
-            outstandingAmount: 786_000,
-            prepaidAmount: 0,
-            overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+      toFactsView(
+        {
+          ...autoReply,
+          facts: {
+            stock: null,
+            backorder: null,
+            receivable: {
+              outstandingAmount: 786_000,
+              prepaidAmount: 0,
+              overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+            },
           },
         },
-      })?.lines.map(factLineText),
+        NOW,
+      )?.lines.map(factLineText),
     ).toEqual(["미결제 786,000원, 선수금 0원", "연체 없음"]);
   });
 });
@@ -511,20 +514,23 @@ describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () =
   };
 
   it("되묻기(값 없음) → 값 줄 0, 끝 줄 '10:20 조회'", () => {
-    const view = toFactsView(base);
+    const view = toFactsView(base, NOW);
     expect(view?.lines).toEqual([]);
     expect(view?.seen).toBe("10:20 조회");
   });
 
   it("재고 → 앞말 + 조회 시각, 구간 글자는 소매 카드와 같은 '10~49장'", () => {
-    const view = toFactsView({
-      ...base,
-      facts: {
-        stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
-        backorder: null,
-        receivable: null,
+    const view = toFactsView(
+      {
+        ...base,
+        facts: {
+          stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
+          backorder: null,
+          receivable: null,
+        },
       },
-    });
+      NOW,
+    );
     expect(view?.lines.map(factLineText)).toEqual([
       "판매가능 35장, 주문 한도 500장",
     ]);
@@ -532,20 +538,23 @@ describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () =
   });
 
   it("미송 → 값 줄 + '14:02 조회'(앞말 없음)", () => {
-    const view = toFactsView({
-      ...base,
-      intent: "BACKORDER",
-      checkedAt: "2026-10-28T14:02:00+09:00",
-      facts: {
-        stock: null,
-        backorder: {
-          qty: 20,
-          expectedInboundDate: "10/30",
-          expectedInboundReason: null,
+    const view = toFactsView(
+      {
+        ...base,
+        intent: "BACKORDER",
+        checkedAt: "2026-10-28T14:02:00+09:00",
+        facts: {
+          stock: null,
+          backorder: {
+            qty: 20,
+            expectedInboundDate: "10/30",
+            expectedInboundReason: null,
+          },
+          receivable: null,
         },
-        receivable: null,
       },
-    });
+      NOW,
+    );
     expect(view?.lines.map(factLineText)).toEqual([
       "미송 20장, 입고 예정 10/30",
     ]);
@@ -553,20 +562,23 @@ describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () =
   });
 
   it("미수 → 값 두 줄 + '06:40 조회'. 서울 자정 넘김(전날 21:40Z)도 서울 날로 읽는다", () => {
-    const view = toFactsView({
-      ...base,
-      intent: "RECEIVABLE",
-      checkedAt: "2026-10-27T21:40:00Z",
-      facts: {
-        stock: null,
-        backorder: null,
-        receivable: {
-          outstandingAmount: 786_000,
-          prepaidAmount: 0,
-          overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+    const view = toFactsView(
+      {
+        ...base,
+        intent: "RECEIVABLE",
+        checkedAt: "2026-10-27T21:40:00Z",
+        facts: {
+          stock: null,
+          backorder: null,
+          receivable: {
+            outstandingAmount: 786_000,
+            prepaidAmount: 0,
+            overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+          },
         },
       },
-    });
+      NOW,
+    );
     expect(view?.lines.map(factLineText)).toEqual([
       "미결제 786,000원, 선수금 0원",
       "연체 1건 120,000원 (최대 3일)",

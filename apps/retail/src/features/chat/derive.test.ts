@@ -6,6 +6,7 @@ import {
   askListingId,
   autoReplySeen,
   cardAddedText,
+  backorderGuardSequences,
   choiceSendFailed,
   handoffCauses,
   pendingAc,
@@ -157,8 +158,11 @@ describe("S5-6 자동 답변, 사람 넘김, 모르는 kind", () => {
   });
 
   it("S5-6 조회 시각은 checkedAt을 서울 HH:mm으로 + ' 조회'. 근거가 없으면 없음", () => {
-    expect(autoReplySeen({ autoReply: AUTO_REPLY })).toBe("10:22 조회");
-    expect(autoReplySeen({ autoReply: null })).toBeNull();
+    const sameDay = Date.parse(AUTO_REPLY.checkedAt);
+    expect(autoReplySeen({ autoReply: AUTO_REPLY }, sameDay)).toBe(
+      "10:22 조회",
+    );
+    expect(autoReplySeen({ autoReply: null }, sameDay)).toBeNull();
   });
 
   it("S5-6 HANDOFF는 서버 body(도매에게 하는 말) 대신 '사장님께 전달했어요'", () => {
@@ -215,6 +219,7 @@ describe("QA F4 상태별 data-ac — S8-8 S8-10 S8-15", () => {
     sessionLost: false,
     handoffCauses: new Set<number>(),
     choiceFailed: false,
+    backorderGuard: new Set<number>(),
   };
 
   it("S8-10 넘김 줄 바로 앞의 내 말만 넘김을 부른 문의다. 사이에 자동 답이 끼면 잇지 않는다", () => {
@@ -272,6 +277,63 @@ describe("QA F4 상태별 data-ac — S8-8 S8-10 S8-15", () => {
         { status: "failed", inquiry: ask },
       ]),
     ).toBe(false);
+  });
+});
+
+describe("QA F5 S3-5 미송 대상 검증에 걸린 말", () => {
+  const chip = (backorderId: number | null) => ({
+    intent: "BACKORDER" as const,
+    listingId: null,
+    variantId: 3003,
+    backorderId,
+    label: null,
+  });
+  const none = new Set<string>();
+
+  it("미송 칩으로 보낸 말 + 바로 뒤 넘김 줄에만 단다. 답이 붙은 칩, 칩 없는 말, 보내는 중은 아니다", () => {
+    const messages = [
+      message(1, { inquiry: chip(9005) }),
+      message(2, { sender: "SYSTEM", kind: "HANDOFF" }),
+      message(3, { inquiry: chip(9003) }),
+      message(4, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(5),
+      message(6, { sender: "SYSTEM", kind: "HANDOFF" }),
+      message(7, { inquiry: chip(801) }),
+      // 열린 넘김 억제로 넘김 줄 없이 다음 말이 왔다
+      message(8, { inquiry: chip(9006) }),
+      message(9, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(10, { inquiry: chip(9001) }),
+    ];
+    const guard = backorderGuardSequences([...messages].reverse());
+    expect([...guard].sort((a, b) => a - b)).toEqual([1, 2, 7]);
+    const ctx = {
+      sessionLost: false,
+      handoffCauses: handoffCauses(messages),
+      choiceFailed: false,
+      backorderGuard: guard,
+    };
+    expect(messageAc(messages[0] as ChatMessage, 99, none, ctx)).toBe(
+      "S5-5 S8-10 S3-5",
+    );
+    expect(messageAc(messages[1] as ChatMessage, 99, none, ctx)).toBe(
+      "S5-6 S8-10 S3-5",
+    );
+    expect(messageAc(messages[4] as ChatMessage, 99, none, ctx)).toBe(
+      "S5-5 S8-10",
+    );
+  });
+
+  it("재고 칩(intent STOCK)과 backorderId 없는 미송 문맥은 아니다", () => {
+    expect([
+      ...backorderGuardSequences([
+        message(1, { inquiry: { ...chip(null) } }),
+        message(2, { sender: "SYSTEM", kind: "HANDOFF" }),
+        message(3, {
+          inquiry: { ...chip(null), intent: "STOCK", listingId: 2001 },
+        }),
+        message(4, { sender: "SYSTEM", kind: "HANDOFF" }),
+      ]),
+    ]).toEqual([]);
   });
 });
 
@@ -622,17 +684,24 @@ function pendingOf(patch: Partial<PendingMessage> = {}): PendingMessage {
 describe("S7-13 소매 조회 시각 — 모든 자동 답", () => {
   it("S7-13 재고, 되묻기, 미송, 미수 자동 답 전부 checkedAt 서울 HH:mm + ' 조회'", () => {
     const checkedAt = "2026-10-28T01:20:00Z";
+    const sameDay = Date.parse(checkedAt) + 60_000;
     for (const intent of ["STOCK", "BACKORDER", "RECEIVABLE"] as const) {
       expect(
-        autoReplySeen({ autoReply: { ...AUTO_REPLY, intent, checkedAt } }),
+        autoReplySeen(
+          { autoReply: { ...AUTO_REPLY, intent, checkedAt } },
+          sameDay,
+        ),
       ).toBe("10:20 조회");
     }
-    expect(autoReplySeen(clarify(4, { checkedAt }))).toBe("10:20 조회");
-    // 자정 넘는 UTC → 서울 시각
+    expect(autoReplySeen(clarify(4, { checkedAt }), sameDay)).toBe(
+      "10:20 조회",
+    );
+    // 자정 넘는 UTC → 서울 시각. 지금도 같은 서울 날짜(10/28)라 날짜가 붙지 않는다
     expect(
-      autoReplySeen({
-        autoReply: { ...AUTO_REPLY, checkedAt: "2026-10-27T15:05:00Z" },
-      }),
+      autoReplySeen(
+        { autoReply: { ...AUTO_REPLY, checkedAt: "2026-10-27T15:05:00Z" } },
+        Date.parse("2026-10-27T15:30:00Z"),
+      ),
     ).toBe("00:05 조회");
   });
 });
