@@ -419,6 +419,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retail/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 알림 목록 (커서)
+         * @description 내 알림 목록. 정렬 createdAt 내림차순, 같으면 id 내림차순(고정). keyset 커서라 첫 장을 받은 뒤 새 알림이 생겨도 다음 장에 중복, 누락이 없다(새 알림은 첫 장 앞에 붙는다). id 는 식별용이고 순서 의미가 없다.
+         *
+         *     내 소매처 것만 내린다. title, body 에 남의 소매처 이름, 수량, SKU 합계, 판매가능을 싣지 않는다.
+         *
+         *     에러: 400 VALIDATION_FAILED(잘못된 cursor, size 범위 밖) / 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 소매 사업체다.
+         */
+        get: operations["notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 알림 읽음 처리
+         * @description 읽음 처리. 본문은 둘 중 하나.
+         *
+         *     1. {ids} 고른 알림만. 멱등(이미 읽은 것 → 200 같은 값, readAt 은 처음 읽은 시각 그대로). 없는 id, 남의 id 는 조용히 무시한다.
+         *     2. {all: true, expectedUnread} 내 안 읽음 전부(받지 않은 장 포함). 한 트랜잭션에서 readAt IS NULL 인 행을 읽음으로 바꾸고, 바뀐 행 수가 expectedUnread 와 다르면 롤백하고 409 UNREAD_CHANGED. 그 사이 새 알림이 왔거나 다른 탭이 읽었다는 뜻이다.
+         *
+         *     한계: 화면이 count 를 받은 뒤 다른 기기가 1개 읽고 새 1개가 와 수가 같으면 못 잡는다. 화면은 unread-count 의 latestNotificationId 로 새 알림을 먼저 알아채 이 요청을 막는다.
+         *
+         *     응답 notifications = 처리 뒤 남은 안 읽음 수.
+         *
+         *     에러: 400 VALIDATION_FAILED(ids 와 all 이 같이 옴, 둘 다 없음, 빈 ids, ids 101개 이상, ids 중복, all 인데 expectedUnread 없음, expectedUnread 0 이하) / 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 409 UNREAD_CHANGED / 500
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 소매 사업체다.
+         */
+        post: operations["markNotificationsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retail/notifications/unread-count": {
         parameters: {
             query?: never;
@@ -727,6 +784,19 @@ export interface components {
             id: number;
             /** @description 도매처 상호 */
             name: string;
+        };
+        /** @description 미송 대기 현황으로 간다(`/backorders?wholesaler={wholesalerId}`). BACKORDER_DATE_CHANGED 가 쓴다 */
+        BackordersTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "BACKORDERS";
+            /**
+             * Format: int64
+             * @description 그 미송 SKU 의 도매처 id
+             */
+            wholesalerId: number;
         };
         /**
          * @description 주문 취소.
@@ -1552,6 +1622,26 @@ export interface components {
              */
             lastReadSequence: number;
         };
+        /** @description 고른 알림만({ids}) 또는 안 읽음 전부({all, expectedUnread}). 둘을 섞으면 400 */
+        MarkNotificationsReadRequest: {
+            ids: number[];
+        } | {
+            /** @enum {boolean} */
+            all: true;
+            /**
+             * Format: int32
+             * @description 화면이 버튼에 보여 준 안 읽음 수
+             */
+            expectedUnread: number;
+        };
+        /** @description 읽음 결과 */
+        MarkNotificationsReadResult: {
+            /**
+             * Format: int32
+             * @description 처리 뒤 남은 안 읽음 수
+             */
+            notifications: number;
+        };
         Meta: {
             /** @description 다음 장이 있는지. 무한 스크롤은 이것만 보면 된다 */
             hasNext: boolean;
@@ -1576,6 +1666,34 @@ export interface components {
              */
             totalPages: number;
         };
+        /** @description 소매 알림 한 건. 문구(title, body)는 서버가 만든다 */
+        Notification: {
+            /** @description 예: "린넨 셋업 자켓 베이지/L 남은 2장, 11/5(목) → 11/8(일)". 이 소매처 자기 미송 값만(남은 수량 = 그 트랜잭션이 읽은 이 소매처의 그 SKU 남은 합). 없으면 null */
+            body: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description 식별용. 순서 의미 없음
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description 처음 읽은 시각. 안 읽었으면 null
+             */
+            readAt: string | null;
+            target: components["schemas"]["NotificationTarget"];
+            /** @description 서버가 만든 한 줄. 예: "무드온 미송 입고일 변경" */
+            title: string;
+            type: components["schemas"]["NotificationType"];
+        };
+        /** @description 알림을 누르면 갈 곳. kind 로 갈래가 갈린다. 모르는 kind 면 화면은 이동하지 않는다(FE 는 kind 만 먼저 읽는다) */
+        NotificationTarget: components["schemas"]["OrderTarget"] | components["schemas"]["BackordersTarget"];
+        /**
+         * @description ORDER_CONFIRMED 도매 주문 확정(그 소매 주문에 1건), BACKORDER_DATE_CHANGED 미송 입고 예정일 변경(그 SKU 에 OPEN 미송이 있는 소매처마다 1건, 날짜가 바뀔 때만. 미정 ↔ 날짜 포함, 사유만 바뀌면 0건), BACKORDER_ALLOCATED 미송 배분(배분받은 주문마다 1건), SHIPPED 출고 완료. 값이 늘 수 있다 — 화면은 모르는 값을 title 만 그리고 이동하지 않는다
+         * @enum {string}
+         */
+        NotificationType: "ORDER_CONFIRMED" | "BACKORDER_DATE_CHANGED" | "BACKORDER_ALLOCATED" | "SHIPPED";
         /**
          * @description 통합 주문서 하나를 펼친다. 상태를 세 층으로 보여준다.
          *
@@ -1699,6 +1817,19 @@ export interface components {
             wholesalerCount: number;
             /** @description 화면에 "무드온 외 1곳" 으로 그린다 */
             wholesalerNames: string[];
+        };
+        /** @description 소매 주문 상세로 간다(`/orders/{orderId}`) */
+        OrderTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "ORDER";
+            /**
+             * Format: int64
+             * @description 소매 주문 id. 배분이 주문 둘에 걸치면 주문마다 1건
+             */
+            orderId: number;
         };
         /**
          * @description 출고 기록. <b>장끼 단위</b>라 주문 하나가 여러 장끼로 나뉠 수 있다.
@@ -4057,6 +4188,213 @@ export interface operations {
                      *       "code": "INTERNAL_ERROR",
                      *       "errors": [],
                      *       "message": "잠시 후 다시 시도해주세요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    notifications: {
+        parameters: {
+            query?: {
+                /** @description 직전 응답 meta.nextCursor 그대로. 첫 장은 생략. 불투명 값(서버가 마지막 행의 createdAt, id 를 넣는다) */
+                cursor?: string;
+                /** @description 한 번에 몇 개. 1~100, 범위 밖은 400. 기본 20 */
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Notification"][];
+                        meta: components["schemas"]["CursorPageMeta"];
+                    };
+                };
+            };
+            /** @description 잘못된 cursor, size 범위 밖. errors[{field: cursor|size}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "잘못된 cursor, size 범위 밖. errors[{field: cursor|size}]",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHORIZED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ACCOUNT_NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MarkNotificationsReadResult"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}]",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHORIZED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ACCOUNT_NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNREAD_CHANGED",
+                     *       "errors": [],
+                     *       "message": "all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
                      *       "traceId": null
                      *     }
                      */

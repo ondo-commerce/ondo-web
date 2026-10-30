@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AccountChip, storeNameLabel } from "@/features/account";
 import { CART_PATH, CartButton, type CartCountWire } from "@/features/cart";
 import { ChatNavButton } from "@/features/chat";
+import { NotificationBell } from "@/features/notification";
 import { requireSession, serverApi } from "@/shared/api/server";
 import { AppShell } from "@/shared/components/AppShell";
 
@@ -71,6 +72,8 @@ export default async function ShopLayout({
       /* 채팅 배지는 브라우저가 30초마다 받는다(loop-06 S2) — 목이 브라우저 MSW라 서버에선 못 받고,
          장바구니처럼 `router.refresh()`를 기다리면 답이 온 걸 모른다 */
       chat={<ChatNavButton />}
+      /* 종은 채팅 링크가 내는 count 하나를 같이 읽는다(06b S2-1). 목록은 패널을 열 때만 브라우저가 받는다 */
+      notifications={<NotificationBell />}
       cart={<CartButton count={cartCount} />}
       account={<AccountChip storeName={storeNameLabel(me.shopName)} />}
     >

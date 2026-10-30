@@ -87,21 +87,8 @@ export interface ReturnLink {
  * 헤더 count와 목록(loop-06 S2)
  * ------------------------------------------------------------------------ */
 
-/**
- * 헤더 count 쿼리의 값. **실패도 값이다** — queryFn이 던지지 않는다(도매 `HeaderCounts`와 같은 이유).
- * 던지면 401이 소매 전역 QueryCache를 지나 `/login` 전체 이동이 된다(`providers.tsx`, 쓰던 글이 사라진다).
- * 그리고 TanStack의 실패 횟수는 요청마다 0으로 돌아가 "연속 몇 번 실패"를 셀 수 없다.
- */
-export type HeaderCounts =
-  | {
-      kind: "ok";
-      /** 내 방 안 읽은 메시지 합. 채팅 링크 배지 */
-      chats: number;
-    }
-  /** 401, 403. 배지 없이 멈춘다. 다시 도는 건 새로고침이나 로그인 뒤(§4-1 3) */
-  | { kind: "stopped" }
-  /** 404, 500, 연결 실패. 배지 없이 간격만 늘린다. `failures`는 연속 실패 수(1부터) */
-  | { kind: "failed"; failures: number };
+/** 헤더 count 쿼리의 값. 06b 알림 종과 같이 써서 `shared/headerCounts.ts`로 내렸다 */
+export type { HeaderCounts } from "@/shared/headerCounts";
 
 /** 헤더 아이콘 하나의 그리기 값. 배지 글자와 접근 이름이 같은 숫자에서 나온다 */
 export interface BadgeView {

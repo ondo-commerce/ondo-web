@@ -1,11 +1,26 @@
 "use client";
 
-import { SearchInput } from "@ondo/ui";
+import { cn, SearchInput } from "@ondo/ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent } from "react";
 
+/**
+ * 320 폭에서 펼친 검색 줄(loop-06b 디자인 결정 49)이 쓰는 것. 평소 헤더 검색칸은 셋 다 비운다.
+ * `className` 폼에 덧붙임, `autoFocus` 펼치자마자 입력, `onClose` Esc와 검색 뒤 원래 줄로
+ */
+interface SearchOptions {
+  className?: string;
+  autoFocus?: boolean;
+  onClose?: () => void;
+}
+
 /** 헤더 통합 검색. 셸은 `/search?q=`로 넘기기까지만 하고 결과는 그 화면이 만든다 */
-function SearchForm({ initialQuery }: { initialQuery: string }) {
+function SearchForm({
+  initialQuery,
+  className,
+  autoFocus,
+  onClose,
+}: { initialQuery: string } & SearchOptions) {
   const router = useRouter();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -17,6 +32,7 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
     if (!q) return;
 
     router.push(`/search?${new URLSearchParams({ q }).toString()}`);
+    onClose?.();
   }
 
   return (
@@ -28,6 +44,8 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
       action="/search"
       method="get"
       onSubmit={handleSubmit}
+      /* 헤더 검색칸과 360 미만 펼친 검색 줄 둘 다 이 form이다(와이어프레임 `.search`, `.sform`의 S2-8) */
+      data-ac="S2-8"
       /* min-w-0: flex 자식의 기본 min-width는 auto라 안쪽 340px이 그대로 하한이 된다.
          이걸 풀지 않으면 헤더가 781px 아래로 줄지 않아 페이지 전체가 가로로 밀린다(F14).
          ≤60rem에서 남은 폭을 채우는 건 확정 와이어프레임 `_base.css:329`의 `.search`
@@ -35,13 +53,20 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
          AC가 960/640px를 픽셀로 못박고 있어서다 */
       /* phone:min-w-7(28px): 320에서 남는 폭(25px)보다 돋보기 자리를 지킨다(디자인 결정 33 "320 28px, 돋보기만").
          모자란 3px는 헤더 줄 오른쪽 여백(20px) 안으로 들어가 가로 스크롤이 생기지 않는다 */
-      className="min-w-0 tablet:flex-1 phone:min-w-7"
+      className={cn("min-w-0 tablet:flex-1 phone:min-w-7", className)}
     >
       <SearchInput
         name="q"
         aria-label="통합 검색"
         placeholder="상품명, 품번, 도매처 검색"
         defaultValue={initialQuery}
+        autoFocus={autoFocus}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && onClose !== undefined) {
+            event.preventDefault();
+            onClose();
+          }
+        }}
         /* 빈 값 차단을 JS 밖에도 둔다 — 위 onSubmit은 하이드레이션 전에는 없어서
            빈 Enter가 그대로 /search?q= 로 나갔다. required는 브라우저가 제출 자체를
            막고, pattern은 공백만 친 경우까지 막는다(JS 경로의 trim과 같은 기준) */
@@ -59,23 +84,23 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
   );
 }
 
-function SearchFormWithQuery() {
+function SearchFormWithQuery(options: SearchOptions) {
   const query = useSearchParams().get("q") ?? "";
 
   /* key: 주소의 q가 바뀌면 입력을 새로 마운트해 그 값으로 되돌린다.
      /search?q=셔츠 로 직접 들어오거나 뒤로 가기를 해도 검색창이 주소와 같아야 한다.
      제어 컴포넌트로 만들면 글자마다 리렌더가 헤더 전체로 번진다 */
-  return <SearchForm key={query} initialQuery={query} />;
+  return <SearchForm key={query} initialQuery={query} {...options} />;
 }
 
-export function GlobalSearch() {
+export function GlobalSearch(options: SearchOptions = {}) {
   /* useSearchParams는 정적 프리렌더를 막는다 — 경계가 없으면 이 헤더를 쓰는
      14화면이 전부 빌드에서 걸린다. 경계를 컴포넌트가 스스로 갖는다.
      정적으로 굳는 화면에서는 프리렌더 결과가 빈 검색창이고 하이드레이션 뒤 채워지지만,
      `?q=`가 실제로 실리는 /search는 그 화면이 force-dynamic이라 첫 HTML부터 값이 있다 */
   return (
-    <Suspense fallback={<SearchForm initialQuery="" />}>
-      <SearchFormWithQuery />
+    <Suspense fallback={<SearchForm initialQuery="" {...options} />}>
+      <SearchFormWithQuery {...options} />
     </Suspense>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { clearHeaderSession } from "@/shared/api/headerCounts";
 import { AccountMenu } from "@/shared/components/AccountMenu";
 import { useLogoutMutation } from "../api/session";
 import { ACCOUNT_PATH } from "../constants";
@@ -24,9 +26,13 @@ import { storeInitial } from "../derive";
  */
 export function AccountChip({ storeName }: { storeName: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const logoutMutation = useLogoutMutation();
 
   const logout = () => {
+    /* 헤더 count와 알림 캐시를 먼저 버린다(06b §4-1 3 ①). 클라이언트 이동이라 QueryClient가 살아서, 안 지우면
+       다음에 로그인한 계정이 앞 계정의 배지와 알림 행을 잠깐 본다 */
+    void clearHeaderSession(queryClient);
     /* 서버 세션을 먼저 끊고 나서 옮긴다. 실패해도 옮긴다 — 쿠키가 남아도 이
        브라우저에서 할 수 있는 일이 없고, 로그아웃을 누른 사람을 네트워크 사정
        때문에 붙잡아 두면 안 된다. `refresh`로 서버 컴포넌트가 끊긴 세션을 다시

@@ -14,6 +14,8 @@ import {
   type IdempotencyRecord,
 } from "../wholesale/chat";
 import { recordMockPayment } from "../wholesale/settlement";
+import { retailNotificationCount } from "./notification";
+import { RETAIL_ME_RETAILER_ID, RETAIL_WHOLESALERS } from "./parties";
 
 /**
  * 소매 채팅 목 — 초안 op 6개(#263, `openapi/retail.json` `x-ondo-draft`). loop-05a `01-plan.md` §5-2.
@@ -39,18 +41,11 @@ type ChatSendResult = RetailSchema<"ChatSendResult">;
 type ChatRetailFacts = RetailSchema<"ChatRetailFacts">;
 type ChatMessageKind = RetailSchema<"ChatMessageKind">;
 
-/** 세션 없는 목의 "나". 주문, 미송 목과 같은 id */
-export const CHAT_ME_RETAILER_ID = 1;
+/** 세션 없는 목의 "나". 주문, 미송 목과 같은 id. 원본은 `./parties.ts`(알림 목과 같이 쓴다) */
+export const CHAT_ME_RETAILER_ID = RETAIL_ME_RETAILER_ID;
 
-/**
- * 대화할 수 있는 도매처. 이름은 소매 e2e 가짜 API(`e2e/side-02/retail/stub-api.ts`)의 상품과 맞춘다.
- * 103은 30자 상호다 — 방 머리 말줄임(S5-15)을 이 방 하나로 본다. 이 표에 없는 id는 404(없는 도매처).
- */
-export const CHAT_WHOLESALERS: Readonly<Record<number, string>> = {
-  101: "무드온",
-  102: "라온",
-  103: "코튼클럽 동대문 신평화패션타운 삼층 본점 직영 도매상회",
-};
+/** 대화할 수 있는 도매처. 원본은 `./parties.ts` */
+export const CHAT_WHOLESALERS = RETAIL_WHOLESALERS;
 
 /**
  * `/__mock/chat/fail`이 고르는 op. 도매 목과 같은 이름 + `create`(방 만들기) + `count`(헤더 배지
@@ -264,17 +259,16 @@ function myUnreadChats(): number {
  */
 export const retailChatHandlers = [
   /**
-   * 헤더 배지 둘(초안 op `notificationUnreadCount`, loop-06). `notifications`는 알림 목이 06b라 늘 0.
-   * 소매 worker에 올라가야 해서 알림 목이 아니라 여기 둔다(`../browser.ts`는 채팅 핸들러만 올린다)
+   * 헤더 배지 둘(초안 op `notificationUnreadCount`, loop-06). `notifications`와 `latestNotificationId`는
+   * 알림 목(`./notification.ts`, 06b) 저장소를 그때그때 읽는다. 핸들러는 06a 그대로 여기 둔다 — 실패, 지연
+   * 손잡이가 `/__mock/chat/{fail,delay} {op: count}`라서 그걸 쓰는 06a e2e가 그대로 돈다
    */
   http.get("*/api/retail/notifications/unread-count", async () => {
     const planned = plannedFailure("count");
     if (planned) return planned;
     const data: RetailSchema<"RetailUnreadCount"> = {
-      notifications: 0,
+      ...retailNotificationCount(),
       chats: myUnreadChats(),
-      // 06b 가 새 알림을 이 id 로 안다. 06a 목에는 알림이 없다
-      latestNotificationId: null,
     };
     await plannedDelay("count");
     return HttpResponse.json({ data });

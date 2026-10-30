@@ -83,17 +83,7 @@ export const ROOM_TEXT = {
 /** 채팅 목록 주소. 헤더 링크가 가는 곳이고, 그 목록에서 연 방의 `?from=` 값이다 */
 export const CHATS_HREF = "/chats";
 
-/**
- * 헤더 count 주기(D36③). 활성 탭당 분당 2회라 열린 방 polling(3초)보다 훨씬 적다.
- * 도매 `features/notification/constants.ts`와 같은 값이다(앱 사이 import 금지라 다시 적는다).
- */
-export const HEADER_POLL_MS = 30_000;
-
-/**
- * 연속 실패 뒤 다음 간격. 1번째 실패 뒤 60초, 2번째 120초, 3번째부터 300초(§4-1 3).
- * BE에 `unread-count`가 아직 없어 실서버는 404를 계속 준다 — 셸 14화면이 30초마다 두드리지 않게 늘린다.
- */
-export const HEADER_BACKOFF_MS = [60_000, 120_000, 300_000] as const;
+/* 헤더 count 주기와 실패 간격은 `shared/headerCounts.ts`(06b 알림 종과 같이 쓴다) */
 
 /** 이 수부터 배지가 "99+"다. 아이콘 폭(32)을 넘지 않게 */
 export const BADGE_MAX = 99;

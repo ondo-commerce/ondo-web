@@ -381,8 +381,9 @@ test("(R1) 목록 요청이 늦는 동안 모두 읽음 성공 → 늦은 목록
 });
 
 /* F3 재현(QA): 기준이 연 때 count 면 그 사이 다른 기기가 하나 읽을 때 새 알림 1개가 줄 없이 묻힌다.
-   c21c590의 엿보기는 03-review M1 M2로 뺐고 F3는 accept(계약 §5-2 한계, 06b latestNotificationId). 그래서 다시 test.fail */
-test.fail("(g) 패널 연 뒤 다른 기기가 1개 읽고 새 알림 1개 → '새 알림 1개 보기'가 떠야 한다", async ({
+   c21c590의 엿보기는 03-review M1 M2로 뺐고 F3는 accept였다. loop-06b #306이 count latestNotificationId 비교로
+   풀어(엿보기 GET 없이) test.fail → test */
+test("(g) 패널 연 뒤 다른 기기가 1개 읽고 새 알림 1개 → '새 알림 1개 보기'가 떠야 한다", async ({
   page,
 }) => {
   await start(page);

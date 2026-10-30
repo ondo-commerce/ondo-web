@@ -83,13 +83,18 @@ export function mergeDrafts(received, drafts) {
 /**
  * 병합 결과에 초안이 약속한 것이 남았는지 본다. 사라진 것을 사람이 읽는 문장 배열로 돌려준다(없으면 빈 배열).
  *
- * 보는 것 둘:
+ * 보는 것 셋:
  *  1. drafts 의 op(path × method)가 병합 결과에 있다 — 받은 쪽이 이겼어도 op 자체는 있어야 한다
  *  2. drafts 스키마에서 `x-ondo-draft: true`가 붙은 **속성**이 병합 결과의 같은 스키마에 있다.
  *     예: BE가 `ChatAutoReply`를 먼저 내면 받은 쪽이 이겨 초안의 `choices`가 조용히 사라진다(Codex 7).
  *     그 칸은 required 가 아니라 codegen 뒤에도 컴파일이 통과한다 — 화면은 칩이 안 나오는 채로 배포된다.
  *
- * 속성 단위 표시만 보는 이유: drafts 에는 `ErrorResponse`처럼 BE 것을 옮겨 둔 스키마도 있다.
+ *  3. drafts 스키마 자체에 `x-ondo-draft: true`가 붙고 `oneOf`가 있으면 병합 결과의 같은 스키마도 `oneOf`이고
+ *     갈래 수가 같으며, 초안 갈래의 `$ref`가 전부 남아 있다. 예: BE가 `NotificationTarget`을 kind, orderId,
+ *     wholesalerId 를 다 optional 로 단 평평한 객체로 내면 받은 쪽이 이긴다(loop-06b Codex 13). 칸이 다 있어서
+ *     2번 검사도, typecheck 도 통과한다 — 그런데 "ORDER 인데 orderId 없음"을 타입이 더는 막지 않는다.
+ *
+ * 속성 단위 표시와 스키마 단위 `oneOf`만 보는 이유: drafts 에는 `ErrorResponse`처럼 BE 것을 옮겨 둔 스키마도 있다.
  * 그 모양 차이까지 막으면 BE 스펙을 받을 때마다 거짓 경보가 난다.
  */
 export function checkDraftSurvival(merged, drafts) {
@@ -108,6 +113,17 @@ export function checkDraftSurvival(merged, drafts) {
       if (def?.["x-ondo-draft"] !== true) continue;
       if (mergedSchemas[name]?.properties?.[prop] === undefined)
         problems.push(`\`${name}.${prop}\` 사라짐`);
+    }
+    if (schema["x-ondo-draft"] === true && Array.isArray(schema.oneOf)) {
+      const got = mergedSchemas[name]?.oneOf;
+      const refs = (branches) =>
+        branches.map((b) => b?.$ref).filter((r) => r !== undefined);
+      if (
+        !Array.isArray(got) ||
+        got.length !== schema.oneOf.length ||
+        refs(schema.oneOf).some((r) => !refs(got).includes(r))
+      )
+        problems.push(`\`${name}\` oneOf 갈래 사라짐`);
     }
   }
   return problems;

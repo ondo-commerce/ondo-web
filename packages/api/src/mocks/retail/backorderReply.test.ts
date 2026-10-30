@@ -224,13 +224,14 @@ describe("S1-5 unread-count", () => {
     return rooms.body.data.reduce((s, r) => s + r.unreadCount, 0);
   }
 
-  it("시드 {notifications 0, chats = 방 1과 33 unreadCount 합}, 도매 답 주입 +1, 읽음 뒤 감소", async () => {
+  it("시드 {notifications 2, chats = 방 1과 33 unreadCount 합, latestNotificationId}, 도매 답 주입 +1, 읽음 뒤 감소", async () => {
     const seed = await count();
     expect(seed.status).toBe(200);
+    // 06b 부터 알림 몫은 알림 목 시드(안 읽음 2, 첫 행 2022)다. 06a 땐 0, null 이었다
     expect(seed.body.data).toEqual({
-      notifications: 0,
+      notifications: 2,
       chats: await roomsUnreadSum(),
-      latestNotificationId: null,
+      latestNotificationId: 2022,
     });
     const before = seed.body.data.chats;
 
@@ -307,7 +308,7 @@ describe("S1-5 unread-count", () => {
 });
 
 describe("소매 reset 손잡이", () => {
-  it("{empty: true} → 내 방 0개, chats 0", async () => {
+  it("{empty: true} → 내 방 0개, chats 0. 알림 몫은 채팅 reset 이 안 건드린다(알림 reset 이 따로 있다)", async () => {
     await knob("/reset", { empty: true });
     const rooms = await call<{ data: unknown[] }>(
       "GET",
@@ -315,9 +316,9 @@ describe("소매 reset 손잡이", () => {
     );
     expect(rooms.body.data).toEqual([]);
     expect((await count()).body.data).toEqual({
-      notifications: 0,
+      notifications: 2,
       chats: 0,
-      latestNotificationId: null,
+      latestNotificationId: 2022,
     });
   });
 

@@ -141,3 +141,76 @@ BE 모드와 다른 점:
 | 초기화 | 위 reset 두 줄, 또는 새로고침 | 운영자가 시드 리셋 |
 
 소매 헤더의 "답 왔음" 배지(장면 1의 8단계)는 아직 없다. loop-06(#297)에서 소매 알림과 같이 붙는다.
+
+## 8. 발표자용 장면 2 (화면 계약 시연)
+
+장면 2는 "소매가 채팅으로 미송이 언제 오냐고 묻고 → 자동 답 → 도매가 입고일을 바꾸면 → 소매 헤더 종에 알림 → 누르면 미송 화면에 새 날짜 → 다시 물으면 새 날짜"다. 같은 순서가 e2e `e2e/loop-06b-retail-notify/scene2-retail.spec.ts` 한 파일에 있다(도매 탭 + 소매 탭).
+
+알림 생성 연동은 아직 아니다. 도매 저장이 소매 알림을 만드는 게 아니라, 소매 탭에 같은 결과를 주입해서 보여 준다. "도매 저장 → 소매 알림"은 BE 알림 구현 뒤 실서버에서 이어진다고 말한다.
+
+날짜: 오늘을 R이라 하면 린넨 셋업 자켓 베이지/L(3019)의 지금 입고일은 R+7, 바꿀 날짜 D는 R+10이다. 아래 `D`는 그날 날짜로 바꿔 친다(도매 칸은 `YYYY.MM.DD`, 주입은 `YYYY-MM-DD`).
+
+준비(탭 2개, 장면 1과 같은 서버 셋):
+
+```bash
+# 터미널 1 — 도매(목). 탭 A: http://localhost:3000/login, 아무 이메일로 로그인
+NEXT_PUBLIC_API_MOCK=1 pnpm --filter wholesale dev
+# 터미널 2, 3 — 소매(가짜 API 3199 + 목). 탭 B: http://localhost:3001
+node --no-warnings e2e/side-02/retail/stub-server.ts
+NEXT_PUBLIC_API_MOCK=1 API_ORIGIN=http://localhost:3199 pnpm --filter retail exec next dev -p 3001
+```
+
+초기화. 도매 탭 A 콘솔:
+
+```js
+await fetch("/__mock/chat/reset",{method:"POST",body:"{}"})
+```
+
+소매 탭 B 콘솔. 블록 두 개를 따로 붙여 넣는다. 먼저 봄봄상회로 들어가기(새로고침된다):
+
+```js
+document.cookie="stub_retailer=bombom; path=/"; location.reload()
+```
+
+새로고침이 끝난 뒤 채팅 목, 알림 0개(같이 붙여 넣으면 reset이 새로고침 전 페이지에서 돌고, 새로고침이 목을 시드 알림 22개로 되돌린다):
+
+```js
+await fetch("/__mock/chat/reset",{method:"POST",body:"{}"})
+await fetch("/__mock/notifications/reset",{method:"POST",body:JSON.stringify({empty:true})})
+```
+
+터미널(가짜 API의 미송 표를 시드로):
+
+```bash
+curl -X POST http://localhost:3199/__stub/reset
+```
+
+목은 탭마다 따로고 새로고침하면 시드로 돌아간다. 초기화한 뒤에는 헤더와 메뉴로만 옮긴다.
+
+순서:
+
+1. 소매 탭 B: 도매 답 주입 → 30초 안에 헤더 채팅 배지 +1
+
+   ```js
+   await fetch("/__mock/chat/rooms/1/incoming",{method:"POST",body:JSON.stringify({body:"네 내일 오전에 주문 넣어 주시면 바로 챙길게요"})})
+   ```
+2. 헤더 `채팅` → 무드온 방 → "지난주 주문한 거 언제 와요?" → 보기 4개 → 린넨 셋업 자켓 → 카드 "도매 입고 예정 {R+7}"
+3. 도매 탭 A: 주 메뉴 `미송` → SKU 1-2 펼치기 → 예상 입고일에 D, 변동 사유 "원단 수급 지연" → 폼 아래 "저장하면 이 옵션을 기다리는 소매처 1곳에 알림이 가요" → `저장` → "저장했어요"
+4. 소매 탭 B: 로고로 홈. 종 배지 없음을 보여 주고 주입 둘(도매 저장 대신)
+
+   ```js
+   await fetch("/__mock/notifications/incoming",{method:"POST",body:JSON.stringify({type:"BACKORDER_DATE_CHANGED",variantId:3019,expectedInboundDate:"D",expectedInboundReason:"원단 수급 지연"})})
+   ```
+
+   ```bash
+   curl -X POST http://localhost:3199/__stub/backorders/eta -H 'Content-Type: application/json' -d '{"variantId":3019,"expectedInboundDate":"D"}'
+   ```
+5. 30초 안에 종 배지 1 → 종 → 맨 위 "무드온 미송 입고일 변경", "린넨 셋업 자켓 베이지/L 남은 2장, {R+7} → {D}", "방금"
+6. 그 행 → 미송 화면(무드온 칩 켜짐), 린넨 셋업 자켓 줄 예상 입고일 D. 종 배지 사라짐
+7. 헤더 `채팅` → 무드온 방 → 같은 질문 → 린넨 셋업 자켓 → "{D} 도매 입고 예정이에요(원단 수급 지연)"
+
+BE 복귀 뒤 확인(목 모드로는 못 본다):
+
+- [ ] 도매에서 3019 입고일 저장 → 소매 실서버 종 count +1(주입 없이)
+- [ ] 그 알림 행 본문의 날짜가 "{옛 날짜} → {저장한 날짜}"
+- [ ] 사유만 바꿔 저장하면 알림 0건

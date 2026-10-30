@@ -4,9 +4,9 @@ import { Button, cn } from "@ondo/ui";
 import { MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useHeaderCountsQuery } from "../api/headerCounts";
 import { CHATS_HREF } from "../constants";
 import { chatBadgeLabel } from "../derive";
+import { useHeaderCountsQuery } from "@/shared/api/headerCounts";
 
 /**
  * 헤더 `채팅` 링크 + 안 읽은 메시지 배지(loop-06 S2, 디자인 결정 30~32). 찜과 장바구니 사이에
