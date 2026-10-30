@@ -215,10 +215,11 @@ test("S11-9 그 사이 새 알림 → 409 안내, 점 그대로, 첫 행 새 주
 });
 
 /**
- * 계약 한계(§5-2) 기록. 03-review M1 M2로 엿보기를 뺐다 — 이 경우 줄은 안 뜨고 모두 읽음은 POST 1회로 본 적 없는
- * 새 행까지 읽는다. F3는 accept, 06b의 latestNotificationId로 푼다. 그때 이 테스트를 409 쪽으로 바꾼다
+ * 05b-2 F3. 03-review M1 M2로 엿보기를 뺐고, loop-06b #306이 count `latestNotificationId` 비교로 줄을 띄운다
+ * (목록 GET 0 그대로). 모두 읽음은 계약대로 POST한다 — `expectedUnread`는 수를 비교하므로 수가 같은 이 경우는
+ * 409가 아니라 200이다(기획 "모두 읽음은 계약대로 POST"). 줄이 떠 있어 사장은 누르기 전에 새 행이 있다는 걸 본다
  */
-test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → 줄 0, 모두 읽음 POST 1회 200", async ({
+test("F3: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음) → '새 알림 1개 보기', 목록 GET 0, 모두 읽음 POST 1회 200", async ({
   page,
 }) => {
   await openPanel(page);
@@ -238,11 +239,9 @@ test("계약 한계: 연 뒤 다른 기기가 1개 읽고 새 1개(count 같음)
 
   await expect(markAllButton(page)).toHaveText("안 읽은 알림 3개 모두 읽음");
   await expect(
-    panel(page).getByRole("button", { name: /^새 알림 \d+개 보기$/ }),
-  ).toHaveCount(0);
-  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(
-    lists,
-  );
+    panel(page).getByRole("button", { name: "새 알림 1개 보기", exact: true }),
+  ).toBeVisible();
+  expect(await count(page, LIST_GET), "count 뒤 목록 GET 0(§4-1⑤)").toBe(lists);
 
   await markAllButton(page).click();
   await expect(markAllButton(page)).toHaveCount(0);

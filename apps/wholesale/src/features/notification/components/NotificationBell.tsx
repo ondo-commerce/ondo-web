@@ -9,7 +9,7 @@ import { CountBadge } from "./CountBadge";
 import { NotificationPanel } from "./NotificationPanel";
 import { notificationKeys } from "../api/keys";
 import { useMarkNotificationsReadMutation } from "../api/mutations";
-import { bellBadge, newerCount, unreadOf } from "../derive";
+import { bellBadge, unreadOf } from "../derive";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 import type {
@@ -31,9 +31,9 @@ type ListData = InfiniteData<NotificationPage, string | null>;
  *  - 안 읽은 행 → 그 행 잠김 → read `{ids}` 1회(응답 안 기다림) + 이동. 같은 틱 연타도 1회(S11-5)
  *  - 읽은 행 → POST 없이 이동. 모르는 type → 이동 없이 읽음만(S11-16)
  *  - `모두 읽음` N은 count 값(받은 행 수가 아니다, S11-8). 409면 아무것도 안 바꾸고 다시 받는다(S11-9)
- *  - "새 알림 N개 보기"는 count 차이다. 연 뒤 다른 기기가 하나 읽고 새 것이 하나 오면 수가 같아 줄이 안 뜨고,
- *    `모두 읽음`도 409 없이 그 새 행까지 읽는다. 계약 §5-2가 허용한 한계다 — 목록을 따로 엿보면 30초마다 GET이
- *    늘고(§4-1⑤) 계약에 없는 차단이 생겨서 뺐다(03-review M1 M2). 06b의 latestNotificationId로 푼다
+ *  - "새 알림 N개 보기"를 띄울지는 count `latestNotificationId`와 첫 장 첫 행 id 비교다(loop-06b, `hasNewer`).
+ *    연 뒤 다른 기기가 하나 읽고 새 것이 하나 와 수가 같아도 뜬다(05b-2 F3). 목록은 엿보지 않는다(03-review M1 M2).
+ *    N만 연 때 수와의 차이다(`newerCount`, 하한). `모두 읽음`은 계약대로 POST하고 그 사이 바뀌면 409가 막는다
  */
 export function NotificationBell({
   counts,
@@ -46,7 +46,7 @@ export function NotificationBell({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(false);
-  /** 패널을 연 때(또는 마지막으로 첫 장을 다시 받은 때)의 안 읽음 수. "새 알림 N개 보기"의 기준 */
+  /** 패널을 연 때(또는 마지막으로 첫 장을 다시 받은 때)의 안 읽음 수. "새 알림 N개 보기"의 N 기준(띄울지는 id가 정한다) */
   const [baseline, setBaseline] = useState<number | null>(null);
   const [notice, setNotice] = useState<PanelNotice>(null);
   /** 누른 행. 화면 표시(aria-disabled)는 state, 같은 틱 연타 막기는 ref — state는 다음 렌더에야 보인다 */
@@ -195,8 +195,8 @@ export function NotificationBell({
           titleId={titleId}
           titleRef={titleRef}
           scrollRef={scrollRef}
-          unread={unread}
-          newer={newerCount(baseline, unread)}
+          counts={counts}
+          openedUnread={baseline}
           notice={notice}
           marking={markAll.isPending}
           lockedIds={lockedIds}
