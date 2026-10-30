@@ -2478,6 +2478,11 @@ export interface components {
              */
             chatsNeedingReply: number;
             /**
+             * Format: int64
+             * @description 내 알림 중 가장 최근 것(목록 첫 행, createdAt desc, id desc)의 id. 알림이 없으면 null. 화면은 개수가 아니라 이 값이 바뀌었는지로 새 알림을 안다(1개 읽고 새로 1개 와서 수가 같아도 잡힌다). required 아님(읽는 쪽은 칸이 없으면 새 알림 판단을 끈다)
+             */
+            latestNotificationId?: number | null;
+            /**
              * Format: int32
              * @description 안 읽은 알림 수
              */

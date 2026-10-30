@@ -75,15 +75,21 @@
   "stock": [
     {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3001, "color": "레드", "size": "S", "availableQty": 40, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3002, "color": "레드", "size": "M", "availableQty": 35, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
-    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3003, "color": "레드", "size": "L", "availableQty": -13, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3003, "color": "레드", "size": "L", "availableQty": -15, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3004, "color": "네이비", "size": "S", "availableQty": 20, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2001, "wholesalerId": 101, "listingTitle": "빈티지 플라워 셔츠", "listingPublished": true, "variantId": 3005, "color": "네이비", "size": "M", "availableQty": 18, "orderLimit": 500, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2002, "wholesalerId": 101, "listingTitle": "루즈핏 니트 가디건", "listingPublished": true, "variantId": 3006, "color": "블랙", "size": "FREE", "availableQty": 12, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2002, "wholesalerId": 101, "listingTitle": "루즈핏 니트 가디건", "listingPublished": true, "variantId": 3007, "color": "베이지", "size": "FREE", "availableQty": 8, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
-    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3008, "color": "네이비", "size": "S", "availableQty": 15, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
-    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3009, "color": "네이비", "size": "M", "availableQty": 22, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
-    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3010, "color": "네이비", "size": "L", "availableQty": 9, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
-    {"listingId": 2003, "wholesalerId": 102, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3011, "color": "소라", "size": "M", "availableQty": 5, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 101, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3008, "color": "네이비", "size": "S", "availableQty": 15, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 101, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3009, "color": "네이비", "size": "M", "availableQty": 22, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 101, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3010, "color": "네이비", "size": "L", "availableQty": 9, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2003, "wholesalerId": 101, "listingTitle": "와이드 데님 팬츠", "listingPublished": true, "variantId": 3011, "color": "소라", "size": "M", "availableQty": 5, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3012, "color": "화이트", "size": "S", "availableQty": 50, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3013, "color": "화이트", "size": "M", "availableQty": 60, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3014, "color": "화이트", "size": "L", "availableQty": 45, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3015, "color": "화이트", "size": "XL", "availableQty": 10, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3016, "color": "블랙", "size": "M", "availableQty": 30, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
+    {"listingId": 2004, "wholesalerId": 102, "listingTitle": "코튼 반팔 티셔츠", "listingPublished": true, "variantId": 3017, "color": "블랙", "size": "L", "availableQty": 25, "orderLimit": 0, "variantPublished": true, "source": "product.ts seed"},
     {"listingId": 2901, "wholesalerId": 101, "listingTitle": "무지 캔버스 에코백", "listingPublished": true, "variantId": 3901, "color": "블랙", "size": "FREE", "availableQty": 50, "orderLimit": 0, "variantPublished": true, "source": "chat mock extra"},
     {"listingId": 2901, "wholesalerId": 101, "listingTitle": "무지 캔버스 에코백", "listingPublished": true, "variantId": 3902, "color": "화이트", "size": "FREE", "availableQty": 5, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"},
     {"listingId": 2902, "wholesalerId": 101, "listingTitle": "샘플 반팔 티셔츠", "listingPublished": true, "variantId": 3903, "color": "그레이", "size": "M", "availableQty": 10, "orderLimit": 0, "variantPublished": false, "source": "chat mock extra"}
@@ -326,7 +332,7 @@
     },
     {
       "id": "S09",
-      "title": "재고 0 (판매가능 −13): 문장 → 없음 + 넘김",
+      "title": "재고 0 (판매가능 −15): 문장 → 없음 + 넘김",
       "required": false,
       "group": "stock",
       "room": {
@@ -614,7 +620,7 @@
         "autoReply": true
       },
       "steps": [
-        {"text": "네이비 / S", "inquiry": {"intent": "STOCK", "listingId": 2003, "variantId": 3008}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
+        {"text": "화이트 / S", "inquiry": {"intent": "STOCK", "listingId": 2004, "variantId": 3012}, "expect": {"kind": "HANDOFF", "reason": "INVALID_TARGET"}}
       ]
     },
     {

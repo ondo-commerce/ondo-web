@@ -313,12 +313,16 @@ describe("S1-1 loop-06 초안: 소매 unread-count op, 보기 kind, backorderId,
     ]);
   });
 
-  it("기존 op 는 안 바뀐다: 소매 스냅샷의 알림 경로는 새 op 하나뿐, 도매 스냅샷에는 retail 경로 없음", () => {
+  it("기존 op 는 안 바뀐다: 소매 스냅샷의 알림 경로는 06a unread-count + 06b 목록, 읽음뿐, 도매 스냅샷에는 retail 경로 없음", () => {
     expect(
       Object.keys(SNAPSHOTS.retail.paths).filter((p) =>
         p.includes("/notifications"),
       ),
-    ).toEqual([RETAIL_UNREAD]);
+    ).toEqual([
+      "/api/retail/notifications",
+      "/api/retail/notifications/read",
+      RETAIL_UNREAD,
+    ]);
     expect(
       Object.keys(SNAPSHOTS.wholesale.paths).filter((p) =>
         p.startsWith("/api/retail/"),
@@ -419,5 +423,207 @@ describe("S1-1 loop-07 초안: ChatHandoffReason, ChatHandoff, ChatMessage.hando
   it("새 op 0: 도매 drafts 경로 9개, 스냅샷 경로 59개 그대로(06a 와 같다)", () => {
     expect(Object.keys(DRAFTS.wholesale.paths)).toHaveLength(9);
     expect(Object.keys(SNAPSHOTS.wholesale.paths)).toHaveLength(59);
+  });
+});
+
+/**
+ * loop-06b S1-1. 소매 알림 op 2개(목록, 읽음) + 스키마 7개, 도매 `NotificationUnreadCount.latestNotificationId`.
+ * target 은 kind 별 oneOf 다 — BE 가 평평한 객체로 내면 칸은 다 있어도 "ORDER 인데 orderId 없음"을 타입이 못 막는다.
+ */
+const RETAIL_LIST = "/api/retail/notifications";
+const RETAIL_READ = "/api/retail/notifications/read";
+const RETAIL_NOTIFICATION_SCHEMAS = [
+  "BackordersTarget",
+  "MarkNotificationsReadRequest",
+  "MarkNotificationsReadResult",
+  "Notification",
+  "NotificationTarget",
+  "NotificationType",
+  "OrderTarget",
+];
+
+/** JSON 왕복 복사. scripts/ 의 eslint 전역에 structuredClone 이 없다 */
+const clone = (value) => JSON.parse(JSON.stringify(value));
+
+/** 알림 스키마를 다 낸 BE 스펙(받은 쪽이 이긴다). 고칠 곳만 고쳐 가짜 스펙을 만든다 */
+function receivedWithRetailSchemas() {
+  const received = emptyReceived();
+  for (const name of [...RETAIL_NOTIFICATION_SCHEMAS, "RetailUnreadCount"])
+    received.components.schemas[name] = clone(
+      DRAFTS.retail.components.schemas[name],
+    );
+  return received;
+}
+
+describe("S1-1 loop-06b 초안: 소매 알림 목록, 읽음, target oneOf, latestNotificationId", () => {
+  it("소매 drafts 와 스냅샷에 op 2개(x-ondo-draft), 응답 코드, 소매 오류 어휘가 같다", () => {
+    for (const doc of [DRAFTS.retail, SNAPSHOTS.retail]) {
+      const list = doc.paths[RETAIL_LIST]?.get;
+      const read = doc.paths[RETAIL_READ]?.post;
+      expect(list?.operationId).toBe("notifications");
+      expect(read?.operationId).toBe("markNotificationsRead");
+      expect(list?.["x-ondo-draft"]).toBe(true);
+      expect(read?.["x-ondo-draft"]).toBe(true);
+      expect(Object.keys(list.responses).sort()).toEqual([
+        "200",
+        "400",
+        "401",
+        "403",
+        "500",
+      ]);
+      expect(Object.keys(read.responses).sort()).toEqual([
+        "200",
+        "400",
+        "401",
+        "403",
+        "409",
+        "500",
+      ]);
+      const code = (op, status) =>
+        op.responses[status].content["application/json"].example.code;
+      for (const op of [list, read]) {
+        expect(code(op, "401")).toBe("UNAUTHORIZED");
+        expect(code(op, "403")).toBe("ACCOUNT_NOT_APPROVED");
+      }
+      expect(code(read, "409")).toBe("UNREAD_CHANGED");
+      expect(list.parameters.map((p) => p.name)).toEqual(["cursor", "size"]);
+    }
+    expect(SNAPSHOTS.retail.paths[RETAIL_LIST]).toEqual(
+      DRAFTS.retail.paths[RETAIL_LIST],
+    );
+    expect(SNAPSHOTS.retail.paths[RETAIL_READ]).toEqual(
+      DRAFTS.retail.paths[RETAIL_READ],
+    );
+  });
+
+  it("스키마 7개가 drafts 와 스냅샷에 같다. target 갈래는 kind 별 id 하나씩, 남는 칸 금지", () => {
+    for (const name of RETAIL_NOTIFICATION_SCHEMAS) {
+      expect(DRAFTS.retail.components.schemas[name], name).toBeDefined();
+      expect(SNAPSHOTS.retail.components.schemas[name], name).toEqual(
+        DRAFTS.retail.components.schemas[name],
+      );
+    }
+    const s = DRAFTS.retail.components.schemas;
+    expect(s.NotificationTarget.oneOf).toEqual([
+      { $ref: "#/components/schemas/OrderTarget" },
+      { $ref: "#/components/schemas/BackordersTarget" },
+    ]);
+    expect(s.NotificationTarget.discriminator.propertyName).toBe("kind");
+    expect(Object.keys(s.OrderTarget.properties).sort()).toEqual([
+      "kind",
+      "orderId",
+    ]);
+    expect(Object.keys(s.BackordersTarget.properties).sort()).toEqual([
+      "kind",
+      "wholesalerId",
+    ]);
+    for (const t of [s.OrderTarget, s.BackordersTarget])
+      expect(t.additionalProperties).toBe(false);
+    const read = s.MarkNotificationsReadRequest.oneOf;
+    expect(read).toHaveLength(2);
+    expect(read.map((b) => b.additionalProperties)).toEqual([false, false]);
+    expect(read[0].properties.ids.uniqueItems).toBe(true);
+    expect(read[1].required).toEqual(["all", "expectedUnread"]);
+    expect(s.NotificationType.enum).toEqual([
+      "ORDER_CONFIRMED",
+      "BACKORDER_DATE_CHANGED",
+      "BACKORDER_ALLOCATED",
+      "SHIPPED",
+    ]);
+  });
+
+  it("도매 drafts 와 스냅샷에 NotificationUnreadCount.latestNotificationId(int64 | null, x-ondo-draft, required 아님)", () => {
+    for (const doc of [DRAFTS.wholesale, SNAPSHOTS.wholesale]) {
+      const schema = doc.components.schemas.NotificationUnreadCount;
+      expect(schema.properties.latestNotificationId).toMatchObject({
+        type: ["integer", "null"],
+        format: "int64",
+        "x-ondo-draft": true,
+      });
+      expect(schema.required).toEqual(["chatsNeedingReply", "notifications"]);
+    }
+  });
+
+  it("빈 BE 스펙과 합치면 op 2개, 스키마 7개(target 갈래까지 참조를 따라)가 들어오고 검사가 빈 배열이다", () => {
+    const { merged, kept } = mergeDrafts(emptyReceived(), DRAFTS.retail);
+    expect(kept).toContain(`GET ${RETAIL_LIST}`);
+    expect(kept).toContain(`POST ${RETAIL_READ}`);
+    for (const name of RETAIL_NOTIFICATION_SCHEMAS)
+      expect(merged.components.schemas[name], name).toBeDefined();
+    expect(checkDraftSurvival(merged, DRAFTS.retail)).toEqual([]);
+  });
+
+  it("BE 가 같은 모양으로 다 구현해 내면 받은 쪽이 이기고 검사는 빈 배열이다(거짓 경보 없음)", () => {
+    const received = receivedWithRetailSchemas();
+    received.paths[RETAIL_LIST] = { get: { responses: {} } };
+    received.paths[RETAIL_READ] = { post: { responses: {} } };
+    received.paths[RETAIL_UNREAD] = { get: { responses: {} } };
+    const { merged, dropped } = mergeDrafts(received, DRAFTS.retail);
+    expect(dropped).toEqual(
+      expect.arrayContaining([`GET ${RETAIL_LIST}`, `POST ${RETAIL_READ}`]),
+    );
+    expect(checkDraftSurvival(merged, DRAFTS.retail)).toEqual([]);
+  });
+
+  it("가짜 스펙 1: 병합 뒤 목록, 읽음 op 가 빠지면 둘 다 사라짐으로 실패한다", () => {
+    const { merged } = mergeDrafts(emptyReceived(), DRAFTS.retail);
+    delete merged.paths[RETAIL_LIST];
+    delete merged.paths[RETAIL_READ];
+    expect(checkDraftSurvival(merged, DRAFTS.retail).sort()).toEqual(
+      [`GET ${RETAIL_LIST} 사라짐`, `POST ${RETAIL_READ} 사라짐`].sort(),
+    );
+  });
+
+  it("가짜 스펙 2: BE 가 target 을 평평한 객체(kind, orderId, wholesalerId 다 optional)로 내면 oneOf 갈래 사라짐으로 실패한다", () => {
+    const received = receivedWithRetailSchemas();
+    received.components.schemas.NotificationTarget = {
+      type: "object",
+      required: ["kind"],
+      properties: {
+        kind: { type: "string" },
+        orderId: { type: ["integer", "null"] },
+        wholesalerId: { type: ["integer", "null"] },
+      },
+    };
+    const { merged } = mergeDrafts(received, DRAFTS.retail);
+    expect(checkDraftSurvival(merged, DRAFTS.retail)).toEqual([
+      "`NotificationTarget` oneOf 갈래 사라짐",
+    ]);
+    // 갈래 하나만 남겨도(BACKORDERS 를 뺀 BE) 잡는다
+    const partial = receivedWithRetailSchemas();
+    partial.components.schemas.NotificationTarget.oneOf = [
+      { $ref: "#/components/schemas/OrderTarget" },
+    ];
+    expect(
+      checkDraftSurvival(
+        mergeDrafts(partial, DRAFTS.retail).merged,
+        DRAFTS.retail,
+      ),
+    ).toEqual(["`NotificationTarget` oneOf 갈래 사라짐"]);
+  });
+
+  it("가짜 스펙 3: BE 가 latestNotificationId 없는 count 를 내면 소매, 도매 각각 사라짐으로 실패한다", () => {
+    const retail = receivedWithRetailSchemas();
+    delete retail.components.schemas.RetailUnreadCount.properties
+      .latestNotificationId;
+    expect(
+      checkDraftSurvival(
+        mergeDrafts(retail, DRAFTS.retail).merged,
+        DRAFTS.retail,
+      ),
+    ).toEqual(["`RetailUnreadCount.latestNotificationId` 사라짐"]);
+
+    const wholesale = emptyReceived();
+    wholesale.components.schemas.NotificationUnreadCount = clone(
+      DRAFTS.wholesale.components.schemas.NotificationUnreadCount,
+    );
+    delete wholesale.components.schemas.NotificationUnreadCount.properties
+      .latestNotificationId;
+    expect(
+      checkDraftSurvival(
+        mergeDrafts(wholesale, DRAFTS.wholesale).merged,
+        DRAFTS.wholesale,
+      ),
+    ).toEqual(["`NotificationUnreadCount.latestNotificationId` 사라짐"]);
   });
 });

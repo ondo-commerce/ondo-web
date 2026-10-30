@@ -126,7 +126,7 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 소매 | `POST /__mock/chat/fail {op: count, status}` | 헤더 배지 op `GET /api/retail/notifications/unread-count`의 다음 n회 실패 |
 | 소매 | `POST /__mock/chat/delay {op: count\|read, ms, times = 1}` | 다음 n회 응답을 늦춘다. 값은 요청 시점에 정한다(늦은 count 시험) |
 
-소매 `unread-count` = `{notifications: 0, chats: 내 방 unreadCount 합, latestNotificationId: null}`. 알림은 06b라 06a 목에선 늘 0과 null이다.
+소매 `unread-count` = `{notifications, chats: 내 방 unreadCount 합, latestNotificationId}`. 06b부터 알림 몫은 소매 알림 목(아래 "소매 알림 목") 저장소를 읽는다. 시드는 2와 2022.
 골든셋 v3(`openapi/golden/inquiry-golden.json`)은 재고 35 + 미송 24. 판정 unit이 전부, 소매 HTTP 테스트가 방 1 시나리오를 돈다.
 | HTTP | `POST /__mock/chat/auto-reply {enabled, intents?}` | 자동 답 켜고 끄기. 소매 탭은 도매 탭 스위치와 상태를 나누지 않아 이걸로 맞춘다 (공용) |
 
@@ -172,6 +172,28 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | HTTP | `POST /__mock/notifications/reset {empty?}` | 시드로, fail과 delay 해제. `empty: true`면 0개. 주문 목, 채팅 목은 안 건드린다 |
 
 계약 테스트는 `notification.test.ts`, 초안 소실 검사는 `scripts/merge-drafts.test.mjs`의 S10-1.
+count 의 초안 칸 `latestNotificationId`(loop-06b)는 목록 첫 행 id다. 알림이 없으면 null.
+
+### 소매 알림 목 (`src/mocks/retail/notification.ts`, loop-06b #304)
+
+초안 op 2개(소매 `notifications` `markNotificationsRead`). 도매 알림 목의 복제이고 다른 점은 소매 오류 어휘, target 갈래
+(`{kind: ORDER, orderId}` | `{kind: BACKORDERS, wholesalerId}`), read `ids` 중복 400이다. `unread-count`는 06a 채팅 목 핸들러가
+이 저장소를 읽는다(`retailNotificationCount`). 소매 worker(`startRetailChatWorker`)가 채팅과 같이 올린다.
+
+- 시드 22개: 입고일 변경 8, 주문 확정 6, 미송 배분 4, 출고 3, 스펙 밖 type `PAYMENT_DUE` 1. 안 읽음 2(1, 21번째). 20, 21번째 createdAt 같음. 5, 6번째 id가 가장 크다(2030, 2031)
+- 입고일 변경 규칙은 순수 함수 `src/mocks/retail/dateChangeNotice.ts` `dateChangeNotifications`. **BE가 옮길 규칙이 여기 있다**(날짜가 바뀔 때만, OPEN 미송 소매처마다 남은 합으로 1건)
+- 입고일 주입은 미송 목(`wholesale/backorder.ts`)을 도매 PUT과 같은 `replaceExpectedInbound`(전체 대체)로 바꾼다. 그래서 그 뒤 채팅 미송 답도 새 날짜를 쓴다
+
+| 종류 | 이름 | 동작 |
+|---|---|---|
+| HTTP | `POST /__mock/notifications/incoming {type: BACKORDER_DATE_CHANGED, variantId, expectedInboundDate (null 가능), expectedInboundReason?}` | 미송 목 그 SKU 전체 대체 + "나"(봄봄) 몫 알림. 날짜가 같으면 0건. 응답 `{data: {created, notifications}}` |
+| HTTP | `POST /__mock/notifications/incoming {type: ORDER_CONFIRMED \| SHIPPED, orderId}`, `{type: BACKORDER_ALLOCATED, orderId, qty}` | ORDER target 알림 1건. 주문 상태는 안 바꾼다(stub 몫). 모르는 type, 없는 variantId, orderId 없음 400 |
+| HTTP | `POST /__mock/notifications/fail {op: list\|read, status = 500, times = 1}` | count 는 06a `/__mock/chat/fail {op: count}` |
+| HTTP | `POST /__mock/notifications/delay {op: list\|read, ms, times = 1}` | count 는 06a `/__mock/chat/delay {op: count}` |
+| HTTP | `POST /__mock/notifications/reset {empty?}` | 시드로, fail과 delay 해제. 미송, 채팅 목은 `/__mock/chat/reset`이 되돌린다 |
+
+계약 테스트는 `retail/notification.test.ts`, 규칙 unit 은 `retail/dateChangeNotice.test.ts`, 초안 소실 검사는 `scripts/merge-drafts.test.mjs`의 loop-06b S1-1
+(op 2, target `oneOf` 갈래, `latestNotificationId` 소실을 가짜 스펙으로).
 
 ### 재고 문의 자동 답 (loop-05b)
 

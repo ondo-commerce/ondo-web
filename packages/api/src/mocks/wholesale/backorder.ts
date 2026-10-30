@@ -28,8 +28,8 @@ import {
  *     9006(봄봄상회, 3003, 원래 4장 중 2장 배분 → 남은 2장 — 답이 원래 수량을 쓰면 틀린다), 801(도매처 102,
  *     코튼 셔츠 블랙 / L 20장 — 소매 방 33의 미송). 9006의 주문 7006은 이 목 안의 번호다(알림 목 incoming이
  *     주문 목에 만드는 7006과 저장소가 달라 안 섞인다).
- *  6. (loop-06) 소유: 미송 탭의 "나"는 도매처 101이다. 3011, 3019는 상품 목에선 다른 도매처 게시글이지만
- *     이 목에선 지금처럼 101 것으로 둔다(미송 탭 화면이 그대로 보이게). 102의 SKU(3801)는 탭에 안 나온다.
+ *  6. (loop-06) 소유: 미송 탭의 "나"는 도매처 101이다. 3011, 3019도 101 것이다(loop-06b에 상품 목을 이쪽에
+ *     맞췄다, `./product` 머리 주석 6). 102의 SKU(3801)는 탭에 안 나온다.
  *
  * 응답 모양은 스펙(`WholesaleSchema`)이 지킨다. 배분 뒤 잔여·가용재고가 줄고 다 받은 미송이 빠지는 건
  * 스펙 설명("부분 성공 없음", "`resolvedBackorderIds`로 해소된 미송을 알려준다")을 따라 여기서 흉내 낸다.
@@ -633,10 +633,11 @@ export const backorderHandlers = [
           "expectedInboundReason",
         );
 
-      // 전체 대체 — 날짜를 지우면 사유도 같이 비운다(스펙: "`null` = 해제(사유도 함께 null)")
-      v.expectedInboundDate = date;
-      v.expectedInboundReason =
-        date === null ? null : ((reason as string | undefined) ?? null);
+      replaceExpectedInbound(
+        v.id,
+        date,
+        (reason as string | undefined) ?? null,
+      );
 
       const data: WholesaleSchema<"ExpectedInboundResponse"> = {
         variantId: v.id,
@@ -660,6 +661,61 @@ export function resetBackorderMock(options: { empty?: boolean } = {}) {
   nextBatchId = 4401;
   nextPackingId = 7710;
   nextPackingItemId = 91101;
+}
+
+/**
+ * 입고 예정일 쓰기. 도매 PUT과 소매 알림 목 `incoming`(`../retail/notification.ts`)이 **같은 함수**를 부른다 —
+ * 시연 장면 2에서 소매 탭 주입 뒤 채팅 미송 답이 도매 저장과 같은 값을 보게(loop-06b §5-4 3, Codex 14).
+ *
+ * 전체 대체다. 사유를 안 주면 null, 날짜를 지우면 사유도 같이 비운다(스펙: "`null` = 해제(사유도 함께 null)").
+ * 소유를 보지 않는다 — 도매 PUT은 부르기 전에 `findVariant`로 101 것인지 본다. 없는 SKU면 null
+ */
+export function replaceExpectedInbound(
+  variantId: number,
+  date: string | null,
+  reason: string | null,
+): { before: string | null; after: string | null } | null {
+  const v = variants.find((x) => x.id === variantId);
+  if (v === undefined) return null;
+  const before = v.expectedInboundDate;
+  v.expectedInboundDate = date;
+  v.expectedInboundReason = date === null ? null : reason;
+  return { before, after: v.expectedInboundDate };
+}
+
+/** 소매 알림 목이 읽는 SKU 하나와 그 미송 전부(상태 포함). 이름은 상품명, 색상, 사이즈만 싣는다 */
+export interface BackorderSkuSnapshot {
+  variantId: number;
+  wholesalerId: number;
+  productName: string;
+  color: string;
+  size: Size;
+  expectedInboundDate: string | null;
+  backorders: {
+    retailerId: number;
+    remainingQty: number;
+    status: "OPEN" | "RESOLVED";
+  }[];
+}
+
+export function backorderSku(variantId: number): BackorderSkuSnapshot | null {
+  const v = variants.find((x) => x.id === variantId);
+  if (v === undefined) return null;
+  return {
+    variantId: v.id,
+    wholesalerId: v.wholesalerId,
+    productName: v.productName,
+    color: v.color,
+    size: v.size,
+    expectedInboundDate: v.expectedInboundDate,
+    backorders: backorders
+      .filter((b) => b.variantId === v.id)
+      .map((b) => ({
+        retailerId: b.retailerId,
+        remainingQty: b.remainingQty,
+        status: b.status,
+      })),
+  };
 }
 
 /**

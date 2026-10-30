@@ -192,6 +192,27 @@ describe("S10-3 unread-count", () => {
     await incoming();
     expect((await count()).body.data.notifications).toBe(4);
   });
+
+  it("loop-06b 초안 칸 latestNotificationId = 목록 첫 행 id(id 최대값 아님), incoming 뒤 새 id, 읽어도 그대로, 빈 목록 null", async () => {
+    const first = (await list("?size=1")).body.data[0];
+    const seed = (await count()).body.data.latestNotificationId;
+    expect(seed).toBe(first?.id);
+    // 시드 5, 6번째(1020, 1021)가 id 최대값이다 — 최대값으로 고르면 여기서 틀린다
+    expect(seed).not.toBe(1021);
+
+    // 05b-2 F3: 1개 읽고 새 1개가 와서 안 읽음 수가 같아도 id 는 바뀐다
+    await read({ ids: [first?.id ?? 0] });
+    const created = (await incoming()).body.data.notification;
+    const after = (await count()).body.data;
+    expect(after.notifications).toBe(3);
+    expect(after.latestNotificationId).toBe(created.id);
+
+    await read({ ids: [created.id] });
+    expect((await count()).body.data.latestNotificationId).toBe(created.id);
+
+    resetNotificationMock(true);
+    expect((await count()).body.data.latestNotificationId).toBeNull();
+  });
 });
 
 describe("S10-4 ids 읽음", () => {

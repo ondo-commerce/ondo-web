@@ -343,6 +343,8 @@ export const notificationHandlers = [
     const data: WholesaleSchema<"NotificationUnreadCount"> = {
       notifications: unread(),
       chatsNeedingReply: chatsNeedingReplyCount(),
+      // 초안 칸(loop-06b). 목록 첫 행 id — id 최대값이 아니다(시드 5, 6번째가 그 둘을 가른다)
+      latestNotificationId: [...notifications].sort(compare)[0]?.id ?? null,
     };
     await plannedDelay("count");
     if (planned) return planned;
