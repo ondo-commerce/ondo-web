@@ -42,6 +42,8 @@ export const PANEL_TEXT = {
   moreFailed: "더 불러오지 못했어요",
   processing: "처리 중",
   changed: "그 사이 알림이 바뀌었어요. 확인하고 다시 눌러 주세요",
+  /* '새 알림 보기' 줄이 뜬 채 모두 읽음을 눌렀을 때(loop-06b F2). 소매 `PANEL_TEXT.newerFirst`와 같은 문구 */
+  newerFirst: "새 알림이 왔어요. 확인하고 다시 눌러 주세요",
   markFailed: "읽음으로 바꾸지 못했어요. 다시 눌러 주세요",
   unreadPrefix: "안 읽음, ",
 } as const;

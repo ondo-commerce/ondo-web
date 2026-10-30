@@ -58,7 +58,10 @@ const INCOMING_TYPES = [
 
 let notifications: Notification[] = [];
 const failPlan = new Map<MockOp, { status: number; times: number }>();
-const delayPlan = new Map<MockOp, { ms: number; times: number }>();
+const delayPlan = new Map<
+  MockOp,
+  { ms: number; times: number; beforeApply: boolean }
+>();
 
 /* --- 문구 --------------------------------------------------------------- */
 
@@ -304,9 +307,11 @@ function plannedFailure(op: MockOp) {
 }
 
 /** 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 늦게 온 응답이 요청 시점 값을 들고 오게(경쟁 시험) */
-async function plannedDelay(op: MockOp) {
+async function plannedDelay(op: MockOp, beforeApply = false) {
   const plan = delayPlan.get(op);
   if (plan === undefined || plan.times <= 0) return;
+  /* 저장 전 지연(`beforeApply`)과 응답 전 지연은 한 요청에서 한 번만 걸린다 */
+  if (plan.beforeApply !== beforeApply) return;
   plan.times -= 1;
   if (plan.times === 0) delayPlan.delete(op);
   await delay(plan.ms);
@@ -538,6 +543,7 @@ export const retailNotificationHandlers = [
     }
     const parsed = parseReadBody(await request.json().catch(() => null));
     if (parsed instanceof Response) return parsed;
+    await plannedDelay("read", true);
 
     if (parsed.kind === "ids") {
       const now = kstIso(Date.now());
@@ -596,18 +602,29 @@ export const retailNotificationHandlers = [
     return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
   }),
 
-  /** 다음 n회 응답을 ms만큼 늦춘다. `{op: list|read, ms, times = 1}`. 값은 요청 시점 것 */
+  /**
+   * 다음 n회 응답을 ms만큼 늦춘다. `{op: list|read, ms, times = 1, beforeApply?}`. 값은 요청 시점 것.
+   * `beforeApply: true`(read만): 저장하기 **전에** 기다린다 — 그 사이 목록 GET은 읽음 전 행을 받는다(codex-meta M2)
+   */
   http.post("*/__mock/notifications/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
       ms?: number;
       times?: number;
+      beforeApply?: boolean;
     };
     const op = knobOp(input.op);
     if (op === undefined) return invalid("op", "INVALID", KNOB_OP_MESSAGE);
     if (typeof input.ms !== "number" || input.ms < 0)
       return invalid("ms", "INVALID", "ms는 0 이상 숫자여야 합니다.");
-    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1 });
+    const beforeApply = input.beforeApply === true;
+    if (beforeApply && op !== "read")
+      return invalid(
+        "beforeApply",
+        "INVALID",
+        "beforeApply는 read만 받습니다.",
+      );
+    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1, beforeApply });
     return HttpResponse.json({ data: { op, ...delayPlan.get(op) } });
   }),
 

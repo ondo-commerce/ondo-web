@@ -20,7 +20,9 @@ import {
 assertStubServers();
 
 for (const path of ["/", "/chats", "/chats/1"] as const) {
-  test(`390 헤더 ${path}: 검색칸 95px(결정 33), 아이콘 44, 가로 스크롤 0`, async ({ page }) => {
+  /* 06b 결정 48(폰 폭 찜 숨김, 좌우 16, 칸 사이 8)로 검색칸이 95 → 107px로 넓어졌다. 기대값을 06b 기획 Q3 하한
+     (390 ≥ 90)으로 바꿨다(loop-06b QA, 04-qa.md "남긴 e2e 파일") */
+  test(`390 헤더 ${path}: 검색칸 ≥ 90px(06b 결정 48), 아이콘 44, 가로 스크롤 0`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await start(page, "/");
     if (path !== "/") {
@@ -54,7 +56,7 @@ for (const path of ["/", "/chats", "/chats/1"] as const) {
     expect(m.x).toBe(0);
     const chat = m.icons.find((i) => i.label?.startsWith("채팅"));
     expect(chat?.w).toBe(44);
-    expect(Math.round(m.form ?? 0)).toBe(95);
+    expect(Math.round(m.form ?? 0)).toBeGreaterThanOrEqual(90);
   });
 }
 
@@ -111,25 +113,39 @@ test("1470 토큰: 미송 보기 36px, 14px, 간격 6, 테두리 1, 카드 위 �
 
 const SHOTS = "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-06-backorder-reply/qa";
 
+/* 06b 결정 48, 49가 06a 결정 33 수치를 바꿨다(loop-06b QA에서 갱신). 폰 폭(≤40rem)은 찜이 헤더에서 빠져 계정 메뉴로 가고
+   좌우 16, 칸 사이 8. 360 미만은 검색칸 대신 돋보기 44. 하한은 06b 기획 Q3(390 ≥ 90, 360 ≥ 60). 옛 기대값
+   (95/65/28, 돋보기와 찜 사이 간격)은 찜 아이콘이 없어져 잴 대상이 없다 */
 for (const width of [390, 360, 320] as const) {
-  test(`${width} 헤더 가로 스크롤 0, 채팅 링크 보임`, async ({ page }) => {
+  test(`${width} 헤더 가로 스크롤 0, 채팅 링크 보임, 06b 결정 48 49 배치`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await start(page, "/");
-    const m = await page.evaluate(() => ({
-      x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      form: document.querySelector("header form")?.getBoundingClientRect().width ?? null,
-      /* 돋보기 오른쪽 끝과 찜 왼쪽 끝 사이. 0보다 작으면 겹친다(F2 320) */
-      iconGap:
-        (document.querySelector('header a[aria-label="찜 목록"]')?.getBoundingClientRect().left ?? 0) -
-        (document.querySelector("header form svg")?.getBoundingClientRect().right ?? Infinity),
-    }));
+    const m = await page.evaluate(() => {
+      const visible = (el: Element | null) => el !== null && (el as HTMLElement).offsetParent !== null;
+      return {
+        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        form: visible(document.querySelector("header form"))
+          ? document.querySelector("header form")!.getBoundingClientRect().width
+          : null,
+        wish: visible(document.querySelector('header a[aria-label="찜 목록"]')),
+        searchToggle: (() => {
+          const b = document.querySelector('header button[aria-label="통합 검색 열기"]');
+          return visible(b) ? Math.round(b!.getBoundingClientRect().width) : null;
+        })(),
+      };
+    });
     console.log("QA design header", width, JSON.stringify(m));
     await page.locator("header").screenshot({ path: `${SHOTS}/header-${width}.png` }).catch(() => undefined);
     expect(m.x).toBe(0);
     await expect(chatNav(page)).toBeInViewport();
-    /* 디자인 결정 33 수치 */
-    expect(Math.round(m.form ?? 0)).toBe({ 390: 95, 360: 65, 320: 28 }[width]);
-    expect(m.iconGap).toBeGreaterThan(0);
+    expect(m.wish, "폰 폭 찜 숨김(결정 48)").toBe(false);
+    if (width === 320) {
+      expect(m.form, "320 검색칸 숨김(결정 49)").toBeNull();
+      expect(m.searchToggle, "320 돋보기 44").toBe(44);
+    } else {
+      expect(m.searchToggle).toBeNull();
+      expect(Math.round(m.form ?? 0)).toBeGreaterThanOrEqual({ 390: 90, 360: 60 }[width]);
+    }
   });
 }
 

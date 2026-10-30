@@ -200,6 +200,29 @@ test("S2-3 패널을 연 뒤 로그아웃 → miso 로그인 + 목록 지연 3�
   await flushUntil(page, async () => (await rows(page).count()) === 20);
 });
 
+/* 04-qa F3. 위 테스트는 패널을 열 때 목록을 지우는 규칙만으로도 통과한다. 이 테스트는 세션 전환 캐시 비우기
+   (`AccountChip` 로그아웃, `LoginView` 로그인의 `clearHeaderSession`)를 지킨다 — 둘 다 빼면 miso 첫 count가 오기 전
+   구간에 bombom 배지 2가 셸에 남아 실패한다(0ms 단계). 첫 count를 4초 늦춰 그 구간을 연다.
+   하나만 빼면 통과한다: 클라이언트 이동으로 다른 계정이 들어오는 길은 로그아웃 → 로그인 하나뿐이라 두 호출이 같은 길에
+   겹친다(채팅 끊김의 로그인 링크는 `<a>` 전체 이동이라 QueryClient가 새로 뜬다). 둘은 서로의 안전망이다 */
+test("S2-3 bombom 배지 2 → 로그아웃 → miso 로그인 + count 지연 4초 → 그 구간 매 단계 배지 0, 이름 '알림'", async ({
+  page,
+}) => {
+  await routeAuth(page);
+  await startNotify(page, "/");
+  await expect(bellBadge(page)).toHaveText("2");
+  await expect(bell(page)).toHaveAccessibleName("알림, 안 읽음 2개");
+
+  await chatMock(page, "delay", { op: "count", ms: 4_000 });
+  await logoutThenLogin(page, "miso");
+  await pauseClock(page);
+  for (let t = 0; t < 3_500; t += 500) {
+    await expect(bellBadge(page), `${t}ms 옛 배지 0`).toHaveCount(0);
+    await expect(bell(page)).toHaveAccessibleName("알림");
+    await page.clock.runFor(500);
+  }
+});
+
 test("S2-3 /chats/1 에서 '가나다' 쓰는 중 목록 401 → 패널 안 '로그인이 끊겼어요', 이동 0, 글 그대로", async ({
   page,
 }) => {
@@ -247,6 +270,78 @@ test("S2-3 /chats/1 에서 모두 읽음 401 → 오류 한 줄, 이동 0, 글 �
   await expect(page).toHaveURL("/chats/1?from=/chats");
   await expect(composer(page)).toHaveValue("가나다");
   expect(loginNavs()).toBe(0);
+});
+
+/* 03-review R1. 읽음 401이 count를 멈출 때 진행 중 count를 취소하지 않으면, 그 count가 늦게 성공해 `stopped`를 `ok`로
+   덮고 배지 2가 되살아나며 polling이 다시 돈다. `stopHeaderCounts`의 취소와 울타리를 빼면 이 테스트가 실패한다 */
+test("S2-3 늦은 count(지연 5초) 중 모두 읽음 401 → 배지 0, 늦은 count 도착 뒤에도 0, 그 뒤 60초 count 요청 0", async ({
+  page,
+}) => {
+  await startNotify(page, "/");
+  await openPanel(page);
+  await firstPageShown(page);
+  await chatMock(page, "delay", { op: "count", ms: 5_000 });
+  await pauseClock(page);
+  const counts = await count(page, COUNT_GET);
+  await page.clock.runFor(30_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+
+  await notifyMock(page, "fail", { op: "read", status: 401 });
+  await markAllButton(page).click();
+  await expect(
+    appAlert(page).filter({
+      hasText: "로그인이 끊겼어요. 다시 로그인한 뒤 눌러 주세요",
+    }),
+  ).toBeVisible();
+  await expect(bellBadge(page)).toHaveCount(0);
+  for (let t = 0; t <= 6_000; t += 500) {
+    await expect(bellBadge(page)).toHaveCount(0);
+    await page.clock.runFor(500);
+  }
+  const late = (await requests(page, COUNT_GET))[counts];
+  expect(late?.status, "늦은 count가 도착했다").not.toBeNull();
+  await expect(bell(page)).toHaveAccessibleName("알림");
+
+  const after = await count(page, COUNT_GET);
+  await page.clock.runFor(60_000);
+  expect(await count(page, COUNT_GET), "멈춘 뒤 count 요청 0").toBe(after);
+  await expect(bellBadge(page)).toHaveCount(0);
+});
+
+/* codex-meta M1. bombom이 보낸 모두 읽음이 401로 늦게 오는 사이 로그아웃 → miso 로그인. 그 응답이 miso 셸이 붙은
+   뒤에 도착해도 miso count를 멈추면 안 된다. mutation 콜백은 `clearHeaderSession`이 끊지 못해서 세션 세대로 거른다.
+   세대 검사를 빼면 늦은 401이 `stopped`를 넣어 31초 count가 안 나가 실패한다.
+   지연 20초: 로그아웃, 로그인이 흐르는 시계로 몇 초 걸리니 그 뒤에 도착하게 넉넉히 둔다 */
+test("S2-3 모두 읽음 401 지연 20초 중 로그아웃 → miso 로그인 → 늦은 401 도착 뒤에도 31초 안에 count 다시 돈다", async ({
+  page,
+}) => {
+  await routeAuth(page);
+  await startNotify(page, "/");
+  await openPanel(page);
+  await firstPageShown(page);
+  await notifyMock(page, "fail", { op: "read", status: 401 });
+  await notifyMock(page, "delay", { op: "read", ms: 20_000 });
+  await markAllButton(page).click();
+  await waitCount(page, NREAD_POST, 1);
+  await page.keyboard.press("Escape");
+
+  await logoutThenLogin(page, "miso");
+  await pauseClock(page);
+  expect(
+    (await requests(page, NREAD_POST))[0]?.status,
+    "로그인이 끝날 때까지 읽음 응답은 아직",
+  ).toBeNull();
+  await page.clock.runFor(20_000);
+  await flushUntil(
+    page,
+    async () => (await requests(page, NREAD_POST))[0]?.status === 401,
+  );
+  /* 콜백(onError)이 돌 틈 */
+  await page.clock.runFor(100);
+  const counts = await count(page, COUNT_GET);
+  await page.clock.runFor(31_000);
+  await waitCount(page, COUNT_GET, counts + 1);
+  await expect(bell(page)).toBeVisible();
 });
 
 test("S2-4 닫혀 있으면 목록 0, 열면 1회. 첫 행 title, body, 어제 시각, 점. 더 보기 22개 중복 0. Esc → 종으로 포커스", async ({
@@ -640,6 +735,50 @@ test("S2-11 ① 더 보기 지연 중 첫 장 안 읽은 행 누름 → 배지�
     "data-unread",
     "true",
   );
+});
+
+/* codex-meta M2. 아래 ②는 목이 읽음을 먼저 저장하고 응답만 늦춰서, 다시 연 목록이 이미 읽음 행을 받는다 — 목록 보정
+   (`mutations.ts` onSuccess의 `markPagesRead`)을 지워도 통과했다. 여기선 목이 **저장 전에** 기다린다(`beforeApply`).
+   다시 연 목록은 읽음 전 행(점 있음)을 받아 먼저 끝나고, 그 뒤 read 200이 온다. 목록 요청이 끝난 뒤라 다시 받지
+   않으니 점을 지우는 건 보정 하나다. 보정을 지우면 마지막 단언에서 실패한다 */
+test("S2-11 ③ read 저장 전 지연 3초 중 다시 엶 → 목록은 읽음 전 행(점), read 도착 뒤 목록 GET 없이 점 0, 배지 1", async ({
+  page,
+}) => {
+  await startNotify(page, "/backorders?wholesaler=101");
+  await openPanel(page);
+  await firstPageShown(page);
+  await notifyMock(page, "delay", { op: "read", ms: 3_000, beforeApply: true });
+  await pauseClock(page);
+  await rowById(page, SEED_FIRST).click();
+  await waitCount(page, NREAD_POST, 1);
+  const lists = await count(page, LIST_GET);
+  await openPanel(page);
+  await waitCount(page, LIST_GET, lists + 1);
+  await flushUntil(page, async () => (await rows(page).count()) === 20);
+  await settled(page, LIST_GET);
+  expect(
+    (await requests(page, NREAD_POST))[0]?.status,
+    "목록이 read보다 먼저 끝났다",
+  ).toBeNull();
+  await expect(rowById(page, SEED_FIRST), "읽음 전 스냅샷").toHaveAttribute(
+    "data-unread",
+    "true",
+  );
+
+  await page.clock.runFor(3_000);
+  await flushUntil(
+    page,
+    async () => (await requests(page, NREAD_POST))[0]?.status === 200,
+  );
+  await page.clock.runFor(100);
+  expect(await count(page, LIST_GET), "read 뒤 목록 다시 받기 0").toBe(
+    lists + 1,
+  );
+  await expect(rowById(page, SEED_FIRST)).toHaveAttribute(
+    "data-unread",
+    "false",
+  );
+  await expect(bellBadge(page)).toHaveText("1");
 });
 
 test("S2-11 ② read 지연 3초 중 패널 닫고 다시 엶 → 그 사이 목록이 먼저 와도 read 도착 뒤 누른 행 점 0", async ({

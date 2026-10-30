@@ -97,14 +97,14 @@ export function NotificationPanel({
       </div>
 
       {/* 409는 사장 잘못이 아니라 빨강을 안 쓴다(디자인 결정 33). 500은 오류 한 줄 */}
-      {notice === "changed" ? (
+      {notice === "changed" || notice === "newerFirst" ? (
         <Notice
           role="status"
           /* 떠 있는 작은 표면이라 Notice 기본(12 16, 14)보다 작게 — 와이어프레임 `.pop .notice` 8 12, 13 */
           className="mt-3 shrink-0 px-3 py-2 text-body"
           data-ac="S11-9"
         >
-          {PANEL_TEXT.changed}
+          {notice === "changed" ? PANEL_TEXT.changed : PANEL_TEXT.newerFirst}
         </Notice>
       ) : null}
       {notice === "markFailed" ? (
