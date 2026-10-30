@@ -89,4 +89,4 @@ export interface NotificationRowView {
 }
 
 /** 패널 위쪽 한 줄 안내. 다음 누름에서 사라진다 */
-export type PanelNotice = "changed" | "markFailed" | null;
+export type PanelNotice = "changed" | "newerFirst" | "markFailed" | null;

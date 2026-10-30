@@ -54,10 +54,11 @@ test("(d) 연 뒤 다른 기기가 1개 읽고 새 1개 → '새 알림 1개 보
 });
 
 /**
- * F2 재현(test.fail). 02-dev S3 부채 1: 줄이 뜬 채 모두 읽음(계약대로 POST 200) → 배지 0, 새 행은 화면에 없는데 읽음 처리되고,
- * '새 알림 N개 보기' 줄은 남는다. 이 테스트는 지금 동작을 기록한다(줄이 남는 것). 결함이면 F 번호로 올린다.
+ * F2. 고치기 전: 줄이 뜬 채 모두 읽음(계약대로 POST 200) → 배지 0, 화면에 없던 새 행까지 읽음, 줄은 남았다(test.fail로 기록).
+ * 고친 뒤(소매 S2-6과 같은 규칙): 줄이 떠 있으면 read POST 0 + 첫 장 다시 + 안내 한 줄. 새 행이 맨 위, 줄 사라짐, 배지 그대로.
+ * 그다음 누름은 계약대로 POST {all, expectedUnread}. `NotificationBell`의 `hasNewer` 분기를 빼면 안내 한 줄 단언에서 실패한다(그 뒤 POST 0, 줄 0도 깨진다).
  */
-test.fail("(d') F2 줄이 뜬 채 모두 읽음 → 배지 0. 그 뒤 '새 알림 N개 보기' 줄이 남는가 기록", async ({
+test("(d') F2 줄이 뜬 채 모두 읽음 → POST 0, 첫 장 다시, 새 행 맨 위, 줄 0. 다시 누르면 POST 1", async ({
   page,
 }) => {
   await start(page);
@@ -75,32 +76,47 @@ test.fail("(d') F2 줄이 뜬 채 모두 읽음 → 배지 0. 그 뒤 '새 알�
   const counts = await count(page, COUNT_GET);
   await page.clock.fastForward(30_000);
   await waitCount(page, COUNT_GET, counts + 1);
-  const lists = await count(page, LIST_GET);
-  await markAllButton(page).click();
-  await expect(markAllButton(page)).toHaveCount(0);
-  await expect(bell(page)).toHaveAccessibleName("알림");
-  /* 다음 count 한 번 더(줄이 count 갱신으로 사라지는지까지 본다) */
-  const after = await count(page, COUNT_GET);
-  await page.clock.fastForward(30_000);
-  await waitCount(page, COUNT_GET, after + 1);
   const line = panel(page).getByRole("button", {
     name: /^새 알림 \d+개 보기$/,
   });
-  const state = {
-    reads: await readBodies(page),
-    listGetsAfterMarkAll: (await count(page, LIST_GET)) - lists,
-    newerLine: await line.count(),
-    newerText: (await line.count()) > 0 ? await line.textContent() : null,
-    rowIds: (await rowIds(page)).slice(0, 3),
-  };
-  test
-    .info()
-    .annotations.push({ type: "state", description: JSON.stringify(state) });
+  await expect(line).toBeVisible();
+  const label = await bell(page).getAttribute("aria-label");
+  const readsBefore = (await readBodies(page)).length;
+  const lists = await count(page, LIST_GET);
+  await markAllButton(page).click();
+  await expect(
+    panel(page).getByRole("status").filter({
+      hasText: "새 알림이 왔어요. 확인하고 다시 눌러 주세요",
+    }),
+  ).toBeVisible();
+  await waitCount(page, LIST_GET, lists + 1);
+  await expect(line).toHaveCount(0);
+  expect((await rowIds(page))[0]).toBe(NEW_ID);
+  expect((await readBodies(page)).length, "줄이 떠 있으면 read POST 0").toBe(
+    readsBefore,
+  );
+  await expect(bell(page)).toHaveAttribute("aria-label", label ?? "");
+  /* 다음 count 한 번 더 — 줄이 다시 뜨지 않는다 */
+  const after = await count(page, COUNT_GET);
+  await page.clock.fastForward(30_000);
+  await waitCount(page, COUNT_GET, after + 1);
+  await expect(line).toHaveCount(0);
   await panel(page).screenshot({
-    path: `${SHOTS}/wholesale-markall-newer-left.png`,
+    path: `${SHOTS}/wholesale-markall-newer-fixed.png`,
   });
-  /* 기록: 남으면 1. 배지 0인데 '새 알림 1개 보기'가 남는 것 = F 후보 */
-  expect(state.newerLine, "모두 읽음 뒤 새 알림 줄").toBe(0);
+
+  /* 확인한 뒤 다시 누르면 계약대로 POST {all, expectedUnread} */
+  await markAllButton(page).click();
+  await expect
+    .poll(async () => (await readBodies(page)).slice(readsBefore))
+    .toEqual([
+      expect.objectContaining({
+        all: true,
+        expectedUnread: expect.any(Number),
+      }),
+    ]);
+  await expect(markAllButton(page)).toHaveCount(0);
+  await expect(bell(page)).toHaveAccessibleName("알림");
 });
 
 test("S3-1 안내 줄 토큰: secondary-foreground 13px, 'N곳'만 foreground 500, 저장 버튼 aria-describedby", async ({

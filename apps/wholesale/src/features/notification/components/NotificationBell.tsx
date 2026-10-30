@@ -9,10 +9,11 @@ import { CountBadge } from "./CountBadge";
 import { NotificationPanel } from "./NotificationPanel";
 import { notificationKeys } from "../api/keys";
 import { useMarkNotificationsReadMutation } from "../api/mutations";
-import { bellBadge, unreadOf } from "../derive";
+import { bellBadge, hasNewer, unreadOf } from "../derive";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import { useSingleFlight } from "@/shared/lib/useSingleFlight";
 import type {
+  FetchedNotificationPage,
   HeaderCounts,
   NotificationPage,
   NotificationRowView,
@@ -20,6 +21,8 @@ import type {
 } from "../types";
 
 type ListData = InfiniteData<NotificationPage, string | null>;
+/** 목록 캐시의 실제 모양. 장마다 그 첫 장을 보낼 때의 count 순번이 붙는다(`hasNewer`가 본다) */
+type FetchedListData = InfiniteData<FetchedNotificationPage, string | null>;
 
 /**
  * 헤더 종 + 알림 패널(디자인 결정 28, A안). packages/ui `Popover` 360, 종 아래 오른쪽 맞춤.
@@ -33,7 +36,8 @@ type ListData = InfiniteData<NotificationPage, string | null>;
  *  - `모두 읽음` N은 count 값(받은 행 수가 아니다, S11-8). 409면 아무것도 안 바꾸고 다시 받는다(S11-9)
  *  - "새 알림 N개 보기"를 띄울지는 count `latestNotificationId`와 첫 장 첫 행 id 비교다(loop-06b, `hasNewer`).
  *    연 뒤 다른 기기가 하나 읽고 새 것이 하나 와 수가 같아도 뜬다(05b-2 F3). 목록은 엿보지 않는다(03-review M1 M2).
- *    N만 연 때 수와의 차이다(`newerCount`, 하한). `모두 읽음`은 계약대로 POST하고 그 사이 바뀌면 409가 막는다
+ *    N만 연 때 수와의 차이다(`newerCount`, 하한). 그 줄이 떠 있으면 `모두 읽음`은 POST 없이 첫 장을 다시 받는다(F2).
+ *    줄이 없으면 계약대로 POST하고 그 사이 바뀌면 409가 막는다
  */
 export function NotificationBell({
   counts,
@@ -137,6 +141,20 @@ export function NotificationBell({
       const expected = unread;
       if (expected === null || expected < 1) {
         release();
+        return;
+      }
+      /* '새 알림 보기' 줄이 떠 있으면 POST하지 않고 첫 장을 다시 받는다(loop-06b F2, 소매 S2-6과 같은 규칙).
+         그대로 보내면 수가 맞아 200이 나고, 화면에 그린 적 없는 새 알림까지 읽힌다. 줄도 다음 count 뒤에 남는다.
+         누른 순간의 값을 캐시에서 읽는다 — 렌더 값은 30초 count가 막 바뀐 틱에 하나 늦을 수 있다 */
+      if (
+        hasNewer(
+          queryClient.getQueryData<HeaderCounts>(notificationKeys.counts()),
+          queryClient.getQueryData<FetchedListData>(notificationKeys.list())
+            ?.pages[0],
+        )
+      ) {
+        setNotice("newerFirst");
+        void reloadFirstPage().finally(release);
         return;
       }
       setNotice(null);

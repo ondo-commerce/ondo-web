@@ -83,7 +83,8 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
   };
 
   return (
-    <form onSubmit={submit} noValidate>
+    /* data-ac: 와이어프레임 `20_retail-notifications/_screen-wholesale.html` `form.eta`와 같은 값(04-qa F4) */
+    <form onSubmit={submit} noValidate data-ac="S3-1 S4-2">
       {errors._form ? (
         <p role="alert" className="text-destructive-strong mb-3 text-sm">
           {errors._form}
