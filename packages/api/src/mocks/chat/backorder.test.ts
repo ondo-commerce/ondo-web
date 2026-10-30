@@ -386,3 +386,114 @@ describe("칩 검증(§4-2 2) — 보기 밖, 30분, 보기 뒤 해소", () => {
     });
   });
 });
+
+describe("R1 색상, 사이즈가 둘 이상이면 확정하지 않는다(D37 ④)", () => {
+  const blackL = [row(9101, { color: "블랙", size: "L" })];
+
+  it("블랙/L만 열림 + '블랙 M이랑 화이트 L' → 블랙/L로 답하지 않고 되묻는다", () => {
+    const d = decide("블랙 M이랑 화이트 L 미송 언제 와요?", blackL);
+    // 넘김으로 바뀌어도 잡히게 되묻기와 보기(블랙/L 하나)까지 본다(리뷰 M4)
+    expect(d.kind).toBe("CLARIFY");
+    if (d.kind !== "CLARIFY" || d.intent !== "BACKORDER")
+      throw new Error("미송 되묻기여야 한다");
+    expect(d.choices.map((b) => b.backorderId)).toEqual([9101]);
+    expect(d.truncated).toBe(false);
+    expect(generatedLines(d, 1, GOLDEN_T0).map((l) => l.kind)).toEqual([
+      "CLARIFY",
+    ]);
+  });
+
+  it("색상 둘, 사이즈 하나('블랙 L이랑 화이트 L')도 확정하지 않는다", () => {
+    expect(decide("블랙 L이랑 화이트 L 미송 언제 와요?", blackL).kind).not.toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("색상 하나, 사이즈 둘('블랙 M L')도 확정하지 않는다", () => {
+    expect(decide("블랙 M L 미송 언제 와요?", blackL).kind).not.toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("같은 사이즈를 두 번 말한 건 하나로 본다('블랙 L, L 사이즈') → 답", () => {
+    expect(decide("블랙 L L사이즈 미송 언제 와요?", blackL).kind).toBe(
+      "AUTO_REPLY",
+    );
+  });
+
+  it("대조군: '블랙 L' 한 쌍이면 답한다", () => {
+    expect(decide("블랙 L 미송 언제 와요?", blackL).kind).toBe("AUTO_REPLY");
+  });
+
+  it("되묻기(보기 블랙/L 하나) 뒤 답글에 쌍이 둘이면 다시 넘김(CLARIFY_AGAIN)", () => {
+    const first = decide("미송 언제 와요?", blackL);
+    expect(first.kind).toBe("CLARIFY");
+    const history = asHistory(first, GOLDEN_T0);
+    const d = decide("블랙 M이랑 화이트 L", blackL, {
+      now: GOLDEN_T0 + MINUTE,
+      history,
+    });
+    expect(d).toMatchObject({ kind: "HANDOFF", reason: "CLARIFY_AGAIN" });
+  });
+});
+
+describe("M1 후보에 없는 상품명이 있으면 확정하지 않는다(D37 ④ 틀린 답보다 넘김)", () => {
+  // 린넨 셋업 자켓 베이지/L(9003) 하나만 열림
+  const jacket = [row(9003)];
+
+  it("'블라우스 베이지 L' → 자켓 날짜로 답하지 않고 넘김(NO_MATCH)", () => {
+    const d = decide("블라우스 베이지 L 미송 언제 와요?", jacket);
+    expect(d).toEqual({
+      kind: "HANDOFF",
+      reason: "NO_MATCH",
+      intent: "BACKORDER",
+    });
+    expect(
+      generatedLines(d, 1, GOLDEN_T0)
+        .map((l) => l.body)
+        .join("\n"),
+    ).not.toContain("입고 예정");
+  });
+
+  it("조사가 붙어도 모르는 말이다('블라우스는 베이지 L이요') → 넘김", () => {
+    expect(decide("블라우스는 베이지 L이요 언제 와요", jacket)).toMatchObject({
+      kind: "HANDOFF",
+      reason: "NO_MATCH",
+    });
+  });
+
+  it("되묻기 뒤 답글에 모르는 상품명 → 다시 넘김(CLARIFY_AGAIN)", () => {
+    const first = decide("미송 언제 와요?", jacket);
+    expect(first.kind).toBe("CLARIFY");
+    const d = decide("블라우스 베이지 L이요", jacket, {
+      now: GOLDEN_T0 + MINUTE,
+      history: asHistory(first, GOLDEN_T0),
+    });
+    expect(d).toMatchObject({ kind: "HANDOFF", reason: "CLARIFY_AGAIN" });
+  });
+
+  it("대조군: 상품명이 후보와 맞거나, 흔한 말과 조사만 있으면 답한다", () => {
+    for (const body of [
+      "린넨 셋업 자켓 베이지 L 미송 언제 와요?",
+      "자켓 베이지 L 미송 언제 와요",
+      "베이지 L 사이즈 미송건 언제쯤 들어와요?",
+      "혹시 베이지 L 주문한 거 언제 와요",
+    ])
+      expect(decide(body, jacket).kind, body).toBe("AUTO_REPLY");
+  });
+});
+
+describe("M3 겹치는 색상 이름은 가장 긴 것만 센다", () => {
+  const sky = [row(9201, { color: "스카이블루", size: "L" })];
+
+  it("후보 스카이블루/L + '린넨 자켓 스카이블루 L' → 즉답(스카이, 블루를 따로 세지 않는다)", () => {
+    const d = decide("린넨 자켓 스카이블루 L 미송 언제 와요?", sky);
+    expect(d).toMatchObject({ kind: "AUTO_REPLY", intent: "BACKORDER" });
+  });
+
+  it("대조군: '스카이블루 L이랑 블루 M'은 색상 둘이라 확정하지 않는다", () => {
+    expect(
+      decide("스카이블루 L이랑 블루 M 미송 언제 와요?", sky).kind,
+    ).not.toBe("AUTO_REPLY");
+  });
+});

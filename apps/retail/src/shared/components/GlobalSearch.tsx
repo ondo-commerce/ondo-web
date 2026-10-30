@@ -33,7 +33,9 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
          ≤60rem에서 남은 폭을 채우는 건 확정 와이어프레임 `_base.css:329`의 `.search`
          규칙 그대로다 — 브레이크포인트를 Tailwind 기본값으로 반올림하지 않는 이유는
          AC가 960/640px를 픽셀로 못박고 있어서다 */
-      className="min-w-0 tablet:flex-1"
+      /* phone:min-w-7(28px): 320에서 남는 폭(25px)보다 돋보기 자리를 지킨다(디자인 결정 33 "320 28px, 돋보기만").
+         모자란 3px는 헤더 줄 오른쪽 여백(20px) 안으로 들어가 가로 스크롤이 생기지 않는다 */
+      className="min-w-0 tablet:flex-1 phone:min-w-7"
     >
       <SearchInput
         name="q"
@@ -50,7 +52,8 @@ function SearchForm({ initialQuery }: { initialQuery: string }) {
            헤더의 주 조작 요소라 여기서 덮는다(WCAG 2.4.7).
            w-full: SearchInput 기본 폭 w-85(340px)를 좁은 화면에서만 벗긴다.
            packages/ui는 읽기 전용이라 기본값 자체는 건드리지 않는다 */
-        className="focus-within:ring-ring focus-within:ring-2 tablet:w-full"
+        /* phone:px-3: 28px 칸에서 돋보기(16)가 칸 밖으로 비어져 나오지 않게 좌우 여백을 12로 줄인다 */
+        className="focus-within:ring-ring focus-within:ring-2 tablet:w-full phone:px-3"
       />
     </form>
   );
