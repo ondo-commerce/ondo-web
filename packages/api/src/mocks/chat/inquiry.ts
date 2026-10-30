@@ -258,6 +258,125 @@ export function hasPeriodWord(body: string): boolean {
     PERIOD_DATE.test(raw)
   );
 }
+
+/**
+ * 미수 질문으로 **아는 말 조각**(Codex C2). 금액 답 직전에 본문을 이 조각으로만 이어 붙일 수 있는지 본다.
+ *
+ * 기간 말 목록(`PERIOD_WORDS`)은 빠뜨린 말이 계속 나왔다 — "보름 동안", "열흘간", "이틀 전"에 전체 잔액이 나갔다.
+ * 그래서 반대로 묻는다: 모르는 말이 하나라도 남으면 금액을 말하지 않는다(06a 미송 M1과 같은 원리). 이 목록을
+ * 넓히는 건 금액 답을 늘리는 일이니 조각 하나씩, 그 조각끼리 붙어 기간 말이 되지 않는지 보고 넣는다.
+ *  - "주", "일", "달", "번", "전", "어", "아"는 혼자 넣지 않는다 — "이"+"주"(2주), "어"+"제"(어제)가 된다
+ *  - "까지"는 넣지 않는다 — "언제까지 갚아야"는 기한 질문이지 잔액 질문이 아니다
+ */
+const RECEIVABLE_KNOWN_PIECES: readonly string[] = [
+  // 미수 질문 낱말
+  "미수",
+  "외상",
+  "잔액",
+  "잔금",
+  "갚을",
+  "갚아야",
+  "밀린",
+  "돈",
+  "금액",
+  "총액",
+  "얼마",
+  "얼마나",
+  "남은",
+  "남았",
+  "남아",
+  "있",
+  "지금",
+  "현재",
+  "아직",
+  "총",
+  "전체",
+  "전부",
+  "우리",
+  "저희",
+  "제",
+  "저",
+  "내",
+  "사장님",
+  "사장",
+  "혹시",
+  "좀",
+  "거",
+  "것",
+  "게",
+  "건",
+  "확인",
+  "알려",
+  "해",
+  "할",
+  "되",
+  "돼",
+  "될",
+  "주세요",
+  "줘",
+  "줘요",
+  "부탁",
+  "드려요",
+  // 조사
+  "은",
+  "는",
+  "이",
+  "가",
+  "을",
+  "를",
+  "도",
+  "만",
+  "의",
+  "에",
+  // 공손 어미, 물음 어미
+  "예요",
+  "이에요",
+  "에요",
+  "어요",
+  "아요",
+  "나요",
+  "가요",
+  "까요",
+  "인가요",
+  "인지",
+  "니까",
+  "습니까",
+  "죠",
+  "지요",
+  "요",
+];
+const RECEIVABLE_KNOWN_SET = new Set(RECEIVABLE_KNOWN_PIECES);
+const RECEIVABLE_PIECE_MAX = Math.max(
+  ...RECEIVABLE_KNOWN_PIECES.map((p) => p.length),
+);
+
+/** 낱말 하나를 아는 조각으로 빈틈없이 자를 수 있는가(앞에서부터 동적 계획). 낱말 경계를 넘어 붙이지 않는다 */
+function segmentsIntoKnown(token: string): boolean {
+  const ok: boolean[] = [true];
+  for (let end = 1; end <= token.length; end++) {
+    ok[end] = false;
+    for (let len = 1; len <= Math.min(RECEIVABLE_PIECE_MAX, end); len++) {
+      if (
+        ok[end - len] === true &&
+        RECEIVABLE_KNOWN_SET.has(token.slice(end - len, end))
+      ) {
+        ok[end] = true;
+        break;
+      }
+    }
+  }
+  return ok[token.length] === true;
+}
+
+/**
+ * 미수 본문에 아는 말만 있는가(Codex C2). 숫자가 하나라도 있으면 false — "37,500원 맞아요?", "3일 전"처럼
+ * 금액 확인이나 기간일 수 있다. 문장부호, 이모지는 정규화가 지운다
+ */
+export function hasOnlyKnownReceivableWords(body: string): boolean {
+  const text = normalizeInquiryText(body);
+  if (/\p{N}/u.test(text)) return false;
+  return text.split(" ").every((t) => t === "" || segmentsIntoKnown(t));
+}
 /**
  * 배송어. 미송 의도여도 이 말이 있으면 넘긴다 — 미송 답은 "도매 입고 예정"만 말한다. 출고, 배송, 수령은 다른
  * 업무 단계라 같은 날짜로 답하면 틀린다(Codex 7). "언제받", "아직안왔"도 수령 질문이라 미송 키워드에 안 넣었다
@@ -361,7 +480,7 @@ export type HandoffReason =
   | "PERIOD"
   /** 미수. 이 방 도매처와 이 소매처의 정산 줄이 없다. "없어요"라고 답하지 않는다 — 원본이 다 담는지 모른다(D34) */
   | "NO_RELATION"
-  /** 미수. 원본 금액을 보장 못 한다(`toReceivableFacts`의 이상값 7종) */
+  /** 미수. 원본 금액을 보장 못 한다(`toReceivableFacts`의 이상값 7종), 또는 본문에 아는 말 밖의 낱말, 숫자(C2) */
   | "AMOUNT_UNSURE"
   /** 미수. 원본 조회가 던졌다. 보내기는 201이고 오류가 아니라 넘김이다(S1-9) */
   | "LOOKUP_FAILED";
@@ -663,7 +782,8 @@ function decideBackorder(
  *  b. 원본 조회가 던짐 → LOOKUP_FAILED
  *  c. 이 방 도매처 + 이 방 소매처 줄 없음 → NO_RELATION
  *  d. 이상값 7종(`toReceivableFacts`) → AMOUNT_UNSURE
- *  e. 답. `checkedAt` = 원본 `asOf`
+ *  e. 본문에 아는 말 밖의 낱말이나 숫자 → AMOUNT_UNSURE(Codex C2, `hasOnlyKnownReceivableWords`)
+ *  f. 답. `checkedAt` = 원본 `asOf`
  */
 function decideReceivable(input: InquiryInput): InquiryDecision {
   if (hasPeriodWord(input.body)) return handoff("PERIOD", "RECEIVABLE");
@@ -677,6 +797,11 @@ function decideReceivable(input: InquiryInput): InquiryDecision {
   if (row === null) return handoff("NO_RELATION", "RECEIVABLE");
   const converted = toReceivableFacts(row);
   if (!converted.ok) return handoff("AMOUNT_UNSURE", "RECEIVABLE");
+  // f. 아는 말만 있을 때만 금액(Codex C2). 계약 이유 enum은 못 늘려서 AMOUNT_UNSURE로 넘긴다 — PERIOD는 도매
+  // 화면에 "기간을 정해 물었어요"로 나가는데, 남은 말이 "37,500원 맞아요"나 상품명이면 그 문장이 틀린다.
+  // AMOUNT_UNSURE("잔액과 연체 내역 확인이 필요해요")는 어느 경우에도 맞는 말이다
+  if (!hasOnlyKnownReceivableWords(input.body))
+    return handoff("AMOUNT_UNSURE", "RECEIVABLE");
   return {
     kind: "AUTO_REPLY",
     intent: "RECEIVABLE",
