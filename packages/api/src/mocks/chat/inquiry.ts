@@ -475,8 +475,11 @@ function decideBackorder(
   }
 
   if (all.length === 0) return handoff("NO_BACKORDER", "BACKORDER");
-  const { said, left, confirmed } = narrowBackorders(text, all);
-  if (said && left.length === 0) return handoff("NO_MATCH", "BACKORDER");
+  const { said, left, confirmed, blocked } = narrowBackorders(text, all);
+  // blocked: 후보 하나로 좁혀졌지만 본문에 모르는 말(후보에 없는 상품명일 수 있다)이 있다. 그 칩 하나로 되물으면
+  // 소매가 말하지 않은 상품을 내미는 셈이라 넘긴다(리뷰 M1)
+  if (said && (left.length === 0 || blocked))
+    return handoff("NO_MATCH", "BACKORDER");
   if (confirmed !== null) return backorderAnswer(confirmed, today);
   return {
     kind: "CLARIFY",
