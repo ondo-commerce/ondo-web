@@ -22,10 +22,11 @@ import {
   DEFAULT_AUTO_REPLY_SETTINGS,
   INQUIRY_BAND_EDGES,
   INQUIRY_CONTEXT_MINUTES,
+  RECEIVABLE_AMOUNT_QUESTIONS,
   decideInquiry,
   generatedLines,
-  hasOnlyKnownReceivableWords,
   hasPeriodWord,
+  isReceivableAmountQuestion,
   linesToAppend,
   openHandoffOf,
   orderLimitOf,
@@ -619,8 +620,8 @@ const GOLDEN_RECEIVABLE_AUTO_TEXTS = GOLDEN.scenarios.flatMap((s) =>
   ),
 );
 
-describe("미수 금액은 아는 말만 있을 때만(Codex C2)", () => {
-  it("목록에 없는 기간 말, 숫자가 붙은 미수 질문 → 금액 없이 넘김(AMOUNT_UNSURE)", () => {
+describe("미수 금액은 정해 둔 문장일 때만(D41, Codex C2 C3)", () => {
+  it("C2 반례 8개: 목록에 없는 기간 말이 붙은 미수 질문 → 금액 없이 넘김", () => {
     for (const period of [
       "보름 동안",
       "열흘간",
@@ -635,20 +636,31 @@ describe("미수 금액은 아는 말만 있을 때만(Codex C2)", () => {
         `${period} 미수 얼마예요?`,
         `${period} 외상 얼마 있어요?`,
       ]) {
-        expect(hasOnlyKnownReceivableWords(body), body).toBe(false);
+        expect(isReceivableAmountQuestion(body), body).toBe(false);
         expect(decideOnce(body), body).toMatchObject({
           kind: "HANDOFF",
           intent: "RECEIVABLE",
         });
       }
-      // hasPeriodWord 가 못 잡는 것은 이번 검사가 받는다
+      // hasPeriodWord 가 못 잡는 것은 문장 검사가 받는다
       const body = `${period} 미수 얼마예요?`;
       if (!hasPeriodWord(body))
         expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
     }
   });
 
-  it("숫자가 하나라도 있거나 조각끼리 붙은 기간 말(이주)이면 넘긴다. 금액 확인 질문에 잔액을 말하지 않는다", () => {
+  it("C3 반례: 허용 조각으로 만든 다른 뜻(방향 반대, 기한), 누가 누구에게인지 모호한 문장 → 넘김", () => {
+    for (const body of [
+      "사장님이 저희에게 갚을 돈은 얼마예요?",
+      "미수 얼마만에 갚아야 되나요?",
+      "사장님 미수 얼마예요",
+    ]) {
+      expect(isReceivableAmountQuestion(body), body).toBe(false);
+      expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+  });
+
+  it("숫자가 붙은 금액 확인, 붙여 쓴 기간 말(이주)도 넘긴다", () => {
     for (const body of [
       "미수 37,500원 맞아요?",
       "외상 2만원 맞죠",
@@ -658,26 +670,23 @@ describe("미수 금액은 아는 말만 있을 때만(Codex C2)", () => {
     }
   });
 
-  it("아는 말만 있는 미수 질문은 그대로 금액 답", () => {
-    for (const body of [
-      "지금 미수 얼마예요?",
-      "미수 얼마예요",
-      "제 외상 얼마 있어요?",
-      "사장님, 제 미수 얼마예요?",
-      "현재 총 잔액 얼마인가요?",
-      "우리 갚을 돈 얼마 남은 거예요?",
-      "혹시 전체 미수 금액 알려주세요",
-    ]) {
-      expect(hasOnlyKnownReceivableWords(body), body).toBe(true);
-      expect(decideOnce(body), body).toMatchObject({
-        kind: "AUTO_REPLY",
-        intent: "RECEIVABLE",
-      });
+  it("허용 문장은 전부 금액 답. 띄어쓰기, 문장부호 차이는 같은 문장이다", () => {
+    for (const sentence of RECEIVABLE_AMOUNT_QUESTIONS) {
+      for (const body of [
+        sentence,
+        sentence.replace(/[?,]/g, ""),
+        `${sentence.replace(/\s/g, "")}!!`,
+      ]) {
+        expect(isReceivableAmountQuestion(body), body).toBe(true);
+        expect(decideOnce(body), body).toMatchObject({
+          kind: "AUTO_REPLY",
+          intent: "RECEIVABLE",
+        });
+      }
     }
   });
 
-  it('"외상 얼마 남았어요?"는 이 검사 전에 재고 낱말 "남았"과 겹쳐 의도 둘이다(R11과 같다)', () => {
-    expect(hasOnlyKnownReceivableWords("외상 얼마 남았어요?")).toBe(true);
+  it('"외상 얼마 남았어요?"는 문장 검사 전에 재고 낱말 "남았"과 겹쳐 의도 둘이다(R11과 같다)', () => {
     expect(decideOnce("외상 얼마 남았어요?")).toEqual({
       kind: "HANDOFF",
       reason: "MULTI_INTENT",
@@ -685,10 +694,10 @@ describe("미수 금액은 아는 말만 있을 때만(Codex C2)", () => {
     });
   });
 
-  it("골든셋 미수 금액 답 10단계 본문은 전부 아는 말뿐이다", () => {
+  it("골든셋 미수 금액 답 10단계 본문은 전부 허용 문장이다", () => {
     expect(GOLDEN_RECEIVABLE_AUTO_TEXTS).toHaveLength(10);
     for (const text of GOLDEN_RECEIVABLE_AUTO_TEXTS)
-      expect(hasOnlyKnownReceivableWords(text), text).toBe(true);
+      expect(isReceivableAmountQuestion(text), text).toBe(true);
   });
 
   it("재고 문장은 이 검사를 타지 않는다", () => {
