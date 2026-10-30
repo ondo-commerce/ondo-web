@@ -272,8 +272,9 @@ describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
           )
         : [];
     const sent = v4.filter((r) => receivableLines(r.actual).length > 0);
-    // 미수 답 10단계(P5 2, R01 R02 R03 R04 R08 R14 R16 R17)가 실제로 나갔다 — 0이면 측정 불가
-    expect(sent.length).toBe(10);
+    // 미수 답 9단계(P5 2, R01 R02 R03 R04 R14 R16 R17)가 실제로 나갔다 — 0이면 측정 불가.
+    // R08 "잔액 얼마예요"는 C4로 넘김이 됐다
+    expect(sent.length).toBe(9);
     expect(
       sent.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
     ).toEqual([]);
@@ -521,7 +522,6 @@ describe("미수 기간 말은 넓게 잡는다(loop-07 codex-meta M1, QA F4)", 
       "지금 미수 얼마예요?",
       "미수 얼마예요?",
       "제 외상 얼마 있어요?",
-      "잔액 얼마예요",
     ]) {
       expect(decideOnce(body), body).toMatchObject({
         kind: "AUTO_REPLY",
@@ -694,8 +694,26 @@ describe("미수 금액은 정해 둔 문장일 때만(D41, Codex C2 C3)", () =>
     });
   });
 
-  it("골든셋 미수 금액 답 10단계 본문은 전부 허용 문장이다", () => {
-    expect(GOLDEN_RECEIVABLE_AUTO_TEXTS).toHaveLength(10);
+  it("C4: '잔액'이 든 문장은 선수금 잔액으로도 읽혀 금액 없이 넘긴다. 장면 문장은 그대로 금액", () => {
+    for (const body of [
+      "잔액 얼마예요",
+      "잔액 얼마예요?",
+      "제 잔액 얼마예요?",
+    ]) {
+      expect(isReceivableAmountQuestion(body), body).toBe(false);
+      expect(decideOnce(body), body).toEqual(UNKNOWN_WORD_HANDOFF);
+    }
+    expect(
+      RECEIVABLE_AMOUNT_QUESTIONS.filter((s) => s.includes("잔액")),
+    ).toEqual([]);
+    expect(decideOnce("지금 미수 얼마예요?")).toMatchObject({
+      kind: "AUTO_REPLY",
+      intent: "RECEIVABLE",
+    });
+  });
+
+  it("골든셋 미수 금액 답 9단계 본문은 전부 허용 문장이다", () => {
+    expect(GOLDEN_RECEIVABLE_AUTO_TEXTS).toHaveLength(9);
     for (const text of GOLDEN_RECEIVABLE_AUTO_TEXTS)
       expect(isReceivableAmountQuestion(text), text).toBe(true);
   });

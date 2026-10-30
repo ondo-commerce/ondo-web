@@ -1198,13 +1198,13 @@
     },
     {
       "id": "R08",
-      "title": "\"잔액 얼마예요\" → B",
+      "title": "\"잔액 얼마예요\" → 선수금 잔액으로도 읽혀 금액 없이 넘김(D41, Codex C4. 전에는 B)",
       "required": false,
       "group": "receivable",
       "since": 4,
       "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
       "steps": [
-        {"text": "잔액 얼마예요", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "RECEIVABLE", "outstanding": 37500, "prepaid": 0, "overdue": {"count": 1, "amount": 37500, "maxDaysOverdue": 54}, "body": "갚을 돈은 37,500원이에요. 그중 기한 지난 것 1건, 37,500원이에요", "checkedAt": "asOf"}]}}
+        {"text": "잔액 얼마예요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "AMOUNT_UNSURE", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
       ]
     },
     {
