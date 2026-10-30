@@ -548,6 +548,54 @@ describe("미수 기간 말은 넓게 잡는다(loop-07 codex-meta M1, QA F4)", 
     }
   });
 
+  it("한자어, 축약, 붙여쓰기 기간 말 + 미수 → PERIOD 넘김(Codex C1 전월)", () => {
+    for (const word of [
+      "전월",
+      "당월",
+      "금월",
+      "익월",
+      "전전월",
+      "차월",
+      "이달",
+      "지지난달",
+      "다다음달",
+      "전년",
+      "작년",
+      "재작년",
+      "금년",
+      "올해",
+      "내년",
+      "명년",
+      "당해",
+      "전분기",
+      "상순",
+      "중순",
+      "하순",
+      "월초",
+      "월중",
+      "월말",
+      "연초",
+      "연말",
+      "연중",
+      "상반기",
+      "하반기",
+      "금주",
+      "차주",
+      "전주",
+      "이번달",
+      "지난달",
+      "저번달",
+      "금일",
+      "당일",
+      "전일",
+      "익일",
+    ]) {
+      const body = `${word} 미수 얼마예요?`;
+      expect(hasPeriodWord(body), body).toBe(true);
+      expect(decideOnce(body), body).toEqual(PERIOD_HANDOFF);
+    }
+  });
+
   it("hasPeriodWord 는 원문 날짜 모양을 본다(정규화가 / 를 공백으로 바꾸기 전)", () => {
     expect(hasPeriodWord("9/7 주문분")).toBe(true);
     expect(hasPeriodWord("37,500원")).toBe(false);
