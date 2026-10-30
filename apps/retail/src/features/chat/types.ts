@@ -179,15 +179,37 @@ export interface ComposerCheck {
  * 재고 자동 답(loop-05b S8) — 되묻기 칩, 재고 카드, 장바구니 담기
  * ------------------------------------------------------------------------ */
 
-/** 되묻기(CLARIFY) 말풍선 안 옵션 칩 줄 */
+/**
+ * 되묻기(CLARIFY) 말풍선 안 보기 줄.
+ * - `stock` 재고 되묻기 — 옵션 알약 칩 줄(05b 결정 22)
+ * - `backorder` 미송 되묻기 — 주문 네모 버튼 세로 목록 + 끝에 `다른 주문이에요` 알약(loop-06 결정 37 38)
+ */
 export interface ClarifyView {
-  /** 이 되묻기가 물은 게시글. 칩을 고를 때 `inquiry.listingId`로 간다 */
-  listingId: number;
+  mode: "stock" | "backorder";
+  /** 이 되묻기가 물은 게시글. 재고 칩을 고를 때 `inquiry.listingId`로 간다. 미송 되묻기는 null */
+  listingId: number | null;
   choices: ChatChoice[];
   /** 지금 고를 수 있나(`choicesActive`). 아니면 줄 전체 disabled */
   active: boolean;
-  /** 이 되묻기에 대해 이미 고른 옵션(보낸 것, 보내는 중, 못 보낸 것 포함). 없으면 null */
-  selectedVariantId: number | null;
+  /** 이미 고른 보기의 `choiceKey`(보낸 것, 보내는 중, 재고는 못 보낸 것도). 없으면 null */
+  selectedKey: string | null;
+}
+
+/** 미송 자동 답(AUTO_REPLY, BACKORDER)의 카드 칸(loop-06 S3-3). 담기 없음 */
+export interface BackorderCardView {
+  backorderId: number;
+  /** `린넨 셋업 자켓 베이지 / L` */
+  target: string;
+  /** `9/7 주문 #7003`. 되묻기 보기에서 못 찾으면 null */
+  order: string | null;
+  /** `2장` — 남은 미배분 수량 */
+  qtyLabel: string;
+  /** 예정, 오늘, 미정, 등록 예정일 지남 */
+  state: "FUTURE" | "TODAY" | "NONE" | "PAST";
+  /** `11월 5일`, 다른 해 `2027년 1월 5일`. 미정이면 null */
+  dateLabel: string | null;
+  /** 예정, 오늘일 때만. 그 밖이면 null(결정 40) */
+  reason: string | null;
 }
 
 /** 재고 자동 답(AUTO_REPLY, STOCK)의 카드 칸. 소매엔 정확 수량이 없다(D31②) */

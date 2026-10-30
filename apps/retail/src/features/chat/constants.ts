@@ -208,6 +208,18 @@ export const STOCK_TEXT = {
   qtyNotNumber: "숫자만 넣을 수 있어요(소수점, 부호는 못 받아요)",
 } as const;
 
+/** 미송 되묻기와 답 카드 글자(loop-06 S3, 와이어프레임 `#state-bo-clarify` `#state-bo-card`) */
+export const BACKORDER_TEXT = {
+  /** 보기 목록 이름. 재고 칩 줄(`색상, 사이즈 고르기`)과 다르다 — e2e와 낭독기가 둘을 가른다 */
+  choicesLabel: "주문 고르기",
+  remaining: "남은 미송 ",
+  expected: "도매 입고 예정 ",
+  today: "오늘",
+  undecided: "입고일 미정",
+  /** "지연"이라 단정하지 않는다(Q2) */
+  passed: "등록 예정일 지남",
+} as const;
+
 /** 담기 결과의 `장바구니 보기` */
 export const CART_HREF = "/cart";
 

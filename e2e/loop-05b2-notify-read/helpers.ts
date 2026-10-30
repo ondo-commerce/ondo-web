@@ -193,6 +193,22 @@ export async function flushUntil(
     .toBe(true);
 }
 
+/**
+ * 페이지에 매크로태스크 두 번을 돌린다. 멈춘 시계(`page.clock`)는 MessageChannel 을 가짜로 안 바꾸는데,
+ * React scheduler 가 그걸로 커밋한다. 그래서 `runFor` 직후 단언은 그 커밋 전일 수 있다(QA F4).
+ * 고정 대기 대신 같은 큐 뒤에 줄을 서서 앞에 걸린 렌더가 끝난 뒤를 본다.
+ */
+export async function yieldToPage(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    for (let i = 0; i < 2; i++)
+      await new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      });
+  });
+}
+
 /** 우측 주문 카드(첫 패널) */
 export function orderCard(page: Page): Locator {
   return page.getByRole("main").locator('[data-ac="S11-5 S11-17"]');

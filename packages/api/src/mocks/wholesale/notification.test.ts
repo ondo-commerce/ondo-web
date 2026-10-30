@@ -326,17 +326,28 @@ describe("S10-6 incoming 손잡이", () => {
     expect(again.status).toBe(409);
   });
 
-  it("없는 orderId, 취소인데 orderId 없음, 모르는 type → 400", async () => {
+  it("없는 orderId, 취소인데 orderId 없음, 그 밖의 type → 400", async () => {
     for (const body of [
       { type: "NEW_ORDER", orderId: 99_999 },
       { type: "ORDER_CANCELLED", orderId: 99_999 },
       { type: "ORDER_CANCELLED" },
-      { type: "PAYMENT_RECEIVED" },
+      { type: "REFUNDED" },
     ]) {
       const res = await incoming(body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
     expect(mockOrders()).toHaveLength(5);
+  });
+
+  it("PAYMENT_RECEIVED → 주문 없이 안 읽은 모르는 type 알림 1개, 안 읽음 +1", async () => {
+    const res = await incoming({ type: UNKNOWN_NOTIFICATION_TYPE });
+    expect(res.status).toBe(201);
+    const first = (await list()).body.data[0];
+    expect(first?.id).toBe(res.body.data.notification.id);
+    expect(first?.type as string).toBe(UNKNOWN_NOTIFICATION_TYPE);
+    expect(first?.readAt).toBeNull();
+    expect(mockOrders()).toHaveLength(5);
+    expect((await count()).body.data.notifications).toBe(4);
   });
 
   it("시드에 모르는 type 1개, ORDER_CANCELLED 2개가 있다", async () => {
