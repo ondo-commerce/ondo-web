@@ -122,7 +122,168 @@ function cartOf(key: string): Map<number, StubCartLine> {
   return cart;
 }
 
+/* --- 미송 대기 현황(loop-06b S1-8) ---------------------------------------- */
+
+const DAY_MS = 86_400_000;
+const SEOUL_OFFSET_MS = 9 * 3_600_000;
+
+/** stub 실제 시계의 서울 날짜 + n일. Next 서버(`todayKst(new Date())`)와 같은 시계를 쓴다(기획 §5-4 6) */
+function seoulDatePlus(days: number): string {
+  return new Date(Date.now() + SEOUL_OFFSET_MS + days * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+interface StubBackorder {
+  backorderId: number;
+  /** eta 손잡이가 고르는 SKU. 응답에는 없다(스펙 `BackorderResponse`에 칸이 없다) */
+  variantId: number;
+  orderId: number;
+  orderNo: string;
+  orderedAt: string;
+  listingId: number;
+  title: string;
+  colorName: string;
+  size: string;
+  /** 원래 미송량(스펙: 배분돼도 안 변한다) */
+  qty: number;
+  expectedInboundDate: string | null;
+  expectedInboundReason: string | null;
+}
+
+/**
+ * 봄봄(쿠키 bombom)의 OPEN 미송. 브라우저 미송 목(`packages/api/src/mocks/wholesale/backorder.ts`)의
+ * 봄봄 × 무드온 몫과 같은 id, 상품, 원래 수량, 입고일 상대값이다(9001 −3일, 9002 미정, 9003 +7일, 9006 −3일).
+ * 시각은 reset 때 다시 잰다 — 자정을 넘긴 stub 이 옛 날짜를 들고 있지 않게.
+ */
+function seedBackorders(): StubBackorder[] {
+  const base = (
+    backorderId: number,
+    variantId: number,
+    orderId: number,
+    orderedAt: string,
+  ) => ({
+    backorderId,
+    variantId,
+    orderId,
+    orderNo: `R-${orderedAt.slice(0, 10).replaceAll("-", "")}-${String(orderId).slice(-4)}`,
+    orderedAt,
+  });
+  return [
+    {
+      ...base(9001, 3003, 7001, "2026-09-04T10:00:00+09:00"),
+      listingId: 2001,
+      title: "빈티지 플라워 셔츠",
+      colorName: "레드",
+      size: "L",
+      qty: 4,
+      expectedInboundDate: seoulDatePlus(-3),
+      expectedInboundReason: "공장 재입고 예정",
+    },
+    {
+      ...base(9002, 3011, 7002, "2026-09-06T10:00:00+09:00"),
+      listingId: 2003,
+      title: "와이드 데님 팬츠",
+      colorName: "소라",
+      size: "M",
+      qty: 1,
+      expectedInboundDate: null,
+      expectedInboundReason: null,
+    },
+    {
+      ...base(9006, 3003, 7006, "2026-09-06T15:00:00+09:00"),
+      listingId: 2001,
+      title: "빈티지 플라워 셔츠",
+      colorName: "레드",
+      size: "L",
+      qty: 4,
+      expectedInboundDate: seoulDatePlus(-3),
+      expectedInboundReason: "공장 재입고 예정",
+    },
+    {
+      ...base(9003, 3019, 7003, "2026-09-07T08:00:00+09:00"),
+      listingId: 2005,
+      title: "린넨 셋업 자켓",
+      colorName: "베이지",
+      size: "L",
+      qty: 2,
+      expectedInboundDate: seoulDatePlus(7),
+      expectedInboundReason: "원단 수급 지연",
+    },
+  ];
+}
+
+let backorders = seedBackorders();
+
+/** `GET /api/retail/backorders` — `PageResponseBackorderResponse`. 봄봄만 행이 있다. 오래된 순 */
+function backorderPage(retailerId: number, page: number, size: number) {
+  const mine =
+    retailerId === RETAILERS.bombom.retailerId
+      ? [...backorders].sort((a, b) => a.orderedAt.localeCompare(b.orderedAt))
+      : [];
+  const data = mine.slice(page * size, page * size + size).map((b) => ({
+    backorderId: b.backorderId,
+    orderId: b.orderId,
+    orderNo: b.orderNo,
+    orderedAt: b.orderedAt,
+    listingId: b.listingId,
+    title: b.title,
+    colorName: b.colorName,
+    size: b.size,
+    qty: b.qty,
+    expectedInboundDate: b.expectedInboundDate,
+    expectedInboundReason: b.expectedInboundReason,
+    wholesaler: WHOLESALER,
+  }));
+  const totalPages = Math.max(Math.ceil(mine.length / size), 1);
+  return {
+    status: 200,
+    body: {
+      data,
+      meta: {
+        page,
+        size,
+        totalElements: mine.length,
+        totalPages,
+        hasNext: page + 1 < totalPages,
+      },
+    },
+  };
+}
+
+/** eta 손잡이: 그 SKU 줄 전부의 날짜를 바꾼다(입고일은 SKU 단위). 날짜를 지우면 사유도 비운다 */
+function setBackorderEta(raw: string): { status: number; body: unknown } {
+  let input: { variantId?: unknown; expectedInboundDate?: unknown } = {};
+  try {
+    input = JSON.parse(raw || "{}") as typeof input;
+  } catch {
+    // 아래 검사가 400을 낸다
+  }
+  const { variantId, expectedInboundDate: date } = input;
+  const rows = backorders.filter((b) => b.variantId === variantId);
+  if (rows.length === 0)
+    return { status: 400, body: { code: "STUB", message: "없는 variantId" } };
+  if (
+    date !== null &&
+    (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+  )
+    return {
+      status: 400,
+      body: {
+        code: "STUB",
+        message: "expectedInboundDate는 YYYY-MM-DD | null",
+      },
+    };
+  for (const b of rows) {
+    b.expectedInboundDate = date;
+    if (date === null) b.expectedInboundReason = null;
+  }
+  return { status: 200, body: { data: { updated: rows.length } } };
+}
+
 function resetStub(key: string | null) {
+  // 미송 표는 쿠키별이 아니라 하나다. reset 이면 키와 상관없이 시드로 돌린다
+  backorders = seedBackorders();
   if (key === null) {
     carts.clear();
     cartFails.clear();
@@ -338,6 +499,7 @@ function route(
   path: string,
   cookie: string | undefined,
   rawBody: string,
+  query: URLSearchParams = new URLSearchParams(),
 ): { status: number; body: unknown } {
   const key = cookieOf(cookie, "stub_retailer");
   const retailer =
@@ -366,6 +528,13 @@ function route(
       rejection: null,
     });
   }
+
+  if (path === "/api/retail/backorders")
+    return backorderPage(
+      retailer.retailerId,
+      Number(query.get("page") ?? 0),
+      Number(query.get("size") ?? 20),
+    );
 
   if (path === "/api/retail/cart-items/count")
     return ok({ count: cartOf(cartKey).size });
@@ -508,6 +677,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
  * - `POST /__stub/reset` 장바구니와 걸어 둔 실패를 비운다(loop-05b `beforeEach`가 200을 단언한다)
  * - `POST /__stub/cart-fail {status, times}` 다음 n번의 담기 실패(400, 401, 403, 500)
  * - `POST /__stub/cart-slow {ms}` 다음 담기 1번의 응답을 늦춘다
+ * - `POST /__stub/backorders/eta {variantId, expectedInboundDate}` 그 SKU 미송 줄의 예상 입고일(loop-06b S1-8).
+ *   reset 은 키와 상관없이 미송 표도 시드로 되돌린다
  */
 async function knob(
   req: IncomingMessage,
@@ -518,6 +689,8 @@ async function knob(
     resetStub(key);
     return { status: 200, body: { data: { reset: key ?? "all" } } };
   }
+  if (req.method === "POST" && url.pathname === "/__stub/backorders/eta")
+    return setBackorderEta(await readBody(req));
   if (url.pathname === "/__stub/cart-fail") {
     const input = JSON.parse((await readBody(req)) || "{}") as {
       status?: number;
@@ -570,6 +743,7 @@ export function startStubApi(): Promise<Server> {
         url.pathname,
         req.headers.cookie,
         raw,
+        url.searchParams,
       );
       const delay = takeCartDelay(method, url.pathname, req.headers.cookie);
       if (delay > 0) setTimeout(() => send(res, status, body), delay);
