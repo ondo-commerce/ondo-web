@@ -146,9 +146,164 @@ const RECEIVABLE_WORDS = [
 const PAYMENT_REPORT_WORDS = ["입금했", "송금했", "이체했", "입금완료"];
 /**
  * 기간 말. 미수 질문에 붙으면 넘긴다(Q2) — 배정이 주문 단위라 달별로 나눌 규칙이 없고, "지난달 얼마예요"에
- * 전체 금액을 말하면 질문과 다른 답이다
+ * 전체 금액을 말하면 질문과 다른 답이다.
+ *
+ * **일부러 넓게 잡는다**(Codex M1). 여섯 낱말만 보던 때 "9월 미수 얼마예요?", "지난주 미수 얼마예요?"에 전체
+ * 잔액이 나갔다. 기간이 아닌 말을 기간으로 읽으면 사장에게 넘어갈 뿐이고, 기간을 놓치면 틀린 금액이 나간다.
+ * "지금"은 넣지 않는다 — "지금 미수 얼마예요?"는 전체 잔액을 묻는 장면 문장이다(P5, R04).
+ * 공백을 지운 본문(`flat`)에서 찾는다
  */
-const PERIOD_WORDS = ["이번달", "지난달", "저번달", "이번주", "오늘", "어제"];
+const PERIOD_WORDS = [
+  // 달: 이번달, 지난달, 저번달, 다음달, 요번달, 월말, 월초 …
+  "이번달",
+  "요번달",
+  "지난달",
+  "저번달",
+  "다음달",
+  "담달",
+  "월말",
+  "월초",
+  "말일",
+  "초순",
+  "중순",
+  "하순",
+  "상순",
+  "월중",
+  "이달",
+  "지지난달",
+  "다다음달",
+  // 한자어 달(Codex C1). "전월 미수 얼마예요?"에 전체 잔액이 나갔다. 전전월은 전월에 걸리지만 목록으로 남긴다
+  "전월",
+  "전전월",
+  "당월",
+  "금월",
+  "익월",
+  "차월",
+  // 주
+  "이번주",
+  "요번주",
+  "지난주",
+  "저번주",
+  "다음주",
+  "금주",
+  "차주",
+  "전주",
+  "주초",
+  "주중",
+  "주말",
+  "요일",
+  // "내주"는 넣지 않는다 — 공백을 지우면 "내 주문"이 "내주문"이 된다
+  // 날
+  "오늘",
+  "어제",
+  "그제",
+  "그저께",
+  "엊그제",
+  "내일",
+  "모레",
+  "어저께",
+  "금일",
+  "당일",
+  "전일",
+  "작일",
+  "익일",
+  "명일",
+  // 해, 반기, 분기
+  "올해",
+  "금년",
+  "당해",
+  "당년",
+  "작년",
+  "재작년",
+  "전년",
+  "지난해",
+  "내년",
+  "명년",
+  "익년",
+  "후년",
+  "연말",
+  "연초",
+  "연중",
+  "상반기",
+  "하반기",
+  "분기",
+  // 지난 어느 때(주문 하나, 거래 한 번을 가리킨다 — 그 몫만 따로 셀 규칙이 없다)
+  "지난번",
+  "저번",
+  "요전",
+  "최근",
+  "요즘",
+];
+/**
+ * 숫자가 붙은 기간: "9월", "10일", "2주", "3개월", "2025년", "1분기", 한글 수 "한달", "두 달", "몇 주"
+ */
+const PERIOD_PATTERNS: readonly RegExp[] = [
+  /\d+(월|일|주|개월|달|년|분기)/,
+  /(한|두|세|석|네|넉|몇|여러)(달|주|개월)/,
+  /(일|이|삼|사|오|유|육|칠|팔|구|시|십|십일|십이)월(달|분|에|미수|외상|잔금|잔액|거)/,
+];
+/**
+ * 날짜 모양 "9/7", "9.7", "9-7", "10/29". 정규화가 문장부호를 공백으로 바꾸기 전 원문에서 찾는다.
+ * 금액 쉼표("37,500")는 이 모양이 아니다
+ */
+const PERIOD_DATE = /\d{1,4}\s*[/.-]\s*\d{1,2}(?!\d)/;
+
+/** 본문에 기간 표현이 있는가. `body`는 원문, 판정은 NFKC만 거친 원문과 공백 지운 정규화 본문을 같이 본다 */
+export function hasPeriodWord(body: string): boolean {
+  const raw = body.normalize("NFKC");
+  const flat = compact(normalizeInquiryText(body));
+  return (
+    PERIOD_WORDS.some((w) => flat.includes(w)) ||
+    PERIOD_PATTERNS.some((p) => p.test(flat)) ||
+    PERIOD_DATE.test(raw)
+  );
+}
+
+/**
+ * 미수 금액을 답하는 **문장 전체**(D41). 본문을 정규화해 이 집합에 정확히 있을 때만 금액을 말한다.
+ *
+ * 왜 문장 통째인가: 기간 말 목록(`PERIOD_WORDS`)은 빠뜨린 말이 계속 나왔고(C2 "보름 동안", "이틀 전"), 아는 말
+ * 조각으로만 이어지는지 보는 방식도 조각끼리 붙어 다른 뜻이 됐다(C3) — "사장님이 저희에게 갚을 돈은 얼마예요?"는
+ * 방향이 반대고, "미수 얼마만에 갚아야 되나요?"는 기한 질문인데 둘 다 37,500원 답이 나갔다.
+ * 그래서 소매가 **자기가 갚을 돈**을 묻는 게 분명한 문장만 적는다. "사장님 미수 얼마예요"처럼 누가 누구에게인지
+ * 모호한 문장은 넣지 않는다. 여기 없는 문장은 AMOUNT_UNSURE로 사장에게 넘어갈 뿐이라, 넓히기보다 좁게 둔다.
+ * '잔액'이 든 문장은 넣지 않는다(Codex C4) — 소매가 맡겨 둔 선수금 잔액을 묻는 말로도 읽혀, 갚을 돈을 답하면 틀린다.
+ * 골든셋에서 미수 금액 답을 기대하는 문장은 전부 여기 있어야 한다(unit이 확인한다).
+ */
+export const RECEIVABLE_AMOUNT_QUESTIONS: readonly string[] = [
+  // 골든셋(P5, R01~R04, R14, R16, R17)
+  "지금 미수 얼마예요?",
+  "미수 얼마예요?",
+  "외상 얼마 있어요?",
+  "제 미수 얼마예요?",
+  "사장님, 제 미수 얼마예요?",
+  // 짧은 변형
+  "미수 얼마",
+  "미수 금액 알려주세요",
+  "제 외상 얼마 있어요?",
+  "외상 얼마예요?",
+  "지금 외상 얼마예요?",
+  "제 외상 얼마예요?",
+  "갚을 돈 얼마예요?",
+  "제가 갚을 돈 얼마예요?",
+];
+
+/** 문장 비교 열쇠. 판정과 같은 정규화를 거친 뒤 공백까지 지운다 — 띄어쓰기, 쉼표, 물음표 차이는 같은 문장이다 */
+function receivableQuestionKey(body: string): string {
+  return compact(normalizeInquiryText(body));
+}
+
+/** 처음 부를 때 만든다 — 정규화가 쓰는 `TYPO_FIXES`가 이 아래에 있어 모듈 로드 때 만들면 초기화 전 참조다 */
+let receivableAmountKeys: Set<string> | null = null;
+
+/** 본문이 정해 둔 미수 금액 문장 중 하나인가(D41). 숫자, 기간 말, 모르는 말이 끼면 자연히 false다 */
+export function isReceivableAmountQuestion(body: string): boolean {
+  receivableAmountKeys ??= new Set(
+    RECEIVABLE_AMOUNT_QUESTIONS.map(receivableQuestionKey),
+  );
+  return receivableAmountKeys.has(receivableQuestionKey(body));
+}
+
 /**
  * 배송어. 미송 의도여도 이 말이 있으면 넘긴다 — 미송 답은 "도매 입고 예정"만 말한다. 출고, 배송, 수령은 다른
  * 업무 단계라 같은 날짜로 답하면 틀린다(Codex 7). "언제받", "아직안왔"도 수령 질문이라 미송 키워드에 안 넣었다
@@ -252,7 +407,7 @@ export type HandoffReason =
   | "PERIOD"
   /** 미수. 이 방 도매처와 이 소매처의 정산 줄이 없다. "없어요"라고 답하지 않는다 — 원본이 다 담는지 모른다(D34) */
   | "NO_RELATION"
-  /** 미수. 원본 금액을 보장 못 한다(`toReceivableFacts`의 이상값 7종) */
+  /** 미수. 원본 금액을 보장 못 한다(`toReceivableFacts`의 이상값 7종), 또는 본문이 정해 둔 미수 문장이 아니다(D41) */
   | "AMOUNT_UNSURE"
   /** 미수. 원본 조회가 던졌다. 보내기는 201이고 오류가 아니라 넘김이다(S1-9) */
   | "LOOKUP_FAILED";
@@ -533,8 +688,11 @@ function decideBackorder(
   }
 
   if (all.length === 0) return handoff("NO_BACKORDER", "BACKORDER");
-  const { said, left, confirmed } = narrowBackorders(text, all);
-  if (said && left.length === 0) return handoff("NO_MATCH", "BACKORDER");
+  const { said, left, confirmed, blocked } = narrowBackorders(text, all);
+  // blocked: 후보 하나로 좁혀졌지만 본문에 모르는 말(후보에 없는 상품명일 수 있다)이 있다. 그 칩 하나로 되물으면
+  // 소매가 말하지 않은 상품을 내미는 셈이라 넘긴다(리뷰 M1)
+  if (said && (left.length === 0 || blocked))
+    return handoff("NO_MATCH", "BACKORDER");
   if (confirmed !== null) return backorderAnswer(confirmed, today);
   return {
     kind: "CLARIFY",
@@ -551,11 +709,11 @@ function decideBackorder(
  *  b. 원본 조회가 던짐 → LOOKUP_FAILED
  *  c. 이 방 도매처 + 이 방 소매처 줄 없음 → NO_RELATION
  *  d. 이상값 7종(`toReceivableFacts`) → AMOUNT_UNSURE
- *  e. 답. `checkedAt` = 원본 `asOf`
+ *  e. 본문이 정해 둔 문장이 아님 → AMOUNT_UNSURE(D41, `isReceivableAmountQuestion`)
+ *  f. 답. `checkedAt` = 원본 `asOf`
  */
-function decideReceivable(input: InquiryInput, flat: string): InquiryDecision {
-  if (PERIOD_WORDS.some((w) => flat.includes(w)))
-    return handoff("PERIOD", "RECEIVABLE");
+function decideReceivable(input: InquiryInput): InquiryDecision {
+  if (hasPeriodWord(input.body)) return handoff("PERIOD", "RECEIVABLE");
   let rows;
   try {
     rows = input.receivables();
@@ -566,6 +724,11 @@ function decideReceivable(input: InquiryInput, flat: string): InquiryDecision {
   if (row === null) return handoff("NO_RELATION", "RECEIVABLE");
   const converted = toReceivableFacts(row);
   if (!converted.ok) return handoff("AMOUNT_UNSURE", "RECEIVABLE");
+  // e. 정해 둔 문장일 때만 금액(D41). 계약 이유 enum은 못 늘려서 AMOUNT_UNSURE로 넘긴다 — PERIOD는 도매
+  // 화면에 "기간을 정해 물었어요"로 나가는데, 본문이 "37,500원 맞아요"나 기한 질문이면 그 문장이 틀린다.
+  // AMOUNT_UNSURE("잔액과 연체 내역 확인이 필요해요")는 어느 경우에도 맞는 말이다
+  if (!isReceivableAmountQuestion(input.body))
+    return handoff("AMOUNT_UNSURE", "RECEIVABLE");
   return {
     kind: "AUTO_REPLY",
     intent: "RECEIVABLE",
@@ -613,6 +776,16 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   // 칩 의도와 본문 의도가 다르면 의도 둘로 본다. 칩만 믿으면 미송 질문에 재고 숫자가 나간다(C1)
   if (inquiry !== null && intents.size === 1 && !saidIntent(inquiry.intent))
     return handoff("MULTI_INTENT");
+  // 1-3. "이번 달 얼마 남았어요?": 재고 낱말("남았")뿐이지만 "얼마" + 기간 말은 돈을 묻는 문장일 수 있다(QA F4).
+  // 색상, 사이즈를 되묻거나 잔액을 말하지 않고 기간 넘김으로 보낸다. 기간 말이 없는 "이 셔츠 얼마 남았어요?"는
+  // 그대로 재고다(R10), "얼마"가 없는 "오늘 몇 장 남았어요?"도 재고다
+  if (
+    intents.size === 1 &&
+    intents.has("STOCK") &&
+    flat.includes("얼마") &&
+    hasPeriodWord(input.body)
+  )
+    return handoff("PERIOD", "RECEIVABLE");
 
   // 2. 되묻기 계승: 같은 의도, 같은 상품일 때만. 칩이면 variantId가 보기 안, 아니면 본문이 보기 하나
   if (prev !== null && prev.listingId !== null) {
@@ -658,7 +831,7 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   if (intent === "BACKORDER")
     return decideBackorder(input, text, backorderPrev);
   // 미수는 되묻기가 없고 다른 의도의 열린 되묻기를 계승하지 않는다(R14). 위 계승은 같은 의도일 때만 걸린다
-  if (intent === "RECEIVABLE") return decideReceivable(input, flat);
+  if (intent === "RECEIVABLE") return decideReceivable(input);
   if (intent !== "STOCK") return handoff("NOT_SUPPORTED", intent);
 
   // 6. 상품 문맥: inquiry.listingId > 방 문맥(30분 안)

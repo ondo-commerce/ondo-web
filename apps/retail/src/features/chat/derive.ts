@@ -332,12 +332,15 @@ export interface MessageAcContext {
   handoffCauses: ReadonlySet<number>;
   /** 옵션 칩으로 보낸 말이 못 보냄 상태(`choiceSendFailed`) — 되묻기 말풍선 S8-15 */
   choiceFailed: boolean;
+  /** 미송 대상 검증에 걸린 내 말과 그 넘김 줄(`backorderGuardSequences`) — S3-5 */
+  backorderGuard: ReadonlySet<number>;
 }
 
 const NO_AC_CONTEXT: MessageAcContext = {
   sessionLost: false,
   handoffCauses: new Set(),
   choiceFailed: false,
+  backorderGuard: new Set(),
 };
 
 /**
@@ -370,6 +373,7 @@ export function messageAc(
   if (message.kind === "CLARIFY" && context.choiceFailed) ac.push("S8-15");
   if (message.kind === "HANDOFF" || context.handoffCauses.has(message.sequence))
     ac.push("S8-10");
+  if (context.backorderGuard.has(message.sequence)) ac.push("S3-5");
   if (message.sequence > baseline && message.sender === "WHOLESALER")
     ac.push("S6-7", "S6-11");
   if (
@@ -395,6 +399,36 @@ export function handoffCauses(
       causes.add(prev.sequence);
   });
   return causes;
+}
+
+/**
+ * 미송 대상 검증에 걸린 말(와이어프레임 #state-bo-guard, S3-5). 미송 칩(`inquiry.backorderId`)으로 보냈는데
+ * 바로 다음 말이 미송 답이 아닌 내 말, 그리고 그 바로 뒤 넘김 줄. 남의 미송, 보기 밖, 30분 지난 칩이 여기 온다.
+ * 소매 응답엔 넘김 이유가 없어서(누출 규칙) 이유로 가르지 않는다. 다음 말이 아직 없으면(보내는 중) 달지 않는다.
+ * 열린 넘김 억제(M2)로 넘김 줄이 안 붙어도 내 말에는 단다 — 답이 안 나간 건 같다
+ */
+export function backorderGuardSequences(
+  messages: readonly Pick<
+    ChatMessage,
+    "sequence" | "sender" | "kind" | "inquiry"
+  >[],
+): Set<number> {
+  const guarded = new Set<number>();
+  const sorted = [...messages].sort((a, b) => a.sequence - b.sequence);
+  sorted.forEach((message, i) => {
+    const next = sorted[i + 1];
+    if (
+      message.sender !== "RETAILER" ||
+      message.inquiry?.intent !== "BACKORDER" ||
+      message.inquiry.backorderId == null ||
+      next === undefined ||
+      next.kind === "AUTO_REPLY"
+    )
+      return;
+    guarded.add(message.sequence);
+    if (next.kind === "HANDOFF") guarded.add(next.sequence);
+  });
+  return guarded;
 }
 
 /** 옵션 칩으로 보낸 말(문맥에 variant가 있다)인가 — 재시도 때 문맥을 지키는 대상(S8-15) */

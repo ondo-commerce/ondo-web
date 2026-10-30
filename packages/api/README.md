@@ -150,6 +150,7 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 앱 | 손잡이 | 동작 |
 |---|---|---|
 | 도매, 소매 | `POST /__mock/chat/fail {op: receivable, times = 1}` | 다음 n번 미수 원본 조회가 던진다. 보내기는 201, 답 대신 넘김(LOOKUP_FAILED) |
+| 소매 | `POST /__mock/chat/payment {amount, allocations?: [{orderId, amount}]}` | 봄봄상회의 도매처 101 장부에 입금. 소매 화면에서 미수 답 C(전액 배분), D(남는 선수금)를 본다. 배분이 미수를 넘으면 400 |
 
 골든셋 v4는 v3 59 + 미수 18(P5, R01~R17) + 넘김 7(H16~H22) = 84. v4 몫(`since: 4`)의 expect는 방에 **들어간 줄** 투영이다.
 `receivables` 표 7행과 `receivableAnomalies` 이상값 표 9행이 같이 있다.

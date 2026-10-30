@@ -173,6 +173,77 @@ export function recordMockSale(
   });
 }
 
+/** 입금 한 건을 저장소에 넣는다: 배정(주문 목 배정액), 입금, 원장 입금 줄. 검증은 부르는 쪽이 끝냈다 */
+function pushPayment(
+  p: Omit<MockPayment, "id" | "allocations" | "createdAt">,
+  targets: readonly { order: MockOrder; amount: number }[],
+): MockPayment {
+  const createdAt = new Date().toISOString();
+  const payment: MockPayment = {
+    ...p,
+    id: nextPaymentId++,
+    allocations: targets.map(({ order, amount }) => {
+      allocateMockPayment(order, amount);
+      return {
+        id: nextAllocationId++,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        amount,
+        createdAt,
+      };
+    }),
+    createdAt,
+  };
+  payments.push(payment);
+  ledger.push({
+    id: nextLedgerId++,
+    retailerId: payment.retailerId,
+    entryType: "PAYMENT",
+    balanceChange: payment.amount,
+    occurredAt: payment.paidAt,
+    orderId: null,
+    orderNumber: null,
+    paymentId: payment.id,
+  });
+  return payment;
+}
+
+/**
+ * 시험 손잡이용 입금(목 전용). 소매 앱 번들에는 정산 핸들러가 없어 소매 화면에서 갚을 돈 0(문장 C), 선수금(D)을
+ * 만들 길이 없다 — 소매 채팅 목 `/__mock/chat/payment`가 이 함수로 같은 장부에 입금을 넣는다(loop-07 M5).
+ * 규칙은 `POST /payments`와 같은 저장 경로(`pushPayment`)를 탄다. 배분이 미수를 넘거나 남의 주문이면 던진다
+ */
+export function recordMockPayment(input: {
+  retailerId: number;
+  amount: number;
+  allocations: readonly { orderId: number; amount: number }[];
+  paidAt?: string;
+}): void {
+  const targets = input.allocations.map((a) => {
+    const order = mockOrders().find((o) => o.id === a.orderId);
+    if (order === undefined || order.retailerId !== input.retailerId)
+      throw new Error(`목: 배분할 주문 ${a.orderId}이 없다`);
+    if (a.amount > mockOrderSettlement(order).outstandingAmount)
+      throw new Error(`목: 주문 ${a.orderId} 미수를 넘는 배분`);
+    return { order, amount: a.amount };
+  });
+  if (targets.reduce((s, t) => s + t.amount, 0) > input.amount)
+    throw new Error("목: 배분 합계가 입금액을 넘었다");
+  pushPayment(
+    {
+      retailerId: input.retailerId,
+      amount: input.amount,
+      paidAt: input.paidAt ?? new Date().toISOString(),
+      paidBy: "RETAILER",
+      method: "BANK_TRANSFER",
+      memo: null,
+      idempotencyKey: `mock-${nextPaymentId}`,
+      bodyJson: "",
+    },
+    targets,
+  );
+}
+
 /* --- 조회 --------------------------------------------------------------- */
 
 /** 서버 에러 본문 모양. `packages/api` 런타임이 `code`·`message`로 읽는다 */
@@ -550,40 +621,19 @@ export const settlementHandlers = [
           `주문 ${order.orderNumber}의 미수(${mockOrderSettlement(order).outstandingAmount})를 넘었습니다.`,
         );
 
-    const createdAt = new Date().toISOString();
-    const payment: MockPayment = {
-      id: nextPaymentId++,
-      retailerId: body.retailerId,
-      amount: body.amount,
-      paidAt: body.paidAt,
-      paidBy: body.paidBy,
-      method: body.method,
-      memo: isBlank(body.memo) ? null : body.memo,
-      allocations: targets.map(({ order, amount }) => {
-        allocateMockPayment(order, amount);
-        return {
-          id: nextAllocationId++,
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          amount,
-          createdAt,
-        };
-      }),
-      createdAt,
-      idempotencyKey: key,
-      bodyJson,
-    };
-    payments.push(payment);
-    ledger.push({
-      id: nextLedgerId++,
-      retailerId: payment.retailerId,
-      entryType: "PAYMENT",
-      balanceChange: payment.amount,
-      occurredAt: payment.paidAt,
-      orderId: null,
-      orderNumber: null,
-      paymentId: payment.id,
-    });
+    const payment = pushPayment(
+      {
+        retailerId: body.retailerId,
+        amount: body.amount,
+        paidAt: body.paidAt,
+        paidBy: body.paidBy,
+        method: body.method,
+        memo: isBlank(body.memo) ? null : (body.memo ?? null),
+        idempotencyKey: key,
+        bodyJson,
+      },
+      targets,
+    );
     return HttpResponse.json(
       { data: paymentResponse(payment) },
       { status: 201 },
@@ -755,7 +805,8 @@ export interface SummaryPayment {
  *  - 연체 = 미수 > 0이고 판매 줄이 **서울 날짜 하나**뿐인 주문. 일수 = 오늘 − 출고일 − 1(외상 1일, MUL-128 전).
  *    1 이상이면 연체. 출고 다음 날은 아직 아니다. 근거는 dev 실측 1건(9/8 출고, 9/18 조회 maxDays 9)이다
  *  - `exact` false = 금액을 보장 못 한다: 미수가 남은 주문의 판매 줄이 서울 날짜 둘 이상(배정이 어느 출고분을
- *    갚았는지 규칙이 없다) / `PAYMENT_VOID`, `ADJUST` 줄 / 취소된 주문의 판매 줄 / 배정액이 판매 합보다 큼
+ *    갚았는지 규칙이 없다) / `PAYMENT_VOID`, `ADJUST` 줄 / 취소된 주문의 판매 줄 / 판매 줄의 주문이 `orders`에
+ *    없음 / 배정액이 판매 합보다 큼
  *
  * 연체 일수 기준 날짜 `today`(서울 `YYYY-MM-DD`)와 조회 시각 `asOf`는 부르는 쪽이 넘긴다 — 같은 호출에서 나온
  * 값이어야 답의 금액과 조회 시각이 한 시점을 가리킨다(Codex 6).
@@ -788,7 +839,9 @@ export function receivableSummary(input: {
   const overdue = { amount: 0, count: 0, maxDays: 0 };
   for (const [orderId, s] of sales) {
     const order = input.orders.find((o) => o.id === orderId);
-    if (order?.status === "CANCELLED") exact = false;
+    // 주문 원본이 없으면 취소됐는지도, 얼마 배정됐는지도 모른다. 배정 0으로 치면 취소 방어를 건너뛰고 판매 합
+    // 전체를 미수로 말한다(Codex M2). 금액은 계속 셈하되 보장하지 않는다
+    if (order === undefined || order.status === "CANCELLED") exact = false;
     const left = s.amount - (order?.allocatedAmount ?? 0);
     if (left < 0) exact = false;
     if (left <= 0) continue;

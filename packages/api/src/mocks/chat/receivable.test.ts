@@ -119,6 +119,44 @@ describe("S1-3 toReceivableFacts 와 문장", () => {
     ]);
   });
 
+  it("안전 정수 밖 금액(1e21, 2^53, Infinity) → NOT_INTEGER, AMOUNT_UNSURE. '1e+21원'이 나가지 않는다(M3)", () => {
+    const zero = { amount: 0, count: 0, maxDays: 0 };
+    const big = 2 ** 53;
+    for (const [name, r] of [
+      ["1e21", row({ balance: 1e21, unpaid: 1e21, overdue: zero })],
+      ["2^53", row({ balance: big, unpaid: big, overdue: zero })],
+      [
+        "연체 금액만 2^53",
+        row({
+          balance: big,
+          unpaid: big,
+          overdue: { amount: big, count: 1, maxDays: 3 },
+        }),
+      ],
+      ["Infinity", row({ balance: Infinity, unpaid: Infinity, overdue: zero })],
+      [
+        "선수금 -1e21",
+        row({ balance: -1e21, unpaid: 0, prepaid: 1e21, overdue: zero }),
+      ],
+    ] as const) {
+      expect(toReceivableFacts(r), name).toEqual({
+        ok: false,
+        anomaly: "NOT_INTEGER",
+      });
+      const d = decide([r]);
+      expect(d, name).toEqual({
+        kind: "HANDOFF",
+        reason: "AMOUNT_UNSURE",
+        intent: "RECEIVABLE",
+      });
+    }
+    // 안전 정수 끝값은 통과한다
+    const max = Number.MAX_SAFE_INTEGER;
+    expect(
+      toReceivableFacts(row({ balance: max, unpaid: max, overdue: zero })).ok,
+    ).toBe(true);
+  });
+
   it("facts 는 갚을 돈 = unpaid, 선수금 = prepaid, 연체 세 칸. checkedAt = asOf", () => {
     expect(toReceivableFacts(row())).toEqual({
       ok: true,
@@ -360,6 +398,16 @@ describe("S1-4 receivableSummary (T0 = 10/29 14:20)", () => {
         ],
       }).exact,
     ).toBe(true);
+  });
+
+  it("판매 줄의 주문이 orders 에 없으면 exact false → AMOUNT_UNSURE(배정 0으로 보고 전액 말하지 않는다, M2)", () => {
+    const missing = summary({ orders: [] });
+    expect(missing).toMatchObject({ unpaid: 37_500, exact: false });
+    expect(answerOf(missing)).toBe("AMOUNT_UNSURE");
+    // 다른 주문만 있어도 같다
+    const other = summary({ orders: [{ ...ORDER_7004, id: 7999 }] });
+    expect(other.exact).toBe(false);
+    expect(answerOf(other)).toBe("AMOUNT_UNSURE");
   });
 
   it("다른 소매처 줄과 입금은 섞이지 않는다", () => {

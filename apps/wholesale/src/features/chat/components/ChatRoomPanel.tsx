@@ -121,6 +121,7 @@ function ChatRoom({
 }: { roomId: number } & RoomCallbacks) {
   const queryClient = useQueryClient();
   const { room, thread, threadUpdatedAt } = useRoomQueries(roomId);
+  const now = useNow();
   const sessionLost = useChatSessionLost();
   const visible = useDocumentVisible();
   const name = room.counterpart.name;
@@ -238,6 +239,9 @@ function ChatRoom({
                 message={item.message}
                 counterpartName={name}
                 ac={messageAc(item.message, baseline, pendingIds, causes)}
+                /* "오늘"의 기준 = 지금 시각(1분 tick). 마지막 polling 응답 시각을 쓰면 응답이 끊긴 동안(오프라인,
+                   세션 끊김) 자정을 넘겨도 날짜가 안 붙는다(리뷰 M4, D38 ⑤). 소매(`useNow`)와 같은 방식 */
+                nowMs={now}
               />
             ),
           )
@@ -287,3 +291,18 @@ function DateDivider({ children }: { children: string }) {
     </div>
   );
 }
+
+/**
+ * 지금 시각(ms). 조회 시각 줄의 "오늘" 판정(S3-5)을 렌더 중에 시계를 읽지 않고 하려고 state로 둔다.
+ * 1분마다 갱신 — 줄이 분 단위("14:20 조회")라 자정 뒤 최대 1분 늦게 날짜가 붙는다
+ */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+const NOW_TICK_MS = 60_000;
