@@ -1,5 +1,5 @@
 import { delay, http, HttpResponse } from "msw";
-import type { WholesaleSchema } from "../../wholesale";
+import type { WholesalePaths, WholesaleSchema } from "../../wholesale";
 import { CHAT_EXTRA_LISTINGS } from "../chat/extraListings";
 import { chatExtraReceivables } from "../chat/extraReceivables";
 import {
@@ -104,10 +104,27 @@ type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
 
 /**
  * `/__mock/chat/delay`가 고르는 op(loop-08 §5-4 3). 늦은 방 머리가 polling 뒤에 옛 읽음 값을 들고 도착하는
- * 순서 역전을 만든다. 소매 목의 같은 손잡이와 모양이 같다
+ * 순서 역전을 만든다. 소매 목의 같은 손잡이와 모양이 같다.
+ * `rooms`는 검색어를 바꾼 사이 늦게 온 이전 목록(loop-08b S4-7), `send`는 응답 전에 방을 옮기는 경우(S3-12).
+ * `send`는 **저장은 요청 시점, 응답만 늦다** — 그사이 messages 조회가 그 메시지를 먼저 가져오는 경로도 생긴다
  */
-export const CHAT_DELAY_OPS = ["room", "messages"] as const;
+export const CHAT_DELAY_OPS = ["room", "messages", "rooms", "send"] as const;
 type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
+
+/** 방 목록 필터와 검색(초안 쿼리 `filter`, `q`, loop-08b §5-2) */
+type ChatRoomsQuery = NonNullable<
+  WholesalePaths["/api/wholesale/chat/rooms"]["get"]["parameters"]["query"]
+>;
+type ChatRoomFilter = NonNullable<ChatRoomsQuery["filter"]>;
+export const CHAT_ROOM_FILTERS = [
+  "UNREAD",
+  "NEEDS_REPLY",
+] as const satisfies readonly ChatRoomFilter[];
+/** `q` 상한. 앞뒤 공백을 지운 뒤 코드 포인트로 센다 */
+export const CHAT_ROOM_QUERY_MAX = 50;
+
+/** 필터, 검색 시험용 시드 이름(`reset {seed: "rooms-70"}`). 기본 시드를 대신한다 */
+export const ROOMS_70_SEED_NAME = "rooms-70";
 
 /** 문의 지표 조회 기간 상한(일). 스펙 `to` 설명과 같다 */
 export const STATS_MAX_DAYS = 62;
@@ -619,6 +636,121 @@ function seedStatsRooms(): MockRoom[] {
   );
 }
 
+/**
+ * 필터, 검색 시드 `rooms-70`(loop-08b §5-3 2). 기본 시드를 **대신한다** — 기대값(S1-2, S4-2)이 이 시드만으로
+ * 손 계산한 숫자라서다. 내 방 70개(roomId 100 + i, "소매처 i"), i가 작을수록 최근(i분 전, 동률 없음).
+ *
+ * - i 홀수(35개): 소매 TEXT 를 안 읽었고, 그 뒤 자동 답이 답했다. **안 읽음이지만 답 필요는 아니다** —
+ *   `needsReply`는 "마지막이 소매 TEXT"라서 소매 글로 끝내면 두 집합이 겹친다(기획 "두 집합은 겹치지 않는다")
+ * - i 4의 배수(17개): 마지막이 소매 TEXT, 읽음 처리됨 → 답 필요만
+ * - 나머지(18개): 마지막이 도매 TEXT, 다 읽음
+ * - 남의 방 1개(도매처 102, "소매처 6", 171): 가장 최근이고 안 읽음 + 답 필요 — 소유 도매처 거르기가 빠지면
+ *   모든 조건 결과에 끼어든다
+ *
+ * 소매처 id 는 1000 + i 다. 1~33은 주문, 정산 목의 실제 소매처라 겹치면 미수 자동 답이 남의 장부를 읽는다
+ */
+function seedRooms70(): MockRoom[] {
+  nextMessageId = 1;
+  const list: MockRoom[] = [];
+  const named = (r: MockRoom, i: number) => {
+    r.retailerName = `소매처 ${i}`;
+    return r;
+  };
+  for (let i = 1; i <= 70; i++) {
+    const lines: SeedLine[] =
+      i % 2 === 1
+        ? [
+            {
+              sender: "WHOLESALER",
+              body: "네 말씀하세요",
+              sentAt: at(i + 0.5),
+            },
+            {
+              sender: "RETAILER",
+              body: "레드 M 있어요?",
+              sentAt: at(i + 0.2),
+              inquiry: {
+                intent: "STOCK",
+                listingId: 2001,
+                variantId: 3002,
+                backorderId: null,
+                label: "빈티지 플라워 셔츠 레드 / M",
+              },
+            },
+            {
+              sender: "WHOLESALER",
+              kind: "AUTO_REPLY",
+              body: "레드 M은 10~49장 있어요. 지금 주문할 수 있어요(한 번에 최대 500장)",
+              sentAt: at(i),
+              // 기본 시드 방 1의 자동 답과 같은 사실(상품 목 3002 시드 재고)
+              autoReply: {
+                intent: "STOCK",
+                replyToSequence: 2,
+                generatedBy: "RULE",
+                checkedAt: at(i),
+                subject: {
+                  listingId: 2001,
+                  variantId: 3002,
+                  backorderId: null,
+                  label: "빈티지 플라워 셔츠 레드 / M",
+                },
+                facts: {
+                  stock: {
+                    availableQty: 35,
+                    band: "UNDER_50",
+                    orderLimit: 500,
+                  },
+                  backorder: null,
+                  receivable: null,
+                },
+              },
+            },
+          ]
+        : i % 4 === 0
+          ? [
+              {
+                sender: "WHOLESALER",
+                body: "네 말씀하세요",
+                sentAt: at(i + 0.5),
+              },
+              { sender: "RETAILER", body: "내일 몇 시에 와요?", sentAt: at(i) },
+            ]
+          : [
+              {
+                sender: "RETAILER",
+                body: "블랙 L 주문할게요",
+                sentAt: at(i + 0.5),
+              },
+              { sender: "WHOLESALER", body: "네 넣어 둘게요", sentAt: at(i) },
+            ];
+    // 홀수 방은 첫 줄(도매 인사)까지만 읽었다 → 소매 글 1개가 안 읽음. 나머지는 끝까지
+    const read = i % 2 === 1 ? 1 : lines.length;
+    list.push(
+      named(
+        room(100 + i, 999 + i, at(i + 1), lines, {
+          wholesaler: read,
+          retailer: lines.length,
+        }),
+        i,
+      ),
+    );
+  }
+  list.push(
+    named(
+      room(
+        171,
+        1005,
+        at(1),
+        [{ sender: "RETAILER", body: "남의 방이에요", sentAt: at(0) }],
+        { wholesaler: 0, retailer: 1 },
+        102,
+      ),
+      6,
+    ),
+  );
+  return list;
+}
+
 function seedIdempotency() {
   idempotency.clear();
   const r = rooms.find((x) => x.roomId === 6);
@@ -1041,6 +1173,64 @@ function sizeInvalid() {
   return invalid("size", "OUT_OF_RANGE", "size는 1~100이어야 합니다.");
 }
 
+interface RoomCondition {
+  filter: ChatRoomFilter | null;
+  /** 앞뒤 공백을 지운 검색어. 비면 null(조건 없음) */
+  q: string | null;
+}
+
+/**
+ * 방 목록 `filter`, `q` 쿼리 검사(loop-08b §5-2). 성공이면 조건, 실패면 400 응답.
+ * 빈 `filter=`는 없는 것으로 본다 — Spring 의 enum 변환이 빈 문자열을 null 로 바꾸는 것과 맞춘다
+ */
+function roomCondition(
+  url: URL,
+): RoomCondition | { error: ReturnType<typeof invalid> } {
+  const filterRaw = url.searchParams.get("filter");
+  let filter: ChatRoomFilter | null = null;
+  if (filterRaw !== null && filterRaw !== "") {
+    const known = CHAT_ROOM_FILTERS.find((f) => f === filterRaw);
+    if (known === undefined)
+      return {
+        error: invalid(
+          "filter",
+          "INVALID",
+          `filter는 ${CHAT_ROOM_FILTERS.join(" | ")}`,
+        ),
+      };
+    filter = known;
+  }
+  const q = (url.searchParams.get("q") ?? "").trim();
+  if (codePoints(q) > CHAT_ROOM_QUERY_MAX)
+    return {
+      error: invalid(
+        "q",
+        "TOO_LONG",
+        `검색어는 ${CHAT_ROOM_QUERY_MAX}자까지입니다.`,
+      ),
+    };
+  return { filter, q: q === "" ? null : q };
+}
+
+/** 영문 대문자만 소문자로. `toLowerCase`는 다른 문자(그리스, 전각 등)까지 바꿔 계약("영문 대소문자")보다 넓다 */
+function foldAscii(text: string): string {
+  return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/** 조건 판정은 응답과 같은 `summaryOf`를 지난다 — 목록 칸과 거르는 기준이 갈라지지 않게 */
+function matchesRoomCondition(r: MockRoom, condition: RoomCondition): boolean {
+  if (condition.q !== null) {
+    // 안쪽 공백은 그대로 비교한다(공백 접기 없음)
+    if (!foldAscii(r.retailerName).includes(foldAscii(condition.q)))
+      return false;
+  }
+  if (condition.filter === null) return true;
+  const summary = summaryOf(r);
+  return condition.filter === "UNREAD"
+    ? summary.unreadCount > 0
+    : summary.needsReply;
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1083,7 +1273,7 @@ export const chatHandlers = [
     return HttpResponse.json({ data: autoReplySettings });
   }),
 
-  http.get("*/api/wholesale/chat/rooms", ({ request }) => {
+  http.get("*/api/wholesale/chat/rooms", async ({ request }) => {
     const planned = plannedFailure("rooms");
     if (planned) return planned;
     const url = new URL(request.url);
@@ -1095,8 +1285,13 @@ export const chatHandlers = [
     if (cursorRaw !== null && cursor === null)
       return invalid("cursor", "INVALID_CURSOR", "cursor가 올바르지 않습니다.");
 
+    const condition = roomCondition(url);
+    if ("error" in condition) return condition.error;
+
+    // 순서가 계약이다: 내 방 → 조건 → 정렬 → cursor 자르기. 조건을 자른 장 안에서 걸면 둘째 장 이후 방을 못 찾는다
     const sorted = rooms
       .filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
+      .filter((r) => matchesRoomCondition(r, condition))
       .sort(compareRooms);
     // 키셋: 커서 지점보다 정렬상 뒤에 오는 것부터. 그사이 순서가 바뀌어도 중복이 안 난다
     const rest =
@@ -1115,7 +1310,10 @@ export const chatHandlers = [
       nextCursor:
         rest.length > size && last !== undefined ? encodeCursor(last) : null,
     };
-    return HttpResponse.json({ data: page.map(summaryOf), meta });
+    // 값을 정한 뒤 기다린다 — 늦게 도착한 이전 검색 결과가 옛 값을 들고 온다(S4-7)
+    const data = page.map(summaryOf);
+    await plannedDelay("rooms");
+    return HttpResponse.json({ data, meta });
   }),
 
   /**
@@ -1290,6 +1488,8 @@ export const chatHandlers = [
       r.wholesalerLastRead = Math.max(r.wholesalerLastRead, message.sequence);
       record.result = { message, generatedMessages: [], generation: "NONE" };
 
+      // 저장은 끝났고 응답만 늦다(S3-12). 같은 키로 다시 보내면 이 응답을 기다렸다가 replay 한다
+      await plannedDelay("send");
       await delay(
         text.includes(CHAT_BODY_HOOK.SLOW_5S)
           ? CHAT_SLOW_MS
@@ -1457,7 +1657,10 @@ export const chatHandlers = [
     },
   ),
 
-  /** 다음 n회 응답을 ms 늦춘다. `{op: room|messages, ms, times = 1}`. 값은 요청 시점에 정한다 */
+  /**
+   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send, ms, times = 1}`. 값은 요청 시점에 정한다.
+   * `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다)
+   */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
@@ -1475,7 +1678,8 @@ export const chatHandlers = [
 
   /**
    * 시드로 되돌린다. `{rooms: 0}`이면 내 방을 비운다(빈 상태), `{rooms: n}`이면 최근 n개만.
-   * `{seed: "stats-v1"}`이면 기본 시드 대신 문의 지표 fixture(F1~F12, F14~F16)를 넣는다
+   * `{seed: "stats-v1"}`이면 기본 시드 대신 문의 지표 fixture(F1~F12, F14~F16)를 넣는다.
+   * `{seed: "rooms-70"}`이면 필터, 검색 시드(내 방 70 + 남의 방 1, `seedRooms70`)
    */
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
@@ -1483,8 +1687,16 @@ export const chatHandlers = [
       noBackorders?: boolean;
       seed?: string;
     };
-    if (input.seed !== undefined && input.seed !== STATS_SEED_NAME)
-      return invalid("seed", "INVALID", `seed는 ${STATS_SEED_NAME}`);
+    if (
+      input.seed !== undefined &&
+      input.seed !== STATS_SEED_NAME &&
+      input.seed !== ROOMS_70_SEED_NAME
+    )
+      return invalid(
+        "seed",
+        "INVALID",
+        `seed는 ${STATS_SEED_NAME} | ${ROOMS_70_SEED_NAME}`,
+      );
     resetChatMock(input.rooms, {
       noBackorders: input.noBackorders === true,
       seed: input.seed,
@@ -1505,7 +1717,12 @@ export function resetChatMock(
   keepRooms?: number,
   options: { noBackorders?: boolean; seed?: string } = {},
 ) {
-  rooms = options.seed === STATS_SEED_NAME ? seedStatsRooms() : seedRooms();
+  rooms =
+    options.seed === STATS_SEED_NAME
+      ? seedStatsRooms()
+      : options.seed === ROOMS_70_SEED_NAME
+        ? seedRooms70()
+        : seedRooms();
   // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
   resetBackorderMock({ empty: options.noBackorders === true });
   // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는

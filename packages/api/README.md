@@ -174,6 +174,18 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 소매 | `POST /__mock/chat/delay {op: count\|read\|room\|messages\|rooms, ...}` | 06a 의 count, read 에 셋을 더했다 |
 | 소매 | `POST /__mock/chat/reset {rooms: n}` | 내 방 n개(2~200) = 시드 방 1, 33 + 가짜 방(도매처 1001 …). 방 목록은 이제 실제 keyset cursor(도매 목과 같은 정렬, 잘못된 cursor 400) |
 
+### 방 목록 필터와 검색 (loop-08b, #326)
+
+초안 쿼리 `chatRooms?filter=UNREAD|NEEDS_REPLY&q=`(op 는 그대로, 쿼리 둘에 `x-ondo-draft`). 순서는 내 방 → 조건 → 정렬 → cursor.
+`q`는 소매처 이름 부분 일치, 앞뒤 공백 지움(비면 조건 없음), 안쪽 공백 그대로, 영문 대소문자만 무시, 지운 뒤 50자 넘으면 400.
+`filter=`(빈 값)는 없는 것과 같다. BE 가 `chatRooms`를 먼저 내면서 두 쿼리를 빼면 `sync-spec`이 멈춘다(`checkDraftSurvival` 4번).
+계약 테스트는 `chatRoomsFilter.test.ts`.
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 도매 | `POST /__mock/chat/reset {seed: "rooms-70"}` | 기본 시드 **대신** 내 방 70개(roomId 100 + i, "소매처 i", i 작을수록 최근). 홀수 안 읽음(자동 답이 답해 답 필요 아님) 35, 4의 배수 답 필요 17, 나머지 18. 남의 방 171(도매처 102, "소매처 6") |
+| 도매 | `POST /__mock/chat/delay {op: rooms\|send, ms, times = 1}` | 08a 의 room, messages 에 둘을 더했다. `rooms`는 값을 정한 뒤 늦게 도착, `send`는 저장한 뒤 응답만 늦다(기본 300ms 위에 더함) |
+
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
 
 초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.

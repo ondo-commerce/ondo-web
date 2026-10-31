@@ -187,9 +187,10 @@ describe("S1-6 도매 counterpart-read (방 5: 소매 읽음 2, 메시지 4 → 
     expect((await room()).body.data.counterpartLastReadSequence).toBe(5);
   });
 
-  it("delay op 는 room | messages 만, ms 는 0 이상", async () => {
+  // loop-08b 가 rooms, send 를 더했다(`chatRoomsFilter.test.ts` S1-6). 모르는 op 거절은 그대로
+  it("delay op 는 정한 것만, ms 는 0 이상", async () => {
     expect((await knob("/delay", { op: "messages", ms: 0 })).status).toBe(200);
-    expect((await knob("/delay", { op: "rooms", ms: 10 })).status).toBe(400);
+    expect((await knob("/delay", { op: "stats", ms: 10 })).status).toBe(400);
     expect((await knob("/delay", { op: "room", ms: -1 })).status).toBe(400);
   });
 });

@@ -4349,6 +4349,10 @@ export interface operations {
                 cursor?: string;
                 /** @description 한 번에 몇 개. 1~100, 범위 밖은 400. 기본 30 */
                 size?: number;
+                /** @description 없으면 전부. UNREAD = unreadCount > 0, NEEDS_REPLY = needsReply. 모르는 값은 400 VALIDATION_FAILED. 거른 결과에 같은 정렬(lastActivityAt desc, roomId desc)과 cursor 를 쓴다. cursor 는 위치만 담는다 — 조건을 바꾸면 첫 장부터 받는다 */
+                filter?: "UNREAD" | "NEEDS_REPLY";
+                /** @description 소매처 이름(counterpart.name) 부분 일치. 앞뒤 공백을 지운 뒤 비면 없는 것과 같다. 안쪽 공백은 그대로 비교한다. 영문 대소문자는 구분하지 않는다. 앞뒤 공백을 지운 뒤 50자를 넘으면 400 VALIDATION_FAILED. filter 와 AND */
+                q?: string;
             };
             header?: never;
             path?: never;
