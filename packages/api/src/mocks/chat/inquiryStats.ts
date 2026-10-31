@@ -61,11 +61,15 @@ export function businessDateOf(ms: number): string {
   return ms >= businessDayStartMs(calendar) ? calendar : addDays(calendar, -1);
 }
 
-/** 보고서에 옮겨 적기 좋게 KST 오프셋을 붙인 ISO 8601(`2026-10-28T12:00:00+09:00`) */
+/**
+ * 보고서에 옮겨 적기 좋게 KST 오프셋을 붙인 ISO 8601(`2026-10-28T12:00:00+09:00`). 밀리초가 0이 아니면 남긴다
+ * (`…11:59:30.250+09:00`) — 잘라 내면 응답의 `asOf`로 다시 집계할 때 그 1초 안의 줄이 빠져 숫자가 달라진다
+ * (메타 리뷰 M3). 경계(startAt, endAt)는 늘 정각이라 모양 그대로다
+ */
 export function kstIso(ms: number): string {
   return new Date(ms + KST_OFFSET_MS)
     .toISOString()
-    .replace(/\.\d{3}Z$/, "+09:00");
+    .replace(/(\.000)?Z$/, "+09:00");
 }
 
 /** from ~ to(포함) 날짜 목록. from > to 면 빈 배열(검사는 핸들러가 한다) */
