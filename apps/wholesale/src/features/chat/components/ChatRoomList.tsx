@@ -160,6 +160,12 @@ function ListFilterBar({
   const [text, setText] = useState(list.q ?? "");
   const composing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* 타이머는 300ms 뒤에 돈다. 그 사이 칩을 바꾸거나 방을 열면 `onQuery`가 새로 만들어지는데, 예약할 때의
+     것을 부르면 옛 조건과 옛 방으로 URL과 칩을 되돌린다(loop-08b F1). 부를 때의 최신 것을 ref로 쥔다 */
+  const latestOnQuery = useRef(onQuery);
+  useEffect(() => {
+    latestOnQuery.current = onQuery;
+  }, [onQuery]);
 
   const cancel = () => {
     if (timer.current === null) return;
@@ -170,7 +176,7 @@ function ListFilterBar({
     cancel();
     timer.current = setTimeout(() => {
       timer.current = null;
-      onQuery(normalizeQuery(value));
+      latestOnQuery.current(normalizeQuery(value));
     }, ROOM_SEARCH_DEBOUNCE_MS);
   };
   useEffect(() => cancel, []);
