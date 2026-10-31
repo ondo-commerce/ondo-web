@@ -13,6 +13,7 @@ import { useEffect } from "react";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { chatKeys } from "./keys";
+import { subscribeSharedInterval } from "./sharedInterval";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
 import {
@@ -201,9 +202,10 @@ export function useRoomListQuery() {
 
   const visible = useDocumentVisible();
   const sessionLost = isRoomListSessionLost(query.error);
+  /* 타이머는 QueryClient(= 목록 캐시) 하나에 하나다. 이 훅이 두 곳에서 마운트돼도 15초 갱신은 한 번(메타 리뷰 M5) */
   useEffect(() => {
     if (!visible || sessionLost) return;
-    const timer = setInterval(() => {
+    return subscribeSharedInterval(queryClient, ROOM_LIST_POLL_MS, () => {
       const state = queryClient.getQueryState(chatKeys.rooms());
       /* 겹친 회차만 건너뛴다. 다음 회차는 이 타이머 그대로 15초 뒤다 */
       if (state?.fetchStatus === "fetching") return;
@@ -212,8 +214,7 @@ export function useRoomListQuery() {
         { queryKey: chatKeys.rooms(), exact: true, type: "active" },
         { cancelRefetch: false },
       );
-    }, ROOM_LIST_POLL_MS);
-    return () => clearInterval(timer);
+    });
   }, [visible, sessionLost, queryClient]);
 
   return query;
