@@ -1,8 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
-import { chatKeys } from "./keys";
+import { useChatCache } from "./scope";
 import { guardSession } from "./session";
 import type { AutoReplySettings } from "../types";
 
@@ -24,13 +24,11 @@ const SESSION_LOSS_INLINE = { sessionLoss: "inline" } as const;
  * 실패해도 다시 묻지 않는다(`retry: false`) — 스위치 자리가 비고 대화는 그대로 쓴다.
  */
 export function useAutoReplySettingsQuery() {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   return useQuery({
-    queryKey: chatKeys.autoReplySettings(),
+    queryKey: chat.keys.autoReplySettings(),
     queryFn: () =>
-      guardSession(queryClient, () =>
-        apiFetch<AutoReplySettings>(SETTINGS_PATH),
-      ),
+      guardSession(chat, () => apiFetch<AutoReplySettings>(SETTINGS_PATH)),
     staleTime: Infinity,
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
@@ -46,17 +44,17 @@ export function useAutoReplySettingsQuery() {
  * 401은 `guardSession`이 채팅 세션 끊김으로 바꾼다(쓰던 답 글, 주소 그대로, S9-4).
  */
 export function useUpdateAutoReplySettingsMutation() {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   return useMutation({
     mutationFn: (settings: AutoReplySettings) =>
-      guardSession(queryClient, () =>
+      guardSession(chat, () =>
         apiFetch<AutoReplySettings>(SETTINGS_PATH, {
           method: "PUT",
           body: settings,
         }),
       ),
     onSuccess: (saved) => {
-      queryClient.setQueryData(chatKeys.autoReplySettings(), saved);
+      chat.queryClient.setQueryData(chat.keys.autoReplySettings(), saved);
     },
     meta: SESSION_LOSS_INLINE,
   });

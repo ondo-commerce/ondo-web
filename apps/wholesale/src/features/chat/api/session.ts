@@ -1,13 +1,10 @@
 "use client";
 
-import {
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
 import { useEffect } from "react";
-import { chatKeys } from "./keys";
+import type { ChatCache } from "./keys";
+import { useChatCache } from "./scope";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -20,7 +17,7 @@ import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
  * - 보내기와 입력창 잠김(읽기 전용, 쓴 글은 남는다)
  * - 다른 방으로 옮겨도 그대로 — 방이 아니라 채팅 화면 전체의 상태다
  *
- * 저장은 쿼리 캐시 한 칸(`chatKeys.session()`)이다. queryFn(React 밖)과 화면(React 안)이 같은 값을 본다.
+ * 저장은 쿼리 캐시 한 칸(`keys.session()`, 계정마다)이다. queryFn(React 밖)과 화면(React 안)이 같은 값을 본다.
  * 채팅 화면을 떠날 때 지운다(`useResetChatSessionOnLeave`) — 다시 로그인하고 클라이언트 이동으로
  * 돌아왔을 때 잠긴 채로 남지 않게.
  */
@@ -45,12 +42,12 @@ function isUnauthenticated(error: unknown): boolean {
   );
 }
 
-export function isSessionLost(queryClient: QueryClient): boolean {
-  return queryClient.getQueryData<boolean>(chatKeys.session()) === true;
+export function isSessionLost({ queryClient, keys }: ChatCache): boolean {
+  return queryClient.getQueryData<boolean>(keys.session()) === true;
 }
 
-export function markSessionLost(queryClient: QueryClient): void {
-  queryClient.setQueryData<boolean>(chatKeys.session(), true);
+export function markSessionLost({ queryClient, keys }: ChatCache): void {
+  queryClient.setQueryData<boolean>(keys.session(), true);
 }
 
 /**
@@ -58,15 +55,15 @@ export function markSessionLost(queryClient: QueryClient): void {
  * 던지는 건 `ChatSessionLostError`라 공용 처리가 `/login`으로 보내지 않는다.
  */
 export async function guardSession<T>(
-  queryClient: QueryClient,
+  chat: ChatCache,
   run: () => Promise<T>,
 ): Promise<T> {
-  if (isSessionLost(queryClient)) throw new ChatSessionLostError();
+  if (isSessionLost(chat)) throw new ChatSessionLostError();
   try {
     return await run();
   } catch (error) {
     if (isUnauthenticated(error)) {
-      markSessionLost(queryClient);
+      markSessionLost(chat);
       throw new ChatSessionLostError();
     }
     throw error;
@@ -75,8 +72,9 @@ export async function guardSession<T>(
 
 /** 화면이 보는 값. 요청을 내지 않는 캐시 칸이다(`queryFn`은 쓰지 않는 기본값) */
 export function useChatSessionLost(): boolean {
+  const { keys } = useChatCache();
   const { data } = useQuery({
-    queryKey: chatKeys.session(),
+    queryKey: keys.session(),
     queryFn: () => false,
     initialData: false,
     staleTime: Infinity,
@@ -89,11 +87,13 @@ export function useChatSessionLost(): boolean {
  * 먼저 시작해 지난 표시를 보고 요청을 안 만든다.
  */
 export function useResetChatSessionOnLeave(): void {
-  const queryClient = useQueryClient();
+  const { queryClient, keys } = useChatCache();
   useEffect(
     () => () => {
-      queryClient.setQueryData<boolean>(chatKeys.session(), false);
+      /* 로그아웃이 캐시를 이미 비웠으면 칸을 새로 만들지 않는다 — 지운 계정 키가 되살아난다 */
+      if (queryClient.getQueryState(keys.session()) === undefined) return;
+      queryClient.setQueryData<boolean>(keys.session(), false);
     },
-    [queryClient],
+    [queryClient, keys],
   );
 }

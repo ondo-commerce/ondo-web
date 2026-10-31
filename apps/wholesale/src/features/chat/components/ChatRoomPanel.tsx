@@ -1,7 +1,6 @@
 "use client";
 
 import { Badge, Panel } from "@ondo/ui";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -11,9 +10,9 @@ import {
 } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
-import { chatKeys } from "../api/keys";
 import { useMarkReadMutation } from "../api/mutations";
 import { useRoomNamePeek, useRoomQueries } from "../api/queries";
+import { useChatCache } from "../api/scope";
 import { isChatSessionLostError, useChatSessionLost } from "../api/session";
 import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
 import {
@@ -61,14 +60,14 @@ export function ChatRoomPanel({
 
   /* 실패한 채로 방을 떠나면 그 실패를 버린다 — 다시 열면 새로 묻는다. 안 버리면 Suspense 경계가
      같은 실패를 그대로 다시 그려서, 사장이 다른 방에 갔다 와도 `다시 시도`를 눌러야 한다 */
-  const queryClient = useQueryClient();
+  const { queryClient, keys } = useChatCache();
   useEffect(
     () => () => {
-      for (const queryKey of [chatKeys.thread(roomId), chatKeys.room(roomId)])
+      for (const queryKey of [keys.thread(roomId), keys.room(roomId)])
         if (queryClient.getQueryState(queryKey)?.status === "error")
           queryClient.removeQueries({ queryKey, exact: true });
     },
-    [queryClient, roomId],
+    [queryClient, keys, roomId],
   );
 
   return (
@@ -137,7 +136,7 @@ function ChatRoom({
   draftKey,
   outbox,
 }: { roomId: number } & RoomCallbacks) {
-  const queryClient = useQueryClient();
+  const { queryClient, keys } = useChatCache();
   const { room, thread, threadUpdatedAt } = useRoomQueries(roomId);
   const now = useNow();
   const sessionLost = useChatSessionLost();
@@ -155,9 +154,9 @@ function ChatRoom({
      처음 연 값과 같으면 아무것도 안 한다(열기만 했는데 목록을 다시 부르지 않게) */
   useEffect(() => {
     if (thread.cursor <= openedCursor) return;
-    void queryClient.invalidateQueries({ queryKey: chatKeys.rooms() });
-    void queryClient.invalidateQueries({ queryKey: chatKeys.room(roomId) });
-  }, [thread.cursor, openedCursor, queryClient, roomId]);
+    void queryClient.invalidateQueries({ queryKey: keys.rooms() });
+    void queryClient.invalidateQueries({ queryKey: keys.room(roomId) });
+  }, [thread.cursor, openedCursor, queryClient, keys, roomId]);
 
   /* 읽음(S3-7). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고, 세션이 살아 있을 때.
      - 확인된 위치(confirmed)와 날아가는 중인 위치(inFlight)를 나눈다(리뷰 F2). 응답 전 다시 그려져도 1회,

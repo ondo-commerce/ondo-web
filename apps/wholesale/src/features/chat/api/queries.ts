@@ -6,13 +6,12 @@ import {
   onlineManager,
   queryOptions,
   useInfiniteQuery,
-  useQueryClient,
   useSuspenseInfiniteQuery,
   useSuspenseQueries,
-  type QueryClient,
 } from "@tanstack/react-query";
 import { apiFetch, apiFetchBody } from "@ondo/api";
-import { chatKeys } from "./keys";
+import type { ChatCache } from "./keys";
+import { useChatCache } from "./scope";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
 import {
   MESSAGE_PAGE_SIZE,
@@ -63,11 +62,11 @@ const NO_CONDITION: RoomListParams = { filter: "ALL", q: null };
  * 조건(filter, q)은 서버가 건다(loop-08b Q6 ①) — 받은 장 안에서 거르면 둘째 장 이후 방을 못 찾는다.
  * cursor는 위치만 담아서 조건이 바뀌면 키가 바뀌고 첫 장부터 받는다(계약 `filter` 설명)
  */
-function roomListOptions(queryClient: QueryClient, params: RoomListParams) {
+function roomListOptions(chat: ChatCache, params: RoomListParams) {
   return infiniteQueryOptions({
-    queryKey: chatKeys.roomList(params.filter, params.q),
+    queryKey: chat.keys.roomList(params.filter, params.q),
     queryFn: ({ pageParam }) =>
-      guardSession(queryClient, () =>
+      guardSession(chat, () =>
         apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
           searchParams: {
             size: ROOM_PAGE_SIZE,
@@ -90,11 +89,10 @@ function roomListOptions(queryClient: QueryClient, params: RoomListParams) {
  * 세션이 끊기면 멈춘다(간격 false, 그래도 불리면 요청 없이 끊김 오류).
  */
 export function useRoomListQuery(params: RoomListParams) {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   return useSuspenseInfiniteQuery({
-    ...roomListOptions(queryClient, params),
-    refetchInterval: () =>
-      isSessionLost(queryClient) ? false : ROOM_LIST_POLL_MS,
+    ...roomListOptions(chat, params),
+    refetchInterval: () => (isSessionLost(chat) ? false : ROOM_LIST_POLL_MS),
     refetchIntervalInBackground: false,
   });
 }
@@ -110,9 +108,9 @@ const PEEK_ONLY = { enabled: false } as const;
  * (고를 게 없다, 디자인 결정 16). 모르면 `undefined`. 간격을 주지 않는다 — 폴링은 목록 패널 한 곳만 한다.
  */
 export function useRoomListEmptyPeek(): boolean | undefined {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   const { data } = useInfiniteQuery({
-    ...roomListOptions(queryClient, NO_CONDITION),
+    ...roomListOptions(chat, NO_CONDITION),
     ...PEEK_ONLY,
     select: (d) => d.pages[0]?.data.length === 0,
   });
@@ -128,9 +126,9 @@ export function useRoomNamePeek(
   roomId: number,
   params: RoomListParams,
 ): string | undefined {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   const { data } = useInfiniteQuery({
-    ...roomListOptions(queryClient, params),
+    ...roomListOptions(chat, params),
     ...PEEK_ONLY,
     select: (d) =>
       d.pages
@@ -147,23 +145,25 @@ export function useRoomNamePeek(
  * polling보다 늦게 도착할 수 있다 — 값을 캐시 하나에 max로만 쌓아야 늦은 머리의 옛 값이 `읽음`을 내리지 못한다.
  * 메시지 캐시가 아직 없으면(첫 진입) 메시지 첫 조회가 끝날 때 이 머리 값을 읽어 합친다(`fetchThread`).
  */
-function roomDetailOptions(roomId: number, queryClient: QueryClient) {
+function roomDetailOptions(roomId: number, chat: ChatCache) {
   return queryOptions({
-    queryKey: chatKeys.room(roomId),
+    queryKey: chat.keys.room(roomId),
     queryFn: async () => {
-      const detail = await guardSession(queryClient, () =>
+      const detail = await guardSession(chat, () =>
         apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
       );
-      queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
-        thread === undefined
-          ? thread
-          : {
-              ...thread,
-              counterpartRead: mergeCounterpartRead(
-                thread.counterpartRead,
-                detail.counterpartLastReadSequence,
-              ),
-            },
+      chat.queryClient.setQueryData<ChatThread>(
+        chat.keys.thread(roomId),
+        (thread) =>
+          thread === undefined
+            ? thread
+            : {
+                ...thread,
+                counterpartRead: mergeCounterpartRead(
+                  thread.counterpartRead,
+                  detail.counterpartLastReadSequence,
+                ),
+              },
       );
       return detail;
     },
@@ -183,15 +183,15 @@ function roomDetailOptions(roomId: number, queryClient: QueryClient) {
  * - polling 실패는 화면에 띄우지 않는다. 이미 그린 대화를 오류 패널로 바꾸면 읽던 걸 잃는다.
  *   실패를 삼키고 간격만 늘린다(S3-6). 첫 조회 실패만 던져 방 패널이 오류를 그린다(S3-9)
  */
-function threadOptions(roomId: number, queryClient: QueryClient) {
-  const key = chatKeys.thread(roomId);
+function threadOptions(roomId: number, chat: ChatCache) {
+  const key = chat.keys.thread(roomId);
   return queryOptions({
     queryKey: key,
-    queryFn: () => fetchThread(roomId, queryClient),
+    queryFn: () => fetchThread(roomId, chat),
     retry: false,
     refetchInterval: (query) => {
       const thread = query.state.data;
-      return thread === undefined || isSessionLost(queryClient)
+      return thread === undefined || isSessionLost(chat)
         ? false
         : thread.nextPollMs;
     },
@@ -206,12 +206,9 @@ function threadOptions(roomId: number, queryClient: QueryClient) {
  * 메시지 요청이 나간다(폭포).
  */
 export function useRoomQueries(roomId: number) {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   const [detail, thread] = useSuspenseQueries({
-    queries: [
-      roomDetailOptions(roomId, queryClient),
-      threadOptions(roomId, queryClient),
-    ],
+    queries: [roomDetailOptions(roomId, chat), threadOptions(roomId, chat)],
   });
   return {
     room: detail.data,
@@ -226,17 +223,17 @@ export function useRoomQueries(roomId: number) {
  * (이 쿼리를 보는 화면이 없다), 탭을 숨겼거나, 오프라인이 됐거나, 세션이 끊겼으면 거기서 멈춘다.
  * 받은 장까지는 남기고 cursor도 거기까지라 다음 polling이 이어 받는다.
  */
-function canContinue(queryClient: QueryClient, roomId: number): boolean {
+function canContinue(chat: ChatCache, roomId: number): boolean {
   const observed =
-    (queryClient
+    (chat.queryClient
       .getQueryCache()
-      .find({ queryKey: chatKeys.thread(roomId), exact: true })
+      .find({ queryKey: chat.keys.thread(roomId), exact: true })
       ?.getObserversCount() ?? 0) > 0;
   return (
     observed &&
     focusManager.isFocused() &&
     onlineManager.isOnline() &&
-    !isSessionLost(queryClient)
+    !isSessionLost(chat)
   );
 }
 
@@ -246,15 +243,15 @@ function canContinue(queryClient: QueryClient, roomId: number): boolean {
  */
 async function fetchThread(
   roomId: number,
-  queryClient: QueryClient,
+  chat: ChatCache,
 ): Promise<ChatThread> {
-  const key = chatKeys.thread(roomId);
-  const read = () => queryClient.getQueryData<ChatThread>(key);
+  const key = chat.keys.thread(roomId);
+  const read = () => chat.queryClient.getQueryData<ChatThread>(key);
   const path = CHAT_PATH.messages(roomId);
   const start = read();
 
   if (start === undefined) {
-    const page = await guardSession(queryClient, () =>
+    const page = await guardSession(chat, () =>
       apiFetchBody<ChatMessagePage>(path, {
         searchParams: { size: MESSAGE_PAGE_SIZE },
       }),
@@ -267,12 +264,12 @@ async function fetchThread(
       /* 방 머리가 먼저 도착했으면 그 값은 캐시가 없어 합쳐지지 못했다 — 여기서 같이 합친다(어느 쪽이 먼저든 하나로) */
       counterpartRead: mergeCounterpartRead(
         page.meta.counterpartLastReadSequence,
-        queryClient.getQueryData<ChatRoomDetail>(chatKeys.room(roomId))
+        chat.queryClient.getQueryData<ChatRoomDetail>(chat.keys.room(roomId))
           ?.counterpartLastReadSequence,
       ),
     };
   }
-  if (isSessionLost(queryClient)) return start;
+  if (isSessionLost(chat)) return start;
 
   let cursor = start.cursor;
   let fetched: ChatMessage[] = [];
@@ -280,7 +277,7 @@ async function fetchThread(
   let counterpartRead: number | null = null;
   try {
     for (;;) {
-      const page = await guardSession(queryClient, () =>
+      const page = await guardSession(chat, () =>
         apiFetchBody<ChatMessagePage>(path, {
           searchParams: { afterSequence: cursor, size: MESSAGE_PAGE_SIZE },
         }),
@@ -292,7 +289,7 @@ async function fetchThread(
         page.meta.counterpartLastReadSequence,
       );
       if (!page.meta.hasMore || page.data.length === 0) break;
-      if (!canContinue(queryClient, roomId)) break;
+      if (!canContinue(chat, roomId)) break;
     }
   } catch (error) {
     const latest = read() ?? start;

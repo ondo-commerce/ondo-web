@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatRoomListPanel } from "./ChatRoomList";
 import { ChatRoomPanel } from "./ChatRoomPanel";
 import { useRoomListEmptyPeek } from "../api/queries";
+import { ChatAccountScope } from "../api/scope";
 import { useResetChatSessionOnLeave } from "../api/session";
 import { ROOM_TEXT } from "../constants";
 import {
@@ -43,9 +44,19 @@ const NO_CONDITION: RoomListParams = { filter: "ALL", q: null };
 export function ChatView({
   email,
 }: {
-  /** 로그인 이메일. 쓰던 글 키에 들어간다(`draftKey`). feature끼리 import 못 해 `app/`이 넘긴다 */
+  /** 로그인 이메일. 쓰던 글 키와 쿼리 키에 들어간다. feature끼리 import 못 해 `app/`이 넘긴다 */
   email: string | null;
 }) {
+  /* 쿼리 키를 계정마다 나눈다(loop-08b M1). 아래 훅 전부가 이 범위의 키를 쓴다 — 보내기(`useChatOutbox`)도
+     그래서 범위 안쪽 컴포넌트에서 부른다 */
+  return (
+    <ChatAccountScope account={email ?? ""}>
+      <ChatInbox email={email} />
+    </ChatAccountScope>
+  );
+}
+
+function ChatInbox({ email }: { email: string | null }) {
   const searchParams = useSearchParams();
   /* 보류 말풍선은 방 패널이 아니라 여기 산다 — 방을 옮겨도 남는다(loop-08b S3-10) */
   const outbox = useChatOutbox();

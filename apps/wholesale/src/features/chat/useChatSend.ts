@@ -1,9 +1,9 @@
 "use client";
 
-import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { onlineManager } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { chatKeys } from "./api/keys";
 import { useSendMessageMutation } from "./api/mutations";
+import { chatEpoch, useChatCache } from "./api/scope";
 import { markSessionLost } from "./api/session";
 import {
   insertSent,
@@ -27,7 +27,7 @@ import type { ChatThread, PendingByRoom, PendingMessage } from "./types";
  * 다른 방을 보는 사이 끝난 보내기는 **자기 방**에만 간다 — 결과 처리가 보낸 순간의 roomId를 쥐고 있다(S3-12).
  */
 export function useChatOutbox() {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   const { mutateAsync } = useSendMessageMutation();
   const [byRoom, setByRoom] = useState<PendingByRoom>({});
 
@@ -55,42 +55,46 @@ export function useChatOutbox() {
       update(roomId, (list) =>
         upsertPending(list, { ...item, status: "sending", failure: null }),
       );
+      /* 보낸 순간의 계정 키와 로그아웃 세대(loop-08b M1). 응답 전에 로그아웃하고 다른 계정으로 들어왔으면
+         결과를 버린다 — 지운 캐시에 A의 말풍선을 다시 넣거나 B의 화면에 끊김 표시를 남기지 않게 */
+      const { queryClient, keys } = chat;
+      const epoch = chatEpoch();
       mutateAsync({
         roomId,
         clientMessageId: item.clientMessageId,
         body: item.body,
       }).then(
         (result) => {
-          queryClient.setQueryData<ChatThread>(
-            chatKeys.thread(roomId),
-            (thread) =>
-              thread === undefined
-                ? thread
-                : insertSent(thread, [
-                    result.message,
-                    ...result.generatedMessages,
-                  ]),
+          if (chatEpoch() !== epoch) return;
+          queryClient.setQueryData<ChatThread>(keys.thread(roomId), (thread) =>
+            thread === undefined
+              ? thread
+              : insertSent(thread, [
+                  result.message,
+                  ...result.generatedMessages,
+                ]),
           );
           update(roomId, (list) =>
             list.filter((p) => p.clientMessageId !== item.clientMessageId),
           );
           // 답 필요, 미리보기, 순서가 바뀐다
-          void queryClient.invalidateQueries({ queryKey: chatKeys.rooms() });
+          void queryClient.invalidateQueries({ queryKey: keys.rooms() });
           void queryClient.invalidateQueries({
-            queryKey: chatKeys.room(roomId),
+            queryKey: keys.room(roomId),
           });
         },
         (error: unknown) => {
+          if (chatEpoch() !== epoch) return;
           const failure = sendFailureOf(error);
           // 401 — 채팅 세션 끊김 하나로(`api/session.ts`). polling 전부와 입력창이 같이 멈춘다
-          if (failure === "session") markSessionLost(queryClient);
+          if (failure === "session") markSessionLost(chat);
           update(roomId, (list) =>
             upsertPending(list, { ...item, status: "failed", failure }),
           );
         },
       );
     },
-    [mutateAsync, queryClient, update],
+    [chat, mutateAsync, update],
   );
 
   /** 새 말풍선. 키는 여기서 한 번 만들고 다시 보내기까지 그대로 간다(S3-11) */
