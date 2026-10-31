@@ -9,7 +9,9 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
+import { useDocumentVisible } from "../useDocumentVisible";
 import { chatKeys } from "./keys";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
@@ -150,11 +152,14 @@ export function isRoomListSessionLost(error: unknown): boolean {
  *
  * 갱신(§4-4 1): 15초마다, 그리고 탭이 다시 보이면 즉시 1회. TanStack infinite query의 다시 받기는 **받은 장 수만큼
  * 첫 장부터** 차례로 다시 묻고 cursor는 새로 받은 장에서 다시 뽑는다 — 기획 규칙 그대로라 직접 돌리지 않는다.
- * 탭이 숨으면 멈춘다(`refetchIntervalInBackground: false`).
+ *
+ * 주기는 TanStack `refetchInterval`이 아니라 아래 `setInterval`이다(메타 리뷰 M1). `refetchInterval`은 요청이
+ * 시작되고 끝날 때마다 타이머를 다시 걸어, 14초에 누른 `더 보기`가 5초 걸리면 다음 갱신이 34초가 된다.
+ * §4-4 2는 "겹친 회차만 건너뛰고 다음 15초, 최대 15초"다 — 주기는 화면이 열린(또는 탭이 다시 보인) 때부터
+ * 요청과 상관없이 15초씩 돈다. 탭이 숨으면 타이머를 지우고, 보이면 그때부터 다시 건다.
  *
  * 겹침(§4-4 2):
- * - `더 보기`가 도는 중 15초가 되면 그 갱신은 새 요청 없이 도는 요청에 붙는다(TanStack이 진행 중 fetch를
- *   취소하지 않고 같은 promise를 돌려준다). 타이머는 요청이 끝날 때 다시 걸려 다음 갱신은 그 15초 뒤다
+ * - 15초가 된 순간 요청(`더 보기`, 탭 복귀 재조회)이 돌고 있으면 그 회차는 묻지 않고 건너뛴다
  * - 갱신이 도는 중엔 화면이 `더 보기`를 잠근다(`moreStateOf`). 누르는 쪽도 `cancelRefetch: false`로 부른다 —
  *   기본값(true)이면 연타가 앞 요청을 취소하고 새로 보내 요청이 여러 번 나간다(S4-4 3연타 1회)
  *
@@ -164,7 +169,7 @@ export function isRoomListSessionLost(error: unknown): boolean {
  */
 export function useRoomListQuery() {
   const queryClient = useQueryClient();
-  return useInfiniteQuery({
+  const query = useInfiniteQuery({
     queryKey: chatKeys.rooms(),
     queryFn: async ({ pageParam }) => {
       await chatMockReady();
@@ -187,13 +192,29 @@ export function useRoomListQuery() {
     retry: false,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchInterval: (query) =>
-      isRoomListSessionLost(query.state.error) ? false : ROOM_LIST_POLL_MS,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: (query) =>
-      isRoomListSessionLost(query.state.error) ? false : "always",
+    refetchOnWindowFocus: (q) =>
+      isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnReconnect: false,
   });
+
+  const visible = useDocumentVisible();
+  const sessionLost = isRoomListSessionLost(query.error);
+  useEffect(() => {
+    if (!visible || sessionLost) return;
+    const timer = setInterval(() => {
+      const state = queryClient.getQueryState(chatKeys.rooms());
+      /* 겹친 회차만 건너뛴다. 다음 회차는 이 타이머 그대로 15초 뒤다 */
+      if (state?.fetchStatus === "fetching") return;
+      if (isRoomListSessionLost(state?.error)) return;
+      void queryClient.refetchQueries(
+        { queryKey: chatKeys.rooms(), exact: true, type: "active" },
+        { cancelRefetch: false },
+      );
+    }, ROOM_LIST_POLL_MS);
+    return () => clearInterval(timer);
+  }, [visible, sessionLost, queryClient]);
+
+  return query;
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   openList,
   pauseOnList,
   rowIds,
+  runToTick,
   setVisibility,
   settled,
   waitCount,
@@ -36,27 +37,23 @@ test("S4-3 /chats 15초마다 첫 장 1회, 숨김 60초 동안 0회, 보이면 
   page,
 }) => {
   await openList(page, 2);
-  const n0 = await pauseOnList(page);
+  await pauseOnList(page);
 
-  await page.clock.runFor(13_000);
-  expect(await count(page, FIRST_PAGE_GET), "15초 전엔 0회").toBe(n0);
-  await page.clock.runFor(3_000);
-  await waitCount(page, FIRST_PAGE_GET, n0 + 1);
+  /* 주기는 화면이 열린 때부터 요청과 따로 돈다(M1) — 회차 하나(T)를 잡고 거기서 잰다 */
+  const n1 = await runToTick(page);
   await settled(page, FIRST_PAGE_GET);
-
-  /* 기준점은 방금 응답이다(TanStack이 응답 때 타이머를 다시 건다) */
-  await page.clock.runFor(13_500);
-  expect(await count(page, FIRST_PAGE_GET), "다음 15초 전엔 0회").toBe(n0 + 1);
-  await page.clock.runFor(2_500);
-  await waitCount(page, FIRST_PAGE_GET, n0 + 2);
+  await page.clock.runFor(14_000);
+  expect(await count(page, FIRST_PAGE_GET), "다음 15초 전엔 0회").toBe(n1);
+  await page.clock.runFor(1_500);
+  await waitCount(page, FIRST_PAGE_GET, n1 + 1);
   await settled(page, FIRST_PAGE_GET);
 
   await setVisibility(page, "hidden");
   await page.clock.runFor(60_000);
-  expect(await count(page, FIRST_PAGE_GET), "숨김 60초 동안 0회").toBe(n0 + 2);
+  expect(await count(page, FIRST_PAGE_GET), "숨김 60초 동안 0회").toBe(n1 + 1);
 
   await setVisibility(page, "visible");
-  await waitCount(page, FIRST_PAGE_GET, n0 + 3);
+  await waitCount(page, FIRST_PAGE_GET, n1 + 2);
   /* 갱신은 화면에 표시하지 않는다(결정 63) — 알림 줄, 스피너 0 */
   await expect(appAlert(page)).toHaveCount(0);
   await expect(page.locator('[role="status"]')).toHaveCount(0);
@@ -99,7 +96,7 @@ test("S4-5 경쟁 ① 더 보기가 도는 중 15초 경과 → 그 갱신 요�
 }) => {
   await openList(page, 35);
   const first0 = await pauseOnList(page);
-  /* 15초 타이머는 누르는 순간 다시 걸린다 — 그 15초를 넘기려면 다음 장이 15초보다 오래 걸려야 한다 */
+  /* 다음 장을 20초 늦춰 화면을 연 뒤 첫 15초 회차가 반드시 더 보기 중에 오게 한다 */
   await chatMock(page, "delay", { op: "rooms", ms: 20_000 });
   await moreButton(page).click();
   await flushUntil(page, async () => moreButton(page).isDisabled());
@@ -117,6 +114,37 @@ test("S4-5 경쟁 ① 더 보기가 도는 중 15초 경과 → 그 갱신 요�
   await expectRows(page, 35);
   expect(await count(page, FIRST_PAGE_GET)).toBe(first0);
   expect(await count(page, NEXT_PAGE_GET)).toBe(1);
+});
+
+test("S4-5 경쟁 ③ 회차 T 뒤 13.5초에 더 보기(5초) → T+15 회차만 건너뛰고 다음은 T+30(끝난 뒤 15초인 T+33.5 아님)", async ({
+  page,
+}) => {
+  await openList(page, 35);
+  await pauseOnList(page);
+  const first0 = await runToTick(page);
+  await settled(page, FIRST_PAGE_GET);
+
+  await page.clock.runFor(13_500);
+  await chatMock(page, "delay", { op: "rooms", ms: 5_000 });
+  await moreButton(page).click();
+  await flushUntil(page, async () => moreButton(page).isDisabled());
+  expect(await count(page, NEXT_PAGE_GET)).toBe(1);
+
+  await page.clock.runFor(2_000);
+  expect(
+    await count(page, FIRST_PAGE_GET),
+    "T+15 — 더 보기와 겹친 회차는 건너뛴다",
+  ).toBe(first0);
+
+  await page.clock.runFor(4_000);
+  await flushRows(page, 35);
+  await expectRows(page, 35);
+  expect(await count(page, FIRST_PAGE_GET)).toBe(first0);
+
+  await page.clock.runFor(9_000);
+  expect(await count(page, FIRST_PAGE_GET), "T+30 전엔 0회").toBe(first0);
+  await page.clock.runFor(1_500);
+  await waitCount(page, FIRST_PAGE_GET, first0 + 1);
 });
 
 test("S4-5 경쟁 ② 갱신 응답을 늦춘 사이 더 보기 disabled(글자 그대로, 스피너 없음), 갱신 끝나면 눌러져 35행 중복 0", async ({

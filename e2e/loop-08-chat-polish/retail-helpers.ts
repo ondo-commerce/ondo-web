@@ -86,6 +86,21 @@ export async function pauseOnList(page: Page): Promise<number> {
   return count(page, FIRST_PAGE_GET);
 }
 
+/**
+ * 멈춘 시계를 100ms씩 밀어 15초 회차 하나가 나간 순간에 선다(메타 리뷰 M1). 주기는 화면이 열린 때부터 돌아
+ * 시작점을 밖에서 모른다 — 회차 하나를 잡아 그 시각(T)을 기준으로 잰다. 끝나면 지금은 T+0.1~0.2초쯤이다
+ * (요청 기록이 한 걸음 늦게 올 수 있다). 반환 = 그 회차까지 첫 장 요청 수
+ */
+export async function runToTick(page: Page): Promise<number> {
+  const before = await count(page, FIRST_PAGE_GET);
+  for (let i = 0; i < 200; i++) {
+    await page.clock.runFor(100);
+    const now = await count(page, FIRST_PAGE_GET);
+    if (now > before) return now;
+  }
+  throw new Error("20초 동안 15초 회차가 안 나갔다");
+}
+
 /* --- 상대 읽음 ------------------------------------------------------------ */
 
 /** 보이는 `읽음`(시각 줄 안, aria-hidden) */

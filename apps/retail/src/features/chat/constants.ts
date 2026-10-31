@@ -105,7 +105,7 @@ export const ROOM_LIST_SIZE = 30;
 
 /**
  * `/chats` 갱신 간격(loop-08 §4-4 1, loop-04 §4-4와 같은 값). 받은 장 전부를 첫 장부터 다시 받는다.
- * TanStack은 요청이 시작되고 끝날 때마다 이 타이머를 다시 건다 — 그래서 실제 간격은 "마지막 응답 뒤 15초"다
+ * 요청과 따로 도는 주기다(`useRoomListQuery`의 `setInterval`, 메타 리뷰 M1) — 겹친 회차만 건너뛰고 다음 15초
  */
 export const ROOM_LIST_POLL_MS = 15_000;
 
