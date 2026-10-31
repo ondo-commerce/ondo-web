@@ -8,13 +8,23 @@ import {
   type InquiryBackorderSource,
 } from "./backorderCandidates";
 import {
+  DEFAULT_AUTO_REPLY_SETTINGS,
   QTY_NOTE,
+  decideInquiry,
+  generatedLines,
+  linesToAppend,
+  openHandoffOf,
   type GeneratedLine,
   type InquiryCatalog,
   type InquiryDecision,
+  type InquiryHistoryItem,
   type InquiryListing,
 } from "./inquiry";
-import type { InquiryReceivable } from "./receivable";
+import {
+  receivableOf,
+  type InquiryReceivable,
+  type InquiryReceivableSource,
+} from "./receivable";
 
 /**
  * 골든셋(`openapi/golden/inquiry-golden.json`)을 읽는 테스트 도구. 판정 unit(`inquiry.test.ts`)과
@@ -539,4 +549,274 @@ export function visibleExpect(e: GoldenExpect): GoldenExpect {
   const rest = { ...e };
   if (rest.kind === "HANDOFF") delete rest.reason;
   return rest;
+}
+
+/**
+ * 한 단계의 판정 결과. `sender`를 칸으로 둔다 — 없으면 사장 글을 기대값 모양(`{openHandoff}`)으로만
+ * 알아봐야 하고, 그러면 기대값을 잘못 쓴 소매 단계가 점수 분모에서 조용히 빠진다(loop-08b S2-6).
+ */
+export interface StepResult {
+  scenario: string;
+  required: boolean;
+  sender: "RETAILER" | "WHOLESALER";
+  expect: GoldenExpect;
+  actual: GoldenExpect;
+}
+
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+const DEFAULT_CATALOG = goldenCatalog(GOLDEN.stock);
+const DEFAULT_BACKORDERS = goldenBackorders(GOLDEN.backorders);
+const DEFAULT_RECEIVABLE_ROWS = goldenReceivableRows();
+
+/**
+ * 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 **방에 들어간** 줄(`linesToAppend`)을 history에
+ * 쌓는다. v4(since 4)는 그 줄을 투영하고, v3까지는 판정을 투영한다(기대값 모양이 그때 정해졌다).
+ * 판정 unit과 골든 점수가 같은 결과를 보도록 여기 둔다(loop-08b S2).
+ */
+export function runScenario(
+  s: GoldenScenario,
+  backorders: InquiryBackorderSource = DEFAULT_BACKORDERS,
+  rows: readonly InquiryReceivable[] = DEFAULT_RECEIVABLE_ROWS,
+  catalog: InquiryCatalog = DEFAULT_CATALOG,
+): StepResult[] {
+  let failsLeft = s.room.receivableFailTimes ?? 0;
+  const receivables: InquiryReceivableSource = () => {
+    if (failsLeft > 0) {
+      failsLeft -= 1;
+      throw new Error("골든셋: 정산 조회 실패");
+    }
+    return rows;
+  };
+  const rowAsOf =
+    receivableOf(rows, s.room.wholesalerId, s.room.retailerId ?? 1)?.asOf ??
+    null;
+  let now = GOLDEN_T0 + (s.room.afterDays ?? 0) * DAY;
+  let context =
+    s.room.context === null
+      ? null
+      : {
+          listingId: s.room.context.listingId,
+          at: now - s.room.context.ageMinutes * MINUTE,
+        };
+  const settings = {
+    enabled: s.room.autoReply,
+    intents: s.room.intents ?? DEFAULT_AUTO_REPLY_SETTINGS.intents,
+  };
+  const history: InquiryHistoryItem[] = [];
+  let sequence = 0;
+  return s.steps.map((step): StepResult => {
+    now += (step.afterMinutes ?? 0) * MINUTE;
+    if (step.enter !== undefined)
+      context =
+        step.enter.listingId === null
+          ? null
+          : { listingId: step.enter.listingId, at: now };
+    sequence += 1;
+    const mine = sequence;
+    if (step.sender === "WHOLESALER") {
+      history.push({
+        sequence: mine,
+        sender: "WHOLESALER",
+        kind: "TEXT",
+        sentAt: new Date(now).toISOString(),
+        autoReply: null,
+      });
+      return {
+        scenario: s.id,
+        required: s.required,
+        sender: "WHOLESALER",
+        expect: step.expect,
+        actual: { openHandoff: openHandoffOf(history) !== null },
+      };
+    }
+    const decision = decideInquiry({
+      body: step.text,
+      inquiry: fullInquiry(step.inquiry),
+      now,
+      wholesalerId: s.room.wholesalerId,
+      retailerId: s.room.retailerId ?? 1,
+      today: seoulDate(now),
+      settings,
+      context,
+      history: [...history],
+      catalog,
+      backorders,
+      receivables,
+    });
+    const sentAt = new Date(now).toISOString();
+    const before = [...history];
+    history.push({
+      sequence: mine,
+      sender: "RETAILER",
+      kind: "TEXT",
+      sentAt,
+      autoReply: null,
+    });
+    const lines = generatedLines(decision, mine, now);
+    const kept = linesToAppend(lines, before);
+    for (const line of kept) {
+      sequence += 1;
+      history.push({
+        sequence,
+        sender: line.sender,
+        kind: line.kind,
+        sentAt,
+        autoReply: line.autoReply,
+        handoff: line.handoff,
+      });
+    }
+    return {
+      scenario: s.id,
+      required: s.required,
+      sender: "RETAILER",
+      expect: step.expect,
+      actual:
+        (s.since ?? 0) >= 4
+          ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
+          : projectStep(decision, lines, now),
+    };
+  });
+}
+
+/** v4 줄 투영 `{lines}`의 kind 들. v3 판정 투영은 kind 하나 또는 kinds */
+export const kindsOf = (e: GoldenExpect): unknown[] =>
+  Array.isArray(e.lines)
+    ? (e.lines as { kind: unknown }[]).map((l) => l.kind)
+    : Array.isArray(e.kinds)
+      ? e.kinds
+      : [e.kind];
+export const isAuto = (e: GoldenExpect) => kindsOf(e).includes("AUTO_REPLY");
+export const isHandoff = (e: GoldenExpect) => kindsOf(e).includes("HANDOFF");
+
+/**
+ * 키 순서와 무관한 JSON. 같은 답 판정이 투영을 만든 코드의 키 순서에 기대지 않게 한다.
+ * undefined 칸은 JSON.stringify 처럼 빠진다(기존 정확 일치 단언과 같은 규칙)
+ */
+function canonical(v: unknown): string {
+  return JSON.stringify(v, (_key, value: unknown) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : value,
+  );
+}
+
+/** 같은 답 = 기대 투영 전체 일치. 재고의 intent, orderLimit, qtyNote 와 답+넘김의 kinds 까지 본다 */
+export const sameProjection = (a: GoldenExpect, e: GoldenExpect) =>
+  canonical(a) === canonical(e);
+
+/** 단계 라벨. 기대값 기준이다 — 실제가 틀려도 분모는 흔들리지 않는다 */
+export type GoldenLabel = "AUTO" | "HANDOFF" | "CLARIFY" | "NONE" | "OWNER";
+
+export function goldenLabel(r: StepResult): GoldenLabel {
+  if (r.sender === "WHOLESALER") return "OWNER";
+  const kinds = kindsOf(r.expect);
+  if (kinds.includes("AUTO_REPLY")) return "AUTO";
+  if (kinds.includes("CLARIFY")) return "CLARIFY";
+  if (kinds.includes("HANDOFF")) return "HANDOFF";
+  // v4 `lines: []`(줄 0, H21) 또는 v3 미송 투영 `{kind: null}`
+  if (kinds.length === 0 || (kinds.length === 1 && kinds[0] === null))
+    return "NONE";
+  throw new Error(
+    `골든 점수: ${r.scenario} 기대값 모양을 모른다 ${JSON.stringify(r.expect)}`,
+  );
+}
+
+export interface GoldenScore {
+  version: number;
+  scenarios: number;
+  steps: number;
+  retailSteps: number;
+  exact: number;
+  autoSent: number;
+  autoWrong: number;
+  autoExpected: number;
+  autoRight: number;
+  handoffExpected: number;
+  handoffSafe: number;
+  clarifyExpected: number;
+  clarifyRight: number;
+  noneExpected: number;
+  noneRight: number;
+  /** 반올림하지 않은 비율. 분모 0이면 null(보고서엔 "측정 불가") */
+  rates: {
+    exact: number | null;
+    autoWrong: number | null;
+    autoRight: number | null;
+    handoffSafe: number | null;
+    clarifyRight: number | null;
+  };
+}
+
+const rate = (n: number, d: number) => (d === 0 ? null : n / d);
+
+/**
+ * 골든셋 점수(loop-08b S2). 단계 단위, 라벨은 기대값 기준. 사장 글(sender WHOLESALER)은 steps 와 exact 에만 들어간다.
+ * - autoWrong: 자동 답을 냈는데 기대가 자동 답이 아니거나 투영이 다르다(분모 autoSent)
+ * - autoRight: 기대가 자동 답이고 투영 전체가 같다(분모 autoExpected)
+ * - handoffSafe: 기대가 넘김만이고 실제도 자동 답 없이 넘겼다(분모 handoffExpected)
+ * 목 판정 함수(`decideInquiry`) 대상 숫자다. 실사용 지표가 아니다(D1).
+ */
+export function goldenScore(
+  results: readonly StepResult[],
+  set: { version: number; scenarios: readonly unknown[] },
+): GoldenScore {
+  // 타입을 피해 들어온 sender 없는 결과도 막는다. 조용히 분모에서 빠지면 점수가 좋아 보인다
+  for (const r of results)
+    if (r.sender !== "RETAILER" && r.sender !== "WHOLESALER")
+      throw new Error(`골든 점수: ${r.scenario} sender 없음`);
+  const retail = results.filter((r) => r.sender === "RETAILER");
+  const labelled = retail.map((r) => ({
+    r,
+    label: goldenLabel(r),
+    same: sameProjection(r.actual, r.expect),
+  }));
+  const count = (pred: (x: (typeof labelled)[number]) => boolean) =>
+    labelled.filter(pred).length;
+  const exact = results.filter((r) =>
+    sameProjection(r.actual, r.expect),
+  ).length;
+  const autoSent = count((x) => isAuto(x.r.actual));
+  const autoWrong = count(
+    (x) => isAuto(x.r.actual) && (x.label !== "AUTO" || !x.same),
+  );
+  const autoExpected = count((x) => x.label === "AUTO");
+  const autoRight = count((x) => x.label === "AUTO" && x.same);
+  const handoffExpected = count((x) => x.label === "HANDOFF");
+  const handoffSafe = count(
+    (x) =>
+      x.label === "HANDOFF" && isHandoff(x.r.actual) && !isAuto(x.r.actual),
+  );
+  const clarifyExpected = count((x) => x.label === "CLARIFY");
+  const clarifyRight = count((x) => x.label === "CLARIFY" && x.same);
+  const noneExpected = count((x) => x.label === "NONE");
+  const noneRight = count((x) => x.label === "NONE" && x.same);
+  return {
+    version: set.version,
+    scenarios: set.scenarios.length,
+    steps: results.length,
+    retailSteps: retail.length,
+    exact,
+    autoSent,
+    autoWrong,
+    autoExpected,
+    autoRight,
+    handoffExpected,
+    handoffSafe,
+    clarifyExpected,
+    clarifyRight,
+    noneExpected,
+    noneRight,
+    rates: {
+      exact: rate(exact, results.length),
+      autoWrong: rate(autoWrong, autoSent),
+      autoRight: rate(autoRight, autoExpected),
+      handoffSafe: rate(handoffSafe, handoffExpected),
+      clarifyRight: rate(clarifyRight, clarifyExpected),
+    },
+  };
 }

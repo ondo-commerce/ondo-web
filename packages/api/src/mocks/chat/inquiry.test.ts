@@ -6,16 +6,17 @@ import { chatExtraReceivables } from "./extraReceivables";
 import {
   GOLDEN,
   GOLDEN_T0,
-  fullInquiry,
   goldenBackorders,
   goldenCatalog,
   goldenReceivableRows,
+  goldenScore,
+  isAuto,
+  isHandoff,
   projectDecision,
-  projectStep,
-  projectV4Lines,
+  runScenario,
   type GoldenExpect,
   type GoldenInquiry,
-  type GoldenScenario,
+  type StepResult,
 } from "./golden.testkit";
 import {
   BACKORDER_CHOICE_MAX,
@@ -27,8 +28,6 @@ import {
   generatedLines,
   hasPeriodWord,
   isReceivableAmountQuestion,
-  linesToAppend,
-  openHandoffOf,
   orderLimitOf,
   stockBand,
   stockReplyBody,
@@ -54,7 +53,6 @@ const RECEIVABLES: InquiryReceivableSource = () => RECEIVABLE_ROWS;
 /** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
 const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
-const DAY = 86_400_000;
 /** decideInquiry 를 직접 부르는 재고 unit 이 같이 넘기는 칸(방 1 봄봄상회, 오늘, 골든셋 미송 원본) */
 const ROOM1 = {
   retailerId: 1,
@@ -63,143 +61,11 @@ const ROOM1 = {
   receivables: RECEIVABLES,
 };
 
-interface StepResult {
-  scenario: string;
-  required: boolean;
-  expect: GoldenExpect;
-  actual: GoldenExpect;
-}
-
-/**
- * 시나리오 하나를 한 방에서 차례로 돈다. 각 단계의 소매 메시지와 **방에 들어간** 줄(`linesToAppend`)을 history에
- * 쌓는다. v4(since 4)는 그 줄을 투영하고, v3까지는 판정을 투영한다(기대값 모양이 그때 정해졌다)
- */
-function runScenario(
-  s: GoldenScenario,
-  backorders = BACKORDERS,
-  rows: readonly InquiryReceivable[] = RECEIVABLE_ROWS,
-): StepResult[] {
-  let failsLeft = s.room.receivableFailTimes ?? 0;
-  const receivables: InquiryReceivableSource = () => {
-    if (failsLeft > 0) {
-      failsLeft -= 1;
-      throw new Error("골든셋: 정산 조회 실패");
-    }
-    return rows;
-  };
-  const rowAsOf =
-    receivableOf(rows, s.room.wholesalerId, s.room.retailerId ?? 1)?.asOf ??
-    null;
-  let now = BASE + (s.room.afterDays ?? 0) * DAY;
-  let context =
-    s.room.context === null
-      ? null
-      : {
-          listingId: s.room.context.listingId,
-          at: now - s.room.context.ageMinutes * MINUTE,
-        };
-  const settings = {
-    enabled: s.room.autoReply,
-    intents: s.room.intents ?? DEFAULT_AUTO_REPLY_SETTINGS.intents,
-  };
-  const history: InquiryHistoryItem[] = [];
-  let sequence = 0;
-  return s.steps.map((step) => {
-    now += (step.afterMinutes ?? 0) * MINUTE;
-    if (step.enter !== undefined)
-      context =
-        step.enter.listingId === null
-          ? null
-          : { listingId: step.enter.listingId, at: now };
-    sequence += 1;
-    const mine = sequence;
-    if (step.sender === "WHOLESALER") {
-      history.push({
-        sequence: mine,
-        sender: "WHOLESALER",
-        kind: "TEXT",
-        sentAt: new Date(now).toISOString(),
-        autoReply: null,
-      });
-      return {
-        scenario: s.id,
-        required: s.required,
-        expect: step.expect,
-        actual: { openHandoff: openHandoffOf(history) !== null },
-      };
-    }
-    const decision = decideInquiry({
-      body: step.text,
-      inquiry: fullInquiry(step.inquiry),
-      now,
-      wholesalerId: s.room.wholesalerId,
-      retailerId: s.room.retailerId ?? 1,
-      today: seoulDate(now),
-      settings,
-      context,
-      history: [...history],
-      catalog: CATALOG,
-      backorders,
-      receivables,
-    });
-    const sentAt = new Date(now).toISOString();
-    const before = [...history];
-    history.push({
-      sequence: mine,
-      sender: "RETAILER",
-      kind: "TEXT",
-      sentAt,
-      autoReply: null,
-    });
-    const lines = generatedLines(decision, mine, now);
-    const kept = linesToAppend(lines, before);
-    for (const line of kept) {
-      sequence += 1;
-      history.push({
-        sequence,
-        sender: line.sender,
-        kind: line.kind,
-        sentAt,
-        autoReply: line.autoReply,
-        handoff: line.handoff,
-      });
-    }
-    return {
-      scenario: s.id,
-      required: s.required,
-      expect: step.expect,
-      actual:
-        (s.since ?? 0) >= 4
-          ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
-          : projectStep(decision, lines, now),
-    };
-  });
-}
-
+/** 골든셋 전 단계 결과. 점수(`goldenScore.test.ts`)도 같은 `runScenario`를 돈다 */
 const RESULTS = GOLDEN.scenarios.flatMap((s) => runScenario(s));
+const SCORE = goldenScore(RESULTS, GOLDEN);
 
-/** v4 줄 투영 `{lines}`의 kind 들. v3 판정 투영은 kind 하나 또는 kinds */
-const kindsOf = (e: GoldenExpect): unknown[] =>
-  Array.isArray(e.lines)
-    ? (e.lines as { kind: unknown }[]).map((l) => l.kind)
-    : Array.isArray(e.kinds)
-      ? e.kinds
-      : [e.kind];
-const isAuto = (e: GoldenExpect) => kindsOf(e).includes("AUTO_REPLY");
-const isHandoff = (e: GoldenExpect) => kindsOf(e).includes("HANDOFF");
 const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
-/**
- * 같은 답인가. 재고는 대상, 구간, 주문 가능. 미송은 대상, 남은 수량, 입고일과 상태까지.
- * v4(미수)는 줄 전체 — 금액, 연체, 선수금, 본문, 조회 시각 하나라도 다르면 틀린 답이다
- */
-const sameAnswer = (a: GoldenExpect, e: GoldenExpect) =>
-  isV4(e)
-    ? JSON.stringify(a) === JSON.stringify(e)
-    : a.target === e.target &&
-      a.band === e.band &&
-      a.orderable === e.orderable &&
-      a.remainingQty === e.remainingQty &&
-      JSON.stringify(a.eta) === JSON.stringify(e.eta);
 
 describe("골든셋 모양", () => {
   it("v4 시나리오 84개 = 필수 5 + 재고 답 17 + 넘김 22 + 미송 23 + 미수 17, id 중복 없음, v4 몫 25", () => {
@@ -329,28 +195,14 @@ describe("S7-3, S1-2 골든셋 84개 지표", () => {
     expect(misses).toEqual([]);
   });
 
-  it("잘못된 자동 답 0(AUTO_REPLY 0건이면 측정 불가로 실패), 안전한 넘김 전부, 맞힌 답 80% 이상", () => {
-    const sent = RESULTS.filter((r) => isAuto(r.actual));
-    expect(sent.length).toBeGreaterThan(0);
-    const wrong = sent.filter(
-      (r) => !isAuto(r.expect) || !sameAnswer(r.actual, r.expect),
-    );
-    expect(wrong).toEqual([]);
-
-    const handoffExpected = RESULTS.filter(
-      (r) => isHandoff(r.expect) && !isAuto(r.expect),
-    );
-    const safe = handoffExpected.filter((r) => isHandoff(r.actual));
-    expect(safe.length).toBe(handoffExpected.length);
-
-    const autoExpected = RESULTS.filter((r) => isAuto(r.expect));
-    const right = autoExpected.filter(
-      (r) =>
-        isAuto(r.actual) &&
-        r.actual.intent === r.expect.intent &&
-        sameAnswer(r.actual, r.expect),
-    );
-    expect(right.length / autoExpected.length).toBeGreaterThanOrEqual(0.8);
+  it("잘못된 자동 답 0(AUTO_REPLY 0건이면 측정 불가로 실패), 안전한 넘김 전부, 맞힌 답 80% 이상 — goldenScore 값", () => {
+    // 같은 답 = 기대 투영 전체 일치(loop-08b S2-3). 옛 sameAnswer 는 재고 intent, orderLimit, qtyNote 를 안 봤다
+    expect(SCORE.autoSent).toBeGreaterThan(0);
+    expect(SCORE.autoWrong).toBe(0);
+    expect(SCORE.handoffExpected).toBeGreaterThan(0);
+    expect(SCORE.handoffSafe).toBe(SCORE.handoffExpected);
+    expect(SCORE.rates.autoRight).not.toBeNull();
+    expect(SCORE.rates.autoRight ?? 0).toBeGreaterThanOrEqual(0.8);
   });
 
   it("시드 몫 stock 이 상품 목 시드와 variant마다 같다, 채팅 목 전용 몫은 extraListings 와 같다", () => {

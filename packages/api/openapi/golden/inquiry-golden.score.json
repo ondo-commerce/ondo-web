@@ -1,0 +1,24 @@
+{
+  "version": 4,
+  "scenarios": 84,
+  "steps": 117,
+  "retailSteps": 116,
+  "exact": 117,
+  "autoSent": 35,
+  "autoWrong": 0,
+  "autoExpected": 35,
+  "autoRight": 35,
+  "handoffExpected": 51,
+  "handoffSafe": 51,
+  "clarifyExpected": 29,
+  "clarifyRight": 29,
+  "noneExpected": 1,
+  "noneRight": 1,
+  "rates": {
+    "exact": 1,
+    "autoWrong": 0,
+    "autoRight": 1,
+    "handoffSafe": 1,
+    "clarifyRight": 1
+  }
+}
