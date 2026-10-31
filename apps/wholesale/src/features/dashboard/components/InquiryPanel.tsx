@@ -69,21 +69,23 @@ export function InquiryPanel() {
 function InquiryBody() {
   const { data } = useInquiryStatsQuery();
   return (
-    <div className="grid gap-2 text-sm tabular-nums" data-ac="S2-1">
-      {/* flex로 띄우지 않고 글자 사이 공백으로 띄운다 — 낭독과 복사가 "오늘 소매 메시지 12건" 그대로 나온다 */}
-      <p data-ac="S2-1 S2-3">
+    /* S2-4: polling으로 숫자가 바뀌는 줄(와이어프레임 21 `#state-inquiry-poll`, QA F3) */
+    <div className="grid gap-2 text-sm tabular-nums" data-ac="S2-1 S2-4">
+      {/* flex로 띄우지 않는다 — 낭독과 복사가 "오늘 소매 메시지 12건" 그대로 나와야 한다. 숫자 앞은 공백,
+          뒤는 글자를 안 넣고 `mr-1`(4px, 와이어프레임 `.tot` gap)로 띄운다(QA F2) */}
+      <p data-ac="S2-1 S2-3 S2-4">
         {INQUIRY_TEXT.totalPrefix}{" "}
-        <span className="text-2xl font-semibold">
+        <span className="mr-1 text-2xl font-semibold">
           {formatNumber(data.retailMessages)}
         </span>
         {INQUIRY_TEXT.totalUnit}
       </p>
-      <p data-ac="S2-1">{data.outcomeLine}</p>
-      <p data-ac="S2-1 S2-2">
+      <p data-ac="S2-1 S2-4">{data.outcomeLine}</p>
+      <p data-ac="S2-1 S2-2 S2-4">
         {INQUIRY_TEXT.ratePrefix}{" "}
         <span className="font-medium">{data.rateLabel}</span> {data.rateDetail}
       </p>
-      <p data-ac="S2-1">
+      <p data-ac="S2-1 S2-4">
         <span className="text-muted-foreground">
           {INQUIRY_TEXT.intentPrefix}{" "}
         </span>
