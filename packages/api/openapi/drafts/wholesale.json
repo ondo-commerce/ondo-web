@@ -891,6 +891,179 @@
         ],
         "type": "object"
       },
+      "InquiryCounts": {
+        "description": "한 구간의 소매 메시지 결과. 다섯 칸(autoReplied, autoRepliedWithHandoff, handedOff, clarified, noResult) 합 = retailMessages",
+        "properties": {
+          "autoReplied": {
+            "description": "AUTO_REPLY 만 붙은 메시지",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "autoRepliedWithHandoff": {
+            "description": "같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다(답+확인). 자동으로 끝남 비율 분자에 넣지 않는다",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "byIntent": {
+            "additionalProperties": false,
+            "description": "판정 끝남(autoReplied + autoRepliedWithHandoff + handedOff)을 의도별로",
+            "properties": {
+              "BACKORDER": {
+                "$ref": "#/components/schemas/IntentCounts"
+              },
+              "OTHER": {
+                "$ref": "#/components/schemas/IntentCounts"
+              },
+              "RECEIVABLE": {
+                "$ref": "#/components/schemas/IntentCounts"
+              },
+              "STOCK": {
+                "$ref": "#/components/schemas/IntentCounts"
+              },
+              "UNCLASSIFIED": {
+                "$ref": "#/components/schemas/IntentCounts",
+                "description": "결과 줄 intent 가 null(협상어, 의도 둘, 의도 없음)"
+              }
+            },
+            "required": [
+              "BACKORDER",
+              "OTHER",
+              "RECEIVABLE",
+              "STOCK",
+              "UNCLASSIFIED"
+            ],
+            "type": "object"
+          },
+          "clarified": {
+            "description": "CLARIFY 만. 뒤에 칩 답이 오든 안 오든 이 메시지는 되묻기로 끝",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "handedOff": {
+            "description": "HANDOFF 만(열린 넘김 중 이유가 달라 새 줄이 생긴 것 포함)",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "noResult": {
+            "description": "결과 줄 0. 열린 넘김과 같은 이유라 줄이 안 생긴 것, 자동 답 도입 전 메시지, asOf 뒤에 결과가 붙은 것",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retailMessages": {
+            "description": "센 소매 TEXT 메시지 수 = 다섯 칸 합",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autoReplied",
+          "autoRepliedWithHandoff",
+          "byIntent",
+          "clarified",
+          "handedOff",
+          "noResult",
+          "retailMessages"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
+      "InquiryDay": {
+        "description": "영업일 하루",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/InquiryCounts"
+          },
+          "date": {
+            "description": "영업일 D. 구간은 [D 12:00, D+1 12:00) Asia/Seoul",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "counts",
+          "date"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
+      "InquiryStats": {
+        "description": "문의 지표 응답. 보고서는 숫자와 함께 startAt, endAt, asOf 를 그대로 옮겨 적는다",
+        "properties": {
+          "asOf": {
+            "description": "집계 시각. 이 뒤에 쓰인 결과 줄은 안 센다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "days": {
+            "description": "from 부터 to 까지 모든 영업일, 0인 날 포함, 오름차순. counts 합 = total",
+            "items": {
+              "$ref": "#/components/schemas/InquiryDay"
+            },
+            "type": "array"
+          },
+          "endAt": {
+            "description": "to 다음날 12:00 Asia/Seoul. 이 시각은 포함하지 않는다",
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "startAt": {
+            "description": "from 12:00 Asia/Seoul. 이 시각부터 포함",
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "format": "date",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/InquiryCounts"
+          }
+        },
+        "required": [
+          "asOf",
+          "days",
+          "endAt",
+          "from",
+          "startAt",
+          "to",
+          "total"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
+      "IntentCounts": {
+        "description": "의도 하나의 판정 끝남과 그중 자동 답만",
+        "properties": {
+          "autoReplied": {
+            "description": "autoReplied 칸과 같은 기준(답+확인 제외)",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "judged": {
+            "description": "자동 답 + 답+확인 + 넘김",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autoReplied",
+          "judged"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
       "ListingImageUploadResponse": {
         "properties": {
           "url": {
@@ -1304,6 +1477,123 @@
           }
         },
         "summary": "채팅 자동 답 설정 바꾸기",
+        "tags": [
+          "10 채팅"
+        ],
+        "x-ondo-draft": true
+      }
+    },
+    "/api/wholesale/chat/inquiry-stats": {
+      "get": {
+        "description": "내 도매처 방의 소매 TEXT 메시지(칩 답 포함)를 결과 하나로 센다. 우선순위 자동 답 > 넘김 > 되묻기 > 결과 없음. 도매 TEXT, 자동 줄, SYSTEM 줄, 남의 도매처 방은 안 센다.\n\n출처 연결: AUTO_REPLY, CLARIFY 줄은 autoReply.replyToSequence, HANDOFF 줄은 handoff.sourceSequence 가 그 메시지의 sequence 를 가리킨다. 같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다 있으면 autoRepliedWithHandoff(재고 0, 미송 입고일 미정). 되묻기 뒤 칩 답은 그 칩 답 메시지가 자기 결과로 한 번 세진다(되묻기 메시지와 묶지 않는다).\n\n기간: 영업일 D = [D 12:00, D+1 12:00) Asia/Seoul. 출처 메시지 sentAt 으로 날을 정한다(결과 줄 시각이 아니다). asOf(서버 집계 시각) 뒤에 쓰인 결과 줄은 안 센다 — 같은 기간을 나중에 다시 부르면 noResult 가 줄 수 있다. 보고서는 asOf 를 같이 적는다.\n\n의도: 자동 답(답+확인 포함)이면 autoReply.intent, 넘김만이면 handoff.intent. null 은 UNCLASSIFIED. 비율은 싣지 않는다(FE 가 autoReplied / judged 로 계산).\n\n에러: 400 VALIDATION_FAILED(날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]) / 401 / 403\n\n공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601.",
+        "operationId": "inquiryStats",
+        "parameters": [
+          {
+            "description": "첫 영업일(YYYY-MM-DD). 없으면 오늘 영업일",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "마지막 영업일(포함, YYYY-MM-DD). 없으면 from. from ≤ to ≤ 오늘 영업일, 최대 62일",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InquiryStats"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [],
+                  "message": "날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHENTICATED",
+                  "errors": [],
+                  "message": "로그인이 안 됐거나 세션이 끊겼다",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 끊겼다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 전 계정",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "승인 전 계정"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "서버 문제",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "문의 지표 (영업일 집계)",
         "tags": [
           "10 채팅"
         ],

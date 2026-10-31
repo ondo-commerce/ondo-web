@@ -420,9 +420,122 @@ describe("S1-1 loop-07 초안: ChatHandoffReason, ChatHandoff, ChatMessage.hando
     ]);
   });
 
-  it("새 op 0: 도매 drafts 경로 9개, 스냅샷 경로 59개 그대로(06a 와 같다)", () => {
-    expect(Object.keys(DRAFTS.wholesale.paths)).toHaveLength(9);
-    expect(Object.keys(SNAPSHOTS.wholesale.paths)).toHaveLength(59);
+  it("새 op 0: 도매 drafts 경로 9개, 스냅샷 경로 59개 그대로(06a 와 같다). loop-08 inquiry-stats 1개는 빼고 센다", () => {
+    const loop07 = (doc) =>
+      Object.keys(doc.paths).filter((p) => p !== INQUIRY_STATS_PATH);
+    expect(loop07(DRAFTS.wholesale)).toHaveLength(9);
+    expect(loop07(SNAPSHOTS.wholesale)).toHaveLength(59);
+  });
+});
+
+/**
+ * loop-08 S1-1. 도매 문의 지표 op 1개 + 스키마 4개. 기존 op 는 바꾸지 않는다(읽음 표시는 이미 있는
+ * `counterpartLastReadSequence`만 쓴다). 소매에는 없다(사장 화면 지표).
+ */
+const INQUIRY_STATS_PATH = "/api/wholesale/chat/inquiry-stats";
+const INQUIRY_SCHEMAS = [
+  "InquiryCounts",
+  "InquiryDay",
+  "InquiryStats",
+  "IntentCounts",
+];
+
+describe("S1-1 loop-08 초안: 도매 inquiryStats", () => {
+  it("도매 drafts 와 스냅샷에 같은 op(GET, x-ondo-draft, from/to date, 200 400 401 403 500)와 스키마 4개", () => {
+    for (const doc of [DRAFTS.wholesale, SNAPSHOTS.wholesale]) {
+      const op = doc.paths[INQUIRY_STATS_PATH].get;
+      expect(op.operationId).toBe("inquiryStats");
+      expect(op["x-ondo-draft"]).toBe(true);
+      expect(Object.keys(doc.paths[INQUIRY_STATS_PATH])).toEqual(["get"]);
+      expect(op.parameters.map((p) => [p.name, p.in, p.schema.format])).toEqual(
+        [
+          ["from", "query", "date"],
+          ["to", "query", "date"],
+        ],
+      );
+      expect(Object.keys(op.responses)).toEqual([
+        "200",
+        "400",
+        "401",
+        "403",
+        "500",
+      ]);
+      expect(op.responses["400"].content["application/json"].example.code).toBe(
+        "VALIDATION_FAILED",
+      );
+      expect(op.responses["401"].content["application/json"].example.code).toBe(
+        "UNAUTHENTICATED",
+      );
+      for (const name of INQUIRY_SCHEMAS)
+        expect(doc.components.schemas[name]).toEqual(
+          DRAFTS.wholesale.components.schemas[name],
+        );
+    }
+    const counts = DRAFTS.wholesale.components.schemas.InquiryCounts;
+    expect(counts.required).toEqual([
+      "autoReplied",
+      "autoRepliedWithHandoff",
+      "byIntent",
+      "clarified",
+      "handedOff",
+      "noResult",
+      "retailMessages",
+    ]);
+    expect(counts.properties.byIntent.required).toEqual([
+      "BACKORDER",
+      "OTHER",
+      "RECEIVABLE",
+      "STOCK",
+      "UNCLASSIFIED",
+    ]);
+    expect(counts.properties.byIntent.additionalProperties).toBe(false);
+  });
+
+  it("소매 drafts 와 스냅샷엔 없다", () => {
+    for (const doc of [DRAFTS.retail, SNAPSHOTS.retail]) {
+      expect(JSON.stringify(doc.paths)).not.toContain("inquiry-stats");
+      for (const name of INQUIRY_SCHEMAS)
+        expect(doc.components.schemas[name]).toBeUndefined();
+    }
+  });
+
+  it("읽음 표시는 기존 칸만 쓴다: 방 머리와 messages meta 의 counterpartLastReadSequence 가 원래대로 required", () => {
+    const s = SNAPSHOTS.wholesale.components.schemas;
+    expect(s.ChatRoomDetail.required).toContain("counterpartLastReadSequence");
+    expect(s.ChatMessagePageMeta.required).toContain(
+      "counterpartLastReadSequence",
+    );
+  });
+
+  it("빈 BE 스펙과 합치면 op 와 스키마 4개(byIntent 안 IntentCounts 참조까지)가 들어오고 검사가 빈 배열이다", () => {
+    const { merged, kept } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    expect(kept).toContain(`GET ${INQUIRY_STATS_PATH}`);
+    for (const name of INQUIRY_SCHEMAS)
+      expect(merged.components.schemas[name]).toBeDefined();
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("BE 가 같은 op 를 구현해 내면 받은 쪽이 이기고 검사는 빈 배열이다(거짓 경보 없음)", () => {
+    const received = emptyReceived();
+    received.paths[INQUIRY_STATS_PATH] = {
+      get: clone(DRAFTS.wholesale.paths[INQUIRY_STATS_PATH].get),
+    };
+    delete received.paths[INQUIRY_STATS_PATH].get["x-ondo-draft"];
+    for (const name of INQUIRY_SCHEMAS)
+      received.components.schemas[name] = clone(
+        DRAFTS.wholesale.components.schemas[name],
+      );
+    const { merged, dropped } = mergeDrafts(received, DRAFTS.wholesale);
+    expect(dropped).toContain(`GET ${INQUIRY_STATS_PATH}`);
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("가짜 스펙: 병합 뒤 inquiry-stats 가 빠지면 사라짐으로 실패한다", () => {
+    const { merged } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    delete merged.paths[INQUIRY_STATS_PATH];
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([
+      `GET ${INQUIRY_STATS_PATH} 사라짐`,
+    ]);
   });
 });
 

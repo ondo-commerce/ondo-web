@@ -2,7 +2,11 @@ import {
   BUSINESS_DAY_START_HOUR,
   DASHBOARD_TITLE,
   ELAPSED_UNKNOWN,
+  INQUIRY_INTENT_ORDER,
+  INQUIRY_OUTCOME_ORDER,
+  INQUIRY_TEXT,
   NO_DATE_TOP,
+  RATE_UNKNOWN,
   OVERDUE_TOP,
   RECEIVE_BY_LABEL,
   RECEIVE_BY_ORDER,
@@ -19,6 +23,9 @@ import type {
   DashboardSummary,
   DashboardSummaryPeek,
   DashboardSummaryView,
+  InquiryCounts,
+  InquiryStats,
+  InquiryView,
   NewOrderRowView,
   NewOrderSummary,
   RatioSegment,
@@ -402,5 +409,45 @@ export function toAttentionView(
         toAttentionSku(sku, `${daysSince(sku.latestBackorderedAt, now)}일째`),
       ),
     noDateCount: noDate.length,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 문의 — 오늘 영업일 소매 메시지와 그 결과(loop-08 S2, 기획 §4-1 §4-2)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 자동으로 끝남 비율 = 자동 답 / 판정(반올림 정수 %). 판정 0이면 `-` — 0/0을 0%로 쓰면 "하나도 못 끝냈다"로 읽힌다.
+ * 답+확인은 분자에 안 넣는다(기획 Q3, 보수적). 분자가 분모보다 크게 오면(서버 버그) 100%로 막지 않고 그대로 쓴다 —
+ * 숫자를 고쳐 보이면 버그가 화면에서 안 보인다
+ */
+export function autoResolvedRate(autoReplied: number, judged: number): string {
+  if (judged <= 0) return RATE_UNKNOWN;
+  /* 100을 먼저 곱한다. 나누기를 먼저 하면 23/40 = 0.575가 57.49999…가 돼 x.5가 내림된다(QA F1).
+     정수 곱은 정확해서 손 계산(반올림 정수, 기획 §4-1 5)과 같은 값이 나온다 */
+  return `${Math.round((autoReplied * 100) / judged)}%`;
+}
+
+/** 판정 = 자동 답 + 답+확인 + 넘김(기획 §4-1 4). 되묻기, 결과 없음은 판정이 아니다 */
+export function judgedCount(counts: InquiryCounts): number {
+  return counts.autoReplied + counts.autoRepliedWithHandoff + counts.handedOff;
+}
+
+/** 카드는 오늘 영업일 1일치를 부른다 — `total`이 곧 오늘이다(`days`는 1개) */
+export function toInquiryView(stats: InquiryStats): InquiryView {
+  const counts = stats.total;
+  const judged = judgedCount(counts);
+  return {
+    retailMessages: counts.retailMessages,
+    outcomeLine: INQUIRY_OUTCOME_ORDER.map(
+      (key) => `${INQUIRY_TEXT.outcome[key]} ${formatNumber(counts[key])}`,
+    ).join(", "),
+    rateLabel: autoResolvedRate(counts.autoReplied, judged),
+    rateDetail: `(${formatNumber(counts.autoReplied)}/${INQUIRY_TEXT.judged} ${formatNumber(judged)})`,
+    intentLine: INQUIRY_INTENT_ORDER.map(
+      (key) =>
+        `${INQUIRY_TEXT.intent[key]} ${formatNumber(counts.byIntent[key].judged)}`,
+    ).join(", "),
+    basisLine: `${INQUIRY_TEXT.basis}, ${formatClock(stats.asOf)} ${INQUIRY_TEXT.basisSuffix}`,
   };
 }

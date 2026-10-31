@@ -47,6 +47,7 @@ import {
   maxSequenceOf,
   messageAc,
   nextReadTarget,
+  readMarkerSequence,
   returnLinkOf,
   stockAskInquiry,
   toBackorderReplyView,
@@ -289,6 +290,12 @@ function ChatRoom({
   }, []);
 
   const items = toThreadItems(thread.messages);
+  /* 상대 읽음은 캐시의 방별 최댓값 하나만 본다(머리와 meta가 이미 합쳐져 있다). 값만 바뀐 polling은
+     말풍선 수가 그대로라 위 바닥 내리기가 안 돈다 — 읽던 자리가 안 움직인다(S4-2) */
+  const readSequence = readMarkerSequence(
+    thread.messages,
+    thread.counterpartRead,
+  );
   const acContext = {
     sessionLost,
     handoffCauses: handoffCauses(thread.messages),
@@ -339,6 +346,7 @@ function ChatRoom({
                 counterpartName={name}
                 now={now}
                 ac={messageAc(item.message, baseline, pendingIds, acContext)}
+                readMark={item.message.sequence === readSequence}
                 extra={
                   <AutoReplyExtra
                     message={item.message}

@@ -562,6 +562,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wholesale/chat/inquiry-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 문의 지표 (영업일 집계)
+         * @description 내 도매처 방의 소매 TEXT 메시지(칩 답 포함)를 결과 하나로 센다. 우선순위 자동 답 > 넘김 > 되묻기 > 결과 없음. 도매 TEXT, 자동 줄, SYSTEM 줄, 남의 도매처 방은 안 센다.
+         *
+         *     출처 연결: AUTO_REPLY, CLARIFY 줄은 autoReply.replyToSequence, HANDOFF 줄은 handoff.sourceSequence 가 그 메시지의 sequence 를 가리킨다. 같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다 있으면 autoRepliedWithHandoff(재고 0, 미송 입고일 미정). 되묻기 뒤 칩 답은 그 칩 답 메시지가 자기 결과로 한 번 세진다(되묻기 메시지와 묶지 않는다).
+         *
+         *     기간: 영업일 D = [D 12:00, D+1 12:00) Asia/Seoul. 출처 메시지 sentAt 으로 날을 정한다(결과 줄 시각이 아니다). asOf(서버 집계 시각) 뒤에 쓰인 결과 줄은 안 센다 — 같은 기간을 나중에 다시 부르면 noResult 가 줄 수 있다. 보고서는 asOf 를 같이 적는다.
+         *
+         *     의도: 자동 답(답+확인 포함)이면 autoReply.intent, 넘김만이면 handoff.intent. null 은 UNCLASSIFIED. 비율은 싣지 않는다(FE 가 autoReplied / judged 로 계산).
+         *
+         *     에러: 400 VALIDATION_FAILED(날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601.
+         */
+        get: operations["inquiryStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wholesale/chat/rooms": {
         parameters: {
             query?: never;
@@ -2306,6 +2336,95 @@ export interface components {
             variantId: number;
             /** Format: int32 */
             variantNumber: number;
+        };
+        /** @description 한 구간의 소매 메시지 결과. 다섯 칸(autoReplied, autoRepliedWithHandoff, handedOff, clarified, noResult) 합 = retailMessages */
+        InquiryCounts: {
+            /**
+             * Format: int32
+             * @description AUTO_REPLY 만 붙은 메시지
+             */
+            autoReplied: number;
+            /**
+             * Format: int32
+             * @description 같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다(답+확인). 자동으로 끝남 비율 분자에 넣지 않는다
+             */
+            autoRepliedWithHandoff: number;
+            /** @description 판정 끝남(autoReplied + autoRepliedWithHandoff + handedOff)을 의도별로 */
+            byIntent: {
+                BACKORDER: components["schemas"]["IntentCounts"];
+                OTHER: components["schemas"]["IntentCounts"];
+                RECEIVABLE: components["schemas"]["IntentCounts"];
+                STOCK: components["schemas"]["IntentCounts"];
+                /** @description 결과 줄 intent 가 null(협상어, 의도 둘, 의도 없음) */
+                UNCLASSIFIED: components["schemas"]["IntentCounts"];
+            };
+            /**
+             * Format: int32
+             * @description CLARIFY 만. 뒤에 칩 답이 오든 안 오든 이 메시지는 되묻기로 끝
+             */
+            clarified: number;
+            /**
+             * Format: int32
+             * @description HANDOFF 만(열린 넘김 중 이유가 달라 새 줄이 생긴 것 포함)
+             */
+            handedOff: number;
+            /**
+             * Format: int32
+             * @description 결과 줄 0. 열린 넘김과 같은 이유라 줄이 안 생긴 것, 자동 답 도입 전 메시지, asOf 뒤에 결과가 붙은 것
+             */
+            noResult: number;
+            /**
+             * Format: int32
+             * @description 센 소매 TEXT 메시지 수 = 다섯 칸 합
+             */
+            retailMessages: number;
+        };
+        /** @description 영업일 하루 */
+        InquiryDay: {
+            counts: components["schemas"]["InquiryCounts"];
+            /**
+             * Format: date
+             * @description 영업일 D. 구간은 [D 12:00, D+1 12:00) Asia/Seoul
+             */
+            date: string;
+        };
+        /** @description 문의 지표 응답. 보고서는 숫자와 함께 startAt, endAt, asOf 를 그대로 옮겨 적는다 */
+        InquiryStats: {
+            /**
+             * Format: date-time
+             * @description 집계 시각. 이 뒤에 쓰인 결과 줄은 안 센다
+             */
+            asOf: string;
+            /** @description from 부터 to 까지 모든 영업일, 0인 날 포함, 오름차순. counts 합 = total */
+            days: components["schemas"]["InquiryDay"][];
+            /**
+             * Format: date-time
+             * @description to 다음날 12:00 Asia/Seoul. 이 시각은 포함하지 않는다
+             */
+            endAt: string;
+            /** Format: date */
+            from: string;
+            /**
+             * Format: date-time
+             * @description from 12:00 Asia/Seoul. 이 시각부터 포함
+             */
+            startAt: string;
+            /** Format: date */
+            to: string;
+            total: components["schemas"]["InquiryCounts"];
+        };
+        /** @description 의도 하나의 판정 끝남과 그중 자동 답만 */
+        IntentCounts: {
+            /**
+             * Format: int32
+             * @description autoReplied 칸과 같은 기준(답+확인 제외)
+             */
+            autoReplied: number;
+            /**
+             * Format: int32
+             * @description 자동 답 + 답+확인 + 넘김
+             */
+            judged: number;
         };
         Item: {
             color: string;
@@ -4069,6 +4188,101 @@ export interface operations {
                      *       "code": "VALIDATION_FAILED",
                      *       "errors": [],
                      *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inquiryStats: {
+        parameters: {
+            query?: {
+                /** @description 첫 영업일(YYYY-MM-DD). 없으면 오늘 영업일 */
+                from?: string;
+                /** @description 마지막 영업일(포함, YYYY-MM-DD). 없으면 from. from ≤ to ≤ 오늘 영업일, 최대 62일 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InquiryStats"];
+                    };
+                };
+            };
+            /** @description 날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]",
                      *       "traceId": null
                      *     }
                      */
