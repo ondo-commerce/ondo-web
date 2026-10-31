@@ -12,6 +12,7 @@ import {
   LIST_TEXT,
   NAV_TEXT,
   PENDING_TEXT,
+  READ_MARK_KINDS,
   RECEIVABLE_TEXT,
   RETURN_PATH_PATTERN,
   ROOM_POLL_BACKOFF_MAX_MS,
@@ -231,6 +232,41 @@ export function advanceCursor(
 /** 화면에 그린 가장 큰 sequence. 낭독 기준점에 쓴다 */
 export function maxSequenceOf(messages: readonly ChatMessage[]): number {
   return messages.at(-1)?.sequence ?? 0;
+}
+
+/**
+ * 상대 읽음 위치 둘을 합친다(loop-08 S4, 기획 §4-3 1). 읽음은 올라가기만 하므로 큰 쪽이 새 값이다 —
+ * 늦게 온 방 머리, 늦게 온 messages 응답이 들고 온 작은 값은 버린다. null은 "아직 안 읽음"이라 숫자가 이긴다.
+ * 도매 `mergeCounterpartRead`와 같은 코드다
+ */
+export function mergeCounterpartRead(
+  known: number | null,
+  incoming: number | null | undefined,
+): number | null {
+  if (incoming === null || incoming === undefined) return known;
+  if (known === null) return incoming;
+  return Math.max(known, incoming);
+}
+
+/**
+ * `읽음`을 붙일 말풍선의 sequence(기획 §4-3 2, Q1). 상대가 읽은 위치 이하인 내 글(RETAILER TEXT) 중 가장 아래
+ * 하나. 값이 null이거나 대상이 없으면 null — "안 읽음"은 쓰지 않는다(디자인 결정 61).
+ * 도매와 대상만 다르다: 소매에겐 자동 답, 되묻기가 상대 쪽이다(결정 60).
+ *
+ * 보내는 중, 못 보낸 말풍선은 `messages`에 없다(서버 sequence가 없는 `PendingMessage`) — 그래서 대상이 될 수 없다
+ */
+export function readMarkerSequence(
+  messages: readonly ChatMessage[],
+  counterpartRead: number | null,
+): number | null {
+  if (counterpartRead === null) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m === undefined || m.sequence > counterpartRead) continue;
+    if (m.sender === "RETAILER" && READ_MARK_KINDS.has(m.kind))
+      return m.sequence;
+  }
+  return null;
 }
 
 /** 메시지 사이에 날짜가 바뀌는 자리마다 구분선을 끼운다. 첫 메시지 앞에도 하나 */

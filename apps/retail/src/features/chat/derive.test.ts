@@ -1,6 +1,8 @@
 import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
+  mergeCounterpartRead,
+  readMarkerSequence,
   advanceCursor,
   askChipBusy,
   askListingId,
@@ -513,6 +515,7 @@ describe("S6-4 S6-5 S6-6 보내기 실패와 보류 말풍선", () => {
       cursor: 5,
       failures: 0,
       nextPollMs: 3000,
+      counterpartRead: null,
     };
     const next = insertSent(thread, [message(7, { clientMessageId: "k-1" })]);
     expect(next.cursor).toBe(5);
@@ -1059,6 +1062,7 @@ describe("S8-14 S8-15 응답의 자동 답, polling, 다시 보내기", () => {
       cursor: 7,
       failures: 0,
       nextPollMs: 3000,
+      counterpartRead: null,
     };
     const sent = insertSent(thread, [
       message(8, { clientMessageId: "k-8" }),
@@ -1114,5 +1118,56 @@ describe("S8-14 S8-15 응답의 자동 답, polling, 다시 보내기", () => {
       text: "무드온 자동 답변: 어떤 색상, 사이즈요?",
       sequence: 9,
     });
+  });
+});
+
+describe("S4-1 상대 읽음 (loop-08)", () => {
+  /* 목 방 33 모양(소매 시점): 1 내 글, 2 내 글, 3 자동 답, 4 내 글, 5 자동 답, 6 내 글, 7 넘김 */
+  const thread = [
+    message(1),
+    message(2),
+    message(3, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+    message(4),
+    message(5, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+    message(6),
+    message(7, { sender: "SYSTEM", kind: "HANDOFF" }),
+  ];
+
+  it.each([
+    { read: 7, expected: 6, why: "넘김 줄은 대상이 아니다, 그 앞 내 글" },
+    { read: 5, expected: 4, why: "자동 답은 상대 쪽이라 대상이 아니다" },
+    { read: 3, expected: 2, why: "자동 답 앞 내 글" },
+    { read: 2, expected: 2, why: "내 글 그 자리" },
+    { read: 0, expected: null, why: "0 이하 내 글 없음" },
+  ])("읽음 $read → $expected ($why)", ({ read, expected }) => {
+    expect(readMarkerSequence(thread, read)).toBe(expected);
+  });
+
+  it("대상은 RETAILER TEXT 뿐 — 도매 TEXT, 되묻기, 모르는 kind 는 안 붙는다. null, 빈 방 → 없음", () => {
+    expect(
+      readMarkerSequence(
+        [
+          message(1, { sender: "WHOLESALER" }),
+          message(2, { sender: "WHOLESALER", kind: "CLARIFY" }),
+          message(3, { kind: "ORDER_LINK" as ChatMessage["kind"] }),
+        ],
+        3,
+      ),
+    ).toBeNull();
+    expect(readMarkerSequence(thread, null)).toBeNull();
+    expect(readMarkerSequence([], 5)).toBeNull();
+  });
+
+  it("보내는 중, 못 보낸 말풍선은 서버 메시지 목록에 없다 — 읽음 값이 커도 마지막 서버 내 글까지만", () => {
+    expect(readMarkerSequence(thread.slice(0, 4), 999)).toBe(4);
+  });
+
+  it("mergeCounterpartRead(5, 3) → 5. 작은 값, null, undefined 는 내리지 못한다", () => {
+    expect(mergeCounterpartRead(5, 3)).toBe(5);
+    expect(mergeCounterpartRead(3, 5)).toBe(5);
+    expect(mergeCounterpartRead(5, null)).toBe(5);
+    expect(mergeCounterpartRead(5, undefined)).toBe(5);
+    expect(mergeCounterpartRead(null, 0)).toBe(0);
+    expect(mergeCounterpartRead(null, null)).toBeNull();
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * 읽음 표시가 붙을 수 있는 내 쪽 메시지 kind(기획 §4-3 2, 디자인 결정 60). 소매는 내가 쓴 글(RETAILER TEXT)뿐 —
+ * 자동 답, 되묻기는 도매 이름으로 나간 상대 쪽 말이다. 서버가 kind를 늘리면 여기 없는 값은 안 붙는다
+ */
+export const READ_MARK_KINDS: ReadonlySet<string> = new Set(["TEXT"]);
+
 /** 화면 시각은 전부 이 시간대로 읽는다. 서버는 오프셋을 붙인 ISO를 준다 */
 export const CHAT_TIME_ZONE = "Asia/Seoul";
 
@@ -74,6 +80,12 @@ export const ROOM_TEXT = {
   wholesalerHome: "도매처 홈",
   /** `from=/chats`로 연 방의 돌아가기(디자인 결정 36) */
   backToList: "채팅 목록",
+  /**
+   * 상대 읽음(loop-08 S4, 디자인 결정 60). 뜻은 "도매 사업체에서 누군가 여기까지 열어 봤다" — 특정 사람이 아니다.
+   * 보이는 글자는 시각 줄 안(aria-hidden), 낭독은 말풍선 끝 숨긴 글(`readSr`)
+   */
+  read: "읽음",
+  readSr: ", 읽음",
 } as const;
 
 /* ------------------------------------------------------------------------

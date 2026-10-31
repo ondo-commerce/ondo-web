@@ -56,6 +56,12 @@ export interface ChatThread {
   failures: number;
   /** 다음 polling까지 기다릴 시간. 실패할 때 한 번 뽑아 둔다 — 렌더마다 다시 뽑으면 타이머가 매번 다시 걸린다 */
   nextPollMs: number;
+  /**
+   * 상대(도매)가 읽은 위치, 방별 최댓값 하나(loop-08 S4, 기획 §4-3 1). messages meta(빈 응답에도 온다)와
+   * 방 머리 `counterpartLastReadSequence`를 둘 다 여기로 합친다 — 늦게 온 쪽이 작은 값을 들고 와도 안 내려간다.
+   * 아직 안 읽었으면 null. 도매 `ChatThread.counterpartRead`와 같은 규칙(앱 사이 import 금지라 따로 둔다)
+   */
+  counterpartRead: number | null;
 }
 
 /* ------------------------------------------------------------------------
