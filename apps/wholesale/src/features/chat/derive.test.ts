@@ -15,8 +15,10 @@ import {
   formatUnread,
   insertSent,
   liveAnnouncement,
+  mergeCounterpartRead,
   mergeMessages,
   mergeReadMark,
+  readMarkerSequence,
   handoffCauses,
   messageAc,
   parseRoomParam,
@@ -451,6 +453,7 @@ describe("S4-6 보류 말풍선 합치기", () => {
       cursor: 5,
       failures: 0,
       nextPollMs: 3000,
+      counterpartRead: null,
     };
     const next = insertSent(thread, [
       message(7, { sender: "WHOLESALER", clientMessageId: "k-1" }),
@@ -809,5 +812,59 @@ describe("#299 S4-1 미송 되묻기 보기 줄", () => {
         ],
       }),
     ).toEqual({ mode: "inline", text: "보기: 레드 / M, 레드 / L(주문 불가)" });
+  });
+});
+
+describe("S3-1 상대 읽음 (loop-08)", () => {
+  /* 시드 방 1 모양: 1 소매, 2 내 글, 3 소매, 4 되묻기, 5 소매, 6 자동 답, 7 넘김, 8 소매 */
+  const thread = [
+    message(1),
+    message(2, { sender: "WHOLESALER" }),
+    message(3),
+    message(4, { sender: "WHOLESALER", kind: "CLARIFY" }),
+    message(5),
+    message(6, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+    message(7, { sender: "SYSTEM", kind: "HANDOFF" }),
+    message(8),
+  ];
+
+  it.each([
+    {
+      read: 8,
+      expected: 6,
+      why: "자동 답이 대상, 그 뒤 넘김과 소매 글은 아니다",
+    },
+    { read: 5, expected: 4, why: "되묻기가 대상" },
+    { read: 3, expected: 2, why: "내 글이 대상" },
+    { read: 1, expected: null, why: "그 위치까지 내 쪽 메시지가 없다" },
+    { read: 0, expected: null, why: "0" },
+  ])("읽음 $read → $expected ($why)", ({ read, expected }) => {
+    expect(readMarkerSequence(thread, read)).toBe(expected);
+  });
+
+  it("null(아직 안 읽음) → 없음. 빈 방 → 없음", () => {
+    expect(readMarkerSequence(thread, null)).toBeNull();
+    expect(readMarkerSequence([], 5)).toBeNull();
+  });
+
+  it("넘김 줄(SYSTEM)만 읽힌 자리 → 그 앞 내 쪽 메시지. 넘김에는 안 붙는다", () => {
+    expect(readMarkerSequence(thread, 7)).toBe(6);
+    expect(
+      readMarkerSequence([message(1), message(2, { sender: "SYSTEM" })], 2),
+    ).toBeNull();
+  });
+
+  it("보내는 중, 못 보낸 말풍선은 서버 메시지 목록에 없다 — 읽음 값이 커도 마지막 서버 메시지까지만", () => {
+    /* 보류 말풍선(`PendingMessage`)은 sequence가 없어 이 함수가 받지 않는다. 읽음이 999여도 6 */
+    expect(readMarkerSequence(thread.slice(0, 6), 999)).toBe(6);
+  });
+
+  it("mergeCounterpartRead(5, 3) → 5. 작은 값, null, undefined 는 내리지 못한다", () => {
+    expect(mergeCounterpartRead(5, 3)).toBe(5);
+    expect(mergeCounterpartRead(3, 5)).toBe(5);
+    expect(mergeCounterpartRead(5, null)).toBe(5);
+    expect(mergeCounterpartRead(5, undefined)).toBe(5);
+    expect(mergeCounterpartRead(null, 0)).toBe(0);
+    expect(mergeCounterpartRead(null, null)).toBeNull();
   });
 });
