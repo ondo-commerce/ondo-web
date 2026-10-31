@@ -12,6 +12,7 @@ import {
   LIST_TEXT,
   NAV_TEXT,
   PENDING_TEXT,
+  READ_MARK_KINDS,
   RECEIVABLE_TEXT,
   RETURN_PATH_PATTERN,
   ROOM_POLL_BACKOFF_MAX_MS,
@@ -38,6 +39,8 @@ import type {
   ClarifyView,
   ComposerCheck,
   HeaderCounts,
+  MoreInput,
+  MoreState,
   PendingMessage,
   ReadState,
   ReceivableCardView,
@@ -231,6 +234,41 @@ export function advanceCursor(
 /** 화면에 그린 가장 큰 sequence. 낭독 기준점에 쓴다 */
 export function maxSequenceOf(messages: readonly ChatMessage[]): number {
   return messages.at(-1)?.sequence ?? 0;
+}
+
+/**
+ * 상대 읽음 위치 둘을 합친다(loop-08 S4, 기획 §4-3 1). 읽음은 올라가기만 하므로 큰 쪽이 새 값이다 —
+ * 늦게 온 방 머리, 늦게 온 messages 응답이 들고 온 작은 값은 버린다. null은 "아직 안 읽음"이라 숫자가 이긴다.
+ * 도매 `mergeCounterpartRead`와 같은 코드다
+ */
+export function mergeCounterpartRead(
+  known: number | null,
+  incoming: number | null | undefined,
+): number | null {
+  if (incoming === null || incoming === undefined) return known;
+  if (known === null) return incoming;
+  return Math.max(known, incoming);
+}
+
+/**
+ * `읽음`을 붙일 말풍선의 sequence(기획 §4-3 2, Q1). 상대가 읽은 위치 이하인 내 글(RETAILER TEXT) 중 가장 아래
+ * 하나. 값이 null이거나 대상이 없으면 null — "안 읽음"은 쓰지 않는다(디자인 결정 61).
+ * 도매와 대상만 다르다: 소매에겐 자동 답, 되묻기가 상대 쪽이다(결정 60).
+ *
+ * 보내는 중, 못 보낸 말풍선은 `messages`에 없다(서버 sequence가 없는 `PendingMessage`) — 그래서 대상이 될 수 없다
+ */
+export function readMarkerSequence(
+  messages: readonly ChatMessage[],
+  counterpartRead: number | null,
+): number | null {
+  if (counterpartRead === null) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m === undefined || m.sequence > counterpartRead) continue;
+    if (m.sender === "RETAILER" && READ_MARK_KINDS.has(m.kind))
+      return m.sequence;
+  }
+  return null;
 }
 
 /** 메시지 사이에 날짜가 바뀌는 자리마다 구분선을 끼운다. 첫 메시지 앞에도 하나 */
@@ -573,18 +611,44 @@ export function formatUnread(count: number): string | null {
 }
 
 /**
+ * 같은 방이 두 번 오면 먼저 온 것 하나만(loop-08 S4-1, 기획 §4-4 1). 장을 이어 붙이면 앞 장이 위다 — 위에 있는
+ * 것이 더 최근 상태라 그쪽을 남긴다. 목 cursor는 키셋이라 겹치지 않지만, 서버가 장 사이에 겹쳐 줘도 행이 두 번
+ * 그려지지 않게(React key 충돌도 막는다) 여기서 한 번 더 거른다
+ */
+export function dedupeRooms(
+  rooms: readonly ChatRoomSummary[],
+): ChatRoomSummary[] {
+  const seen = new Set<number>();
+  return rooms.filter((room) => {
+    if (seen.has(room.roomId)) return false;
+    seen.add(room.roomId);
+    return true;
+  });
+}
+
+/**
+ * `더 보기` 자리 상태(loop-08 S4-4 S4-5 S4-7, `MoreState`). 순서가 규칙이다:
+ * 다음 장이 없으면 숨김 → 누른 뒤면 불러오는 중 → 세션이 끊겼거나 갱신 중이면 잠김(결정 64 65) → 실패 → 기본.
+ * 실패 상태에서 갱신이 돌면 잠김이 먼저다 — 그 사이 `다시 시도`를 누르면 다음 장이 아니라 갱신에 묻힌다
+ */
+export function moreStateOf(input: MoreInput): MoreState {
+  if (!input.hasNextPage) return "hidden";
+  if (input.isFetchingNextPage) return "busy";
+  if (input.sessionLost || input.isRefreshing) return "locked";
+  if (input.isFetchNextPageError) return "failed";
+  return "idle";
+}
+
+/**
  * wire → 행. 행을 누르면 `?from=/chats`로 연다 — 방 머리 돌아가기가 목록으로 온다(디자인 결정 36).
- * 같은 방이 두 번 오면 앞 것만(첫 장 안에서도 서버가 겹쳐 줄 수 있다고 본다).
+ * 같은 방이 두 번 오면 앞 것만(`dedupeRooms`).
  */
 export function toRoomRows(
   rooms: readonly ChatRoomSummary[],
   nowMs: number,
 ): ChatRoomRowView[] {
-  const seen = new Set<number>();
   const rows: ChatRoomRowView[] = [];
-  for (const room of rooms) {
-    if (seen.has(room.roomId)) continue;
-    seen.add(room.roomId);
+  for (const room of dedupeRooms(rooms)) {
     rows.push({
       roomId: room.roomId,
       href: chatRoomHref(room.roomId, CHATS_HREF),

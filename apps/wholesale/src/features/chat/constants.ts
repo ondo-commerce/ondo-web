@@ -55,7 +55,23 @@ export const ROOM_TEXT = {
   choiceNotOrderable: "(주문 불가)",
   /** 근거 칸 끝 조회 시각 뒤 글자(`14:20 조회`, `10/28 14:20 조회`) */
   checkedSuffix: " 조회",
+  /**
+   * 상대 읽음(loop-08 S3, 디자인 결정 47). 뜻은 "소매 사업체에서 누군가 여기까지 열어 봤다" — 특정 사람이 아니다.
+   * 보이는 글자는 시각 줄 안(aria-hidden), 낭독은 말풍선 끝 숨긴 글(`readSr`)
+   */
+  read: "읽음",
+  readSr: ", 읽음",
 } as const;
+
+/**
+ * 읽음 표시가 붙을 수 있는 내 쪽 메시지(기획 §4-3 2). 사장이 보낸 글과 사장 이름으로 나간 자동 답, 되묻기.
+ * 넘김 줄(SYSTEM)은 소매에게 보이는 말이 아니라 뺀다. 서버가 kind를 늘리면 여기 없는 값은 안 붙는다
+ */
+export const READ_MARK_KINDS: ReadonlySet<string> = new Set([
+  "TEXT",
+  "AUTO_REPLY",
+  "CLARIFY",
+]);
 
 /**
  * 넘김 줄 아래 이유 한 줄(#302 S3-1, 기획 §4-3 4, 디자인 결정 39). 이번 회차는 이 8개만 글이 있다.

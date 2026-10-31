@@ -49,6 +49,9 @@ describe("S2-2 자동으로 끝남 비율", () => {
     [1, 3, "33%"],
     [5, 8, "63%"],
     [3, 3, "100%"],
+    /* x.5 경계. 나누기 먼저면 57%, 14%로 내림된다(QA F1) */
+    [23, 40, "58%"],
+    [29, 200, "15%"],
   ])("%i/%i → %s", (autoReplied, judged, expected) => {
     expect(autoResolvedRate(autoReplied, judged)).toBe(expected);
   });

@@ -19,7 +19,12 @@ import {
   ROOM_LIST_POLL_MS,
   ROOM_PAGE_SIZE,
 } from "../constants";
-import { advanceCursor, mergeMessages, pollDelayMs } from "../derive";
+import {
+  advanceCursor,
+  mergeCounterpartRead,
+  mergeMessages,
+  pollDelayMs,
+} from "../derive";
 import type {
   ChatMessage,
   ChatMessagePage,
@@ -120,14 +125,33 @@ export function useRoomNamePeek(roomId: number): string | undefined {
   return data;
 }
 
-/** 방 머리. 없는 방, 남의 방은 404(존재를 숨긴다) → 경계의 `notFound` */
+/**
+ * 방 머리. 없는 방, 남의 방은 404(존재를 숨긴다) → 경계의 `notFound`.
+ *
+ * 받은 상대 읽음 값을 메시지 캐시에 합친다(loop-08 S3). 방 머리는 새 메시지가 올 때마다 다시 불려서
+ * polling보다 늦게 도착할 수 있다 — 값을 캐시 하나에 max로만 쌓아야 늦은 머리의 옛 값이 `읽음`을 내리지 못한다.
+ * 메시지 캐시가 아직 없으면(첫 진입) 메시지 첫 조회가 끝날 때 이 머리 값을 읽어 합친다(`fetchThread`).
+ */
 function roomDetailOptions(roomId: number, queryClient: QueryClient) {
   return queryOptions({
     queryKey: chatKeys.room(roomId),
-    queryFn: () =>
-      guardSession(queryClient, () =>
+    queryFn: async () => {
+      const detail = await guardSession(queryClient, () =>
         apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
-      ),
+      );
+      queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
+        thread === undefined
+          ? thread
+          : {
+              ...thread,
+              counterpartRead: mergeCounterpartRead(
+                thread.counterpartRead,
+                detail.counterpartLastReadSequence,
+              ),
+            },
+      );
+      return detail;
+    },
     retry: false,
   });
 }
@@ -225,12 +249,20 @@ async function fetchThread(
       cursor: advanceCursor(0, page.data),
       failures: 0,
       nextPollMs: pollDelayMs(0, 0),
+      /* 방 머리가 먼저 도착했으면 그 값은 캐시가 없어 합쳐지지 못했다 — 여기서 같이 합친다(어느 쪽이 먼저든 하나로) */
+      counterpartRead: mergeCounterpartRead(
+        page.meta.counterpartLastReadSequence,
+        queryClient.getQueryData<ChatRoomDetail>(chatKeys.room(roomId))
+          ?.counterpartLastReadSequence,
+      ),
     };
   }
   if (isSessionLost(queryClient)) return start;
 
   let cursor = start.cursor;
   let fetched: ChatMessage[] = [];
+  /* 이번 polling이 받은 상대 읽음. 빈 응답에도 meta가 와서 새 메시지 없이 `읽음`만 옮길 수 있다(S3-2) */
+  let counterpartRead: number | null = null;
   try {
     for (;;) {
       const page = await guardSession(queryClient, () =>
@@ -240,6 +272,10 @@ async function fetchThread(
       );
       fetched = mergeMessages(fetched, page.data);
       cursor = advanceCursor(cursor, page.data);
+      counterpartRead = mergeCounterpartRead(
+        counterpartRead,
+        page.meta.counterpartLastReadSequence,
+      );
       if (!page.meta.hasMore || page.data.length === 0) break;
       if (!canContinue(queryClient, roomId)) break;
     }
@@ -251,12 +287,20 @@ async function fetchThread(
         ...latest,
         messages: mergeMessages(latest.messages, fetched),
         cursor: Math.max(latest.cursor, cursor),
+        counterpartRead: mergeCounterpartRead(
+          latest.counterpartRead,
+          counterpartRead,
+        ),
       };
     const failures = latest.failures + 1;
     return {
       // 여러 장을 이어 받다 중간에 실패해도 받은 장까지는 남긴다 — cursor도 거기까지 올라가 있다
       ...latest,
       messages: mergeMessages(latest.messages, fetched),
+      counterpartRead: mergeCounterpartRead(
+        latest.counterpartRead,
+        counterpartRead,
+      ),
       cursor: Math.max(latest.cursor, cursor),
       failures,
       nextPollMs: pollDelayMs(failures, Math.random()),
@@ -270,5 +314,10 @@ async function fetchThread(
     cursor: Math.max(latest.cursor, cursor),
     failures: 0,
     nextPollMs: pollDelayMs(0, 0),
+    /* 끝날 때의 캐시 값(그 사이 방 머리가 합쳤을 수 있다)과 이번 응답 값 중 큰 쪽 */
+    counterpartRead: mergeCounterpartRead(
+      latest.counterpartRead,
+      counterpartRead,
+    ),
   };
 }
