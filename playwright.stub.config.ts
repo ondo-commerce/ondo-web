@@ -36,7 +36,7 @@ export default defineConfig({
       /* loop-05a는 개발 spec(`retail-*`)과 QA spec(`qa-*`) 둘 다 여기서 돈다 — 따로 설정을 두면 한쪽이 안 돈다.
          loop-05b, loop-06, loop-07은 소매 spec(이름에 `retail`)만 — 같은 폴더의 도매 spec(#289, #299, #302)은 기본 설정이 돈다 */
       testMatch:
-        /(side-02\/retail\/.*|loop-05a-retail-chat\/(retail|qa)-.*|(loop-05b-stock-reply|loop-06-backorder-reply|loop-07-receivable-reply|loop-06b-retail-notify)\/[^/]*retail[^/]*)\.spec\.ts$/,
+        /(side-02\/retail\/.*|loop-05a-retail-chat\/(retail|qa)-.*|(loop-05b-stock-reply|loop-06-backorder-reply|loop-07-receivable-reply|loop-06b-retail-notify|loop-08-chat-polish)\/[^/]*retail[^/]*)\.spec\.ts$/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3101",
