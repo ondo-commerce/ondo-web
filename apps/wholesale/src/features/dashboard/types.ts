@@ -27,6 +27,13 @@ export interface PackingSummary {
 export type DashboardSummary = Omit<SummaryWire, "packing"> & {
   packing: PackingSummary;
 };
+/**
+ * `GET /chat/inquiry-stats`(초안 op `inquiryStats`, loop-08 #311). 카드는 인자 없이 불러 오늘 영업일 1일치만 본다.
+ * 비율은 응답에 없다 — `derive.ts`가 계산한다(기획 §5-2 "비율은 싣지 않는다")
+ */
+export type InquiryStats = WholesaleSchema<"InquiryStats">;
+/** 결과 다섯 칸 + 의도별. `retailMessages` = 다섯 칸 합(서버가 지킨다) */
+export type InquiryCounts = WholesaleSchema<"InquiryCounts">;
 /** 확정 대기 큐 한 행. 주문 탭 목록과 같은 스키마다 */
 export type NewOrderSummary = WholesaleSchema<"OrderSummaryResponse">;
 /** 미송 SKU 한 행. `latestBackorderedAt`이 "며칠째"의 기준이다 */
@@ -93,6 +100,25 @@ export interface TodayView {
   shippedCount: number;
   shippedQty: number;
   cancelled: number;
+}
+
+/**
+ * 우측 `문의` 카드(loop-08 S2). 줄마다 다 만든 글자를 들고 온다 — 숫자를 끼우는 건 derive가 한다.
+ * 1줄 숫자와 3줄 퍼센트만 굵기가 달라 따로 둔다(디자인 결정 49)
+ */
+export interface InquiryView {
+  /** 1줄 큰 숫자 = 오늘 소매 메시지 수 */
+  retailMessages: number;
+  /** 2줄 `자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1` */
+  outcomeLine: string;
+  /** 3줄 굵은 조각 `63%`. 판정 0이면 `-` */
+  rateLabel: string;
+  /** 3줄 꼬리 `(5/판정 8)` */
+  rateDetail: string;
+  /** 4줄 `재고 4, 미송 1, 미수 1, 기타 0, 미분류 2`(판정한 것만 센다) */
+  intentLine: string;
+  /** 끝 줄 `소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준`. 시각은 서버 `asOf` */
+  basisLine: string;
 }
 
 /** 주의 목록의 SKU 한 줄 */

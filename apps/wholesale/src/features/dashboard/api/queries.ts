@@ -16,6 +16,7 @@ import {
 } from "../constants";
 import {
   toAttentionView,
+  toInquiryView,
   toNewOrderRows,
   toSummaryPeek,
   toSummaryView,
@@ -25,6 +26,7 @@ import type {
   BackorderSku,
   DashboardSummary,
   DashboardSummaryPeek,
+  InquiryStats,
   NewOrderRowView,
   NewOrderSummary,
 } from "../types";
@@ -37,10 +39,12 @@ export const DASHBOARD_PATH = {
   summary: "/api/wholesale/dashboard/summary",
   orders: "/api/wholesale/orders",
   backorderSkus: "/api/wholesale/backorders/variants",
+  /** 초안 op(`x-ondo-draft`, #311). 실서버엔 아직 없어 404가 온다 — 카드 안 오류로 그린다(디자인 결정 50) */
+  inquiryStats: "/api/wholesale/chat/inquiry-stats",
 } as const;
 
 /**
- * 세 쿼리가 같이 쓰는 폴링 옵션. 백그라운드 탭에선 멈추고, 창으로 돌아오면 즉시 한 번 받는다.
+ * 네 쿼리(summary, 큐, 주의, 문의)가 같이 쓰는 폴링 옵션. 백그라운드 탭에선 멈추고, 창으로 돌아오면 즉시 한 번 받는다.
  * 앱 기본은 창 포커스 재조회가 꺼져 있다(providers — 어드민이 창을 옮길 때마다 전부 다시 부르면
  * 시끄럽다). 이 화면은 "돌아왔을 때 새 주문이 보여야 하는" 화면이라 여기만 켠다.
  */
@@ -106,6 +110,19 @@ export function useNewOrderQueueQuery(now: string) {
       }),
     ...POLLING,
     select: (page): NewOrderRowView[] => toNewOrderRows(page.items, now),
+  });
+}
+
+/**
+ * 문의 카드 — 오늘 영업일 1일치(인자 없음 = 서버가 정한 오늘, 낮 12시 경계). 다른 세 쿼리와 같은 30초 polling.
+ * 영업일을 FE가 정하지 않는다 — 사장 PC 시계가 틀리면 어제 숫자를 오늘로 부른다.
+ */
+export function useInquiryStatsQuery() {
+  return useSuspenseQuery({
+    queryKey: dashboardKeys.inquiryStats(),
+    queryFn: () => apiFetch<InquiryStats>(DASHBOARD_PATH.inquiryStats),
+    ...POLLING,
+    select: toInquiryView,
   });
 }
 
