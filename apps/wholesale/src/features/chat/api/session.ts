@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
 import { useEffect } from "react";
 import type { ChatCache } from "./keys";
-import { useChatCache } from "./scope";
+import { chatEpoch, useChatCache } from "./scope";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -53,20 +53,37 @@ export function markSessionLost({ queryClient, keys }: ChatCache): void {
 /**
  * 채팅 요청 하나를 감싼다. 이미 끊겼으면 **요청을 만들지 않고** 던지고, 401이면 끊김으로 표시하고 던진다.
  * 던지는 건 `ChatSessionLostError`라 공용 처리가 `/login`으로 보내지 않는다.
+ *
+ * **시작 때 로그아웃 세대를 잡는다**(loop-08b M7). 로그아웃이 캐시를 지운 뒤 도착한 응답은 성공이든 401이든 버린다 —
+ * 늦은 401이 지운 끊김 칸을 다시 true로 만들면, 같은 계정으로 다시 로그인한 사장의 채팅이 첫 조회부터 잠긴다.
+ * 늦은 성공도 queryFn 안에서 다른 칸을 고치는 경우(방 머리 → 메시지 캐시)가 있어 같이 막는다.
  */
 export async function guardSession<T>(
   chat: ChatCache,
   run: () => Promise<T>,
 ): Promise<T> {
   if (isSessionLost(chat)) throw new ChatSessionLostError();
+  const epoch = chatEpoch();
+  let result: T;
   try {
-    return await run();
+    result = await run();
   } catch (error) {
+    if (chatEpoch() !== epoch) throw new ChatStaleResponseError();
     if (isUnauthenticated(error)) {
       markSessionLost(chat);
       throw new ChatSessionLostError();
     }
     throw error;
+  }
+  if (chatEpoch() !== epoch) throw new ChatStaleResponseError();
+  return result;
+}
+
+/** 로그아웃 전에 떠난 요청의 응답. 지운 캐시에 아무것도 쓰지 않으려고 던진다. `ApiError`가 아니라 공용 처리가 무시한다 */
+export class ChatStaleResponseError extends Error {
+  constructor() {
+    super("로그아웃 전에 떠난 채팅 응답");
+    this.name = "ChatStaleResponseError";
   }
 }
 

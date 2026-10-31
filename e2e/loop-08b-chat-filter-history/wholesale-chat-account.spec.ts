@@ -96,6 +96,90 @@ test("헤더 배지 — A 로그인 배지 숫자 → 로그아웃 → B 로그�
   });
 });
 
+/**
+ * 다음 방 목록 GET 하나를 붙잡아 두었다가 `__release401()` 때 401로 돌려준다. 목(MSW)의 실패 손잡이는 지연 없이
+ * 바로 답해서 "로그아웃 뒤에 도착하는 401"을 못 만든다. 그래서 이 문서의 fetch만 감싼다(서버 상태는 안 바꾼다)
+ */
+async function holdNextRoomsAs401(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __release401: () => void;
+      __delivered401: boolean;
+    };
+    const original = window.fetch.bind(window);
+    let armed = true;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    w.__release401 = release;
+    w.__delivered401 = false;
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (armed && /\/api\/wholesale\/chat\/rooms(\?|$)/.test(url)) {
+        armed = false;
+        (window as unknown as { __held401: boolean }).__held401 = true;
+        await gate;
+        w.__delivered401 = true;
+        return new Response(
+          JSON.stringify({
+            code: "UNAUTHENTICATED",
+            message: "로그인이 필요합니다.",
+            errors: [],
+            traceId: null,
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return original(input, init);
+    };
+  });
+}
+
+test("M7 A 목록 조회 401을 붙잡음 → 로그아웃 → 401 도착 → A 다시 로그인 → 채팅 첫 조회가 안 잠기고 입력 가능", async ({
+  page,
+}) => {
+  await enterChats(page, { email: ME });
+  await holdNextRoomsAs401(page);
+  /* 15초 갱신으로 목록 GET 하나를 내보낸다 — 붙잡힌 채 로그아웃한다 */
+  await page.clock.fastForward(15_000);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __held401?: boolean }).__held401 === true,
+      ),
+    )
+    .toBe(true);
+  await signOut(page);
+  await page.evaluate(() =>
+    (window as unknown as { __release401: () => void }).__release401(),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __delivered401: boolean }).__delivered401,
+      ),
+    )
+    .toBe(true);
+  /* 도착한 응답이 처리될 틈을 준다(마이크로태스크 몇 번) */
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => resolve(null))),
+  );
+
+  await signIn(page, ME);
+  await gotoChats(page);
+  await expect(
+    page.getByRole("region", { name: "대화 목록" }).getByRole("alert"),
+  ).toHaveCount(0);
+  await openRoomReady(page, ROOM_1);
+  await expect(composer(page)).toBeEditable();
+});
+
 /** 방 1에 글을 쓰고 저장소에 들어갈 때까지 */
 async function leaveDraft(page: Page, text: string): Promise<void> {
   await openRoomReady(page, ROOM_1);
