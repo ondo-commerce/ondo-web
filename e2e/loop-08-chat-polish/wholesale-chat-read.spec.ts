@@ -181,6 +181,71 @@ test("S3-3 늦은 방 머리: 방 9 읽음 1, 내 글 3에서 delay {op: room} �
   );
 });
 
+/*
+ * S3-3의 반대 순서(메타 리뷰 M4). S3-3은 늦은 머리가 **옛** 값이라 머리 값을 아예 안 합쳐도 통과한다. 여기선 머리가
+ * 큰 값(2)을 먼저 들고 오고, 그보다 먼저 떠난 polling 응답은 옛 값(1)을 들고 늦게 온다. 머리 값을 합치지 않으면
+ * `읽음`이 안 생기고, max로 합치지 않으면 늦은 polling이 지운다.
+ * 머리를 polling 뒤에 다시 부르는 길은 보내기다(성공하면 방 머리를 비운다, `useChatSend`). 붙잡힌 polling 중에도
+ * 보낸 말풍선은 보내기 응답으로 붙는다.
+ */
+test("S3-3 ② 큰 머리 값이 먼저: 방 9 읽음 1, polling(값 1) 붙잡음 → counterpart-read 2 → 보내기로 머리(2) → seq 2 밑 읽음, 늦은 polling(1) 뒤에도 seq 2", async ({
+  page,
+}) => {
+  const order: string[] = [];
+  page.on("response", (r) => {
+    if (r.request().method() !== "GET" || r.status() !== 200) return;
+    const url = r.url();
+    if (ROOM_GET.path.test(url))
+      void r
+        .json()
+        .then((b: { data: { counterpartLastReadSequence: number | null } }) =>
+          order.push(`room:${b.data.counterpartLastReadSequence}`),
+        );
+    else if (MESSAGES_GET.path.test(url))
+      void r
+        .json()
+        .then((b: { meta: { counterpartLastReadSequence: number | null } }) =>
+          order.push(`messages:${b.meta.counterpartLastReadSequence}`),
+        );
+  });
+
+  await openRoom(page, 9);
+  await expect(marks(page)).toHaveCount(0);
+  await settled(page, MESSAGES_GET);
+
+  /* 다음 polling을 값 1인 채로 떠나보내고 붙잡는다 */
+  await knob(page, "delay", { op: "messages", ms: 8000 });
+  const before = await count(page, MESSAGES_GET);
+  await expect.poll(() => count(page, MESSAGES_GET)).toBeGreaterThan(before);
+  order.push("held");
+
+  await knob(page, "rooms/9/counterpart-read", { sequence: 2 });
+  await send(page, "목요일 오전에 올라가요", 3);
+  await expect.poll(() => order).toContain("room:2");
+  await expect
+    .poll(() => markedSequences(page), {
+      message: "머리 값 2 → seq 2(안 합치면 읽음 0)",
+    })
+    .toEqual([2]);
+  expect(
+    order.slice(order.indexOf("held")).some((o) => o.startsWith("messages:")),
+    "붙잡은 polling은 아직 안 왔다",
+  ).toBe(false);
+
+  /* 붙잡아 둔 polling(값 1)이 머리 뒤에 도착 */
+  await expect
+    .poll(() => order.lastIndexOf("messages:1") > order.indexOf("room:2"), {
+      message: "값 1 polling 응답이 머리(2) 뒤에 도착",
+      timeout: 15_000,
+    })
+    .toBe(true);
+  await settled(page, MESSAGES_GET);
+  expect(await markedSequences(page), "늦은 polling(1) 뒤에도 그대로").toEqual([
+    2,
+  ]);
+  await expect(marks(page)).toHaveCount(1);
+});
+
 test("S3-4 값만 바뀐 polling: 낭독 그대로, 위로 올린 스크롤 그대로, 말풍선 끝 ', 읽음', 맨 아래 읽음은 입력창 위", async ({
   page,
 }) => {

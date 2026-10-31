@@ -423,7 +423,9 @@ export function toAttentionView(
  */
 export function autoResolvedRate(autoReplied: number, judged: number): string {
   if (judged <= 0) return RATE_UNKNOWN;
-  return `${Math.round((autoReplied / judged) * 100)}%`;
+  /* 100을 먼저 곱한다. 나누기를 먼저 하면 23/40 = 0.575가 57.49999…가 돼 x.5가 내림된다(QA F1).
+     정수 곱은 정확해서 손 계산(반올림 정수, 기획 §4-1 5)과 같은 값이 나온다 */
+  return `${Math.round((autoReplied * 100) / judged)}%`;
 }
 
 /** 판정 = 자동 답 + 답+확인 + 넘김(기획 §4-1 4). 되묻기, 결과 없음은 판정이 아니다 */

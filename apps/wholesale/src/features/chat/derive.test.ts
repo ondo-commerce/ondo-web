@@ -477,6 +477,17 @@ describe("S4-6 보류 말풍선 합치기", () => {
     );
   });
 
+  it("loop-08 S3-5 data-ac: 연 뒤 붙은 내 글에만 S3-5. 연 뒤 소매 글, 연 뒤 자동 답, 연 앞 내 글은 아님(QA F3)", () => {
+    const none = new Set<string>();
+    const mine = { sender: "WHOLESALER" } as const;
+    expect(messageAc(message(8, mine), 7, none)).toBe("S3-1 S3-3 S3-4 S3-5");
+    expect(messageAc(message(8), 7, none)).toBe("S3-1 S3-3 S3-4");
+    expect(
+      messageAc(message(8, { ...mine, kind: "AUTO_REPLY" }), 7, none),
+    ).toBe("S3-1 S3-3 S3-4");
+    expect(messageAc(message(5, mine), 7, none)).toBe("S3-1");
+  });
+
   it("S9-3 data-ac: 넘김 줄과 바로 앞 소매 문의에만 S9-3(QA F4)", () => {
     const messages = [
       message(5),

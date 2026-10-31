@@ -30,6 +30,7 @@ export function ChatMessageItem({
   now,
   ac,
   extra = null,
+  readMark = false,
 }: {
   message: ChatMessage;
   counterpartName: string;
@@ -42,6 +43,8 @@ export function ChatMessageItem({
    * (`StockReplyCard`). 방이 판정해서 넘긴다(loop-05b 방향안 A: 답 하나 = 말풍선 하나)
    */
   extra?: ReactNode;
+  /** 상대가 여기까지 읽었다 — 읽힌 내 글 중 가장 아래 하나에만 true(`readMarkerSequence`, loop-08 S4) */
+  readMark?: boolean;
 }) {
   const kind = bubbleKindOf(message);
   const time = formatClock(message.sentAt);
@@ -86,12 +89,24 @@ export function ChatMessageItem({
       ) : (
         <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
       )}
+      {/* 시각 줄. `읽음`은 이 줄 안 시각 왼쪽이다(디자인 결정 60) — 새 줄로 두면 값이 바뀔 때 말풍선이 16px
+          늘어 읽던 자리가 밀린다. 보이는 글자는 시각과 같이 aria-hidden, 낭독은 아래 숨긴 ", 읽음" */}
       <span
         aria-hidden
-        className="text-muted-foreground text-xs leading-4 tabular-nums"
+        className="text-muted-foreground flex gap-1 text-xs leading-4 tabular-nums"
       >
+        {readMark ? (
+          <span className="text-secondary-foreground" data-ac="S4-2">
+            {ROOM_TEXT.read}
+          </span>
+        ) : null}
         {time}
       </span>
+      {readMark ? (
+        <span className="sr-only" data-ac="S4-2">
+          {ROOM_TEXT.readSr}
+        </span>
+      ) : null}
     </div>
   );
 }

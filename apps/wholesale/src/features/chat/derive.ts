@@ -604,18 +604,29 @@ export function insertSent(
 
 /**
  * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
- * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6.
+ * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6. 연 뒤 붙은 내 글이면 S3-5(loop-08).
  * 넘김 줄과 그 바로 앞 소매 문의는 S9-3(와이어프레임 `#state-autoreply-off-flow`, QA F4). 넘김이 꺼짐 때문인지
  * 메시지만으로는 모른다 — 넘김 줄이면 다 단다.
  */
 export function messageAc(
-  message: Pick<ChatMessage, "sequence" | "clientMessageId" | "kind">,
+  message: Pick<
+    ChatMessage,
+    "sequence" | "clientMessageId" | "kind" | "sender"
+  >,
   baseline: number,
   pendingIds: ReadonlySet<string>,
   handoffCauseIds: ReadonlySet<number> = new Set(),
 ): string {
   const ac = ["S3-1"];
   if (message.sequence > baseline) ac.push("S3-3", "S3-4");
+  /* loop-08 S3-5: 방을 연 뒤 내가 보낸 글(와이어프레임 17 `#state-read-send` seq 7). 번호가 loop-04 S3-5와
+     겹쳐 말풍선 쪽에선 이 글만 S3-5를 단다(QA F3) */
+  if (
+    message.sequence > baseline &&
+    message.sender === "WHOLESALER" &&
+    message.kind === "TEXT"
+  )
+    ac.push("S3-5");
   if (
     message.clientMessageId !== null &&
     pendingIds.has(message.clientMessageId)
