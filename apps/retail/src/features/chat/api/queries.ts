@@ -164,7 +164,8 @@ export function isRoomListSessionLost(error: unknown): boolean {
  *   기본값(true)이면 연타가 앞 요청을 취소하고 새로 보내 요청이 여러 번 나간다(S4-4 3연타 1회)
  *
  * `guardSession`을 거치지 않는다: 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에
- * 연 방이 잠긴 채 시작한다. 401은 위 `RoomListSessionLostError`로 가른다. 끊긴 뒤엔 갱신도 탭 복귀 재조회도 멈춘다.
+ * 연 방이 잠긴 채 시작한다. 401은 위 `RoomListSessionLostError`로 가른다. 끊긴 뒤엔 갱신, 탭 복귀 재조회,
+ * 화면 왕복(mount) 재조회가 다 멈춘다 — 오류가 캐시에 남아 있어 방에 갔다 돌아와도 같은 판정이다(메타 리뷰 M2).
  * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4, S4-7). 갱신 실패는 조용히 다음 15초(결정 66).
  */
 export function useRoomListQuery() {
@@ -191,7 +192,8 @@ export function useRoomListQuery() {
     getNextPageParam: (last) => last.meta.nextCursor,
     retry: false,
     staleTime: 0,
-    refetchOnMount: "always",
+    refetchOnMount: (q) =>
+      isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnWindowFocus: (q) =>
       isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnReconnect: false,

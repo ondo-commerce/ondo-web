@@ -262,3 +262,35 @@ test("S4-7 갱신 401 → /login 이동 0, 목록 그대로, 머리 아래 한 �
   expect(loginNavs()).toBe(0);
   await expect(page).toHaveURL("/chats");
 });
+
+test("S4-7 갱신 401 뒤 방에 갔다 목록으로 돌아와도 재조회 0, 한 줄 오류와 행 그대로(메타 리뷰 M2)", async ({
+  page,
+}) => {
+  await openList(page, 35);
+  const first0 = await pauseOnList(page);
+  await chatMock(page, "fail", { op: "rooms", status: 401 });
+  await page.clock.runFor(16_000);
+  await waitCount(page, FIRST_PAGE_GET, first0 + 1);
+  const note = appAlert(page).filter({
+    hasText: "로그인이 끊겨 목록을 새로 받지 못했어요",
+  });
+  await flushUntil(page, () => note.isVisible());
+
+  /* 화면 왕복은 흐르는 시계로. 목록 mount가 다시 받으면 여기서 첫 장 요청이 하나 는다 */
+  await page.clock.resume();
+  const ids = await rowIds(page);
+  await listRows(page).first().click();
+  await expect(page).toHaveURL(`/chats/${ids[0]}?from=/chats`);
+  await page.getByRole("link", { name: "채팅 목록", exact: true }).click();
+  await expect(page).toHaveURL("/chats");
+  await expect(note).toBeVisible();
+  await expectRows(page, 30);
+
+  await pauseOnList(page);
+  await page.clock.runFor(16_000);
+  expect(
+    await count(page, FIRST_PAGE_GET),
+    "왕복 mount, 다음 15초 모두 0회",
+  ).toBe(first0 + 1);
+  await expect(moreBox(page)).toHaveAttribute("data-more", "locked");
+});
