@@ -7,6 +7,7 @@ import type { QueryClient } from "@tanstack/react-query";
  * 성공한 순간 이 숫자를 다시 받아야 한다(S11-15, 30초를 기다리면 답한 방이 계속 `답 필요`로 남는다).
  * feature끼리는 import할 수 없어서 키와 "다시 받기"만 여기로 내린다. 응답 모양은 여기서 모른다.
  */
+/* 앞부분이다. 실제 쿼리 키는 뒤에 계정이 붙는다(`notificationKeysFor`). 다시 받기, 로그아웃 지우기는 앞부분으로 잡는다 */
 export const HEADER_COUNTS_KEY = ["header-counts"] as const;
 
 /**

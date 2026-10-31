@@ -70,6 +70,32 @@ test("M1 A 방 1 열기 → 로그아웃 → B 로그인 → 채팅: 응답 전 
   });
 });
 
+test("헤더 배지 — A 로그인 배지 숫자 → 로그아웃 → B 로그인 직후 첫 count 응답 전엔 배지 없음(A 값 0), 응답 뒤 B 값", async ({
+  page,
+}) => {
+  const bell = page.getByRole("banner").getByRole("button", { name: /^알림/ });
+  await enterChats(page, { email: ME });
+  await expect(bell).toHaveAccessibleName(/^알림, 안 읽음 \d+개$/);
+  await expect(chatLink(page)).toHaveAccessibleName(/^채팅, 답 필요 \d+건$/);
+
+  await signOut(page);
+  /* B의 첫 count를 늦춘다. 그 동안 보이는 숫자가 있으면 A의 캐시다(목은 계정과 무관하게 같은 값을 준다) */
+  await page.evaluate(async () => {
+    const response = await fetch("/__mock/notifications/delay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "count", ms: 3000, times: 1 }),
+    });
+    if (!response.ok) throw new Error(`delay ${response.status}`);
+  });
+  await signIn(page, OTHER);
+  await expect(bell).toHaveAccessibleName("알림");
+  await expect(chatLink(page)).toHaveAccessibleName("채팅");
+  await expect(bell).toHaveAccessibleName(/^알림, 안 읽음 \d+개$/, {
+    timeout: 10_000,
+  });
+});
+
 /** 방 1에 글을 쓰고 저장소에 들어갈 때까지 */
 async function leaveDraft(page: Page, text: string): Promise<void> {
   await openRoomReady(page, ROOM_1);

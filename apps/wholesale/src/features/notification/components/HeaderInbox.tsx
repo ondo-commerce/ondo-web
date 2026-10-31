@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { CountBadge } from "./CountBadge";
 import { NotificationBell } from "./NotificationBell";
 import { useHeaderCountsQuery } from "../api/queries";
+import { NotificationAccountScope } from "../api/scope";
 import { CHAT_HREF } from "../constants";
 import { chatBadge } from "../derive";
 
@@ -18,7 +19,20 @@ import { chatBadge } from "../derive";
  *
  * 실패해도 아이콘은 늘 있다(디자인 결정 36). count를 모르면 배지만 없다.
  */
-export function HeaderInbox() {
+export function HeaderInbox({
+  account,
+}: {
+  /** 로그인 이메일. 쿼리 키에 들어간다(계정마다 캐시를 나눈다). feature끼리 import 못 해 `app/`이 넘긴다 */
+  account: string | null;
+}) {
+  return (
+    <NotificationAccountScope account={account ?? ""}>
+      <HeaderInboxBody />
+    </NotificationAccountScope>
+  );
+}
+
+function HeaderInboxBody() {
   const { data: counts } = useHeaderCountsQuery();
   const pathname = usePathname();
   const chat = chatBadge(counts);
