@@ -123,6 +123,78 @@ test("S4-2 ② 늦은 방 머리: 읽음 2에서 delay {op: room} → 방 열기
   ]);
 });
 
+/*
+ * ②의 반대 순서(메타 리뷰 M4). ②는 늦은 머리가 **옛** 값이라 머리 값을 아예 안 합쳐도 통과한다. 여기선 머리가
+ * 큰 값(5)을 먼저 들고 오고, 그보다 먼저 떠난 polling 응답은 옛 값(2)을 들고 늦게 온다. 머리 값을 합치지 않으면
+ * seq 2에 머물고, 합칠 때 max가 아니면 늦은 polling이 seq 2로 내린다.
+ * 머리 요청이 messages보다 늦게 떠나게 하려고 머리 첫 조회를 500으로 실패시키고 `다시 시도`로 다시 부른다
+ * (실패한 것만 다시 묻는다, S5-8). 그동안 messages 캐시는 이미 있고 polling도 돈다.
+ */
+test("S4-2 ④ 큰 머리 값이 먼저: 읽음 2, 머리 500 → polling(값 2) 붙잡음 → counterpart-read 5 → 다시 시도 머리(5) → seq 4, 늦은 polling(2) 뒤에도 seq 4", async ({
+  page,
+}) => {
+  const order: string[] = [];
+  page.on("response", (response: Response) => {
+    const path = new URL(response.url()).pathname;
+    if (response.request().method() !== "GET" || response.status() !== 200)
+      return;
+    if (path === `/api/retail/chat/rooms/${ROOM}`)
+      void response
+        .json()
+        .then((b: { data: { counterpartLastReadSequence: number } }) =>
+          order.push(`room:${b.data.counterpartLastReadSequence}`),
+        );
+    else if (path === `/api/retail/chat/rooms/${ROOM}/messages`)
+      void response
+        .json()
+        .then((b: { meta: { counterpartLastReadSequence: number } }) =>
+          order.push(`messages:${b.meta.counterpartLastReadSequence}`),
+        );
+  });
+
+  await start(page, "/");
+  await counterpartRead(page, ROOM, 2);
+  await chatMock(page, "fail", { op: "room", status: 500 });
+  await enterFromList(page, ROOM);
+  const retry = page.getByRole("button", { name: "다시 시도", exact: true });
+  await expect(retry).toBeVisible();
+  await waitCount(page, MESSAGES_GET, 1);
+  await settled(page, MESSAGES_GET);
+  await pauseClock(page);
+
+  /* 다음 polling을 값 2인 채로 떠나보내고 붙잡는다 */
+  await chatMock(page, "delay", { op: "messages", ms: 60_000, times: 1 });
+  const before = await count(page, MESSAGES_GET);
+  await page.clock.runFor(3_000);
+  await waitCount(page, MESSAGES_GET, before + 1);
+
+  await counterpartRead(page, ROOM, 5);
+  await retry.click();
+  await flushUntil(page, async () => (await readMarks(page).count()) === 1);
+  await expect
+    .poll(() => order.filter((o) => o.startsWith("room")))
+    .toEqual(["room:5"]);
+  expect(
+    await readMarkSequences(page),
+    "머리 값 5가 먼저 → seq 4(머리를 안 합치면 seq 2)",
+  ).toEqual([4]);
+
+  /* 붙잡아 둔 polling(값 2)이 머리 뒤에 도착 */
+  await page.clock.runFor(60_000);
+  /* 첫 조회도 messages:2라 마지막 것이 머리 뒤인지 본다 */
+  await expect
+    .poll(
+      () => order.lastIndexOf("messages:2") > order.indexOf("room:5"),
+      "값 2 polling 응답이 머리(5) 뒤에 도착",
+    )
+    .toBe(true);
+  await flushUntil(page, async () => (await readMarks(page).count()) === 1);
+  expect(
+    await readMarkSequences(page),
+    "늦은 polling(2) 뒤에도 그대로",
+  ).toEqual([4]);
+});
+
 test("S4-2 ③ 읽음 값만 바뀐 polling: 낭독 그대로, 위로 올린 스크롤 그대로, 말풍선 끝 ', 읽음'", async ({
   page,
 }) => {
