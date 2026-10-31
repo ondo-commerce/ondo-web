@@ -1,7 +1,9 @@
 import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
+  dedupeRooms,
   mergeCounterpartRead,
+  moreStateOf,
   readMarkerSequence,
   advanceCursor,
   askChipBusy,
@@ -43,7 +45,13 @@ import {
   upsertPending,
   visiblePending,
 } from "./derive";
-import type { ChatMessage, ChatThread, PendingMessage } from "./types";
+import type {
+  ChatMessage,
+  ChatRoomSummary,
+  ChatThread,
+  MoreInput,
+  PendingMessage,
+} from "./types";
 
 /*
  * 도매 `features/chat/derive.test.ts`와 짝이다. 같은 이름의 함수는 같은 케이스를 쓰고, 역할이 뒤집힌
@@ -1169,5 +1177,59 @@ describe("S4-1 상대 읽음 (loop-08)", () => {
     expect(mergeCounterpartRead(5, undefined)).toBe(5);
     expect(mergeCounterpartRead(null, 0)).toBe(0);
     expect(mergeCounterpartRead(null, null)).toBeNull();
+  });
+});
+
+describe("S4-1 목록 중복, 더 보기 (loop-08)", () => {
+  function summary(roomId: number, unreadCount = 0): ChatRoomSummary {
+    return {
+      roomId,
+      counterpart: { id: 100 + roomId, name: `도매처 ${roomId}` },
+      lastMessage: null,
+      lastActivityAt: "2026-10-29T14:18:00+09:00",
+      unreadCount,
+      myLastReadSequence: 0,
+      needsReply: false,
+      openHandoff: false,
+    };
+  }
+
+  it("dedupeRooms — 같은 roomId 두 번 → 먼저 온 것 하나, 순서 그대로", () => {
+    const rooms = dedupeRooms([
+      summary(1, 1),
+      summary(33),
+      summary(1, 9),
+      summary(40),
+      summary(33, 5),
+    ]);
+    expect(rooms.map((r) => [r.roomId, r.unreadCount])).toEqual([
+      [1, 1],
+      [33, 0],
+      [40, 0],
+    ]);
+    expect(dedupeRooms([])).toEqual([]);
+  });
+
+  const base: MoreInput = {
+    hasNextPage: true,
+    isFetchingNextPage: false,
+    isRefreshing: false,
+    isFetchNextPageError: false,
+    sessionLost: false,
+  };
+
+  it.each<[Partial<MoreInput>, string]>([
+    [{}, "idle"],
+    [{ hasNextPage: false }, "hidden"],
+    [{ hasNextPage: false, isRefreshing: true, sessionLost: true }, "hidden"],
+    [{ isFetchingNextPage: true }, "busy"],
+    [{ isFetchingNextPage: true, isRefreshing: true }, "busy"],
+    [{ isRefreshing: true }, "locked"],
+    [{ sessionLost: true }, "locked"],
+    [{ isFetchNextPageError: true }, "failed"],
+    [{ isFetchNextPageError: true, isRefreshing: true }, "locked"],
+    [{ isFetchNextPageError: true, sessionLost: true }, "locked"],
+  ])("moreStateOf %o → %s", (patch, expected) => {
+    expect(moreStateOf({ ...base, ...patch })).toBe(expected);
   });
 });

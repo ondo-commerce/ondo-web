@@ -64,6 +64,26 @@ export interface ChatThread {
   counterpartRead: number | null;
 }
 
+/**
+ * `/chats` 끝 `더 보기` 자리(loop-08 S4-4 S4-5 S4-7, 와이어프레임 `list_more`).
+ * - `hidden` 다음 장 없음(끝) — 버튼도 "끝" 글자도 없다(결정 62)
+ * - `idle` 누를 수 있음
+ * - `busy` 누른 뒤 응답 전 — disabled + 스피너 "불러오는 중"
+ * - `locked` 15초 갱신이 도는 중이거나 세션이 끊김 — 글자 그대로 disabled, 스피너 없음(결정 64, 65)
+ * - `failed` 다음 장 실패 — 오류 한 줄 + `다시 시도`
+ */
+export type MoreState = "hidden" | "idle" | "busy" | "locked" | "failed";
+
+/** `moreStateOf` 입력. TanStack infinite query 상태에서 화면이 쓰는 것만 */
+export interface MoreInput {
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  /** 첫 장부터 다시 받는 중(15초 갱신, 탭 복귀). 다음 장 요청은 여기 안 든다 */
+  isRefreshing: boolean;
+  isFetchNextPageError: boolean;
+  sessionLost: boolean;
+}
+
 /* ------------------------------------------------------------------------
  * 뷰 — 화면이 받는 모양. `derive.ts`로만 만든다.
  * ------------------------------------------------------------------------ */

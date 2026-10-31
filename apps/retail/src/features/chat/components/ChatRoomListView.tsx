@@ -2,17 +2,19 @@
 
 import { Button, Panel } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId } from "react";
-import { useRoomListQuery } from "../api/queries";
-import { APPROVAL_PATH, LIST_TEXT } from "../constants";
-import { toRoomRows } from "../derive";
-import type { ChatRoomRowView } from "../types";
+import { isRoomListSessionLost, useRoomListQuery } from "../api/queries";
+import { APPROVAL_PATH, LIST_TEXT, LOGIN_PATH } from "../constants";
+import { moreStateOf, toRoomRows } from "../derive";
+import type { ChatRoomRowView, MoreState } from "../types";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
- * 소매 채팅 목록 `/chats`(loop-06 S2-4, 디자인 결정 34, 35). 첫 장 30개만 — `더 보기`와 15초 갱신은 06b.
+ * 소매 채팅 목록 `/chats`(loop-06 S2-4, 디자인 결정 34, 35 → loop-08 S4). 30개씩 장을 받고 끝에 `더 보기`,
+ * 15초마다 받은 장 전부를 첫 장부터 다시 받는다. 갱신은 화면에 표시하지 않는다(결정 63).
  * 목록에선 읽음을 보내지 않는다. 방을 열어야 읽힌다.
  *
  * 패널 하나 안에서 머리(h1)는 늘 그리고 그 아래가 막대, 빈 상태, 실패, 행으로 갈린다. 소매 셸은 문서형
@@ -45,13 +47,14 @@ function ListBody() {
   const notApproved =
     isApiError(query.error) &&
     query.error.code === RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED;
+  const sessionLost = isRoomListSessionLost(query.error);
 
   /* 승인 전 계정(403) — 방 화면과 같은 갈래로 승인 대기 화면에 보낸다 */
   useEffect(() => {
     if (notApproved) router.replace(APPROVAL_PATH);
   }, [notApproved, router]);
 
-  /* 실패는 받은 장이 없을 때만 그린다. 탭 복귀 다시 받기가 실패해도 이미 그린 행은 그대로 둔다 */
+  /* 실패는 받은 장이 없을 때만 그린다. 15초 갱신, 탭 복귀 다시 받기가 실패해도 이미 그린 행은 그대로 둔다(결정 66) */
   if (query.data === undefined)
     return query.isError && !notApproved ? (
       <LoadFailed onRetry={() => void query.refetch()} />
@@ -60,35 +63,128 @@ function ListBody() {
     );
 
   /* "오늘"의 기준은 마지막으로 받은 시각이다 — 렌더 중에 시계를 읽지 않는다 */
-  const rows = toRoomRows(query.data.data, query.dataUpdatedAt);
-  if (rows.length === 0)
-    return (
-      <div data-ac="S2-4" className="py-12 text-center">
-        <p className="text-sm">{LIST_TEXT.emptyTitle}</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          {LIST_TEXT.emptyDetail}
-        </p>
-      </div>
-    );
+  const rows = toRoomRows(
+    query.data.pages.flatMap((page) => page.data),
+    query.dataUpdatedAt,
+  );
+  const more = moreStateOf({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isRefreshing: query.isFetching && !query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    sessionLost,
+  });
+  /* 같은 task 안 연타(S4-4)는 렌더 전이라 disabled가 아직 안 걸려 있다. `cancelRefetch: false`라 도는 요청이
+     있으면 그 promise를 돌려받을 뿐 새 요청은 없다 — 기본값이면 앞 요청을 취소하고 다시 보낸다 */
+  const loadMore = () => {
+    if (more === "idle" || more === "failed")
+      void query.fetchNextPage({ cancelRefetch: false });
+  };
 
   return (
     <>
-      <ul aria-label={LIST_TEXT.label} className="grid gap-1">
-        {rows.map((row) => (
-          <li key={row.roomId}>
-            <RoomRow row={row} />
-          </li>
-        ))}
-      </ul>
-      {query.data.meta.nextCursor !== null ? (
+      {sessionLost ? <SessionLostNote /> : null}
+      {rows.length === 0 ? (
+        <div data-ac="S2-4" className="py-12 text-center">
+          <p className="text-sm">{LIST_TEXT.emptyTitle}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {LIST_TEXT.emptyDetail}
+          </p>
+        </div>
+      ) : (
+        <ul aria-label={LIST_TEXT.label} className="grid gap-1">
+          {rows.map((row) => (
+            <li key={row.roomId}>
+              <RoomRow row={row} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <MoreBox state={more} onMore={loadMore} />
+    </>
+  );
+}
+
+/**
+ * 목록 끝 `더 보기`(디자인 결정 62, 64, 06b 알림 패널 `더 보기`와 같은 모양). Button line sm, 목록 폭 전체,
+ * ≤40rem 높이 44 글자 14. 다음 장이 없으면 아무것도 그리지 않는다.
+ * 실패면 버튼 위 오류 한 줄 + 글자가 `다시 시도`로 바뀐다(와이어프레임 `list_more("fail")`).
+ */
+function MoreBox({ state, onMore }: { state: MoreState; onMore: () => void }) {
+  if (state === "hidden") return null;
+  const busy = state === "busy";
+  /* 와이어프레임 `list_more` 그대로: 잠김 S4-5, 실패 S4-7, 나머지 S4-4(상자와 버튼이 같은 값) */
+  const ac = state === "locked" ? "S4-5" : state === "failed" ? "S4-7" : "S4-4";
+  return (
+    <div data-ac={ac} data-more={state} className="flex flex-col gap-1.5 pt-2">
+      {state === "failed" ? (
         <p
-          data-ac="S2-4"
-          className="text-muted-foreground px-3 pt-3 text-xs leading-4"
+          role="alert"
+          className="text-destructive-strong text-body flex items-center justify-center gap-1"
         >
-          {LIST_TEXT.firstPageOnly}
+          <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+          {LIST_TEXT.moreFailed}
         </p>
       ) : null}
-    </>
+      <Button
+        type="button"
+        variant="line"
+        size="sm"
+        className="phone:h-11 phone:text-sm w-full"
+        disabled={busy || state === "locked"}
+        aria-busy={busy || undefined}
+        onClick={onMore}
+        data-ac={ac}
+      >
+        {busy ? (
+          <>
+            <Spinner />
+            {LIST_TEXT.moreLoading}
+          </>
+        ) : state === "failed" ? (
+          LIST_TEXT.retry
+        ) : (
+          LIST_TEXT.more
+        )}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * 갱신 401(디자인 결정 65, D39⑥). 머리 아래 오류 한 줄 + `로그인하기`. 이 화면엔 쓰던 글이 없어 로그인 링크를
+ * 둔다 — 전체 이동(`<a href>`)이라 남은 캐시도 같이 버린다. 받은 행은 그대로 누를 수 있다.
+ */
+function SessionLostNote() {
+  return (
+    <div data-ac="S4-7" className="mb-3 flex flex-wrap items-center gap-2">
+      <p
+        role="alert"
+        className="text-destructive-strong text-body flex min-w-0 flex-1 items-center gap-1"
+      >
+        <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+        {LIST_TEXT.sessionLost}
+      </p>
+      <Button
+        asChild
+        variant="line"
+        size="sm"
+        className="phone:h-11 phone:text-sm"
+      >
+        <a href={LOGIN_PATH} data-ac="S4-7">
+          {LIST_TEXT.login}
+        </a>
+      </Button>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span
+      aria-hidden
+      className="border-border border-t-secondary-foreground size-3 animate-spin rounded-full border-2 motion-reduce:animate-none"
+    />
   );
 }
 

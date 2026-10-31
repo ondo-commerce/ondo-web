@@ -4,16 +4,20 @@ import {
   focusManager,
   onlineManager,
   queryOptions,
+  useInfiniteQuery,
   useQueries,
-  useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { apiFetch, apiFetchBody } from "@ondo/api";
+import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
 import { chatKeys } from "./keys";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
-import { MESSAGE_PAGE_SIZE, ROOM_LIST_SIZE } from "../constants";
+import {
+  MESSAGE_PAGE_SIZE,
+  ROOM_LIST_POLL_MS,
+  ROOM_LIST_SIZE,
+} from "../constants";
 import {
   advanceCursor,
   mergeCounterpartRead,
@@ -126,26 +130,68 @@ export function useRoomQueries(roomId: number) {
 }
 
 /**
- * `/chats` 첫 장(loop-06 S2-4). 30개만 받고 `더 보기`는 없다(06b). 진입 때(`refetchOnMount: "always"`)와
- * 탭이 다시 보일 때 1회, 그 밖엔 다시 받지 않는다(15초 갱신은 06b).
+ * 행을 이미 그린 뒤 받은 401(loop-08 S4-7, 디자인 결정 65). `ApiError`가 아니라 공용 처리(`providers.tsx`)가
+ * `/login`으로 보내지 않는다 — 목록은 그대로 두고 머리 아래 한 줄로 알린다. 첫 장 첫 조회 401은 06a처럼
+ * `ApiError` 그대로 던져 `/login`으로 간다(그릴 행이 없다).
+ */
+export class RoomListSessionLostError extends Error {
+  constructor() {
+    super("chat room list session lost");
+    this.name = "RoomListSessionLostError";
+  }
+}
+
+export function isRoomListSessionLost(error: unknown): boolean {
+  return error instanceof RoomListSessionLostError;
+}
+
+/**
+ * `/chats` 목록(loop-06 S2-4 → loop-08 S4). 장은 `ROOM_LIST_SIZE`(30)씩, `더 보기`가 다음 장을 붙인다.
  *
- * `guardSession`을 거치지 않는다: 목록엔 입력창이 없어 401에 공용 처리가 `/login`으로 보내도 잃는 게 없고,
- * 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에 연 방이 잠긴 채 시작한다.
- * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4). 앱 기본(2번 더)이면 실패가 안 보인다.
+ * 갱신(§4-4 1): 15초마다, 그리고 탭이 다시 보이면 즉시 1회. TanStack infinite query의 다시 받기는 **받은 장 수만큼
+ * 첫 장부터** 차례로 다시 묻고 cursor는 새로 받은 장에서 다시 뽑는다 — 기획 규칙 그대로라 직접 돌리지 않는다.
+ * 탭이 숨으면 멈춘다(`refetchIntervalInBackground: false`).
+ *
+ * 겹침(§4-4 2):
+ * - `더 보기`가 도는 중 15초가 되면 그 갱신은 새 요청 없이 도는 요청에 붙는다(TanStack이 진행 중 fetch를
+ *   취소하지 않고 같은 promise를 돌려준다). 타이머는 요청이 끝날 때 다시 걸려 다음 갱신은 그 15초 뒤다
+ * - 갱신이 도는 중엔 화면이 `더 보기`를 잠근다(`moreStateOf`). 누르는 쪽도 `cancelRefetch: false`로 부른다 —
+ *   기본값(true)이면 연타가 앞 요청을 취소하고 새로 보내 요청이 여러 번 나간다(S4-4 3연타 1회)
+ *
+ * `guardSession`을 거치지 않는다: 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에
+ * 연 방이 잠긴 채 시작한다. 401은 위 `RoomListSessionLostError`로 가른다. 끊긴 뒤엔 갱신도 탭 복귀 재조회도 멈춘다.
+ * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4, S4-7). 갱신 실패는 조용히 다음 15초(결정 66).
  */
 export function useRoomListQuery() {
-  return useQuery({
+  const queryClient = useQueryClient();
+  return useInfiniteQuery({
     queryKey: chatKeys.rooms(),
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       await chatMockReady();
-      return apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
-        searchParams: { size: ROOM_LIST_SIZE },
-      });
+      try {
+        return await apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
+          searchParams: {
+            size: ROOM_LIST_SIZE,
+            cursor: pageParam ?? undefined,
+          },
+        });
+      } catch (error) {
+        const drawn = queryClient.getQueryData(chatKeys.rooms()) !== undefined;
+        if (drawn && isApiError(error) && error.status === 401)
+          throw new RoomListSessionLostError();
+        throw error;
+      }
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.meta.nextCursor,
     retry: false,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchOnWindowFocus: "always",
+    refetchInterval: (query) =>
+      isRoomListSessionLost(query.state.error) ? false : ROOM_LIST_POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: (query) =>
+      isRoomListSessionLost(query.state.error) ? false : "always",
     refetchOnReconnect: false,
   });
 }
