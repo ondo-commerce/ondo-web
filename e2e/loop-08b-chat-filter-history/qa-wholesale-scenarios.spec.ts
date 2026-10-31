@@ -338,35 +338,68 @@ test.describe("검색 타이머와 겹친 조작", () => {
 /**
  * 03-review R2(findings F2) 브라우저 재현. 칩, 검색은 replace라 조건 차이가 기록에 남는 건 행 링크(push) 앞뒤뿐이다.
  * 조건 없이 방을 연 기록으로 뒤로 가면 URL은 조건 없음인데 칩은 안 읽음으로 남는가.
- * `test.fail`. 실패 시점 증거(2026-11-01, da4654b): 뒤로 두 번 뒤 URL `/chats`(filter 없음), 칩 locator는
- * radiogroup "대화 필터" 안 radio "전체"를 잡았고 aria-checked="false", 눌린 칩 "안 읽음".
+ * 고친 뒤(popstate에서 주소에 맞춤) `test.fail`을 지웠다. 고치기 전 실패 증거(2026-11-01, da4654b): 뒤로 두 번 뒤
+ * URL `/chats`(filter 없음), 칩 locator는 radiogroup "대화 필터" 안 radio "전체"를 잡았고 aria-checked="false",
+ * 눌린 칩 "안 읽음".
  */
-test.fail(
-  "QA-i 조건 없이 방 2 → 안 읽음 → 방 1 → 뒤로 두 번 → URL 조건 없음이면 칩도 전체",
-  async ({ page }) => {
-    await enterChats(page, { seed: "rooms-70" });
-    await expect(chatRows(page)).toHaveCount(30);
-    await row(page, "소매처 2").click();
-    await expect(page).toHaveURL(/\/chats\?room=102$/);
-    await chip(page, "안 읽음").click();
-    await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=102$/);
-    await expect(row(page, "소매처 2")).toHaveCount(0);
-    await row(page, "소매처 1").click();
-    await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=101$/);
-    await page.goBack();
-    await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=102$/);
-    await page.goBack();
-    const proof = await page.evaluate(() => ({
-      url: location.href,
-      checked: document.querySelector(
-        '[role="radiogroup"][aria-label="대화 필터"] [aria-checked="true"]',
-      )?.textContent,
-    }));
-    test.info().annotations.push({
-      type: "뒤로 두 번 뒤",
-      description: JSON.stringify(proof),
-    });
-    expect(new URL(page.url()).searchParams.get("filter")).toBeNull();
-    await expect(chip(page, "전체")).toHaveAttribute("aria-checked", "true");
-  },
-);
+test("QA-i 조건 없이 방 2 → 안 읽음 → 방 1 → 뒤로 두 번 → URL 조건 없음이면 칩도 전체", async ({
+  page,
+}) => {
+  await enterChats(page, { seed: "rooms-70" });
+  await expect(chatRows(page)).toHaveCount(30);
+  await row(page, "소매처 2").click();
+  await expect(page).toHaveURL(/\/chats\?room=102$/);
+  await chip(page, "안 읽음").click();
+  await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=102$/);
+  await expect(row(page, "소매처 2")).toHaveCount(0);
+  await row(page, "소매처 1").click();
+  await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=101$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=102$/);
+  await page.goBack();
+  const proof = await page.evaluate(() => ({
+    url: location.href,
+    checked: document.querySelector(
+      '[role="radiogroup"][aria-label="대화 필터"] [aria-checked="true"]',
+    )?.textContent,
+  }));
+  test.info().annotations.push({
+    type: "뒤로 두 번 뒤",
+    description: JSON.stringify(proof),
+  });
+  expect(new URL(page.url()).searchParams.get("filter")).toBeNull();
+  await expect(chip(page, "전체")).toHaveAttribute("aria-checked", "true");
+  /* 앞으로 가기도 주소를 따른다. 그 뒤 행 링크는 되살아난 조건을 단다(R2 "방 링크가 덮어쓴다") */
+  await page.goForward();
+  await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=102$/);
+  await expect(chip(page, "안 읽음")).toHaveAttribute("aria-checked", "true");
+  await expect(row(page, "소매처 2")).toHaveCount(0);
+  await row(page, "소매처 1").click();
+  await expect(page).toHaveURL(/\/chats\?filter=UNREAD&room=101$/);
+});
+
+/* F2의 검색칸 쪽. 검색은 칸 글자가 컴포넌트 state라 칩과 따로 맞춰야 한다. 뒤로 가기는 포커스를 검색칸으로 옮기지 않는다 */
+test("QA-j 방 2 → 소매처 6 검색 → 소매처 61 → 뒤로 두 번 → 검색칸 빈칸, 30행, 포커스는 검색칸 아님", async ({
+  page,
+}) => {
+  await enterChats(page, { seed: "rooms-70" });
+  await expect(chatRows(page)).toHaveCount(30);
+  await row(page, "소매처 2").click();
+  await expect(page).toHaveURL(/\/chats\?room=102$/);
+  /* 주소창은 한글을 퍼센트로 보여 준다 */
+  const q6 = `q=${encodeURIComponent("소매처")}\\+6`;
+  await search(page).focus();
+  await page.keyboard.insertText("소매처 6");
+  await expect(page).toHaveURL(new RegExp(`/chats\\?${q6}&room=102$`));
+  await expect(chatRows(page)).toHaveCount(11);
+  await row(page, "소매처 61").click();
+  await expect(page).toHaveURL(new RegExp(`/chats\\?${q6}&room=161$`));
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/chats\\?${q6}&room=102$`));
+  await expect(search(page)).toHaveValue("소매처 6");
+  await page.goBack();
+  await expect(page).toHaveURL(/\/chats$/);
+  await expect(search(page)).toHaveValue("");
+  await expect(chatRows(page)).toHaveCount(30);
+  await expect(search(page)).not.toBeFocused();
+});

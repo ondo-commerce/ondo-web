@@ -47,8 +47,10 @@ interface RowsProps {
 interface ListProps extends RowsProps {
   /** 지금 조건(칩, 검색). 칩과 행 링크는 이 값을 바로 쓴다 */
   list: RoomListParams;
-  /** 조건 지우기마다 오른다 — 검색칸을 빈칸으로 다시 마운트하고 포커스 */
+  /** 검색칸을 다시 마운트할 때마다 오른다 — 조건 지우기(빈칸), 뒤로 가기(주소의 검색어) */
   searchReset: number;
+  /** 다시 마운트한 검색칸에 포커스를 둘지. 조건 지우기만 참(디자인 결정 56) */
+  focusSearch: boolean;
   /** 조건 없는 목록이 0개로 확인됐다 — 걸러 낼 게 없어 필터 줄을 숨긴다(디자인 결정 57) */
   noRooms: boolean;
   onFilter: (filter: RoomListFilter) => void;
@@ -67,6 +69,7 @@ interface ListProps extends RowsProps {
 export function ChatRoomListPanel({
   list,
   searchReset,
+  focusSearch,
   noRooms,
   onFilter,
   onQuery,
@@ -88,7 +91,7 @@ export function ChatRoomListPanel({
         <ListFilterBar
           key={searchReset}
           list={list}
-          focusOnMount={searchReset > 0}
+          focusOnMount={focusSearch}
           onFilter={onFilter}
           onQuery={onQuery}
         />

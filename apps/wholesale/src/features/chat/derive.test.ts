@@ -26,7 +26,9 @@ import {
   hasListCondition,
   normalizeQuery,
   parseListFilter,
+  readListParams,
   roomHref,
+  sameListParams,
   toServerFilter,
   pollDelayMs,
   sendFailureOf,
@@ -909,6 +911,28 @@ describe("loop-08b S4-1 목록 조건과 행 링크", () => {
     expect(normalizeQuery(sixty)).toBe(sixty.slice(0, 50));
     const emoji = "😀".repeat(60);
     expect([...(normalizeQuery(emoji) ?? "")]).toHaveLength(50);
+  });
+
+  it("F2 readListParams는 주소를 첫 진입과 같은 규칙으로 읽고, chatsHref와 왕복하면 같은 조건", () => {
+    expect(readListParams(new URLSearchParams(""))).toEqual({
+      filter: "ALL",
+      q: null,
+    });
+    expect(
+      readListParams(new URLSearchParams("filter=UNREAD&q=+소매처+6+&room=3")),
+    ).toEqual({ filter: "UNREAD", q: "소매처 6" });
+    const href = chatsHref("NEEDS_REPLY", "A&B", 7);
+    expect(readListParams(new URL(href, "http://x").searchParams)).toEqual({
+      filter: "NEEDS_REPLY",
+      q: "A&B",
+    });
+  });
+
+  it("F2 sameListParams는 filter와 q가 둘 다 같을 때만 참", () => {
+    const base = { filter: "UNREAD", q: "봄봄" } as const;
+    expect(sameListParams(base, { filter: "UNREAD", q: "봄봄" })).toBe(true);
+    expect(sameListParams(base, { filter: "ALL", q: "봄봄" })).toBe(false);
+    expect(sameListParams(base, { filter: "UNREAD", q: null })).toBe(false);
   });
 
   it('roomHref(5, "UNREAD", "소매처 6") → "/chats?filter=UNREAD&q=소매처+6&room=5"(순서 고정)', () => {

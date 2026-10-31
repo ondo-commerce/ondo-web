@@ -256,6 +256,21 @@ export function normalizeQuery(raw: string | null): string | null {
   return cut === "" ? null : cut;
 }
 
+/** 주소의 `?filter&q`를 목록 조건으로. 첫 진입과 뒤로 가기(popstate)가 같은 규칙으로 읽는다(loop-08b F2) */
+export function readListParams(
+  params: Pick<URLSearchParams, "get">,
+): RoomListParams {
+  return {
+    filter: parseListFilter(params.get("filter")),
+    q: normalizeQuery(params.get("q")),
+  };
+}
+
+/** 두 조건이 같은가. 같으면 state를 안 바꿔 미뤄 둔 목록("찾는 중")이 괜히 돌지 않게 한다 */
+export function sameListParams(a: RoomListParams, b: RoomListParams): boolean {
+  return a.filter === b.filter && a.q === b.q;
+}
+
 /** 서버로 보낼 `filter`. `ALL`이면 안 보낸다 */
 export function toServerFilter(
   filter: RoomListFilter,

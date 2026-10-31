@@ -2,7 +2,7 @@
 
 import { Panel } from "@ondo/ui";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatRoomListPanel } from "./ChatRoomList";
 import { ChatRoomPanel } from "./ChatRoomPanel";
 import { useRoomListEmptyPeek } from "../api/queries";
@@ -12,9 +12,9 @@ import {
   chatsHref,
   draftKey,
   mergeReadMark,
-  normalizeQuery,
-  parseListFilter,
   parseRoomParam,
+  readListParams,
+  sameListParams,
 } from "../derive";
 import type {
   ChatReadResult,
@@ -66,12 +66,29 @@ export function ChatView({
      바뀌어야 하는데(디자인 결정 55) 라우터 이동은 transition이라 새 목록을 기다리는 동안 칩까지 옛 값에 묶인다.
      URL은 바꿀 때마다 `replaceState`로 따라 적는다(뒤로 가기 기록을 늘리지 않는다, S4-3). 행 링크가 조건을 달고
      가서(`roomHref`) 방을 옮겨도 URL과 이 값이 같다 */
-  const [list, setList] = useState<RoomListParams>(() => ({
-    filter: parseListFilter(searchParams.get("filter")),
-    q: normalizeQuery(searchParams.get("q")),
-  }));
-  /* 조건 지우기마다 오른다 — 검색칸을 빈칸으로 다시 마운트하고 포커스를 거기 둔다(디자인 결정 56) */
-  const [searchReset, setSearchReset] = useState(0);
+  const [list, setList] = useState<RoomListParams>(() =>
+    readListParams(searchParams),
+  );
+  /* 검색칸을 다시 마운트할 때마다 오른다. 조건 지우기는 빈칸에 포커스(디자인 결정 56), 뒤로 가기는 주소의 검색어로
+     채우기만 하고 포커스는 안 옮긴다 */
+  const [searchMount, setSearchMount] = useState({ n: 0, focus: false });
+  const latestList = useRef(list);
+  useEffect(() => {
+    latestList.current = list;
+  }, [list]);
+  /* 뒤로, 앞으로 가기(loop-08b F2). 칩을 바꾸기 전에 연 방의 기록은 옛 조건을 달고 있어서, 돌아가면 주소와 칩이
+     어긋난다. popstate는 히스토리 이동에만 오고 우리 `replaceState`에는 안 온다 — 칩과 검색은 계속 state가 바로
+     받고, 기록을 옮긴 때만 주소에 맞춘다. 조건이 같으면 건드리지 않는다(치던 글, 미뤄 둔 목록 그대로) */
+  useEffect(() => {
+    const onPop = () => {
+      const next = readListParams(new URLSearchParams(window.location.search));
+      if (sameListParams(latestList.current, next)) return;
+      setList(next);
+      setSearchMount((m) => ({ n: m.n + 1, focus: false }));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const changeList = useCallback(
     (next: RoomListParams) => {
       setList(next);
@@ -95,7 +112,7 @@ export function ChatView({
   );
   const onClear = useCallback(() => {
     changeList(NO_CONDITION);
-    setSearchReset((n) => n + 1);
+    setSearchMount((m) => ({ n: m.n + 1, focus: true }));
   }, [changeList]);
 
   const listRef = useRef<HTMLUListElement>(null);
@@ -118,7 +135,8 @@ export function ChatView({
         listRef={listRef}
         onOpen={onOpen}
         list={list}
-        searchReset={searchReset}
+        searchReset={searchMount.n}
+        focusSearch={searchMount.focus}
         noRooms={listEmpty === true}
         onFilter={onFilter}
         onQuery={onQuery}
