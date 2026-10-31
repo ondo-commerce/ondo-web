@@ -25,6 +25,7 @@ export function ChatMessageItem({
   counterpartName,
   ac = "S3-1",
   nowMs,
+  readMark = false,
 }: {
   message: ChatMessage;
   counterpartName: string;
@@ -32,6 +33,8 @@ export function ChatMessageItem({
   ac?: string;
   /** 조회 시각이 오늘인지 가르는 지금 시각(#302 S3-5). 방이 1분 tick 시각을 넘긴다(리뷰 M4) */
   nowMs: number;
+  /** 상대가 여기까지 읽었다 — 읽힌 내 쪽 메시지 중 가장 아래 하나에만 true(`readMarkerSequence`, loop-08 S3) */
+  readMark?: boolean;
 }) {
   const kind = bubbleKindOf(message);
   const time = formatClock(message.sentAt);
@@ -106,12 +109,24 @@ export function ChatMessageItem({
       ) : (
         <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
       )}
+      {/* 시각 줄. `읽음`은 이 줄 안 시각 왼쪽이다(디자인 결정 47) — 새 줄로 두면 값이 바뀔 때 말풍선이 16px
+          늘어 읽던 자리가 밀린다. 보이는 글자는 시각과 같이 aria-hidden, 낭독은 아래 숨긴 ", 읽음" */}
       <span
         aria-hidden
-        className="text-muted-foreground text-xs leading-4 tabular-nums"
+        className="text-muted-foreground flex gap-1 text-xs leading-4 tabular-nums"
       >
+        {readMark ? (
+          <span className="text-secondary-foreground" data-ac="S3-2">
+            {ROOM_TEXT.read}
+          </span>
+        ) : null}
         {time}
       </span>
+      {readMark ? (
+        <span className="sr-only" data-ac="S3-4">
+          {ROOM_TEXT.readSr}
+        </span>
+      ) : null}
     </div>
   );
 }

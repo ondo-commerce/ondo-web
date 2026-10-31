@@ -5,6 +5,7 @@ import {
   CHAT_TIME_ZONE,
   HANDOFF_REASON_TEXT,
   PENDING_TEXT,
+  READ_MARK_KINDS,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
   ROOM_POLL_MS,
@@ -258,6 +259,39 @@ export function advanceCursor(
 /** 화면에 그린 가장 큰 sequence. 읽음 요청에 쓴다 */
 export function maxSequenceOf(messages: readonly ChatMessage[]): number {
   return messages.at(-1)?.sequence ?? 0;
+}
+
+/**
+ * 상대 읽음 위치 둘을 합친다(loop-08 S3, 기획 §4-3 1). 읽음은 올라가기만 하므로 큰 쪽이 새 값이다 —
+ * 늦게 온 방 머리, 늦게 온 messages 응답이 들고 온 작은 값은 버린다. null은 "아직 안 읽음"이라 숫자가 이긴다
+ */
+export function mergeCounterpartRead(
+  known: number | null,
+  incoming: number | null | undefined,
+): number | null {
+  if (incoming === null || incoming === undefined) return known;
+  if (known === null) return incoming;
+  return Math.max(known, incoming);
+}
+
+/**
+ * `읽음`을 붙일 말풍선의 sequence(기획 §4-3 2, Q1). 상대가 읽은 위치 이하인 내 쪽 메시지(내 글, 자동 답, 되묻기)
+ * 중 가장 아래 하나. 값이 null이거나 대상이 없으면 null — "안 읽음"은 쓰지 않는다(디자인 결정 48).
+ *
+ * 보내는 중, 못 보낸 말풍선은 `messages`에 없다(서버 sequence가 없는 `PendingMessage`) — 그래서 대상이 될 수 없다
+ */
+export function readMarkerSequence(
+  messages: readonly ChatMessage[],
+  counterpartRead: number | null,
+): number | null {
+  if (counterpartRead === null) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m === undefined || m.sequence > counterpartRead) continue;
+    if (m.sender === "WHOLESALER" && READ_MARK_KINDS.has(m.kind))
+      return m.sequence;
+  }
+  return null;
 }
 
 /** 메시지 사이에 날짜가 바뀌는 자리마다 구분선을 끼운다. 첫 메시지 앞에도 하나 */
@@ -570,18 +604,29 @@ export function insertSent(
 
 /**
  * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
- * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6.
+ * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6. 연 뒤 붙은 내 글이면 S3-5(loop-08).
  * 넘김 줄과 그 바로 앞 소매 문의는 S9-3(와이어프레임 `#state-autoreply-off-flow`, QA F4). 넘김이 꺼짐 때문인지
  * 메시지만으로는 모른다 — 넘김 줄이면 다 단다.
  */
 export function messageAc(
-  message: Pick<ChatMessage, "sequence" | "clientMessageId" | "kind">,
+  message: Pick<
+    ChatMessage,
+    "sequence" | "clientMessageId" | "kind" | "sender"
+  >,
   baseline: number,
   pendingIds: ReadonlySet<string>,
   handoffCauseIds: ReadonlySet<number> = new Set(),
 ): string {
   const ac = ["S3-1"];
   if (message.sequence > baseline) ac.push("S3-3", "S3-4");
+  /* loop-08 S3-5: 방을 연 뒤 내가 보낸 글(와이어프레임 17 `#state-read-send` seq 7). 번호가 loop-04 S3-5와
+     겹쳐 말풍선 쪽에선 이 글만 S3-5를 단다(QA F3) */
+  if (
+    message.sequence > baseline &&
+    message.sender === "WHOLESALER" &&
+    message.kind === "TEXT"
+  )
+    ac.push("S3-5");
   if (
     message.clientMessageId !== null &&
     pendingIds.has(message.clientMessageId)

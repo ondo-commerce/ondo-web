@@ -254,6 +254,58 @@ describe("S1-3 asOf 경계(F17 결과 줄 16:32)", () => {
     expect(stats.total.autoReplied).toBe(5);
     expect(stats.total.noResult).toBe(1);
   });
+
+  it("응답 asOf로 다시 집계하면 같은 숫자다 — 밀리초를 남긴다(메타 리뷰 M3)", () => {
+    /* 16:32:00.300에 붙은 자동 답, asOf 16:32:00.500. 초로 자르면 16:32:00.000이라 그 답이 빠진다 */
+    const sentAt = (ms: number) => new Date(ms).toISOString();
+    const base = at("2026-10-28 16:32");
+    const room: StatsRoom = {
+      wholesalerId: ME,
+      messages: [
+        {
+          sequence: 1,
+          sender: "RETAILER",
+          kind: "TEXT",
+          sentAt: sentAt(base - 60_000),
+          autoReply: null,
+          handoff: null,
+        },
+        {
+          sequence: 2,
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          sentAt: sentAt(base + 300),
+          autoReply: {
+            intent: "STOCK",
+            replyToSequence: 1,
+            generatedBy: "RULE",
+            checkedAt: sentAt(base + 300),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: null,
+              label: null,
+            },
+            facts: { stock: null, backorder: null, receivable: null },
+          },
+          handoff: null,
+        },
+      ],
+    };
+    const input = {
+      wholesalerId: ME,
+      from: "2026-10-28",
+      to: "2026-10-28",
+    };
+    const first = inquiryStats([room], { ...input, asOf: base + 500 });
+    expect(first.asOf).toBe("2026-10-28T16:32:00.500+09:00");
+    expect(first.total.autoReplied).toBe(1);
+    const again = inquiryStats([room], {
+      ...input,
+      asOf: Date.parse(first.asOf),
+    });
+    expect(again).toEqual(first);
+  });
 });
 
 describe("규칙 하나씩 (손으로 만든 방)", () => {

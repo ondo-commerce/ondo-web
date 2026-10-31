@@ -4,6 +4,7 @@ import { Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useEffect } from "react";
 import { AttentionPanel } from "./AttentionPanel";
+import { InquiryPanel } from "./InquiryPanel";
 import { NewOrderQueue } from "./NewOrderQueue";
 import { TodayPanel } from "./TodayPanel";
 import { TodoTiles, TodoTilesSkeleton } from "./TodoTiles";
@@ -28,7 +29,8 @@ import { formatNumber } from "@/shared/lib/format";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
- * 대시보드 — 좌 처리할 것(타일 4장 + 확정 대기 큐) · 우 확인할 것(오늘 · 주의).
+ * 대시보드 — 좌 처리할 것(타일 4장 + 확정 대기 큐) · 우 확인할 것(오늘 · 문의 · 주의).
+ * `문의` 카드는 자기 경계 그룹을 따로 가진다(`InquiryPanel` 주석) — 그 카드의 재시도가 아래 그룹을 건드리지 않는다.
  *
  * 통계 화면이 아니다. 도매 쪽엔 새 주문이 들어왔음을 알려 주는 것이 없어서 이 화면이 그 역할을 한다 —
  * 그래서 세 쿼리가 30초마다 돌고, 탭 제목에 신규 주문 건수가 붙는다.
@@ -105,6 +107,8 @@ export function DashboardView() {
                 <TodayPanel />
               </QueryBoundary>
             </Panel>
+            {/* 오늘과 같이 shrink-0 — 높이가 모자라면 주의만 줄고 그 안(Panel.Body)이 스크롤한다(디자인 결정 49) */}
+            <InquiryPanel />
             <Panel className="flex-1">
               <Panel.Title className="mb-4">{ATTENTION_TEXT.title}</Panel.Title>
               <QueryBoundary>

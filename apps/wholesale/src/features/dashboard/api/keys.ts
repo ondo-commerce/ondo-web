@@ -11,4 +11,6 @@ export const dashboardKeys = {
   summary: () => [...dashboardKeys.all, "summary"] as const,
   newOrders: () => [...dashboardKeys.all, "new-orders"] as const,
   attention: () => [...dashboardKeys.all, "attention"] as const,
+  /** 문의 카드(loop-08 S2). 채팅 feature 키가 아니라 여기 — 진입 때 대시보드 셋과 같이 비운다 */
+  inquiryStats: () => [...dashboardKeys.all, "inquiry-stats"] as const,
 };

@@ -4,17 +4,29 @@ import {
   focusManager,
   onlineManager,
   queryOptions,
+  useInfiniteQuery,
   useQueries,
-  useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { apiFetch, apiFetchBody } from "@ondo/api";
+import { useEffect } from "react";
+import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
+import { useDocumentVisible } from "../useDocumentVisible";
 import { chatKeys } from "./keys";
+import { subscribeSharedInterval } from "./sharedInterval";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
-import { MESSAGE_PAGE_SIZE, ROOM_LIST_SIZE } from "../constants";
-import { advanceCursor, mergeMessages, pollDelayMs } from "../derive";
+import {
+  MESSAGE_PAGE_SIZE,
+  ROOM_LIST_POLL_MS,
+  ROOM_LIST_SIZE,
+} from "../constants";
+import {
+  advanceCursor,
+  mergeCounterpartRead,
+  mergeMessages,
+  pollDelayMs,
+} from "../derive";
 import type {
   ChatMessage,
   ChatMessagePage,
@@ -45,14 +57,31 @@ export const CHAT_PATH = {
  * 401은 전부 `guardSession`을 거친다(`session.ts`) — 공용 처리의 `/login` 이동 대신 채팅 세션 끊김.
  */
 
+/*
+ * 방 머리. 받은 상대 읽음 값을 메시지 캐시에 합친다(loop-08 S4-2, 도매 `roomDetailOptions`와 같은 규칙).
+ * 방 머리는 메시지보다 늦게 도착할 수 있다 — 값을 캐시 하나에 max로만 쌓아야 늦은 머리의 옛 값이 `읽음`을
+ * 내리지 못한다. 메시지 캐시가 아직 없으면(머리가 먼저 옴) 메시지 첫 조회가 끝날 때 이 머리 값을 읽어 합친다.
+ */
 function roomOptions(roomId: number, queryClient: QueryClient) {
   return queryOptions({
     queryKey: chatKeys.room(roomId),
     queryFn: async () => {
       await chatMockReady();
-      return guardSession(queryClient, () =>
+      const detail = await guardSession(queryClient, () =>
         apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
       );
+      queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
+        thread === undefined
+          ? thread
+          : {
+              ...thread,
+              counterpartRead: mergeCounterpartRead(
+                thread.counterpartRead,
+                detail.counterpartLastReadSequence,
+              ),
+            },
+      );
+      return detail;
     },
     retry: false,
     // 방 머리는 도매처명과 돌아가기 링크만 쓴다. 다시 받을 이유가 없다
@@ -104,28 +133,91 @@ export function useRoomQueries(roomId: number) {
 }
 
 /**
- * `/chats` 첫 장(loop-06 S2-4). 30개만 받고 `더 보기`는 없다(06b). 진입 때(`refetchOnMount: "always"`)와
- * 탭이 다시 보일 때 1회, 그 밖엔 다시 받지 않는다(15초 갱신은 06b).
+ * 행을 이미 그린 뒤 받은 401(loop-08 S4-7, 디자인 결정 65). `ApiError`가 아니라 공용 처리(`providers.tsx`)가
+ * `/login`으로 보내지 않는다 — 목록은 그대로 두고 머리 아래 한 줄로 알린다. 첫 장 첫 조회 401은 06a처럼
+ * `ApiError` 그대로 던져 `/login`으로 간다(그릴 행이 없다).
+ */
+export class RoomListSessionLostError extends Error {
+  constructor() {
+    super("chat room list session lost");
+    this.name = "RoomListSessionLostError";
+  }
+}
+
+export function isRoomListSessionLost(error: unknown): boolean {
+  return error instanceof RoomListSessionLostError;
+}
+
+/**
+ * `/chats` 목록(loop-06 S2-4 → loop-08 S4). 장은 `ROOM_LIST_SIZE`(30)씩, `더 보기`가 다음 장을 붙인다.
  *
- * `guardSession`을 거치지 않는다: 목록엔 입력창이 없어 401에 공용 처리가 `/login`으로 보내도 잃는 게 없고,
- * 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에 연 방이 잠긴 채 시작한다.
- * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4). 앱 기본(2번 더)이면 실패가 안 보인다.
+ * 갱신(§4-4 1): 15초마다, 그리고 탭이 다시 보이면 즉시 1회. TanStack infinite query의 다시 받기는 **받은 장 수만큼
+ * 첫 장부터** 차례로 다시 묻고 cursor는 새로 받은 장에서 다시 뽑는다 — 기획 규칙 그대로라 직접 돌리지 않는다.
+ *
+ * 주기는 TanStack `refetchInterval`이 아니라 아래 `setInterval`이다(메타 리뷰 M1). `refetchInterval`은 요청이
+ * 시작되고 끝날 때마다 타이머를 다시 걸어, 14초에 누른 `더 보기`가 5초 걸리면 다음 갱신이 34초가 된다.
+ * §4-4 2는 "겹친 회차만 건너뛰고 다음 15초, 최대 15초"다 — 주기는 화면이 열린(또는 탭이 다시 보인) 때부터
+ * 요청과 상관없이 15초씩 돈다. 탭이 숨으면 타이머를 지우고, 보이면 그때부터 다시 건다.
+ *
+ * 겹침(§4-4 2):
+ * - 15초가 된 순간 요청(`더 보기`, 탭 복귀 재조회)이 돌고 있으면 그 회차는 묻지 않고 건너뛴다
+ * - 갱신이 도는 중엔 화면이 `더 보기`를 잠근다(`moreStateOf`). 누르는 쪽도 `cancelRefetch: false`로 부른다 —
+ *   기본값(true)이면 연타가 앞 요청을 취소하고 새로 보내 요청이 여러 번 나간다(S4-4 3연타 1회)
+ *
+ * `guardSession`을 거치지 않는다: 세션 잠금을 걸면 그 표시를 지울 곳(방 화면을 떠날 때)이 목록엔 없어 다음에
+ * 연 방이 잠긴 채 시작한다. 401은 위 `RoomListSessionLostError`로 가른다. 끊긴 뒤엔 갱신, 탭 복귀 재조회,
+ * 화면 왕복(mount) 재조회가 다 멈춘다 — 오류가 캐시에 남아 있어 방에 갔다 돌아와도 같은 판정이다(메타 리뷰 M2).
+ * `retry: false` — 실패는 화면의 `다시 시도`가 1회 다시 묻는다(S2-4, S4-7). 갱신 실패는 조용히 다음 15초(결정 66).
  */
 export function useRoomListQuery() {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const query = useInfiniteQuery({
     queryKey: chatKeys.rooms(),
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       await chatMockReady();
-      return apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
-        searchParams: { size: ROOM_LIST_SIZE },
-      });
+      try {
+        return await apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
+          searchParams: {
+            size: ROOM_LIST_SIZE,
+            cursor: pageParam ?? undefined,
+          },
+        });
+      } catch (error) {
+        const drawn = queryClient.getQueryData(chatKeys.rooms()) !== undefined;
+        if (drawn && isApiError(error) && error.status === 401)
+          throw new RoomListSessionLostError();
+        throw error;
+      }
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.meta.nextCursor,
     retry: false,
     staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: "always",
+    refetchOnMount: (q) =>
+      isRoomListSessionLost(q.state.error) ? false : "always",
+    refetchOnWindowFocus: (q) =>
+      isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnReconnect: false,
   });
+
+  const visible = useDocumentVisible();
+  const sessionLost = isRoomListSessionLost(query.error);
+  /* 타이머는 QueryClient(= 목록 캐시) 하나에 하나다. 이 훅이 두 곳에서 마운트돼도 15초 갱신은 한 번(메타 리뷰 M5) */
+  useEffect(() => {
+    if (!visible || sessionLost) return;
+    return subscribeSharedInterval(queryClient, ROOM_LIST_POLL_MS, () => {
+      const state = queryClient.getQueryState(chatKeys.rooms());
+      /* 겹친 회차만 건너뛴다. 다음 회차는 이 타이머 그대로 15초 뒤다 */
+      if (state?.fetchStatus === "fetching") return;
+      if (isRoomListSessionLost(state?.error)) return;
+      void queryClient.refetchQueries(
+        { queryKey: chatKeys.rooms(), exact: true, type: "active" },
+        { cancelRefetch: false },
+      );
+    });
+  }, [visible, sessionLost, queryClient]);
+
+  return query;
 }
 
 /**
@@ -172,12 +264,20 @@ async function fetchThread(
       cursor: advanceCursor(0, page.data),
       failures: 0,
       nextPollMs: pollDelayMs(0, 0),
+      /* 방 머리가 먼저 도착했으면 그 값은 캐시가 없어 합쳐지지 못했다 — 여기서 같이 합친다(어느 쪽이 먼저든 하나로) */
+      counterpartRead: mergeCounterpartRead(
+        page.meta.counterpartLastReadSequence,
+        queryClient.getQueryData<ChatRoomDetail>(chatKeys.room(roomId))
+          ?.counterpartLastReadSequence,
+      ),
     };
   }
   if (isSessionLost(queryClient)) return start;
 
   let cursor = start.cursor;
   let fetched: ChatMessage[] = [];
+  /* 이번 polling이 받은 상대 읽음. 빈 응답에도 meta가 와서 새 메시지 없이 `읽음`만 옮길 수 있다(S4-2) */
+  let counterpartRead: number | null = null;
   try {
     for (;;) {
       const page = await guardSession(queryClient, () =>
@@ -187,6 +287,10 @@ async function fetchThread(
       );
       fetched = mergeMessages(fetched, page.data);
       cursor = advanceCursor(cursor, page.data);
+      counterpartRead = mergeCounterpartRead(
+        counterpartRead,
+        page.meta.counterpartLastReadSequence,
+      );
       if (!page.meta.hasMore || page.data.length === 0) break;
       if (!canContinue(queryClient, roomId)) break;
     }
@@ -198,6 +302,10 @@ async function fetchThread(
         ...latest,
         messages: mergeMessages(latest.messages, fetched),
         cursor: Math.max(latest.cursor, cursor),
+        counterpartRead: mergeCounterpartRead(
+          latest.counterpartRead,
+          counterpartRead,
+        ),
       };
     const failures = latest.failures + 1;
     return {
@@ -205,6 +313,10 @@ async function fetchThread(
       ...latest,
       messages: mergeMessages(latest.messages, fetched),
       cursor: Math.max(latest.cursor, cursor),
+      counterpartRead: mergeCounterpartRead(
+        latest.counterpartRead,
+        counterpartRead,
+      ),
       failures,
       nextPollMs: pollDelayMs(failures, Math.random()),
     };
@@ -217,5 +329,10 @@ async function fetchThread(
     cursor: Math.max(latest.cursor, cursor),
     failures: 0,
     nextPollMs: pollDelayMs(0, 0),
+    /* 끝날 때의 캐시 값(그 사이 방 머리가 합쳤을 수 있다)과 이번 응답 값 중 큰 쪽 */
+    counterpartRead: mergeCounterpartRead(
+      latest.counterpartRead,
+      counterpartRead,
+    ),
   };
 }

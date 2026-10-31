@@ -15,6 +15,7 @@ import {
   maxSequenceOf,
   handoffCauses,
   messageAc,
+  readMarkerSequence,
   toThreadItems,
   visiblePending,
 } from "../derive";
@@ -193,6 +194,12 @@ function ChatRoom({
 
   const items = toThreadItems(thread.messages);
   const causes = handoffCauses(thread.messages);
+  /* 상대 읽음은 캐시의 방별 최댓값 하나만 본다(머리와 meta가 이미 합쳐져 있다). 값만 바뀐 polling은
+     말풍선 수가 그대로라 위 바닥 내리기가 안 돈다 — 읽던 자리가 안 움직인다(S3-4) */
+  const readSequence = readMarkerSequence(
+    thread.messages,
+    thread.counterpartRead,
+  );
 
   return (
     <>
@@ -239,6 +246,7 @@ function ChatRoom({
                 message={item.message}
                 counterpartName={name}
                 ac={messageAc(item.message, baseline, pendingIds, causes)}
+                readMark={item.message.sequence === readSequence}
                 /* "오늘"의 기준 = 지금 시각(1분 tick). 마지막 polling 응답 시각을 쓰면 응답이 끊긴 동안(오프라인,
                    세션 끊김) 자정을 넘겨도 날짜가 안 붙는다(리뷰 M4, D38 ⑤). 소매(`useNow`)와 같은 방식 */
                 nowMs={now}
