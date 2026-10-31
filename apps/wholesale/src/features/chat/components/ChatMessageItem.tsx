@@ -155,7 +155,9 @@ export function PendingItem({
       aria-busy={sending || undefined}
       data-client-id={item.clientMessageId}
       data-pending={item.status}
-      data-ac={sending ? "S4-1" : "S4-5"}
+      /* 08b 와이어프레임 #state-draft-keep 값(loop-08b F3). loop-04의 S4-1, S4-5는 08b에서 목록 필터 AC로
+         다시 쓰여 같은 값이 두 회차를 가리켰다. 안쪽 버튼은 와이어프레임도 loop-04 값 그대로다 */
+      data-ac={sending ? "S3-12" : "S3-10 S3-11"}
       className="flex max-w-7/10 min-w-0 flex-col items-end gap-1 self-end"
     >
       <span className="sr-only">{`${ROOM_TEXT.me}, ${sending ? PENDING_TEXT.srSending : PENDING_TEXT.srFailed}: `}</span>
