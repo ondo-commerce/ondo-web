@@ -25,7 +25,7 @@ import {
   toThreadItems,
   visiblePending,
 } from "../derive";
-import type { ChatReadResult } from "../types";
+import type { ChatReadResult, RoomListParams } from "../types";
 import type { ChatOutbox } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
@@ -50,9 +50,14 @@ interface RoomCallbacks {
  */
 export function ChatRoomPanel({
   roomId,
+  list,
   ...callbacks
-}: { roomId: number } & RoomCallbacks) {
-  const hintName = useRoomNamePeek(roomId);
+}: {
+  roomId: number;
+  /** 왼쪽 목록의 지금 조건. 방 이름을 그 목록 캐시에서 먼저 꺼낸다 */
+  list: RoomListParams;
+} & RoomCallbacks) {
+  const hintName = useRoomNamePeek(roomId, list);
 
   /* 실패한 채로 방을 떠나면 그 실패를 버린다 — 다시 열면 새로 묻는다. 안 버리면 Suspense 경계가
      같은 실패를 그대로 다시 그려서, 사장이 다른 방에 갔다 와도 `다시 시도`를 눌러야 한다 */

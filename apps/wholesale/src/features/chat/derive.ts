@@ -9,7 +9,9 @@ import {
   READ_MARK_KINDS,
   ROOM_POLL_BACKOFF_MAX_MS,
   ROOM_POLL_JITTER,
+  ROOM_LIST_FILTERS,
   ROOM_POLL_MS,
+  ROOM_QUERY_MAX,
   ROOM_TEXT,
   STOCK_BAND_LABEL,
   UNREAD_MAX_SHOWN,
@@ -25,6 +27,7 @@ import type {
   ChatReadResult,
   ChatRoomPage,
   ChatRoomRowView,
+  ChatRoomsFilter,
   ChatRoomSummary,
   ChatThread,
   ClarifyChoicesView,
@@ -35,6 +38,8 @@ import type {
   PendingByRoom,
   PendingMessage,
   ReadMarks,
+  RoomListFilter,
+  RoomListParams,
   SendFailure,
   ThreadItem,
 } from "./types";
@@ -230,6 +235,71 @@ export function parseRoomParam(raw: string | null): number | null | "invalid" {
   if (!/^\d+$/.test(raw)) return "invalid";
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : "invalid";
+}
+
+/* ------------------------------------------------------------------------
+ * 목록 조건(loop-08b S4) — URL `?filter&q&room`이 원본이다
+ * ------------------------------------------------------------------------ */
+
+/** `?filter=` 값. 모르는 값, 없음은 `ALL`(§4-2 3). 대소문자는 고치지 않는다 — 계약도 `unread`는 400이다 */
+export function parseListFilter(raw: string | null): RoomListFilter {
+  return ROOM_LIST_FILTERS.find((f) => f === raw) ?? "ALL";
+}
+
+/**
+ * 검색어 정리. 앞뒤 공백을 지우고 50자(코드 포인트)까지, 비면 null(조건 없음). 안쪽 공백은 그대로 —
+ * 서버도 그대로 비교한다(계약 `q`). 자른 뒤 끝이 공백이면 그것도 지운다(서버가 어차피 지운다)
+ */
+export function normalizeQuery(raw: string | null): string | null {
+  const trimmed = raw?.trim() ?? "";
+  const cut = [...trimmed].slice(0, ROOM_QUERY_MAX).join("").trimEnd();
+  return cut === "" ? null : cut;
+}
+
+/** 서버로 보낼 `filter`. `ALL`이면 안 보낸다 */
+export function toServerFilter(
+  filter: RoomListFilter,
+): ChatRoomsFilter | undefined {
+  return filter === "ALL" ? undefined : filter;
+}
+
+/**
+ * URL 값 하나. `&`, `=`, `+`, `#`, `%`, `?`만 퍼센트로 바꾸고 공백은 `+`(폼 방식). 한글은 그대로 둔다 —
+ * 주소창과 링크가 읽히고, 브라우저가 보낼 때 알아서 인코딩한다. 읽는 쪽(`URLSearchParams`)은 둘 다 같은 값이다
+ */
+function encodeQueryValue(value: string): string {
+  return value
+    .replace(/[%&=+#?]/g, (c) => encodeURIComponent(c))
+    .replace(/ /g, "+");
+}
+
+/**
+ * `/chats` 주소. 순서 고정 filter → q → room(S4-1, 와이어프레임 `href`). `ALL`, 빈 검색, 방 없음은 칸을 안 단다
+ */
+export function chatsHref(
+  filter: RoomListFilter,
+  q: string | null,
+  roomId: number | null,
+): string {
+  const parts: string[] = [];
+  if (filter !== "ALL") parts.push(`filter=${filter}`);
+  if (q !== null) parts.push(`q=${encodeQueryValue(q)}`);
+  if (roomId !== null) parts.push(`room=${roomId}`);
+  return parts.length === 0 ? "/chats" : `/chats?${parts.join("&")}`;
+}
+
+/** 목록 행 링크. 지금 조건을 달고 방만 바꾼다(§4-2 3) */
+export function roomHref(
+  roomId: number,
+  filter: RoomListFilter,
+  q: string | null,
+): string {
+  return chatsHref(filter, q, roomId);
+}
+
+/** 조건이 걸려 있나. 조건 결과 0과 내 방 0을 가른다(§4-2 5) */
+export function hasListCondition(params: RoomListParams): boolean {
+  return params.filter !== "ALL" || params.q !== null;
 }
 
 /**

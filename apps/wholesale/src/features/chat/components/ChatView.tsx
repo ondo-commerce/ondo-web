@@ -8,9 +8,23 @@ import { ChatRoomPanel } from "./ChatRoomPanel";
 import { useRoomListEmptyPeek } from "../api/queries";
 import { useResetChatSessionOnLeave } from "../api/session";
 import { ROOM_TEXT } from "../constants";
-import { draftKey, mergeReadMark, parseRoomParam } from "../derive";
-import type { ChatReadResult, ReadMarks } from "../types";
+import {
+  chatsHref,
+  draftKey,
+  mergeReadMark,
+  normalizeQuery,
+  parseListFilter,
+  parseRoomParam,
+} from "../derive";
+import type {
+  ChatReadResult,
+  ReadMarks,
+  RoomListFilter,
+  RoomListParams,
+} from "../types";
 import { useChatOutbox } from "../useChatSend";
+
+const NO_CONDITION: RoomListParams = { filter: "ALL", q: null };
 
 /**
  * 도매 채팅 받은편지함 — 왼쪽 목록 360px 고정 + 오른쪽 방 유동(방향안 C).
@@ -22,6 +36,9 @@ import { useChatOutbox } from "../useChatSend";
  * 나가서 사장이 안 본 방이 읽힌 것이 된다(디자인 결정 4).
  *
  * 읽음 응답은 여기 모아 목록에 내려 준다(`readMarks`). 방 패널과 목록 패널이 다른 경계라 둘을 아는 곳이 여기다.
+ *
+ * 목록 조건(`?filter&q`)이 걸려도 오른쪽 방은 그대로다. 조건 결과 0이어도, 열어 둔 방이 조건에서 빠져도
+ * 선택은 URL `room=`이 원본이라 안 바뀐다(loop-08b Q5, S4-11 ③).
  */
 export function ChatView({
   email,
@@ -45,6 +62,42 @@ export function ChatView({
   const [focusTick, setFocusTick] = useState(0);
   const onOpen = useCallback(() => setFocusTick((n) => n + 1), []);
 
+  /* 목록 조건(loop-08b S4). 처음엔 URL에서 읽고, 그다음은 이 state가 화면의 원본이다 — 칩과 검색칸은 누른 순간
+     바뀌어야 하는데(디자인 결정 55) 라우터 이동은 transition이라 새 목록을 기다리는 동안 칩까지 옛 값에 묶인다.
+     URL은 바꿀 때마다 `replaceState`로 따라 적는다(뒤로 가기 기록을 늘리지 않는다, S4-3). 행 링크가 조건을 달고
+     가서(`roomHref`) 방을 옮겨도 URL과 이 값이 같다 */
+  const [list, setList] = useState<RoomListParams>(() => ({
+    filter: parseListFilter(searchParams.get("filter")),
+    q: normalizeQuery(searchParams.get("q")),
+  }));
+  /* 조건 지우기마다 오른다 — 검색칸을 빈칸으로 다시 마운트하고 포커스를 거기 둔다(디자인 결정 56) */
+  const [searchReset, setSearchReset] = useState(0);
+  const changeList = useCallback(
+    (next: RoomListParams) => {
+      setList(next);
+      window.history.replaceState(
+        null,
+        "",
+        chatsHref(next.filter, next.q, selectedRoomId),
+      );
+    },
+    [selectedRoomId],
+  );
+  const onFilter = useCallback(
+    (filter: RoomListFilter) => changeList({ ...list, filter }),
+    [changeList, list],
+  );
+  const onQuery = useCallback(
+    (q: string | null) => {
+      if (q !== list.q) changeList({ ...list, q });
+    },
+    [changeList, list],
+  );
+  const onClear = useCallback(() => {
+    changeList(NO_CONDITION);
+    setSearchReset((n) => n + 1);
+  }, [changeList]);
+
   const listRef = useRef<HTMLUListElement>(null);
   const listEmpty = useRoomListEmptyPeek();
   useResetChatSessionOnLeave();
@@ -64,11 +117,18 @@ export function ChatView({
         readMarks={readMarks}
         listRef={listRef}
         onOpen={onOpen}
+        list={list}
+        searchReset={searchReset}
+        noRooms={listEmpty === true}
+        onFilter={onFilter}
+        onQuery={onQuery}
+        onClear={onClear}
       />
       {selectedRoomId !== null ? (
         <ChatRoomPanel
           key={selectedRoomId}
           roomId={selectedRoomId}
+          list={list}
           onRead={onRead}
           focusTick={focusTick}
           onEscape={onEscape}

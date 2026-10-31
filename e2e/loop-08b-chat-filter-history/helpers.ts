@@ -148,6 +148,47 @@ export function captureSends(page: Page) {
   return sent;
 }
 
+/**
+ * 새로고침 뒤 채팅 요청을 잠깐 막아 두는 문(S4-4). 목은 페이지 안이라 새로고침하면 시드로 돌아간다 — 실서버라면
+ * 남아 있을 상태(시드 `rooms-70`, 방 61 읽음)를 **앱의 첫 채팅 요청보다 먼저** 되돌려 놓으려고 쓴다.
+ * `armChatGate`로 다음 문서에서만 켜지고, `openChatGate`로 연다. 손잡이(`/__mock/chat/*`)는 안 막는다.
+ * 응답을 바꾸지 않는다 — 요청이 나가는 시각만 늦춘다.
+ */
+export async function installChatGate(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem("e2e.chatGate") !== "1") return;
+    window.sessionStorage.removeItem("e2e.chatGate");
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    (window as unknown as { __openChatGate: () => void }).__openChatGate = open;
+    const original = window.fetch.bind(window);
+    /* 테스트가 문을 연 채로 상태를 되돌릴 때 쓰는 원래 fetch */
+    (window as unknown as { __rawFetch: typeof fetch }).__rawFetch = original;
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (/\/api\/wholesale\/chat\//.test(url)) await gate;
+      return original(input, init);
+    };
+  });
+}
+
+export async function armChatGate(page: Page): Promise<void> {
+  await page.evaluate(() => window.sessionStorage.setItem("e2e.chatGate", "1"));
+}
+
+export async function openChatGate(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (window as unknown as { __openChatGate: () => void }).__openChatGate(),
+  );
+}
+
 /** 페이지 오류 수. 0이어야 한다(S3-8, S3-13) */
 export function collectPageErrors(page: Page): string[] {
   const errors: string[] = [];

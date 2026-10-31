@@ -1,4 +1,5 @@
-import type { WholesaleSchema } from "@ondo/api";
+import type { WholesalePaths, WholesaleSchema } from "@ondo/api";
+import type { ROOM_LIST_FILTERS } from "./constants";
 
 /* ------------------------------------------------------------------------
  * wire — 스펙에서 생성한 타입의 별칭(ADR-0002). 채팅 op 5개는 초안(#263, `x-ondo-draft`)이지만
@@ -58,6 +59,22 @@ export interface ChatThread {
    * 아직 안 읽었으면 null
    */
   counterpartRead: number | null;
+}
+
+/** 계약 `chatRooms` 쿼리 `filter`(초안 칸, #326) */
+export type ChatRoomsFilter = NonNullable<
+  NonNullable<
+    WholesalePaths["/api/wholesale/chat/rooms"]["get"]["parameters"]["query"]
+  >["filter"]
+>;
+
+/** 목록 칩 값(loop-08b S4). `ALL`은 서버에 안 보낸다 — 나머지는 계약 `filter` 값 그대로(`toServerFilter`) */
+export type RoomListFilter = (typeof ROOM_LIST_FILTERS)[number];
+
+/** 목록 조건. 칩 하나 + 검색어(정리된 값, 없으면 null). 둘은 AND */
+export interface RoomListParams {
+  filter: RoomListFilter;
+  q: string | null;
 }
 
 /** 읽음 요청 응답으로 알게 된 방별 읽음 위치. 늦게 온 목록 응답보다 이쪽이 이긴다 */

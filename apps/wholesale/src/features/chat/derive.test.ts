@@ -22,6 +22,12 @@ import {
   handoffCauses,
   messageAc,
   parseRoomParam,
+  chatsHref,
+  hasListCondition,
+  normalizeQuery,
+  parseListFilter,
+  roomHref,
+  toServerFilter,
   pollDelayMs,
   sendFailureOf,
   toClarifyChoicesView,
@@ -877,5 +883,56 @@ describe("S3-1 상대 읽음 (loop-08)", () => {
     expect(mergeCounterpartRead(5, undefined)).toBe(5);
     expect(mergeCounterpartRead(null, 0)).toBe(0);
     expect(mergeCounterpartRead(null, null)).toBeNull();
+  });
+});
+
+describe("loop-08b S4-1 목록 조건과 행 링크", () => {
+  it('parseListFilter("UNREAD") → UNREAD, "NEEDS_REPLY" → NEEDS_REPLY, "x"와 null, 소문자 → ALL', () => {
+    expect(parseListFilter("UNREAD")).toBe("UNREAD");
+    expect(parseListFilter("NEEDS_REPLY")).toBe("NEEDS_REPLY");
+    expect(parseListFilter("x")).toBe("ALL");
+    expect(parseListFilter(null)).toBe("ALL");
+    expect(parseListFilter("unread")).toBe("ALL");
+    expect(parseListFilter("ALL")).toBe("ALL");
+  });
+
+  it('normalizeQuery("  봄봄 ") → "봄봄", 공백만과 null → null, 안쪽 공백 그대로', () => {
+    expect(normalizeQuery("  봄봄 ")).toBe("봄봄");
+    expect(normalizeQuery("   ")).toBeNull();
+    expect(normalizeQuery("")).toBeNull();
+    expect(normalizeQuery(null)).toBeNull();
+    expect(normalizeQuery("소매처  70")).toBe("소매처  70");
+  });
+
+  it("60자 → 앞 50자(코드 포인트로 센다 — 이모지 하나가 1자)", () => {
+    const sixty = "가나다라마바사아자차".repeat(6);
+    expect(normalizeQuery(sixty)).toBe(sixty.slice(0, 50));
+    const emoji = "😀".repeat(60);
+    expect([...(normalizeQuery(emoji) ?? "")]).toHaveLength(50);
+  });
+
+  it('roomHref(5, "UNREAD", "소매처 6") → "/chats?filter=UNREAD&q=소매처+6&room=5"(순서 고정)', () => {
+    expect(roomHref(5, "UNREAD", "소매처 6")).toBe(
+      "/chats?filter=UNREAD&q=소매처+6&room=5",
+    );
+  });
+
+  it("ALL과 빈 검색은 칸을 안 단다. 예약 문자는 퍼센트로 — 읽으면 같은 값", () => {
+    expect(roomHref(5, "ALL", null)).toBe("/chats?room=5");
+    expect(chatsHref("ALL", null, null)).toBe("/chats");
+    expect(chatsHref("NEEDS_REPLY", null, null)).toBe(
+      "/chats?filter=NEEDS_REPLY",
+    );
+    const href = roomHref(3, "ALL", "A&B=1+2 #?%");
+    expect(href).toBe("/chats?q=A%26B%3D1%2B2+%23%3F%25&room=3");
+    expect(new URL(href, "http://x").searchParams.get("q")).toBe("A&B=1+2 #?%");
+  });
+
+  it("toServerFilter: ALL은 안 보낸다, hasListCondition: 칩이나 검색이 있으면 참", () => {
+    expect(toServerFilter("ALL")).toBeUndefined();
+    expect(toServerFilter("UNREAD")).toBe("UNREAD");
+    expect(hasListCondition({ filter: "ALL", q: null })).toBe(false);
+    expect(hasListCondition({ filter: "UNREAD", q: null })).toBe(true);
+    expect(hasListCondition({ filter: "ALL", q: "봄" })).toBe(true);
   });
 });

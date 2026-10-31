@@ -1,3 +1,5 @@
+import type { RoomListFilter } from "../types";
+
 /**
  * 채팅 feature의 queryKey 팩토리.
  *
@@ -7,7 +9,11 @@
  */
 export const chatKeys = {
   all: ["chat"] as const,
+  /** 목록 전부(조건 무관). 무효화는 이걸로 — 조건마다 따로 비우지 않는다 */
   rooms: () => [...chatKeys.all, "rooms"] as const,
+  /** 조건 하나의 목록(loop-08b S4). 조건이 키에 있어 늦게 온 이전 검색 결과가 지금 화면을 덮지 않는다(S4-7) */
+  roomList: (filter: RoomListFilter, q: string | null) =>
+    [...chatKeys.rooms(), filter, q] as const,
   room: (roomId: number) => [...chatKeys.all, "room", roomId] as const,
   thread: (roomId: number) => [...chatKeys.all, "thread", roomId] as const,
   /** 자동 답 설정(도매처 하나에 한 벌, `settings.ts`). 메시지 polling과 상관없다 */

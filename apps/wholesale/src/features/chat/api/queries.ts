@@ -24,6 +24,7 @@ import {
   mergeCounterpartRead,
   mergeMessages,
   pollDelayMs,
+  toServerFilter,
 } from "../derive";
 import type {
   ChatMessage,
@@ -31,6 +32,7 @@ import type {
   ChatRoomDetail,
   ChatRoomPage,
   ChatThread,
+  RoomListParams,
 } from "../types";
 
 /**
@@ -53,16 +55,25 @@ export const CHAT_PATH = {
  * 401은 전부 `guardSession`을 거친다(`session.ts`, 리뷰 F1) — 공용 처리의 `/login` 이동 대신 채팅 세션 끊김.
  */
 
-/** 방 목록 옵션의 원본. 기다리는 훅과 엿보는 훅이 같은 키를 나눠 써서 요청이 한 번만 나간다 */
-function roomListOptions(queryClient: QueryClient) {
+/** 조건 없는 목록. "내 방이 0개인가"는 이것만 본다 — 조건 결과 0을 방 없음으로 읽지 않게(§4-2 5) */
+const NO_CONDITION: RoomListParams = { filter: "ALL", q: null };
+
+/**
+ * 방 목록 옵션의 원본. 기다리는 훅과 엿보는 훅이 같은 키를 나눠 써서 요청이 한 번만 나간다.
+ * 조건(filter, q)은 서버가 건다(loop-08b Q6 ①) — 받은 장 안에서 거르면 둘째 장 이후 방을 못 찾는다.
+ * cursor는 위치만 담아서 조건이 바뀌면 키가 바뀌고 첫 장부터 받는다(계약 `filter` 설명)
+ */
+function roomListOptions(queryClient: QueryClient, params: RoomListParams) {
   return infiniteQueryOptions({
-    queryKey: chatKeys.rooms(),
+    queryKey: chatKeys.roomList(params.filter, params.q),
     queryFn: ({ pageParam }) =>
       guardSession(queryClient, () =>
         apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
           searchParams: {
             size: ROOM_PAGE_SIZE,
             cursor: pageParam ?? undefined,
+            filter: toServerFilter(params.filter),
+            q: params.q ?? undefined,
           },
         }),
       ),
@@ -78,10 +89,10 @@ function roomListOptions(queryClient: QueryClient) {
  * 위에서 밀려난 방이 사라진다. 이어 받기 전(30개 이하)엔 요청 1건이다.
  * 세션이 끊기면 멈춘다(간격 false, 그래도 불리면 요청 없이 끊김 오류).
  */
-export function useRoomListQuery() {
+export function useRoomListQuery(params: RoomListParams) {
   const queryClient = useQueryClient();
   return useSuspenseInfiniteQuery({
-    ...roomListOptions(queryClient),
+    ...roomListOptions(queryClient, params),
     refetchInterval: () =>
       isSessionLost(queryClient) ? false : ROOM_LIST_POLL_MS,
     refetchIntervalInBackground: false,
@@ -101,7 +112,7 @@ const PEEK_ONLY = { enabled: false } as const;
 export function useRoomListEmptyPeek(): boolean | undefined {
   const queryClient = useQueryClient();
   const { data } = useInfiniteQuery({
-    ...roomListOptions(queryClient),
+    ...roomListOptions(queryClient, NO_CONDITION),
     ...PEEK_ONLY,
     select: (d) => d.pages[0]?.data.length === 0,
   });
@@ -110,12 +121,16 @@ export function useRoomListEmptyPeek(): boolean | undefined {
 
 /**
  * 목록에 이미 있는 방이면 그 이름. 방 머리가 오기 전(로딩, 메시지 조회 실패)에도 제목을 먼저 그린다.
- * 목록에 없으면(이어 받기 전 방, `?room=` 직접 진입) `undefined`.
+ * 목록에 없으면(이어 받기 전 방, `?room=` 직접 진입, 지금 조건에 안 걸리는 방) `undefined`.
+ * 지금 목록 조건의 캐시를 본다 — 왼쪽에 그려진 목록이 그것이다
  */
-export function useRoomNamePeek(roomId: number): string | undefined {
+export function useRoomNamePeek(
+  roomId: number,
+  params: RoomListParams,
+): string | undefined {
   const queryClient = useQueryClient();
   const { data } = useInfiniteQuery({
-    ...roomListOptions(queryClient),
+    ...roomListOptions(queryClient, params),
     ...PEEK_ONLY,
     select: (d) =>
       d.pages

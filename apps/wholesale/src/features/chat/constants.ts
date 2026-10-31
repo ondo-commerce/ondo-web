@@ -27,6 +27,21 @@ export const ROOM_POLL_JITTER = 0.2;
 /** 목록 행 안 읽은 수 상한. 넘으면 `99+` */
 export const UNREAD_MAX_SHOWN = 99;
 
+/**
+ * 목록 필터 칩(loop-08b S4, 디자인 결정 53). `ALL`은 화면 값이고 서버엔 안 보낸다(조건 없음).
+ * 순서가 칩 순서다
+ */
+export const ROOM_LIST_FILTERS = ["ALL", "UNREAD", "NEEDS_REPLY"] as const;
+export const ROOM_LIST_FILTER_LABEL = {
+  ALL: "전체",
+  UNREAD: "안 읽음",
+  NEEDS_REPLY: "답 필요",
+} as const;
+/** 소매처 검색 글자 상한. 계약 `q` maxLength와 같다(앞뒤 공백 지운 뒤, 코드 포인트) */
+export const ROOM_QUERY_MAX = 50;
+/** 마지막 입력 뒤 이만큼 조용하면 묻는다. 한글 조합 중엔 세지 않는다(§4-2 2) */
+export const ROOM_SEARCH_DEBOUNCE_MS = 300;
+
 /** 목록 텍스트 */
 export const LIST_TEXT = {
   title: "채팅",
@@ -36,6 +51,14 @@ export const LIST_TEXT = {
   needsReply: "답 필요",
   moreFailed: "더 불러오지 못했어요",
   retry: "다시 시도",
+  /** 검색칸 이름이자 안내 글(와이어프레임 `_PH`) */
+  search: "소매처 이름 검색",
+  filterGroup: "대화 필터",
+  /** 조건을 바꾸는 동안 제목 옆(디자인 결정 55) */
+  busy: "찾는 중",
+  /** 조건 결과 0(디자인 결정 56). 내 방 0은 위 `emptyTitle` */
+  noMatch: "조건에 맞는 대화가 없어요",
+  clearConditions: "조건 지우기",
 } as const;
 
 export const ROOM_TEXT = {
