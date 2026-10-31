@@ -8,8 +8,9 @@ import { ChatRoomPanel } from "./ChatRoomPanel";
 import { useRoomListEmptyPeek } from "../api/queries";
 import { useResetChatSessionOnLeave } from "../api/session";
 import { ROOM_TEXT } from "../constants";
-import { mergeReadMark, parseRoomParam } from "../derive";
+import { draftKey, mergeReadMark, parseRoomParam } from "../derive";
 import type { ChatReadResult, ReadMarks } from "../types";
+import { useChatOutbox } from "../useChatSend";
 
 /**
  * 도매 채팅 받은편지함 — 왼쪽 목록 360px 고정 + 오른쪽 방 유동(방향안 C).
@@ -22,8 +23,15 @@ import type { ChatReadResult, ReadMarks } from "../types";
  *
  * 읽음 응답은 여기 모아 목록에 내려 준다(`readMarks`). 방 패널과 목록 패널이 다른 경계라 둘을 아는 곳이 여기다.
  */
-export function ChatView() {
+export function ChatView({
+  email,
+}: {
+  /** 로그인 이메일. 쓰던 글 키에 들어간다(`draftKey`). feature끼리 import 못 해 `app/`이 넘긴다 */
+  email: string | null;
+}) {
   const searchParams = useSearchParams();
+  /* 보류 말풍선은 방 패널이 아니라 여기 산다 — 방을 옮겨도 남는다(loop-08b S3-10) */
+  const outbox = useChatOutbox();
   const selected = parseRoomParam(searchParams.get("room"));
   const selectedRoomId = typeof selected === "number" ? selected : null;
 
@@ -64,6 +72,8 @@ export function ChatView() {
           onRead={onRead}
           focusTick={focusTick}
           onEscape={onEscape}
+          draftKey={draftKey(email, selectedRoomId)}
+          outbox={outbox}
         />
       ) : (
         <Panel className="min-w-0 flex-1" data-ac="S2-5">

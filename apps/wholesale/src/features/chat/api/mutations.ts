@@ -26,13 +26,17 @@ const SESSION_LOSS_INLINE = { sessionLoss: "inline" } as const;
  * 결과 처리는 호출마다 `mutateAsync`의 promise로 받는다. 말풍선 여러 개가 동시에 날아갈 수 있는데,
  * `mutate(vars, { onSuccess })`의 콜백은 마지막 호출 것만 불린다.
  */
-export function useSendMessageMutation(roomId: number) {
+export function useSendMessageMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    /* roomId는 호출마다 받는다 — 보내기는 화면 전체가 한 벌로 들고(`useChatOutbox`), 방을 옮겨도 날아가는
+       중인 요청은 보낸 방 것이다(loop-08b S3-12) */
     mutationFn: ({
+      roomId,
       clientMessageId,
       body,
     }: {
+      roomId: number;
       clientMessageId: string;
       body: string;
     }) =>

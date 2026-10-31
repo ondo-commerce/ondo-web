@@ -2,7 +2,13 @@
 
 import { Badge, Panel } from "@ondo/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { chatKeys } from "../api/keys";
@@ -20,7 +26,7 @@ import {
   visiblePending,
 } from "../derive";
 import type { ChatReadResult } from "../types";
-import { useChatSend } from "../useChatSend";
+import type { ChatOutbox } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
 
@@ -29,14 +35,18 @@ interface RoomCallbacks {
   focusTick: number;
   /** 입력창 Esc — 포커스를 목록의 선택 행으로(S4-11) */
   onEscape: () => void;
+  /** 쓰던 글을 기억할 키(loop-08b S3). null이면 기억하지 않는다 */
+  draftKey: string | null;
+  /** 화면 전체의 보내기(`useChatOutbox`). 보류 말풍선은 방 패널 밖에 살아 방을 옮겨도 남는다 */
+  outbox: ChatOutbox;
 }
 
 /**
  * 오른쪽 방 패널. 패널은 경계 밖에 있어 로딩, 실패, 없는 방이 전부 **같은 패널 안에서** 그려진다.
  * 왼쪽 목록은 다른 경계라 메시지 조회가 실패해도 그대로 눌린다(S3-9).
  *
- * 부르는 쪽이 `key={roomId}`를 준다 — 방을 옮기면 입력 글과 낭독 기준점이 새로 시작한다
- * (방별 입력 기억은 loop-08, 01-plan §3 out 4).
+ * 부르는 쪽이 `key={roomId}`를 준다 — 방을 옮기면 낭독 기준점이 새로 시작한다. 쓰던 글은 저장소에서
+ * (`useRoomDraft`), 보류 말풍선은 `ChatView`의 outbox에서 그 방 것을 다시 받는다(loop-08b S3).
  */
 export function ChatRoomPanel({
   roomId,
@@ -119,6 +129,8 @@ function ChatRoom({
   onRead,
   focusTick,
   onEscape,
+  draftKey,
+  outbox,
 }: { roomId: number } & RoomCallbacks) {
   const queryClient = useQueryClient();
   const { room, thread, threadUpdatedAt } = useRoomQueries(roomId);
@@ -181,7 +193,13 @@ function ChatRoom({
     roomId,
   ]);
 
-  const { pending, send, retry, remove } = useChatSend(roomId);
+  const pending = outbox.pendingOf(roomId);
+  /* 입력창이 memo라 보내기 함수는 방이 같으면 같은 참조여야 한다 */
+  const { send: sendTo } = outbox;
+  const send = useCallback(
+    (body: string) => sendTo(roomId, body),
+    [sendTo, roomId],
+  );
   const shownPending = visiblePending(pending, thread.messages);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
@@ -259,13 +277,15 @@ function ChatRoom({
             key={item.clientMessageId}
             item={item}
             sessionLost={sessionLost}
-            onRetry={() => retry(item)}
-            onRemove={() => remove(item.clientMessageId)}
+            onRetry={() => outbox.retry(roomId, item)}
+            onRemove={() => outbox.remove(roomId, item.clientMessageId)}
           />
         ))}
       </div>
 
       <ChatComposer
+        key={draftKey ?? "no-draft"}
+        draftKey={draftKey}
         counterpartName={name}
         focusTick={focusTick}
         sessionLost={sessionLost}

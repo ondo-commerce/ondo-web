@@ -6,10 +6,11 @@ import type { ClipboardEvent, KeyboardEvent } from "react";
 import { memo, useEffect, useId, useRef, useState } from "react";
 import { COMPOSER_TEXT } from "../constants";
 import { checkComposer } from "../derive";
+import { useRoomDraft } from "../useRoomDraft";
 
 /**
  * 방 아래 입력창. 메시지 목록과 **다른 컴포넌트**이고 `memo`인 이유: 3초 polling이 방을 다시 그려도
- * 입력 글과 커서가 흔들리지 않게(S4-10). 입력 상태는 여기만 갖는다.
+ * 입력 글과 커서가 흔들리지 않게(S4-10). 입력 상태는 여기만 갖고, 방별 기억은 `useRoomDraft`가 한다(loop-08b S3).
  *
  * 높이는 84px(min-h-21)에서 글에 맞춰 160px(max-h-40)까지 늘고 그 위는 안에서 스크롤한다
  * (`field-sizing: content`, 디자인 결정 18). 그 속성이 없는 브라우저(Safari 17 이하)는 84px 고정에 안쪽 스크롤.
@@ -17,12 +18,15 @@ import { checkComposer } from "../derive";
  * 키(README 키보드 계약): Enter 보내기, Shift+Enter 줄바꿈, 한글 조합 중 Enter 무시, Esc 목록으로(글은 남는다).
  */
 export const ChatComposer = memo(function ChatComposer({
+  draftKey,
   counterpartName,
   focusTick,
   sessionLost,
   onSend,
   onEscape,
 }: {
+  /** 쓰던 글을 기억할 키(`draftKey`). null이면 기억하지 않는다. 바뀌면 부르는 쪽이 다시 마운트한다 */
+  draftKey: string | null;
   counterpartName: string;
   /** 목록에서 행을 열 때마다 1씩 오른다. 오르면 입력창으로 포커스(S2-6) */
   focusTick: number;
@@ -32,7 +36,11 @@ export const ChatComposer = memo(function ChatComposer({
   /** Esc — 포커스를 선택 행으로(S4-11) */
   onEscape: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const {
+    text: draft,
+    setText: setDraft,
+    discard: discardDraft,
+  } = useRoomDraft(draftKey);
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
   const canSend = !check.blank && !check.over && !sessionLost;
@@ -51,7 +59,7 @@ export const ChatComposer = memo(function ChatComposer({
   const submit = () => {
     if (!canSend) return;
     onSend(draft.trim());
-    setDraft("");
+    discardDraft();
     setPhotoNote(false);
     focusInput();
   };

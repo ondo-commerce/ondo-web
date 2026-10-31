@@ -3,6 +3,7 @@ import {
   BODY_COUNTER_FROM,
   BODY_MAX,
   CHAT_TIME_ZONE,
+  DRAFT_KEY_PREFIX,
   HANDOFF_REASON_TEXT,
   PENDING_TEXT,
   READ_MARK_KINDS,
@@ -31,6 +32,7 @@ import type {
   FactLine,
   FactPart,
   FactsView,
+  PendingByRoom,
   PendingMessage,
   ReadMarks,
   SendFailure,
@@ -228,6 +230,19 @@ export function parseRoomParam(raw: string | null): number | null | "invalid" {
   if (!/^\d+$/.test(raw)) return "invalid";
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : "invalid";
+}
+
+/**
+ * 방별 입력 기억 키(loop-08b §4-1 1). 이메일은 앞뒤 공백을 지우고 소문자로 — 로그인 칸에 친 모양이 달라도
+ * 같은 계정이면 같은 키다. 이메일이 없으면(로그아웃, 판정 전) `null` — 저장하지 않는다.
+ *
+ * 사업체 id를 넣지 않는 이유: 방은 (도매처, 소매처) 쌍에 하나라 roomId가 이미 사업체를 정한다.
+ * 계정 하나 = 도매처 하나로 본다(미확인, 실서버 연결 전 다시 본다).
+ */
+export function draftKey(email: string | null, roomId: number): string | null {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (normalized === "") return null;
+  return `${DRAFT_KEY_PREFIX}${normalized}:${roomId}`;
 }
 
 /* ------------------------------------------------------------------------
@@ -668,6 +683,30 @@ export function visiblePending(
     ),
   );
   return pending.filter((p) => !delivered.has(p.clientMessageId));
+}
+
+const NO_PENDING: readonly PendingMessage[] = [];
+
+/** 방 하나의 보류 말풍선. 없으면 같은 빈 배열 — 렌더마다 새 배열이면 memo가 매번 깨진다 */
+export function pendingOfRoom(
+  all: PendingByRoom,
+  roomId: number,
+): readonly PendingMessage[] {
+  return all[roomId] ?? NO_PENDING;
+}
+
+/** 방 하나의 보류 말풍선만 바꾼다. 비면 그 방 칸을 지운다 — 다른 방 칸은 그대로(S3-10) */
+export function withRoomPending(
+  all: PendingByRoom,
+  roomId: number,
+  change: (list: readonly PendingMessage[]) => PendingMessage[],
+): PendingByRoom {
+  const next = change(pendingOfRoom(all, roomId));
+  if (next.length > 0) return { ...all, [roomId]: next };
+  if (!(roomId in all)) return all;
+  const rest = { ...all };
+  delete rest[roomId];
+  return rest;
 }
 
 /** 같은 키의 보류 말풍선을 바꾼다. 없으면 맨 아래에 붙인다(다시 보내기는 제자리) */

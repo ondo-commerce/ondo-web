@@ -116,6 +116,9 @@ export interface PendingMessage {
   failure: SendFailure | null;
 }
 
+/** 방별 보류 말풍선(loop-08b S3). 화면 수명 동안 `ChatView`가 든다. 빈 방은 칸이 없다 */
+export type PendingByRoom = Readonly<Record<number, readonly PendingMessage[]>>;
+
 /** 입력창 글자 수 판정(S4-4) */
 export interface ComposerCheck {
   /** 앞뒤 공백을 뺀 코드 포인트 수 */

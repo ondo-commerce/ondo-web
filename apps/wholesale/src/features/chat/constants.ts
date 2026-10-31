@@ -119,6 +119,15 @@ export const BODY_MAX = 1000;
 /** 이 글자 수부터 오른쪽에 `N/1,000`을 띄운다. 평소엔 그 자리에 키 안내 */
 export const BODY_COUNTER_FROM = 900;
 
+/**
+ * 방별 입력 기억 키 머리(loop-08b §4-1 1). 뒤에 `{이메일 소문자}:{roomId}`가 붙는다(`draftKey`).
+ * `v1`은 값 모양(글 그대로)이 바뀌면 올린다 — 옛 모양 값을 새 코드가 글로 읽지 않게.
+ * 로그아웃이 이 머리로 시작하는 키를 전부 지운다(Q2, `draftStore.clear`).
+ */
+export const DRAFT_KEY_PREFIX = "ondo.chat.draft.v1:";
+/** 글이 바뀐 뒤 이만큼 조용하면 저장한다. 방을 옮기거나 떠나는 순간은 기다리지 않는다(`useRoomDraft`) */
+export const DRAFT_SAVE_DELAY_MS = 300;
+
 /** 보낸 말풍선 상태 글 */
 export const PENDING_TEXT = {
   sending: "보내는 중",
