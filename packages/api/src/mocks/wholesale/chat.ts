@@ -12,6 +12,15 @@ import {
   type InquiryListing,
 } from "../chat/inquiry";
 import { addDays, koreanDate, seoulDate } from "../chat/backorderCandidates";
+import {
+  businessDateOf,
+  businessDates,
+  inquiryStats,
+} from "../chat/inquiryStats";
+import {
+  STATS_FIXTURE_ROOMS,
+  STATS_SEED_NAME,
+} from "../chat/inquiryStats.fixture";
 import type { InquiryReceivable } from "../chat/receivable";
 import {
   BACKORDER_SEED_ETA_DAYS,
@@ -88,8 +97,20 @@ export const CHAT_FAIL_OPS = [
   "settings",
   /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 보내기는 201 이고 답 대신 넘김(LOOKUP_FAILED)이 붙는다 */
   "receivable",
+  /** 문의 지표 `inquiryStats`(loop-08 S2-5). 대시보드 카드 안 오류 */
+  "stats",
 ] as const;
 type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
+
+/**
+ * `/__mock/chat/delay`가 고르는 op(loop-08 §5-4 3). 늦은 방 머리가 polling 뒤에 옛 읽음 값을 들고 도착하는
+ * 순서 역전을 만든다. 소매 목의 같은 손잡이와 모양이 같다
+ */
+export const CHAT_DELAY_OPS = ["room", "messages"] as const;
+type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
+
+/** 문의 지표 조회 기간 상한(일). 스펙 `to` 설명과 같다 */
+export const STATS_MAX_DAYS = 62;
 
 /* --- 상태 --------------------------------------------------------------- */
 
@@ -126,6 +147,7 @@ const idempotency = new Map<string, IdempotencyRecord>();
 /** `fail500once`가 이미 한 번 실패시킨 키 */
 const failedOnceKeys = new Set<string>();
 const failPlan = new Map<ChatFailOp, { status: number; times: number }>();
+const delayPlan = new Map<ChatDelayOp, { ms: number; times: number }>();
 /**
  * 자동 답 설정(도매처 단위, 초안 op `autoReplySettings`). 목은 "나"(101) 한 벌만 둔다 — 다른 도매처 방은
  * 늘 켜짐으로 판정한다. 새로고침하면 켜짐으로 돌아간다(BE는 저장, §4-3)
@@ -576,6 +598,27 @@ function seedRooms(): MockRoom[] {
   return list;
 }
 
+/**
+ * 문의 지표 시드 `stats-v1`(loop-08 §5-4 2). 기본 시드를 **대신한다** — 기본 시드에도 10/27 영업일 소매 메시지가
+ * 있어서 섞으면 손으로 센 기대값(S1-5, S2-1)이 안 맞는다. fixture 의 unit 전용 방(F13, F17)은 넣지 않는다.
+ * 읽음 위치는 양쪽 다 끝까지(안 읽은 배지가 지표 화면 시험에 섞이지 않게)
+ */
+function seedStatsRooms(): MockRoom[] {
+  nextMessageId = 1;
+  return STATS_FIXTURE_ROOMS.filter((r) => !r.unitOnly).map((r) =>
+    room(
+      r.roomId,
+      r.retailerId - 1,
+      new Date(
+        Date.parse(r.lines[0]?.sentAt ?? at(0)) - MINUTE_MS,
+      ).toISOString(),
+      r.lines,
+      { wholesaler: r.lines.length, retailer: r.lines.length },
+      r.wholesalerId,
+    ),
+  );
+}
+
 function seedIdempotency() {
   idempotency.clear();
   const r = rooms.find((x) => x.roomId === 6);
@@ -920,6 +963,67 @@ function consumeFailure(op: ChatFailOp): boolean {
   return true;
 }
 
+/**
+ * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 먼저 떠난 방 머리가 polling 뒤에 옛 읽음 값으로
+ * 도착한다(S3-3). 소매 목, 도매 알림 목과 같은 규칙
+ */
+async function plannedDelay(op: ChatDelayOp) {
+  const plan = delayPlan.get(op);
+  if (plan === undefined || plan.times <= 0) return;
+  plan.times -= 1;
+  if (plan.times === 0) delayPlan.delete(op);
+  await delay(plan.ms);
+}
+
+/** `YYYY-MM-DD`이고 달력에 있는 날이면 true(`2026-13-01`, `2026-02-30`은 false) */
+function isCalendarDate(raw: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const ms = Date.parse(`${raw}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === raw;
+}
+
+/**
+ * 문의 지표 쿼리 검사. 오늘 영업일은 `now` 기준(낮 12시 경계). 순서: 형식 → from > to → 미래 to → 62일.
+ * 성공이면 `{from, to}`, 실패면 400 응답
+ */
+function statsRange(url: URL, now: number) {
+  const today = businessDateOf(now);
+  const fromRaw = url.searchParams.get("from");
+  const toRaw = url.searchParams.get("to");
+  for (const [field, raw] of [
+    ["from", fromRaw],
+    ["to", toRaw],
+  ] as const) {
+    if (raw !== null && !isCalendarDate(raw))
+      return {
+        error: invalid(field, "INVALID_FORMAT", "날짜는 YYYY-MM-DD 입니다."),
+      };
+  }
+  const from = fromRaw ?? today;
+  const to = toRaw ?? from;
+  if (from > to)
+    return {
+      error: invalid("from", "OUT_OF_RANGE", "from이 to보다 늦습니다."),
+    };
+  if (to > today)
+    return {
+      error: invalid(
+        "to",
+        "OUT_OF_RANGE",
+        "오늘 영업일 뒤는 조회할 수 없습니다.",
+      ),
+    };
+  if (businessDates(from, to).length > STATS_MAX_DAYS)
+    return {
+      error: invalid(
+        "to",
+        "OUT_OF_RANGE",
+        `최대 ${STATS_MAX_DAYS}일까지 조회할 수 있습니다.`,
+      ),
+    };
+  return { from, to };
+}
+
 /** 쿼리 정수. 없으면 `fallback`, 정수가 아니면 `NaN` */
 function intParam(url: URL, name: string, fallback: number | null) {
   const raw = url.searchParams.get(name);
@@ -1014,17 +1118,39 @@ export const chatHandlers = [
     return HttpResponse.json({ data: page.map(summaryOf), meta });
   }),
 
-  http.get("*/api/wholesale/chat/rooms/:roomId", ({ params }) => {
+  /**
+   * 문의 지표(초안 op `inquiryStats`, loop-08 §5-2). 집계는 순수 함수 `../chat/inquiryStats.ts`, 여기는 쿼리 검사와
+   * 저장소 전달만 한다. 기준 시각은 요청 시점의 `Date.now()`(e2e 는 `page.clock`, 테스트는 가짜 Date)
+   */
+  http.get("*/api/wholesale/chat/inquiry-stats", ({ request }) => {
+    const planned = plannedFailure("stats");
+    if (planned) return planned;
+    const now = Date.now();
+    const range = statsRange(new URL(request.url), now);
+    if ("error" in range) return range.error;
+    return HttpResponse.json({
+      data: inquiryStats(rooms, {
+        wholesalerId: CHAT_ME_WHOLESALER_ID,
+        from: range.from,
+        to: range.to,
+        asOf: now,
+      }),
+    });
+  }),
+
+  http.get("*/api/wholesale/chat/rooms/:roomId", async ({ params }) => {
     const planned = plannedFailure("room");
     if (planned) return planned;
     const r = myRoom(Number(params.roomId));
     if (r === undefined) return fail(404);
-    return HttpResponse.json({ data: detailOf(r) });
+    const data = detailOf(r);
+    await plannedDelay("room");
+    return HttpResponse.json({ data });
   }),
 
   http.get(
     "*/api/wholesale/chat/rooms/:roomId/messages",
-    ({ params, request }) => {
+    async ({ params, request }) => {
       const planned = plannedFailure("messages");
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
@@ -1069,6 +1195,7 @@ export const chatHandlers = [
         maxSequence: maxSequence(r),
         counterpartLastReadSequence: r.retailerLastRead,
       };
+      await plannedDelay("messages");
       return HttpResponse.json({ data, meta });
     },
   ),
@@ -1300,13 +1427,68 @@ export const chatHandlers = [
     return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
   }),
 
-  /** 시드로 되돌린다. `{rooms: 0}`이면 내 방을 비운다(빈 상태), `{rooms: n}`이면 최근 n개만 */
+  /**
+   * 상대(소매)가 여기까지 읽었다 `{sequence}`(loop-08 §5-4 3). 내려가지 않는다(작은 값은 무시하고 지금 값을 돌려준다).
+   * 방에 없는 sequence 는 400. 다음 방 머리와 messages meta 의 `counterpartLastReadSequence`가 이 값이다
+   */
+  http.post(
+    "*/__mock/chat/rooms/:roomId/counterpart-read",
+    async ({ params, request }) => {
+      const r = rooms.find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        sequence?: unknown;
+      };
+      const seq = input.sequence;
+      if (
+        typeof seq !== "number" ||
+        !Number.isInteger(seq) ||
+        seq < 0 ||
+        seq > maxSequence(r)
+      )
+        return invalid("sequence", "OUT_OF_RANGE", "방에 없는 sequence입니다.");
+      r.retailerLastRead = Math.max(r.retailerLastRead ?? 0, seq);
+      return HttpResponse.json({
+        data: {
+          roomId: r.roomId,
+          counterpartLastReadSequence: r.retailerLastRead,
+        },
+      });
+    },
+  ),
+
+  /** 다음 n회 응답을 ms 늦춘다. `{op: room|messages, ms, times = 1}`. 값은 요청 시점에 정한다 */
+  http.post("*/__mock/chat/delay", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      op?: string;
+      ms?: number;
+      times?: number;
+    };
+    const op = CHAT_DELAY_OPS.find((o) => o === input.op);
+    if (op === undefined)
+      return invalid("op", "INVALID", `op는 ${CHAT_DELAY_OPS.join(" | ")}`);
+    if (typeof input.ms !== "number" || input.ms < 0)
+      return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
+    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1 });
+    return HttpResponse.json({ data: { op, ...delayPlan.get(op) } });
+  }),
+
+  /**
+   * 시드로 되돌린다. `{rooms: 0}`이면 내 방을 비운다(빈 상태), `{rooms: n}`이면 최근 n개만.
+   * `{seed: "stats-v1"}`이면 기본 시드 대신 문의 지표 fixture(F1~F12, F14~F16)를 넣는다
+   */
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       rooms?: number;
       noBackorders?: boolean;
+      seed?: string;
     };
-    resetChatMock(input.rooms, { noBackorders: input.noBackorders === true });
+    if (input.seed !== undefined && input.seed !== STATS_SEED_NAME)
+      return invalid("seed", "INVALID", `seed는 ${STATS_SEED_NAME}`);
+    resetChatMock(input.rooms, {
+      noBackorders: input.noBackorders === true,
+      seed: input.seed,
+    });
     return HttpResponse.json({
       data: {
         rooms: rooms.filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
@@ -1321,9 +1503,9 @@ export const chatHandlers = [
 /** 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다 */
 export function resetChatMock(
   keepRooms?: number,
-  options: { noBackorders?: boolean } = {},
+  options: { noBackorders?: boolean; seed?: string } = {},
 ) {
-  rooms = seedRooms();
+  rooms = options.seed === STATS_SEED_NAME ? seedStatsRooms() : seedRooms();
   // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
   resetBackorderMock({ empty: options.noBackorders === true });
   // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는
@@ -1346,6 +1528,7 @@ export function resetChatMock(
   seedIdempotency();
   failedOnceKeys.clear();
   failPlan.clear();
+  delayPlan.clear();
   autoReplySettings = structuredClone(DEFAULT_AUTO_REPLY_SETTINGS);
   // 방 1은 빈티지 플라워 셔츠(2001)에서 연 방이다. 문맥 시각은 reset 시각 — 시드 메시지 시각(10/28 고정)으로
   // 박으면 늘 30분이 지나 시연 장면 2가 넘김으로 끝난다
@@ -1404,6 +1587,10 @@ export const chatStore = {
   maxSequence,
   openHandoff,
   lastActivityAt,
+  /** 소매 방 목록 cursor(loop-08 §5-4 4). 도매 목록과 같은 정렬과 같은 불투명 값 */
+  compareRooms,
+  encodeCursor,
+  decodeCursor,
   codePoints,
   hashOf,
   intParam,

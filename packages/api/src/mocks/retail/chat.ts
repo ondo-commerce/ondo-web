@@ -64,9 +64,29 @@ export const RETAIL_CHAT_FAIL_OPS = [
 ] as const;
 type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
 
-/** `/__mock/chat/delay`가 고르는 op. 응답 순서 역전(늦은 count가 읽음 뒤에 도착)을 만드는 둘 */
-export const RETAIL_CHAT_DELAY_OPS = ["count", "read"] as const;
+/**
+ * `/__mock/chat/delay`가 고르는 op. 응답 순서 역전을 만든다: 늦은 count가 읽음 뒤에 도착(06a), 늦은 방 머리가
+ * polling 뒤에 옛 읽음 값으로 도착, 늦은 목록 장이 갱신과 겹침(loop-08 §5-4 3)
+ */
+export const RETAIL_CHAT_DELAY_OPS = [
+  "count",
+  "read",
+  "room",
+  "messages",
+  "rooms",
+] as const;
 type DelayOp = (typeof RETAIL_CHAT_DELAY_OPS)[number];
+
+/** 방 목록 한 장 기본 크기. 소매 `/chats`가 첫 장으로 받는 수 */
+const ROOM_PAGE_DEFAULT = 30;
+
+/**
+ * `reset {rooms: n}`이 더하는 가짜 방의 도매처 번호 시작(loop-08 S1-7). 방은 (도매처, 소매처) 쌍에 1개라 방마다
+ * 다른 도매처가 필요하다. 이름은 `도매처 1001`처럼 번호로 나온다(`wholesalerName`)
+ */
+const FILLER_WHOLESALER_BASE = 1001;
+/** 가짜 방 마지막 메시지 시각의 시작. 시드 방 1, 33(10/28 아침)보다 이르게 둬 둘이 맨 위에 남는다 */
+const FILLER_BASE_MS = Date.parse("2026-10-27T12:00:00+09:00");
 
 const failPlan = new Map<FailOp, { status: number; times: number }>();
 const delayPlan = new Map<DelayOp, { ms: number; times: number }>();
@@ -274,25 +294,50 @@ export const retailChatHandlers = [
     return HttpResponse.json({ data });
   }),
 
-  /** 목록. 05a 화면은 안 부른다(방 목록은 05b). "나"의 방이 두세 개라 한 장으로 끝낸다(nextCursor null) */
-  http.get("*/api/retail/chat/rooms", ({ request }) => {
+  /**
+   * 목록. 정렬 `lastActivityAt` desc, `roomId` desc, keyset cursor(loop-08 §5-4 4, 도매 목과 같은 불투명 값).
+   * 첫 장을 받은 뒤 아직 안 받은 장의 방이 새 메시지로 위로 올라가면 다음 장에서 빠진다 — 키셋이라 중복은 안 생기고,
+   * 첫 장부터 다시 받으면 보인다(§4-4 3 허용 한계)
+   */
+  http.get("*/api/retail/chat/rooms", async ({ request }) => {
     const planned = plannedFailure("rooms");
     if (planned) return planned;
-    const size = chatStore.sizeOf(new URL(request.url), 30);
+    const url = new URL(request.url);
+    const size = chatStore.sizeOf(url, ROOM_PAGE_DEFAULT);
     if (size === null) return chatStore.sizeInvalid();
-    const mine = chatStore
+    const cursorRaw = url.searchParams.get("cursor");
+    const cursor =
+      cursorRaw === null ? null : chatStore.decodeCursor(cursorRaw);
+    if (cursorRaw !== null && cursor === null)
+      return invalid("cursor", "INVALID_CURSOR", "cursor가 올바르지 않습니다.");
+
+    const sorted = chatStore
       .rooms()
       .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID)
-      .sort((a, b) => {
-        const diff =
-          Date.parse(chatStore.lastActivityAt(b)) -
-          Date.parse(chatStore.lastActivityAt(a));
-        return diff !== 0 ? diff : b.roomId - a.roomId;
-      });
-    return HttpResponse.json({
-      data: mine.slice(0, size).map(summaryOf),
-      meta: { nextCursor: null },
-    });
+      .sort(chatStore.compareRooms);
+    const rest =
+      cursor === null
+        ? sorted
+        : sorted.filter((r) => {
+            const ms = Date.parse(chatStore.lastActivityAt(r));
+            return (
+              ms < cursor.activityMs ||
+              (ms === cursor.activityMs && r.roomId < cursor.roomId)
+            );
+          });
+    const page = rest.slice(0, size);
+    const last = page.at(-1);
+    const body = {
+      data: page.map(summaryOf),
+      meta: {
+        nextCursor:
+          rest.length > size && last !== undefined
+            ? chatStore.encodeCursor(last)
+            : null,
+      },
+    };
+    await plannedDelay("rooms");
+    return HttpResponse.json(body);
   }),
 
   /**
@@ -340,22 +385,22 @@ export const retailChatHandlers = [
     );
   }),
 
-  http.get("*/api/retail/chat/rooms/:roomId", ({ params }) => {
+  http.get("*/api/retail/chat/rooms/:roomId", async ({ params }) => {
     const planned = plannedFailure("room");
     if (planned) return planned;
     const r = myRoom(Number(params.roomId));
     if (r === undefined) return fail(404);
-    return HttpResponse.json({
-      data: {
-        ...summaryOf(r),
-        counterpartLastReadSequence: r.wholesalerLastRead,
-      },
-    });
+    const data = {
+      ...summaryOf(r),
+      counterpartLastReadSequence: r.wholesalerLastRead,
+    };
+    await plannedDelay("room");
+    return HttpResponse.json({ data });
   }),
 
   http.get(
     "*/api/retail/chat/rooms/:roomId/messages",
-    ({ params, request }) => {
+    async ({ params, request }) => {
       const planned = plannedFailure("messages");
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
@@ -395,14 +440,16 @@ export const retailChatHandlers = [
         page = older.slice(Math.max(older.length - size, 0));
         hasMore = older.length > size;
       }
-      return HttpResponse.json({
+      const body = {
         data: page.map(toRetailMessage),
         meta: {
           hasMore,
           maxSequence: chatStore.maxSequence(r),
           counterpartLastReadSequence: r.wholesalerLastRead,
         },
-      });
+      };
+      await plannedDelay("messages");
+      return HttpResponse.json(body);
     },
   ),
 
@@ -639,7 +686,39 @@ export const retailChatHandlers = [
     return HttpResponse.json({ data: { ok: true } }, { status: 201 });
   }),
 
-  /** 다음 n회 응답을 ms 늦춘다. `{op: count|read, ms, times = 1}`. 값은 요청 시점에 정한다 */
+  /**
+   * 상대(도매)가 여기까지 읽었다 `{sequence}`(loop-08 §5-4 3). 내려가지 않는다(작은 값은 무시하고 지금 값을 돌려준다).
+   * 방에 없는 sequence 는 400. 다음 방 머리와 messages meta 의 `counterpartLastReadSequence`가 이 값이다
+   */
+  http.post(
+    "*/__mock/chat/rooms/:roomId/counterpart-read",
+    async ({ params, request }) => {
+      const r = chatStore
+        .rooms()
+        .find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        sequence?: unknown;
+      };
+      const seq = input.sequence;
+      if (
+        typeof seq !== "number" ||
+        !Number.isInteger(seq) ||
+        seq < 0 ||
+        seq > chatStore.maxSequence(r)
+      )
+        return invalid("sequence", "OUT_OF_RANGE", "방에 없는 sequence입니다.");
+      r.wholesalerLastRead = Math.max(r.wholesalerLastRead, seq);
+      return HttpResponse.json({
+        data: {
+          roomId: r.roomId,
+          counterpartLastReadSequence: r.wholesalerLastRead,
+        },
+      });
+    },
+  ),
+
+  /** 다음 n회 응답을 ms 늦춘다. `{op: count|read|room|messages|rooms, ms, times = 1}`. 값은 요청 시점에 정한다 */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
@@ -661,16 +740,31 @@ export const retailChatHandlers = [
 
   /**
    * 시드로 되돌린다(도매 목의 시드와 미송 목도 같이). 소매 쪽 실패, 지연 계획도 비운다.
-   * `{empty: true}` 내 방 0개(목록 빈 상태), `{noBackorders: true}` 미송 0건(자동 답 후보 0개)
+   * `{empty: true}` 내 방 0개(목록 빈 상태), `{noBackorders: true}` 미송 0건(자동 답 후보 0개),
+   * `{rooms: n}`(n ≥ 2) 내 방 n개 = 시드 방 1, 33 + 가짜 방 n − 2개(loop-08 S1-7, 목록 두 장)
    */
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       empty?: boolean;
       noBackorders?: boolean;
+      rooms?: unknown;
     };
+    if (
+      input.rooms !== undefined &&
+      (typeof input.rooms !== "number" ||
+        !Number.isInteger(input.rooms) ||
+        input.rooms < 2 ||
+        input.rooms > 200)
+    )
+      return invalid(
+        "rooms",
+        "OUT_OF_RANGE",
+        "rooms는 2~200입니다. 0개는 {empty: true}",
+      );
     resetRetailChatMock({
       empty: input.empty === true,
       noBackorders: input.noBackorders === true,
+      rooms: input.rooms,
     });
     return HttpResponse.json({
       data: {
@@ -684,6 +778,27 @@ export const retailChatHandlers = [
   ...chatSharedKnobs,
 ];
 
+/**
+ * 내 방이 `total`개가 되도록 가짜 방을 더한다. 방마다 도매 메시지 1개, 시각은 1분씩 이르게(같은 시각 없음) —
+ * 목록 순서는 시드 방 1, 33 다음에 1001, 1002 … 순이다
+ */
+function addFillerRooms(total: number) {
+  const mine = chatStore
+    .rooms()
+    .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID).length;
+  for (let i = 0; i < total - mine; i++) {
+    const r = chatStore.addRoom(
+      FILLER_WHOLESALER_BASE + i,
+      CHAT_ME_RETAILER_ID,
+    );
+    chatStore.append(r, {
+      sender: "WHOLESALER",
+      body: "이번 주 신상 올라왔어요",
+      sentAt: new Date(FILLER_BASE_MS - i * 60_000).toISOString(),
+    });
+  }
+}
+
 function toRetailResult(
   result: NonNullable<IdempotencyRecord["result"]>,
 ): ChatSendResult {
@@ -695,11 +810,12 @@ function toRetailResult(
 }
 
 export function resetRetailChatMock(
-  options: { empty?: boolean; noBackorders?: boolean } = {},
+  options: { empty?: boolean; noBackorders?: boolean; rooms?: number } = {},
 ) {
   resetChatMock(undefined, { noBackorders: options.noBackorders === true });
   if (options.empty === true)
     chatStore.removeRetailerRooms(CHAT_ME_RETAILER_ID);
+  else if (options.rooms !== undefined) addFillerRooms(options.rooms);
   failPlan.clear();
   delayPlan.clear();
   failedOnceKeys.clear();

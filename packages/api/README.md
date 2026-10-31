@@ -155,6 +155,25 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 골든셋 v4는 v3 59 + 미수 18(P5, R01~R17) + 넘김 7(H16~H22) = 84. v4 몫(`since: 4`)의 expect는 방에 **들어간 줄** 투영이다.
 `receivables` 표 7행과 `receivableAnomalies` 이상값 표 9행이 같이 있다.
 
+### 문의 지표와 상대 읽음 (loop-08, #311)
+
+초안 op `inquiryStats` `GET /api/wholesale/chat/inquiry-stats?from&to`. 집계는 `src/mocks/chat/inquiryStats.ts` 순수 함수
+`inquiryStats(rooms, {wholesalerId, from, to, asOf})`이고 **BE 규칙 원본**이다. 기대값은 `chat/inquiryStats.fixture.ts`
+(F1~F17) 표를 손으로 센 숫자다(`chat/inquiryStats.test.ts`). BE는 같은 표로 자기 테스트를 맞춘다.
+
+- 소매 TEXT 1개 = 결과 1개. 자동 답 > 넘김 > 되묻기 > 결과 없음. 같은 출처에 답 + 넘김이면 `autoRepliedWithHandoff`
+- 영업일 D = [D 12:00, D+1 12:00) KST, 출처 `sentAt` 기준. `asOf`(요청 시각) 뒤에 쓰인 줄은 안 센다
+- `startAt` `endAt` `asOf`는 `+09:00` 오프셋으로 낸다(보고서에 그대로 옮긴다)
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 도매 | `POST /__mock/chat/reset {seed: "stats-v1"}` | 기본 시드 **대신** fixture F1~F12, F14~F16(방 1 = 101 x 봄봄상회, 방 2 = 102). 다른 seed 이름은 400 |
+| 도매 | `POST /__mock/chat/fail {op: stats, status}` | 지표 op 다음 n회 실패(500, 404 …) |
+| 도매, 소매 | `POST /__mock/chat/rooms/{roomId}/counterpart-read {sequence}` | 상대가 여기까지 읽었다. 내려가지 않는다(작은 값은 무시), 방에 없는 sequence 400 |
+| 도매 | `POST /__mock/chat/delay {op: room\|messages, ms, times = 1}` | 다음 n회 응답을 늦춘다. 값은 요청 시점에 정한다(늦은 방 머리 시험) |
+| 소매 | `POST /__mock/chat/delay {op: count\|read\|room\|messages\|rooms, ...}` | 06a 의 count, read 에 셋을 더했다 |
+| 소매 | `POST /__mock/chat/reset {rooms: n}` | 내 방 n개(2~200) = 시드 방 1, 33 + 가짜 방(도매처 1001 …). 방 목록은 이제 실제 keyset cursor(도매 목과 같은 정렬, 잘못된 cursor 400) |
+
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
 
 초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.
