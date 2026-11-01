@@ -1929,10 +1929,10 @@ export interface components {
             sourceSequence: number;
         };
         /**
-         * @description 넘긴 이유. 값이 늘 수 있다. 모르는 값은 이유 줄 없이 그린다. OFF 자동 답 꺼짐 / NEGOTIATION 가격, 외상, 교환, 반품 / MULTI_INTENT 한 번에 두 가지 / NO_INTENT 의도 못 읽음 / NOT_SUPPORTED 자동 답 없는 질문 / NO_CONTEXT 상품 문맥 없음 / NO_OPTIONS 게시 옵션 0개 / INVALID_TARGET 남의 것, 없는 것 / CLARIFY_AGAIN 되묻기 뒤 또 불명 / NOT_LISTED 다른 주문이에요 / NO_BACKORDER 열린 미송 0개 / NO_MATCH 말한 미송 없음 / STOCK_ZERO 재고 0 답 뒤 / ETA_UNKNOWN 입고일 미정 답 뒤 / ETA_PAST 입고일 지남 답 뒤 / PAYMENT_REPORT 입금했다는 말 / PERIOD 기간을 정한 미수 질문 / NO_RELATION 정산 기록 없음 / AMOUNT_UNSURE 잔액, 연체 확인 필요 / LOOKUP_FAILED 정산 조회 실패
+         * @description 넘긴 이유. 값이 늘 수 있다. 모르는 값은 이유 줄 없이 그린다. OFF 자동 답 꺼짐 / NEGOTIATION 가격, 외상, 교환, 반품 / MULTI_INTENT 한 번에 두 가지 / NO_INTENT 의도 못 읽음 / NOT_SUPPORTED 자동 답 없는 질문 / NO_CONTEXT 상품 문맥 없음 / NO_OPTIONS 게시 옵션 0개 / INVALID_TARGET 남의 것, 없는 것 / CLARIFY_AGAIN 되묻기 뒤 또 불명 / NOT_LISTED 다른 주문이에요 / NO_BACKORDER 열린 미송 0개 / NO_MATCH 말한 미송 없음 / STOCK_ZERO 재고 0 답 뒤 / ETA_UNKNOWN 입고일 미정 답 뒤 / ETA_PAST 입고일 지남 답 뒤 / PAYMENT_REPORT 입금했다는 말 / PERIOD 기간을 정한 미수 질문 / NO_RELATION 정산 기록 없음 / AMOUNT_UNSURE 잔액, 연체 확인 필요 / LOOKUP_FAILED 정산 조회 실패 / HUMAN_REQUEST 사장, 직원과 직접 이야기하길 원함(사장님이랑, 직원분, 상담, 통화, 전화 요청. 호칭만으로는 아님)
          * @enum {string}
          */
-        ChatHandoffReason: "OFF" | "NEGOTIATION" | "MULTI_INTENT" | "NO_INTENT" | "NOT_SUPPORTED" | "NO_CONTEXT" | "NO_OPTIONS" | "INVALID_TARGET" | "CLARIFY_AGAIN" | "NOT_LISTED" | "NO_BACKORDER" | "NO_MATCH" | "STOCK_ZERO" | "ETA_UNKNOWN" | "ETA_PAST" | "PAYMENT_REPORT" | "PERIOD" | "NO_RELATION" | "AMOUNT_UNSURE" | "LOOKUP_FAILED";
+        ChatHandoffReason: "OFF" | "NEGOTIATION" | "MULTI_INTENT" | "NO_INTENT" | "NOT_SUPPORTED" | "NO_CONTEXT" | "NO_OPTIONS" | "INVALID_TARGET" | "CLARIFY_AGAIN" | "NOT_LISTED" | "NO_BACKORDER" | "NO_MATCH" | "STOCK_ZERO" | "ETA_UNKNOWN" | "ETA_PAST" | "PAYMENT_REPORT" | "PERIOD" | "NO_RELATION" | "AMOUNT_UNSURE" | "LOOKUP_FAILED" | "HUMAN_REQUEST";
         /** @description 소매가 칩으로 고른 문의 문맥. 자유 문장이면 메시지에 null 이다 */
         ChatInquiry: {
             /**
