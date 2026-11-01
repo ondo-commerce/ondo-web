@@ -1,7 +1,38 @@
-import type { ChatHandoffReason, StockBand } from "./types";
+import type { ChatHandoffReason, ChatMessage, StockBand } from "./types";
 
 /** 화면 시각은 전부 이 시간대로 읽는다. 서버는 오프셋을 붙인 ISO를 준다 */
 export const CHAT_TIME_ZONE = "Asia/Seoul";
+
+/**
+ * "바닥"의 너비(loop-08c §4-2 1). log 아래 끝에서 이만큼 안이면 바닥이다 — 새 메시지를 따라 내려가고 읽음을 보낸다.
+ * 말풍선 한 줄(36px)보다 조금 넉넉하게. 0으로 두면 소수점 스크롤 하나로 바닥을 놓친다
+ */
+export const BOTTOM_SLACK_PX = 48;
+
+/**
+ * 위로 스크롤해 log `scrollTop`이 이만큼 이하가 되면 이전 장을 자동으로 부른다(D45, §4-1 2-1).
+ * 맨 위에 닿기 전에 요청이 떠나 있어 사장은 대개 "불러오는 중"부터 본다(디자인 결정 89)
+ */
+export const HISTORY_AUTO_LOAD_PX = 200;
+
+/** 이전 메시지 자리 글(디자인 결정 81~84, 와이어프레임 `_08c.py`) */
+export const HISTORY_TEXT = {
+  more: "이전 메시지 보기",
+  loading: "불러오는 중",
+  failed: "이전 메시지를 못 불러왔어요",
+  retry: "다시 시도",
+  end: "대화 처음이에요",
+} as const;
+
+/** 이 앱에서 "상대"(Q3 ①). `새 메시지 N개`의 N은 이 sender의 말만 센다. 소매 앱은 WHOLESALER다(08d) */
+export const COUNTERPART_SENDER = "RETAILER" satisfies ChatMessage["sender"];
+
+/** `새 메시지 N개` 버튼 글(§4-2 3, 디자인 결정 88). 보이는 글로 이름이 시작한다 — 음성 명령도 맞게 */
+export const NEW_MESSAGE_TEXT = {
+  countPrefix: "새 메시지 ",
+  countSuffix: "개",
+  jump: "아래로 이동",
+} as const;
 
 /** 목록 한 페이지. 서버 기본값과 같다 */
 export const ROOM_PAGE_SIZE = 30;

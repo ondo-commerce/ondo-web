@@ -2,6 +2,9 @@ import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import {
   BODY_COUNTER_FROM,
   BODY_MAX,
+  BOTTOM_SLACK_PX,
+  HISTORY_AUTO_LOAD_PX,
+  NEW_MESSAGE_TEXT,
   CHAT_TIME_ZONE,
   DRAFT_KEY_PREFIX,
   HANDOFF_REASON_TEXT,
@@ -24,6 +27,7 @@ import type {
   ChatAutoReply,
   ChatHandoffReason,
   ChatMessage,
+  ChatMessagePageMeta,
   ChatReadResult,
   ChatRoomPage,
   ChatRoomRowView,
@@ -35,6 +39,8 @@ import type {
   FactLine,
   FactPart,
   FactsView,
+  HistorySlot,
+  HistoryStatus,
   PendingByRoom,
   PendingMessage,
   ReadMarks,
@@ -354,6 +360,121 @@ export function advanceCursor(
   page: readonly ChatMessage[],
 ): number {
   return page.reduce((max, m) => Math.max(max, m.sequence), cursor);
+}
+
+/* ------------------------------------------------------------------------
+ * 이전 메시지와 위치 보존(loop-08c S2)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 이전 장(before) 응답을 캐시에 합친다(§4-1 3). 겹치는 sequence는 하나만, **cursor는 그대로**다 — cursor는
+ * polling이 빠짐없이 이어 받은 위쪽 끝이라 옛 메시지와 상관없다. `historyHasMore`는 이 응답의 `hasMore`
+ * ("더 오래된 것이 남았다")로 바꾼다. 상대 읽음은 meta에도 와서 큰 쪽으로 합친다(내려가지 않는다).
+ * 부르는 쪽이 **끝날 때의** 캐시를 넘긴다 — 기다리는 사이 polling이 붙인 메시지를 덮지 않게
+ */
+export function mergeOlder(
+  thread: ChatThread,
+  page: { data: readonly ChatMessage[]; meta: ChatMessagePageMeta },
+): ChatThread {
+  return {
+    ...thread,
+    messages: mergeMessages(thread.messages, page.data),
+    historyHasMore: page.meta.hasMore,
+    historyFetched: true,
+    historyStatus: "idle",
+    counterpartRead: mergeCounterpartRead(
+      thread.counterpartRead,
+      page.meta.counterpartLastReadSequence,
+    ),
+  };
+}
+
+/** log가 바닥인가(§4-2 1). 아래 끝까지 남은 거리가 `BOTTOM_SLACK_PX` 이하 */
+export function isAtBottom(
+  scrollHeight: number,
+  scrollTop: number,
+  clientHeight: number,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= BOTTOM_SLACK_PX;
+}
+
+/** 자동 불러오기 판정에 드는 값. 하나라도 거짓이면 부르지 않는다(§4-1 2-1) */
+export interface AutoLoadInput {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  /** 방을 연 뒤(또는 앞 이전 장을 합친 뒤) 사장이 직접 위로 스크롤했나. 프로그램이 옮긴 스크롤은 아니다 */
+  userScrolled: boolean;
+  historyHasMore: boolean;
+  historyStatus: HistoryStatus;
+  sessionLost: boolean;
+}
+
+/**
+ * 위로 스크롤했을 때 이전 장을 자동으로 부를까(D45, §4-1 2-1). 온라인 여부는 여기서 안 본다 — 오프라인이면
+ * 부르는 쪽(`fetchOlder`)이 요청 없이 실패 줄을 바로 띄운다(§4-1 6). 짧은 방(내용이 log를 못 넘침)은
+ * 스크롤이 없어 자동이 못 걸린다 — 그 방은 버튼이 길이다(S2-19 ②)
+ */
+export function shouldAutoLoadOlder(input: AutoLoadInput): boolean {
+  return (
+    input.historyHasMore &&
+    input.historyStatus === "idle" &&
+    !input.sessionLost &&
+    input.userScrolled &&
+    input.scrollHeight > input.clientHeight &&
+    input.scrollTop <= HISTORY_AUTO_LOAD_PX
+  );
+}
+
+/**
+ * 맨 위 자리에 무엇을 그리나(디자인 결정 81~84). 세션이 끊겼으면 다른 무엇보다 잠긴 버튼이다 — 이유는
+ * 입력창 아래 끊김 줄이 말한다(결정 83). 끝(`hasMore` false)은 이전 장을 받아 본 방에서만 문구를 쓴다 —
+ * 처음부터 50개 이하인 방은 아무것도 없다(§4-1 5)
+ */
+export function historySlotOf(
+  thread: Pick<
+    ChatThread,
+    "historyHasMore" | "historyFetched" | "historyStatus"
+  >,
+  sessionLost: boolean,
+): HistorySlot {
+  if (thread.historyHasMore) {
+    if (sessionLost) return "locked";
+    if (thread.historyStatus === "loading") return "loading";
+    if (thread.historyStatus === "failed") return "failed";
+    return "more";
+  }
+  return thread.historyFetched ? "end" : "none";
+}
+
+/**
+ * 바닥을 떠난 뒤 붙은 메시지 중 상대가 보낸 수(§4-2 3-1, Q3 ①). `since` = 바닥을 떠날 때 그려져 있던 가장 큰
+ * sequence — 그 사이 위에 붙은 옛 메시지는 sequence가 작아 안 센다. 넘김 줄은 상대 말이 아니라 안 센다.
+ * 상대는 앱이 정한다: 도매 = RETAILER(소매는 08d에서 WHOLESALER)
+ */
+export function newMessageCount(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+  since: number,
+  counterpart: ChatMessage["sender"],
+): number {
+  return messages.filter(
+    (m) =>
+      m.sequence > since && m.sender === counterpart && m.kind !== "HANDOFF",
+  ).length;
+}
+
+/** 새 메시지 버튼에 보이는 글. 상대 말이 0개여도 새 줄이 있으면 내려갈 길은 남긴다(§4-2 3-3) */
+export function newMessageText(count: number): string {
+  return count >= 1
+    ? `${NEW_MESSAGE_TEXT.countPrefix}${count}${NEW_MESSAGE_TEXT.countSuffix}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/** 새 메시지 버튼 이름. 보이는 글로 시작해 할 일을 붙인다 — "새 메시지 2개, 아래로 이동"(디자인 결정 88) */
+export function newMessageLabel(count: number): string {
+  return count >= 1
+    ? `${newMessageText(count)}, ${NEW_MESSAGE_TEXT.jump}`
+    : NEW_MESSAGE_TEXT.jump;
 }
 
 /** 화면에 그린 가장 큰 sequence. 읽음 요청에 쓴다 */

@@ -59,7 +59,29 @@ export interface ChatThread {
    * 아직 안 읽었으면 null
    */
   counterpartRead: number | null;
+  /**
+   * 더 오래된 메시지가 서버에 남았나(loop-08c §4-1 1). 첫 장(인자 없음)과 이전 장(before) 응답의 `meta.hasMore`만
+   * 이 칸을 바꾼다. polling(after)의 `hasMore`는 "더 새 것이 남았다"라 뜻이 달라 건드리지 않는다(S2-7)
+   */
+  historyHasMore: boolean;
+  /** 이 방에서 이전 장을 한 번이라도 받았나. 끝에 닿았을 때 `대화 처음이에요`를 그릴지(§4-1 5) */
+  historyFetched: boolean;
+  /**
+   * 이전 장 요청 상태. 방 패널이 아니라 캐시에 둔다 — 응답 전에 방을 옮겼다 돌아와도 날아가는 중이면 다시 안 보내고
+   * (§4-1 2-3, S2-15), 실패면 자동 불러오기가 멈춘 채로 남는다
+   */
+  historyStatus: HistoryStatus;
 }
+
+/**
+ * 이전 장 요청 상태(loop-08c §4-1). `loading`이면 같은 방의 이전 장 요청은 더 만들지 않는다(한 번에 하나, S2-3).
+ * `failed`면 자동 불러오기를 멈추고 사장이 `다시 시도`를 눌러야 다시 묻는다(S2-5, S2-17)
+ */
+export type HistoryStatus = "idle" | "loading" | "failed";
+
+/** 맨 위 자리 하나가 그릴 것(디자인 결정 81~84, 89). `ChatRoomPanel`이 `historySlotOf`로만 만든다 */
+export type HistorySlot =
+  "none" | "more" | "loading" | "failed" | "locked" | "end";
 
 /** 계약 `chatRooms` 쿼리 `filter`(초안 칸, #326) */
 export type ChatRoomsFilter = NonNullable<
