@@ -897,3 +897,72 @@ describe("08c S3 넘김 낱말 — 사람 요청, 협상 17개 + DC", () => {
       expect(decideOnce(body).kind, body).toBe("AUTO_REPLY");
   });
 });
+
+describe("08c 리뷰 R3 R4 R5 — 사람 요청은 요청형만, 보조 낱말 허용, 외상 활용형", () => {
+  const reasonOf = (body: string) => {
+    const d = decideOnce(body);
+    return d.kind === "HANDOFF" ? d.reason : d.kind;
+  };
+
+  it('R3 도매처 102 상품 2004 문맥 "보통 화이트 M 재고 있어요?" → 재고 자동 답(공백 지운 "보통화이트"의 "통화"는 사람 요청 아님)', () => {
+    const d = decideInquiry({
+      body: "보통 화이트 M 재고 있어요?",
+      inquiry: null,
+      now: BASE,
+      wholesalerId: 102,
+      settings: DEFAULT_AUTO_REPLY_SETTINGS,
+      context: { listingId: 2004, at: BASE - 2 * MINUTE },
+      history: [],
+      catalog: CATALOG,
+      ...ROOM1,
+    });
+    expect(d.kind).toBe("AUTO_REPLY");
+    expect(d.kind === "AUTO_REPLY" ? d.intent : null).toBe("STOCK");
+  });
+
+  it('R3 "직원분이 입금했어요" → PAYMENT_REPORT(직원분은 호칭일 뿐), "보상 담당자 있나요"의 "상담"도 아님', () => {
+    expect(decideOnce("직원분이 입금했어요")).toEqual({
+      kind: "HANDOFF",
+      reason: "PAYMENT_REPORT",
+      intent: "RECEIVABLE",
+    });
+    expect(reasonOf("보상 담당자 있나요")).not.toBe("HUMAN_REQUEST");
+  });
+
+  it('R4 "전화 좀 주세요. 레드 M 재고 있어요?" 같은 보조 낱말(좀, 한번) → 재고보다 먼저 HUMAN_REQUEST', () => {
+    for (const body of [
+      "전화 좀 주세요. 레드 M 재고 있어요?",
+      "전화 한번 주세요",
+      "전화 한 번 부탁드려요",
+      "직원분 좀 바꿔 주세요",
+    ])
+      expect(reasonOf(body), body).toBe("HUMAN_REQUEST");
+  });
+
+  it("R3 R4 사람 요청 요청형은 그대로(U01~U06 문장)", () => {
+    for (const body of [
+      "사장님이랑 통화하고 싶어요",
+      "사장님과 이야기하고 싶어요",
+      "직원분 바꿔 주세요",
+      "상담 가능할까요?",
+      "통화 가능해요?",
+      "전화 주세요",
+    ])
+      expect(reasonOf(body), body).toBe("HUMAN_REQUEST");
+  });
+
+  it('R5 "외상 되나요?", "외상 될까요?", "외상 해 주세요", "외상 할 수 있어요?" → NEGOTIATION', () => {
+    for (const body of [
+      "외상 되나요?",
+      "외상 될까요?",
+      "외상 해 주세요",
+      "외상 할 수 있어요?",
+    ])
+      expect(reasonOf(body), body).toBe("NEGOTIATION");
+  });
+
+  it("R5 D41 금액 문장은 협상으로 안 빠진다", () => {
+    for (const body of RECEIVABLE_AMOUNT_QUESTIONS)
+      expect(reasonOf(body), body).not.toBe("NEGOTIATION");
+  });
+});
