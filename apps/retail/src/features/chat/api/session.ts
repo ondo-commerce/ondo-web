@@ -56,21 +56,59 @@ function markSessionLost(queryClient: QueryClient): void {
 /**
  * 채팅 요청 하나를 감싼다. 이미 끊겼으면 **요청을 만들지 않고** 던지고, 401이면 끊김으로 표시하고 던진다.
  * 던지는 건 `ChatSessionLostError`라 공용 처리가 `/login`으로 보내지 않는다.
+ *
+ * **시작 때 세션 세대를 잡는다**(loop-08c S7, 도매 `session.ts`와 같은 규칙). 로그아웃, 로그인이 캐시를 지운 뒤
+ * 도착한 응답은 성공이든 401이든 버린다 — 앞 계정 polling의 늦은 401이 끊김 칸을 true로 만들면 다음에 로그인한
+ * 소매처의 방이 첫 조회부터 잠긴다(S7-3). 늦은 성공도 queryFn 안에서 다른 칸을 고치는 경우(방 머리 → 메시지 캐시,
+ * 보내기 → 메시지 캐시)가 있어 같이 막는다(S7-2).
  */
 export async function guardSession<T>(
   queryClient: QueryClient,
   run: () => Promise<T>,
 ): Promise<T> {
   if (isSessionLost(queryClient)) throw new ChatSessionLostError();
+  const epoch = sessionEpoch;
+  let result: T;
   try {
-    return await run();
+    result = await run();
   } catch (error) {
+    if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
     if (isUnauthorized(error)) {
       markSessionLost(queryClient);
       throw new ChatSessionLostError();
     }
     throw error;
   }
+  if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+  return result;
+}
+
+/** 세션이 바뀌기 전에 떠난 채팅 응답. 지운 캐시에 아무것도 쓰지 않으려고 던진다. `ApiError`가 아니라 공용 처리가 무시한다 */
+export class ChatStaleResponseError extends Error {
+  constructor() {
+    super("세션이 바뀌기 전에 떠난 채팅 응답");
+    this.name = "ChatStaleResponseError";
+  }
+}
+
+/**
+ * 세션 세대. 로그아웃, 로그인 때 오른다(`clearChatCache`). 요청은 시작 때 값을 쥐고, 끝났을 때 값이 바뀌었으면
+ * 결과를 캐시와 화면에 넣지 않는다 — A가 띄운 요청의 응답이 B 로그인 뒤에 도착하는 경우
+ */
+let sessionEpoch = 0;
+
+/**
+ * 세션이 바뀔 때(로그아웃 누름, 로그인 성공) 채팅 캐시를 전부 버린다. 날아가는 조회는 취소하고 지운다 — 취소된
+ * 요청의 응답은 TanStack이 버린다. QueryClient는 루트(`providers.tsx`)라 클라이언트 이동으로는 안 지워진다.
+ *
+ * 로그인 때도 지우는 이유: 로그아웃은 서버 응답을 기다린 뒤 `/login`으로 옮긴다. 그 사이 방 화면이 떠 있어
+ * polling이 A 쿠키로 한 번 더 받아 지운 칸을 다시 채울 수 있다. 로그인 순간엔 채팅 화면이 없다(`(account)`).
+ * 헤더 count(`clearHeaderSession`)와 같은 두 지점이다. 부르는 곳은 `app/`의 연결부다(feature끼리 import 금지)
+ */
+export function clearChatCache(queryClient: QueryClient): void {
+  sessionEpoch += 1;
+  void queryClient.cancelQueries({ queryKey: chatKeys.all });
+  queryClient.removeQueries({ queryKey: chatKeys.all });
 }
 
 /** 화면이 보는 값. 요청을 내지 않는 캐시 칸이다(`queryFn`은 쓰지 않는 기본값) */

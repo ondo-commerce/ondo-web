@@ -11,6 +11,7 @@ import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 import { isCredentialFailure, useLoginMutation } from "../api/session";
+import { runSessionChange } from "../sessionChange";
 import {
   ACCOUNT_PATH,
   CONTACT_LINE,
@@ -93,6 +94,8 @@ export function LoginView() {
        다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다.
        헤더 count와 알림 캐시는 그 전에 버린다 — 다른 계정으로 들어왔으면 앞 계정 행이 남아 있다(06b §4-1 3 ①) */
     await clearHeaderSession(queryClient);
+    /* 채팅 캐시도 한 번 더 — 로그아웃 응답을 기다리는 사이 방 polling이 앞 계정 값을 다시 채웠을 수 있다(loop-08c S7) */
+    runSessionChange();
     router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };
