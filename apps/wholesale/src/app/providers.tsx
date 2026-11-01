@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
 import { isSessionLoss, shouldRedirectOnSessionLoss } from "./sessionLoss";
+import { SignOutCleanup } from "./SignOutCleanup";
 
 /**
  * 세션이 끊긴 걸 알아채는 유일한 지점.
@@ -102,6 +103,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* 목 준비와 상관없이 늘 떠 있어야 한다 — 로그아웃 정리 등록부(loop-08b M2) */}
+      <SignOutCleanup />
       <MockGate>{children}</MockGate>
     </QueryClientProvider>
   );

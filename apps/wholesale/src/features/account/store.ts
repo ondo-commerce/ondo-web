@@ -288,8 +288,37 @@ export function signInWithStatus(
 export function signOut(): void {
   const current = ensureLoaded();
   const next: SessionState = { ...current, loaded: true, email: null };
+  /* 세션을 닫기 **전에** 지운다. 닫으면 가드가 ERP 화면을 내리고, 내려가는 입력창이 마지막 글을 저장한다 —
+     지우기가 그 뒤면 순서에 기대게 된다. 저장 쪽도 세대 번호로 막지만(chat `draftStore`) 앞에서 끝낸다 */
+  for (const cleanup of signOutCleanups) {
+    try {
+      cleanup();
+    } catch {
+      /* 정리 하나가 실패해도 로그아웃은 끝나야 한다 */
+    }
+  }
   writeStorage(next);
   commit(next);
+}
+
+/**
+ * 로그아웃 때 같이 지울 것(loop-08b Q2 — 채팅의 쓰던 글). 덮어쓰기와 달리 **사람에게 딸린 화면 기억**이라
+ * 공용 단말에서 다음 사람이 보면 안 된다. 이 feature는 무엇을 지우는지 모른다 — `app/`이 끼워 넣는다
+ * (feature끼리 import 금지). 돌려준 함수로 뺀다
+ */
+const signOutCleanups = new Set<() => void>();
+
+export function onSignOut(cleanup: () => void): () => void {
+  signOutCleanups.add(cleanup);
+  return () => {
+    signOutCleanups.delete(cleanup);
+  };
+}
+
+/** 로그인한 이메일(소문자). 판정 전, 로그아웃이면 null */
+export function useSessionEmail(): string | null {
+  const session = useSession();
+  return session.state === "signedIn" ? session.account.email : null;
 }
 
 /*
