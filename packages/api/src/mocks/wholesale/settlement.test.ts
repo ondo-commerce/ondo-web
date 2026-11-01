@@ -186,6 +186,19 @@ describe("S4-3 오래된 입금부터 끌어 쓴다", () => {
     ]);
     expect(next.prepaidRemaining).toBe(0);
   });
+
+  it("리뷰 R6 시간대가 섞여도 시각 순: A 3,000(09:00+09:00 = 00:00Z) + B 7,000(01:00Z), 이번 1,000에 6,000 → 1,000, A 3,000, B 2,000", async () => {
+    // 문자열로 비교하면 "…T01:00:00Z" < "…T09:00:00+09:00"이라 B가 먼저 나간다
+    const a = await payOk(3_000, [], "2026-09-01T09:00:00+09:00");
+    const b = await payOk(7_000, [], "2026-09-01T01:00:00Z");
+    const p = await payOk(1_000, [{ orderId: 7004, amount: 6_000 }]);
+    expect(shape(p)).toEqual([
+      [7004, p.id, 1_000],
+      [7004, a.id, 3_000],
+      [7004, b.id, 2_000],
+    ]);
+    expect(p.prepaidRemaining).toBe(5_000);
+  });
 });
 
 describe("S4-4 배분 취소", () => {

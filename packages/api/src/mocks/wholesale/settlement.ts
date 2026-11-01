@@ -225,7 +225,10 @@ function planAllocations(
     { paymentId: null, left: amount },
     ...payments
       .filter((p) => p.retailerId === retailerId)
-      .sort((a, b) => a.paidAt.localeCompare(b.paidAt) || a.id - b.id)
+      /* 시각으로 비교한다(리뷰 R6). paidAt은 요청이 준 문자열 그대로라 "+09:00"과 "Z"가 섞이면 글자 순이 시각 순과 다르다 */
+      .sort(
+        (a, b) => Date.parse(a.paidAt) - Date.parse(b.paidAt) || a.id - b.id,
+      )
       .map((p) => ({ paymentId: p.id, left: remainingOf(p) })),
   ];
   const plan: PlannedAllocation[] = [];
