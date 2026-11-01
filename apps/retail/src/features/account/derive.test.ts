@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { STORE_NAME_FALLBACK } from "./constants";
-import { consentRecords, storeNameLabel } from "./derive";
+import {
+  consentRecords,
+  parseSessionBroadcast,
+  storeNameLabel,
+} from "./derive";
+
+describe("parseSessionBroadcast (loop-08c 리뷰 R8)", () => {
+  it("login, logout만 읽는다", () => {
+    expect(parseSessionBroadcast({ change: "login" })).toBe("login");
+    expect(parseSessionBroadcast({ change: "logout" })).toBe("logout");
+  });
+
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["문자열", "logout"],
+    ["change 없음", {}],
+    ["모르는 값", { change: "refresh" }],
+  ])("모양이 다르면(%s) 무시한다", (_, data) => {
+    expect(parseSessionBroadcast(data)).toBeNull();
+  });
+});
 
 /**
  * 헤더 칩·설정·주문 상세 수령 상호가 전부 `storeNameLabel`을 지난다. 예전에는

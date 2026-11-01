@@ -56,6 +56,21 @@ export function normalizeStoreName(
   return collapsed ? collapsed.slice(0, STORE_NAME_MAX) : null;
 }
 
+/** 탭 사이에 오가는 세션 변경(loop-08c 리뷰 R8) */
+export type SessionBroadcast = "login" | "logout";
+
+/**
+ * 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다.
+ * 소매 클라이언트는 계정 값을 들고 있지 않아(헤더는 상호만 받는다) 이메일을 싣지 않는다 — 받은 탭은 로그인이든
+ * 로그아웃이든 쿠키가 이제 자기가 그린 계정 것이라고 확신할 수 없다
+ */
+export function parseSessionBroadcast(data: unknown): SessionBroadcast | null {
+  if (typeof data !== "object" || data === null || !("change" in data))
+    return null;
+  const { change } = data;
+  return change === "login" || change === "logout" ? change : null;
+}
+
 /**
  * 승인 상태별로 사장이 있어야 할 화면.
  *

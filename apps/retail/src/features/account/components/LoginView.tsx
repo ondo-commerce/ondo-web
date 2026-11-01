@@ -11,7 +11,7 @@ import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 import { isCredentialFailure, useLoginMutation } from "../api/session";
-import { runSessionChange } from "../sessionChange";
+import { broadcastSessionChange, runSessionChange } from "../sessionChange";
 import {
   ACCOUNT_PATH,
   CONTACT_LINE,
@@ -96,6 +96,8 @@ export function LoginView() {
     await clearHeaderSession(queryClient);
     /* 채팅 캐시도 한 번 더 — 로그아웃 응답을 기다리는 사이 방 polling이 앞 계정 값을 다시 채웠을 수 있다(loop-08c S7) */
     runSessionChange();
+    /* 같은 쿠키를 보는 다른 탭은 앞 계정 화면을 그리고 있을 수 있다(loop-08c 리뷰 R8) */
+    broadcastSessionChange("login");
     router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };

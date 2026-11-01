@@ -2,12 +2,17 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { clearHeaderSession } from "@/shared/api/headerCounts";
 import { AccountMenu } from "@/shared/components/AccountMenu";
 import { useLogoutMutation } from "../api/session";
 import { ACCOUNT_PATH } from "../constants";
 import { storeInitial } from "../derive";
-import { runSessionChange } from "../sessionChange";
+import {
+  broadcastSessionChange,
+  runSessionChange,
+  watchOtherTabSessions,
+} from "../sessionChange";
 
 /**
  * 헤더 오른쪽 계정 칩. 상호명은 **서버가 `/me`로 읽어 내려준 값**이다 —
@@ -36,6 +41,8 @@ export function AccountChip({ storeName }: { storeName: string }) {
     void clearHeaderSession(queryClient);
     /* 채팅 목록, 대화, 끊김 표시도 같이(loop-08c S7-1) */
     runSessionChange();
+    /* 같은 쿠키를 보는 다른 탭에도(loop-08c 리뷰 R8) */
+    broadcastSessionChange("logout");
     /* 서버 세션을 먼저 끊고 나서 옮긴다. 실패해도 옮긴다 — 쿠키가 남아도 이
        브라우저에서 할 수 있는 일이 없고, 로그아웃을 누른 사람을 네트워크 사정
        때문에 붙잡아 두면 안 된다. `refresh`로 서버 컴포넌트가 끊긴 세션을 다시
@@ -48,6 +55,22 @@ export function AccountChip({ storeName }: { storeName: string }) {
         router.refresh();
       });
   };
+
+  /*
+   * 다른 탭에서 로그아웃하거나 로그인했다(loop-08c 리뷰 R8). 쿠키는 이제 이 탭이 그린 계정 것이 아니다 — 로그아웃과
+   * 같은 정리(헤더, 채팅 캐시와 세대)를 하고 로그인 화면으로 **전체 이동**한다. 클라이언트 이동이면 라우터 캐시가
+   * 앞 계정 서버 컴포넌트 결과를 되돌려 준다. 서버 로그아웃은 부르지 않는다 — 부르면 다른 탭의 새 세션까지 끊는다.
+   * 이 칩은 로그인한 셸에만 떠서, 로그아웃 상태의 탭(로그인, 가입 화면)은 끌려가지 않는다
+   */
+  useEffect(
+    () =>
+      watchOtherTabSessions(() => {
+        void clearHeaderSession(queryClient);
+        runSessionChange();
+        window.location.assign(ACCOUNT_PATH.login);
+      }),
+    [queryClient],
+  );
 
   return (
     <AccountMenu
