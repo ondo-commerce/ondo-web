@@ -560,7 +560,14 @@ export interface StepResult {
   required: boolean;
   sender: "RETAILER" | "WHOLESALER";
   expect: GoldenExpect;
+  /** 판정 투영. 기대값과 비교한다(판정 정확도). v3까지는 판정에서, v4는 남긴 줄에서 읽는다 */
   actual: GoldenExpect;
+  /**
+   * 이 단계에서 **방에 실제로 남긴 줄**의 kind(`linesToAppend` 뒤). 발송 지표(autoSent, autoWrong, handoffSafe)는
+   * 이것만 본다(loop-08b M5). v3 판정 투영은 생성 줄을 안 거쳐서, 줄 만들기가 비어도 "자동 답 35개를 보냈다"로 셌다.
+   * 사장 글은 빈 배열
+   */
+  sent: readonly string[];
 }
 
 const MINUTE = 60_000;
@@ -628,6 +635,7 @@ export function runScenario(
         sender: "WHOLESALER",
         expect: step.expect,
         actual: { openHandoff: openHandoffOf(history) !== null },
+        sent: [],
       };
     }
     const decision = decideInquiry({
@@ -675,6 +683,7 @@ export function runScenario(
         (s.since ?? 0) >= 4
           ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
           : projectStep(decision, lines, now),
+      sent: kept.map((line) => line.kind),
     };
   });
 }
@@ -780,16 +789,21 @@ export function goldenScore(
   const exact = results.filter((r) =>
     sameProjection(r.actual, r.expect),
   ).length;
-  const autoSent = count((x) => isAuto(x.r.actual));
+  /* 발송 지표 — 실제로 남긴 줄(`sent`)에서 센다(M5). 판정 정확도(exact, autoRight, clarifyRight, noneRight)는
+     투영(`actual`)과 기대의 일치로 따로 센다 */
+  const sentAuto = (x: (typeof labelled)[number]) =>
+    x.r.sent.includes("AUTO_REPLY");
+  const sentHandoff = (x: (typeof labelled)[number]) =>
+    x.r.sent.includes("HANDOFF");
+  const autoSent = count(sentAuto);
   const autoWrong = count(
-    (x) => isAuto(x.r.actual) && (x.label !== "AUTO" || !x.same),
+    (x) => sentAuto(x) && (x.label !== "AUTO" || !x.same),
   );
   const autoExpected = count((x) => x.label === "AUTO");
   const autoRight = count((x) => x.label === "AUTO" && x.same);
   const handoffExpected = count((x) => x.label === "HANDOFF");
   const handoffSafe = count(
-    (x) =>
-      x.label === "HANDOFF" && isHandoff(x.r.actual) && !isAuto(x.r.actual),
+    (x) => x.label === "HANDOFF" && sentHandoff(x) && !sentAuto(x),
   );
   const clarifyExpected = count((x) => x.label === "CLARIFY");
   const clarifyRight = count((x) => x.label === "CLARIFY" && x.same);

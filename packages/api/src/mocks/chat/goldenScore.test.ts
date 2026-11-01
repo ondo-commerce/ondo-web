@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GOLDEN,
   goldenScore,
+  kindsOf,
   runScenario,
   type GoldenExpect,
   type StepResult,
@@ -30,16 +31,21 @@ const CLARIFY: GoldenExpect = {
 };
 const SET = { version: 99, scenarios: [{}, {}] };
 
+/** 남긴 줄(`sent`)을 따로 안 주면 투영의 kind 그대로 — 판정대로 줄이 나간 경우 */
 const step = (
   expect: GoldenExpect,
   actual: GoldenExpect,
   sender: StepResult["sender"] = "RETAILER",
+  sent: readonly string[] = sender === "WHOLESALER"
+    ? []
+    : kindsOf(actual).filter((k): k is string => typeof k === "string"),
 ): StepResult => ({
   scenario: "T",
   required: false,
   sender,
   expect,
   actual,
+  sent,
 });
 
 describe("S2-1 손으로 만든 결과 6개", () => {
@@ -165,6 +171,42 @@ describe("S2-6 한 칸만 틀린 자동 답", () => {
     };
     // @ts-expect-error sender 가 없는 결과는 사장 글과 소매 단계를 가를 수 없어 받지 않는다
     expect(() => goldenScore([noSender], SET)).toThrow();
+  });
+});
+
+describe("M5 발송 지표는 남긴 줄에서, 판정 정확도는 투영에서", () => {
+  it("판정은 맞았는데 줄이 안 나갔다 → autoRight 1(판정), autoSent 0(발송)", () => {
+    const s = goldenScore([step(STOCK_AUTO, STOCK_AUTO, "RETAILER", [])], SET);
+    expect([s.exact, s.autoRight, s.autoSent, s.autoWrong]).toEqual([
+      1, 1, 0, 0,
+    ]);
+  });
+
+  it("넘김 판정인데 넘김 줄이 안 남았다 → handoffSafe 0", () => {
+    const s = goldenScore([step(HANDOFF, HANDOFF, "RETAILER", [])], SET);
+    expect([s.handoffExpected, s.handoffSafe]).toEqual([1, 0]);
+  });
+
+  it("넘김 판정인데 자동 답 줄이 남았다 → autoSent 1, autoWrong 1, handoffSafe 0", () => {
+    const s = goldenScore(
+      [step(HANDOFF, HANDOFF, "RETAILER", ["AUTO_REPLY", "HANDOFF"])],
+      SET,
+    );
+    expect([s.autoSent, s.autoWrong, s.handoffSafe]).toEqual([1, 1, 0]);
+  });
+
+  it("골든셋 전 소매 단계: 투영이 자동 답이면 남긴 줄에도 자동 답, 넘김이면 넘김 줄(v3 판정 투영 포함)", () => {
+    const results = GOLDEN.scenarios
+      .flatMap((s) => runScenario(s))
+      .filter((r) => r.sender === "RETAILER");
+    const mismatch = results.filter(
+      (r) =>
+        kindsOf(r.actual).includes("AUTO_REPLY") !==
+          r.sent.includes("AUTO_REPLY") ||
+        kindsOf(r.actual).includes("HANDOFF") !== r.sent.includes("HANDOFF"),
+    );
+    expect(mismatch.map((r) => r.scenario)).toEqual([]);
+    expect(results).toHaveLength(116);
   });
 });
 

@@ -13,3 +13,8 @@ export { ApprovalStatusView } from "./components/ApprovalStatusView";
 export { ErpGuard } from "./components/ErpGuard";
 export { LoginView } from "./components/LoginView";
 export { SignupView } from "./components/SignupView";
+/*
+ * 채팅 쓰던 글(loop-08b S3)이 이메일을 키로 쓰고 로그아웃 때 지워진다. chat feature가 여기를 직접 못 읽어서
+ * `app/`이 이 둘로 잇는다
+ */
+export { onSignOut, useSessionEmail } from "./store";

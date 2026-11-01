@@ -7,8 +7,8 @@ import { Bell } from "lucide-react";
 import { useCallback, useId, useRef, useState } from "react";
 import { CountBadge } from "./CountBadge";
 import { NotificationPanel } from "./NotificationPanel";
-import { notificationKeys } from "../api/keys";
 import { useMarkNotificationsReadMutation } from "../api/mutations";
+import { useNotificationKeys } from "../api/scope";
 import { bellBadge, hasNewer, unreadOf } from "../derive";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import { useSingleFlight } from "@/shared/lib/useSingleFlight";
@@ -45,6 +45,7 @@ export function NotificationBell({
   counts: HeaderCounts | undefined;
 }) {
   const queryClient = useQueryClient();
+  const notificationKeys = useNotificationKeys();
   const titleId = useId();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -69,7 +70,7 @@ export function NotificationBell({
       unreadOf(
         queryClient.getQueryData<HeaderCounts>(notificationKeys.counts()),
       ),
-    [queryClient],
+    [queryClient, notificationKeys],
   );
 
   const onOpenChange = (next: boolean) => {

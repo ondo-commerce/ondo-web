@@ -8,7 +8,8 @@ import {
 } from "@tanstack/react-query";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
 import { useEffect } from "react";
-import { notificationKeys } from "./keys";
+import type { NotificationKeys } from "./keys";
+import { useNotificationKeys } from "./scope";
 import { NOTIFICATION_PAGE_SIZE, NOTIFICATION_PATH } from "../constants";
 import { failedCounts, headerPollDelayMs } from "../derive";
 import type {
@@ -36,6 +37,7 @@ let issued = 0;
 /** count 1회. 던지지 않는다 — 실패도 값으로 돌려준다(`HeaderCounts` 주석) */
 async function fetchHeaderCounts(
   queryClient: QueryClient,
+  notificationKeys: NotificationKeys,
 ): Promise<HeaderCounts> {
   const started = ++issued;
   try {
@@ -72,14 +74,15 @@ async function fetchHeaderCounts(
  */
 export function useHeaderCountsQuery() {
   const queryClient = useQueryClient();
+  const notificationKeys = useNotificationKeys();
   useEffect(() => {
     const key = notificationKeys.counts();
     if (queryClient.getQueryData<HeaderCounts>(key)?.kind === "unauthorized")
       void queryClient.resetQueries({ queryKey: key, exact: true });
-  }, [queryClient]);
+  }, [queryClient, notificationKeys]);
   return useQuery({
     queryKey: notificationKeys.counts(),
-    queryFn: () => fetchHeaderCounts(queryClient),
+    queryFn: () => fetchHeaderCounts(queryClient, notificationKeys),
     enabled: (query) => query.state.data?.kind !== "unauthorized",
     refetchInterval: (query) => headerPollDelayMs(query.state.data),
     refetchIntervalInBackground: false,
@@ -111,6 +114,7 @@ async function headerSafe<T>(run: () => Promise<T>): Promise<T> {
  * 경계로 쪼개면 머리 줄(제목, `모두 읽음`)까지 같이 사라진다(디자인 결정 35 "머리 줄은 셋 다 그린다").
  */
 export function useNotificationListQuery() {
+  const notificationKeys = useNotificationKeys();
   return useInfiniteQuery({
     queryKey: notificationKeys.list(),
     queryFn: async ({ pageParam }): Promise<FetchedNotificationPage> => {

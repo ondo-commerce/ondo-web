@@ -94,15 +94,33 @@ export function mergeDrafts(received, drafts) {
  *     wholesalerId 를 다 optional 로 단 평평한 객체로 내면 받은 쪽이 이긴다(loop-06b Codex 13). 칸이 다 있어서
  *     2번 검사도, typecheck 도 통과한다 — 그런데 "ORDER 인데 orderId 없음"을 타입이 더는 막지 않는다.
  *
+ *  4. drafts op 의 파라미터 중 `x-ondo-draft: true`가 붙은 것이 병합 결과의 같은 op 에 (이름, in 이 같게) 있다.
+ *     BE 가 같은 op 를 먼저 내면 받은 쪽이 이기므로, 초안이 기존 op 에 더한 쿼리는 이 검사만 지킨다.
+ *
  * 속성 단위 표시와 스키마 단위 `oneOf`만 보는 이유: drafts 에는 `ErrorResponse`처럼 BE 것을 옮겨 둔 스키마도 있다.
  * 그 모양 차이까지 막으면 BE 스펙을 받을 때마다 거짓 경보가 난다.
  */
 export function checkDraftSurvival(merged, drafts) {
   const problems = [];
   for (const [path, operations] of Object.entries(drafts.paths ?? {})) {
-    for (const method of Object.keys(operations)) {
-      if (merged.paths?.[path]?.[method] === undefined)
-        problems.push(`${method.toUpperCase()} ${path} 사라짐`);
+    for (const [method, operation] of Object.entries(operations)) {
+      const label = `${method.toUpperCase()} ${path}`;
+      const got = merged.paths?.[path]?.[method];
+      if (got === undefined) {
+        problems.push(`${label} 사라짐`);
+        continue;
+      }
+      // 4. 초안 op 에 초안이 **더한 파라미터**(`x-ondo-draft: true`)가 받은 op 에도 있다(loop-08b S1-1).
+      //    예: BE 가 `chatRooms`를 filter, q 없이 먼저 구현하면 받은 op 가 이겨 두 쿼리가 조용히 사라진다.
+      //    optional 쿼리라 codegen 뒤에도 컴파일은 통과하고, 화면은 조건을 보내는데 서버는 무시한다
+      for (const param of operation.parameters ?? []) {
+        if (param?.["x-ondo-draft"] !== true) continue;
+        const kept = (got.parameters ?? []).some(
+          (p) => p?.name === param.name && p?.in === param.in,
+        );
+        if (!kept)
+          problems.push(`${label} ${param.in} \`${param.name}\` 사라짐`);
+      }
     }
   }
   const mergedSchemas = merged.components?.schemas ?? {};
