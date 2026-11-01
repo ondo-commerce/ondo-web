@@ -111,6 +111,17 @@ type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
 export const CHAT_DELAY_OPS = ["room", "messages", "rooms", "send"] as const;
 type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
 
+/**
+ * messages 요청 종류(loop-08c §5-3 1). `fail`, `delay`의 `page`로 하나만 고른다 — 이전 메시지(before)와
+ * polling(after)의 응답 순서를 따로 늦추고 따로 실패시키려고. 쿼리로 가른다(`messagesPageOf`)
+ */
+export const CHAT_MESSAGES_PAGES = ["latest", "before", "after"] as const;
+export type ChatMessagesPage = (typeof CHAT_MESSAGES_PAGES)[number];
+
+/** 계획 저장 키. `page` 없는 계획은 op 이름, 있는 계획은 `messages:before`처럼 */
+type FailKey = ChatFailOp | `messages:${ChatMessagesPage}`;
+type DelayKey = ChatDelayOp | `messages:${ChatMessagesPage}`;
+
 /** 방 목록 필터와 검색(초안 쿼리 `filter`, `q`, loop-08b §5-2) */
 type ChatRoomsQuery = NonNullable<
   WholesalePaths["/api/wholesale/chat/rooms"]["get"]["parameters"]["query"]
@@ -163,8 +174,8 @@ let nextMessageId = 1;
 const idempotency = new Map<string, IdempotencyRecord>();
 /** `fail500once`가 이미 한 번 실패시킨 키 */
 const failedOnceKeys = new Set<string>();
-const failPlan = new Map<ChatFailOp, { status: number; times: number }>();
-const delayPlan = new Map<ChatDelayOp, { ms: number; times: number }>();
+const failPlan = new Map<FailKey, { status: number; times: number }>();
+const delayPlan = new Map<DelayKey, { ms: number; times: number }>();
 /**
  * 자동 답 설정(도매처 단위, 초안 op `autoReplySettings`). 목은 "나"(101) 한 벌만 둔다 — 다른 도매처 방은
  * 늘 켜짐으로 판정한다. 새로고침하면 켜짐으로 돌아간다(BE는 저장, §4-3)
@@ -1079,31 +1090,96 @@ function invalid(field: string, code: string, message: string) {
   return fail(400, [{ field, code, message }]);
 }
 
-/** `/__mock/chat/fail`로 걸어 둔 실패. 걸려 있으면 1회 소모하고 그 응답을 돌려준다 */
-function plannedFailure(op: ChatFailOp) {
-  const plan = failPlan.get(op);
-  if (!consumeFailure(op) || plan === undefined) return null;
+/**
+ * 계획 하나를 1회 소모한다. `keys` 앞의 것이 먼저다 — `page`가 맞는 계획이 `page` 없는 계획보다 먼저 쓰인다
+ * (loop-08c §5-3 1). 쓴 계획의 값을 돌려주고, 없으면 null
+ */
+function takePlan<K, P extends { times: number }>(
+  plans: Map<K, P>,
+  keys: readonly K[],
+): P | null {
+  for (const key of keys) {
+    const plan = plans.get(key);
+    if (plan === undefined || plan.times <= 0) continue;
+    plan.times -= 1;
+    if (plan.times === 0) plans.delete(key);
+    return { ...plan };
+  }
+  return null;
+}
+
+function planKeys<Op extends string>(
+  op: Op,
+  page: ChatMessagesPage | undefined,
+): (Op | `messages:${ChatMessagesPage}`)[] {
+  return op === "messages" && page !== undefined
+    ? [`messages:${page}`, op]
+    : [op];
+}
+
+function isDelayOp(op: string): op is ChatDelayOp {
+  return CHAT_DELAY_OPS.some((o) => o === op);
+}
+
+/**
+ * messages 요청 종류. `beforeSequence`가 있으면 before, `afterSequence`가 있으면 after, 둘 다 없으면 latest.
+ * 둘 다 있으면(어차피 400) before로 본다. 빈 값은 없는 것으로 본다(`intParam`과 같다)
+ */
+function messagesPageOf(url: URL): ChatMessagesPage {
+  const has = (name: string) => {
+    const raw = url.searchParams.get(name);
+    return raw !== null && raw !== "";
+  };
+  if (has("beforeSequence")) return "before";
+  if (has("afterSequence")) return "after";
+  return "latest";
+}
+
+/**
+ * 손잡이 본문의 `page`. 없으면 undefined(그 op 전부), 맞는 값이면 그 값, 모르는 값이거나 messages 밖의 op에
+ * 붙였으면 null(→ 400). messages 밖은 요청 종류가 하나라 받으면 시험이 뜻과 다르게 돈다
+ */
+function knobPage(
+  op: string,
+  raw: unknown,
+): ChatMessagesPage | undefined | null {
+  if (raw === undefined) return undefined;
+  if (op !== "messages") return null;
+  return CHAT_MESSAGES_PAGES.find((p) => p === raw) ?? null;
+}
+
+function knobPageInvalid() {
+  return invalid(
+    "page",
+    "INVALID",
+    `page는 op messages에만, ${CHAT_MESSAGES_PAGES.join(" | ")}`,
+  );
+}
+
+/**
+ * `/__mock/chat/fail`로 걸어 둔 실패. 걸려 있으면 1회 소모하고 그 응답을 돌려준다.
+ * 같은 op에 지연도 걸려 있으면 **실패도 그만큼 늦게** 보낸다(loop-08c §5-3 2) — 로그아웃을 넘어 도착하는 늦은
+ * 401을 만들려고. 지연이 없으면 예전처럼 바로 돌아온다
+ */
+async function plannedFailure(op: ChatFailOp, page?: ChatMessagesPage) {
+  const plan = takePlan(failPlan, planKeys(op, page));
+  if (plan === null) return null;
+  if (isDelayOp(op)) await plannedDelay(op, page);
   return fail(plan.status);
 }
 
 /** 걸어 둔 실패가 있으면 1회 소모하고 true. HTTP 응답이 아닌 실패(미수 원본 조회)도 이걸로 본다 */
 function consumeFailure(op: ChatFailOp): boolean {
-  const plan = failPlan.get(op);
-  if (plan === undefined || plan.times <= 0) return false;
-  plan.times -= 1;
-  if (plan.times === 0) failPlan.delete(op);
-  return true;
+  return takePlan(failPlan, [op]) !== null;
 }
 
 /**
  * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 먼저 떠난 방 머리가 polling 뒤에 옛 읽음 값으로
  * 도착한다(S3-3). 소매 목, 도매 알림 목과 같은 규칙
  */
-async function plannedDelay(op: ChatDelayOp) {
-  const plan = delayPlan.get(op);
-  if (plan === undefined || plan.times <= 0) return;
-  plan.times -= 1;
-  if (plan.times === 0) delayPlan.delete(op);
+async function plannedDelay(op: ChatDelayOp, page?: ChatMessagesPage) {
+  const plan = takePlan(delayPlan, planKeys(op, page));
+  if (plan === null) return;
   await delay(plan.ms);
 }
 
@@ -1239,8 +1315,8 @@ const UUID_PATTERN =
 /** 스펙 자동 핸들러 **앞에** 놓는다. 같은 경로면 이쪽이 이긴다 */
 export const chatHandlers = [
   /** 자동 답 설정(초안 op `autoReplySettings`). 처음엔 전부 켜짐 */
-  http.get("*/api/wholesale/chat/auto-reply-settings", () => {
-    const planned = plannedFailure("settings");
+  http.get("*/api/wholesale/chat/auto-reply-settings", async () => {
+    const planned = await plannedFailure("settings");
     if (planned) return planned;
     return HttpResponse.json({ data: autoReplySettings });
   }),
@@ -1250,7 +1326,7 @@ export const chatHandlers = [
    * `/__mock/chat/fail {op: "settings", status}` — GET, PUT이 같은 계획을 쓴다
    */
   http.put("*/api/wholesale/chat/auto-reply-settings", async ({ request }) => {
-    const planned = plannedFailure("settings");
+    const planned = await plannedFailure("settings");
     if (planned) return planned;
     let raw: unknown;
     try {
@@ -1274,7 +1350,7 @@ export const chatHandlers = [
   }),
 
   http.get("*/api/wholesale/chat/rooms", async ({ request }) => {
-    const planned = plannedFailure("rooms");
+    const planned = await plannedFailure("rooms");
     if (planned) return planned;
     const url = new URL(request.url);
     const size = sizeOf(url, ROOM_PAGE_DEFAULT);
@@ -1320,8 +1396,8 @@ export const chatHandlers = [
    * 문의 지표(초안 op `inquiryStats`, loop-08 §5-2). 집계는 순수 함수 `../chat/inquiryStats.ts`, 여기는 쿼리 검사와
    * 저장소 전달만 한다. 기준 시각은 요청 시점의 `Date.now()`(e2e 는 `page.clock`, 테스트는 가짜 Date)
    */
-  http.get("*/api/wholesale/chat/inquiry-stats", ({ request }) => {
-    const planned = plannedFailure("stats");
+  http.get("*/api/wholesale/chat/inquiry-stats", async ({ request }) => {
+    const planned = await plannedFailure("stats");
     if (planned) return planned;
     const now = Date.now();
     const range = statsRange(new URL(request.url), now);
@@ -1337,7 +1413,7 @@ export const chatHandlers = [
   }),
 
   http.get("*/api/wholesale/chat/rooms/:roomId", async ({ params }) => {
-    const planned = plannedFailure("room");
+    const planned = await plannedFailure("room");
     if (planned) return planned;
     const r = myRoom(Number(params.roomId));
     if (r === undefined) return fail(404);
@@ -1349,12 +1425,13 @@ export const chatHandlers = [
   http.get(
     "*/api/wholesale/chat/rooms/:roomId/messages",
     async ({ params, request }) => {
-      const planned = plannedFailure("messages");
+      const url = new URL(request.url);
+      const page = messagesPageOf(url);
+      const planned = await plannedFailure("messages", page);
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
       if (r === undefined) return fail(404);
 
-      const url = new URL(request.url);
       const size = sizeOf(url, MESSAGE_PAGE_DEFAULT);
       if (size === null) return sizeInvalid();
       const after = intParam(url, "afterSequence", null);
@@ -1393,7 +1470,7 @@ export const chatHandlers = [
         maxSequence: maxSequence(r),
         counterpartLastReadSequence: r.retailerLastRead,
       };
-      await plannedDelay("messages");
+      await plannedDelay("messages", page);
       return HttpResponse.json({ data, meta });
     },
   ),
@@ -1408,7 +1485,7 @@ export const chatHandlers = [
   http.post(
     "*/api/wholesale/chat/rooms/:roomId/messages",
     async ({ params, request }) => {
-      const planned = plannedFailure("send");
+      const planned = await plannedFailure("send");
       if (planned) return planned;
       const key = request.headers.get("Idempotency-Key");
       if (key === null || !UUID_PATTERN.test(key))
@@ -1504,7 +1581,7 @@ export const chatHandlers = [
   http.post(
     "*/api/wholesale/chat/rooms/:roomId/read",
     async ({ params, request }) => {
-      const planned = plannedFailure("read");
+      const planned = await plannedFailure("read");
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
       if (r === undefined) return fail(404);
@@ -1613,18 +1690,29 @@ export const chatHandlers = [
     },
   ),
 
-  /** 다음 n회 실패. `{op, status = 500, times = 1}`. 메시지 조회 500(S3-9), backoff(S3-6)용 */
+  /**
+   * 다음 n회 실패. `{op, page?, status = 500, times = 1}`. 메시지 조회 500(S3-9), backoff(S3-6)용.
+   * `page`(latest | before | after)는 op messages에만 — 그 종류의 요청만 실패한다(loop-08c S1-1).
+   * 같은 op에 `delay`도 걸려 있으면 실패 응답도 그만큼 늦다(S1-3)
+   */
   http.post("*/__mock/chat/fail", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
+      page?: unknown;
       status?: number;
       times?: number;
     };
     const op = CHAT_FAIL_OPS.find((o) => o === input.op);
     if (op === undefined)
       return invalid("op", "INVALID", `op는 ${CHAT_FAIL_OPS.join(" | ")}`);
-    failPlan.set(op, { status: input.status ?? 500, times: input.times ?? 1 });
-    return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
+    const page = knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
+    const key: FailKey = page === undefined ? op : `messages:${page}`;
+    failPlan.set(key, {
+      status: input.status ?? 500,
+      times: input.times ?? 1,
+    });
+    return HttpResponse.json({ data: { op, page, ...failPlan.get(key) } });
   }),
 
   /**
@@ -1658,22 +1746,26 @@ export const chatHandlers = [
   ),
 
   /**
-   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send, ms, times = 1}`. 값은 요청 시점에 정한다.
-   * `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다)
+   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send, page?, ms, times = 1}`. 값은 요청 시점에 정한다.
+   * `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08c S1-2)
    */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
+      page?: unknown;
       ms?: number;
       times?: number;
     };
     const op = CHAT_DELAY_OPS.find((o) => o === input.op);
     if (op === undefined)
       return invalid("op", "INVALID", `op는 ${CHAT_DELAY_OPS.join(" | ")}`);
+    const page = knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
     if (typeof input.ms !== "number" || input.ms < 0)
       return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
-    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1 });
-    return HttpResponse.json({ data: { op, ...delayPlan.get(op) } });
+    const key: DelayKey = page === undefined ? op : `messages:${page}`;
+    delayPlan.set(key, { ms: input.ms, times: input.times ?? 1 });
+    return HttpResponse.json({ data: { op, page, ...delayPlan.get(key) } });
   }),
 
   /**

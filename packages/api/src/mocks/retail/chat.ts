@@ -22,7 +22,7 @@ import { RETAIL_ME_RETAILER_ID, RETAIL_WHOLESALERS } from "./parties";
  *
  * **시드와 저장소는 도매 목(`../wholesale/chat.ts`)의 것을 그대로 쓴다**(README "채팅 목" — 방 id 체계는
  * 하나다). 이 파일은 같은 방을 소매 쪽에서 보는 창문이다. 다른 점은 셋:
- * - "나" = 봄봄상회(retailerId 1). 보이는 방은 1(도매처 101)과 33(도매처 102). 나머지는 남의 방이라 404
+ * - "나" = 봄봄상회(retailerId 1, 기본값. `/__mock/chat/me`로 바꾼다). 보이는 방은 1(도매처 101)과 33(도매처 102). 나머지는 남의 방이라 404
  * - 오류 코드가 소매 어휘다(401 `UNAUTHORIZED`, 403 `ACCOUNT_NOT_APPROVED`)
  * - 응답의 `autoReply.facts`는 `ChatRetailFacts`로 바꿔 싣는다. **정확 수량(`availableQty`)은 응답 JSON에
  *   나타나지 않는다**(D31②) — 화면에서 가리는 게 아니라 싣지 않는다
@@ -41,8 +41,18 @@ type ChatSendResult = RetailSchema<"ChatSendResult">;
 type ChatRetailFacts = RetailSchema<"ChatRetailFacts">;
 type ChatMessageKind = RetailSchema<"ChatMessageKind">;
 
-/** 세션 없는 목의 "나". 주문, 미송 목과 같은 id. 원본은 `./parties.ts`(알림 목과 같이 쓴다) */
-export const CHAT_ME_RETAILER_ID = RETAIL_ME_RETAILER_ID;
+/**
+ * 세션 없는 목의 "나". 기본은 주문, 미송 목과 같은 id(`./parties.ts`, 알림 목과 같이 쓴다).
+ * `/__mock/chat/me {retailerId}`로 바꾸고 `reset`이 기본으로 되돌린다(loop-08c §5-3 3) — 공용 단말에서 다른
+ * 소매처가 로그인한 장면을 BE 없이 만들려고. 목록, 방, 메시지, 보내기, 읽음, 헤더 채팅 배지, 입금 손잡이가 이 값을 쓴다.
+ * 알림 목은 바꾸지 않는다(이번 회차 범위 밖)
+ */
+let meRetailerId = RETAIL_ME_RETAILER_ID;
+
+/** 지금 목의 "나" */
+export function chatMeRetailerId(): number {
+  return meRetailerId;
+}
 
 /** 대화할 수 있는 도매처. 원본은 `./parties.ts` */
 export const CHAT_WHOLESALERS = RETAIL_WHOLESALERS;
@@ -97,7 +107,7 @@ const failedOnceKeys = new Set<string>();
 function myRoom(roomId: number): ChatMockRoom | undefined {
   return chatStore
     .rooms()
-    .find((r) => r.roomId === roomId && r.retailerId === CHAT_ME_RETAILER_ID);
+    .find((r) => r.roomId === roomId && r.retailerId === meRetailerId);
 }
 
 function wholesalerName(wholesalerId: number): string {
@@ -243,12 +253,22 @@ function invalid(field: string, code: string, message: string) {
   return fail(400, [{ field, code, message }]);
 }
 
-function plannedFailure(op: FailOp) {
+/**
+ * 걸어 둔 실패. 같은 op에 지연도 걸려 있으면 실패도 그만큼 늦게 보낸다(loop-08c §5-3 2, 도매 목과 같다) —
+ * 앞 계정의 polling이 로그아웃 뒤에 401로 도착하는 장면(S7-3)을 만든다. 지연이 없으면 예전처럼 바로
+ */
+async function plannedFailure(op: FailOp) {
   const plan = failPlan.get(op);
   if (plan === undefined || plan.times <= 0) return null;
   plan.times -= 1;
   if (plan.times === 0) failPlan.delete(op);
-  return fail(plan.status);
+  const { status } = plan;
+  if (isDelayOp(op)) await plannedDelay(op);
+  return fail(status);
+}
+
+function isDelayOp(op: string): op is DelayOp {
+  return RETAIL_CHAT_DELAY_OPS.some((o) => o === op);
 }
 
 /**
@@ -267,7 +287,7 @@ async function plannedDelay(op: DelayOp) {
 function myUnreadChats(): number {
   return chatStore
     .rooms()
-    .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID)
+    .filter((r) => r.retailerId === meRetailerId)
     .reduce((sum, r) => sum + unreadCount(r), 0);
 }
 
@@ -284,7 +304,7 @@ export const retailChatHandlers = [
    * 손잡이가 `/__mock/chat/{fail,delay} {op: count}`라서 그걸 쓰는 06a e2e가 그대로 돈다
    */
   http.get("*/api/retail/notifications/unread-count", async () => {
-    const planned = plannedFailure("count");
+    const planned = await plannedFailure("count");
     if (planned) return planned;
     const data: RetailSchema<"RetailUnreadCount"> = {
       ...retailNotificationCount(),
@@ -300,7 +320,7 @@ export const retailChatHandlers = [
    * 첫 장부터 다시 받으면 보인다(§4-4 3 허용 한계)
    */
   http.get("*/api/retail/chat/rooms", async ({ request }) => {
-    const planned = plannedFailure("rooms");
+    const planned = await plannedFailure("rooms");
     if (planned) return planned;
     const url = new URL(request.url);
     const size = chatStore.sizeOf(url, ROOM_PAGE_DEFAULT);
@@ -313,7 +333,7 @@ export const retailChatHandlers = [
 
     const sorted = chatStore
       .rooms()
-      .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID)
+      .filter((r) => r.retailerId === meRetailerId)
       .sort(chatStore.compareRooms);
     const rest =
       cursor === null
@@ -346,7 +366,7 @@ export const retailChatHandlers = [
    * 대신 방의 상품 문맥을 이 값과 지금 시각으로 바꾼다(200, 201 둘 다, null이면 지운다. loop-05b S7-12)
    */
   http.post("*/api/retail/chat/rooms", async ({ request }) => {
-    const planned = plannedFailure("create");
+    const planned = await plannedFailure("create");
     if (planned) return planned;
     const input = (await request.json().catch(() => ({}))) as Partial<
       RetailSchema<"CreateChatRoomRequest">
@@ -361,9 +381,7 @@ export const retailChatHandlers = [
     const known = chatStore
       .rooms()
       .find(
-        (r) =>
-          r.wholesalerId === wholesalerId &&
-          r.retailerId === CHAT_ME_RETAILER_ID,
+        (r) => r.wholesalerId === wholesalerId && r.retailerId === meRetailerId,
       );
     if (known !== undefined) {
       chatStore.setContext(known, input.listingId);
@@ -377,7 +395,7 @@ export const retailChatHandlers = [
         { status: 200 },
       );
     }
-    const created = chatStore.addRoom(wholesalerId, CHAT_ME_RETAILER_ID);
+    const created = chatStore.addRoom(wholesalerId, meRetailerId);
     chatStore.setContext(created, input.listingId);
     return HttpResponse.json(
       { data: { ...summaryOf(created), counterpartLastReadSequence: 0 } },
@@ -386,7 +404,7 @@ export const retailChatHandlers = [
   }),
 
   http.get("*/api/retail/chat/rooms/:roomId", async ({ params }) => {
-    const planned = plannedFailure("room");
+    const planned = await plannedFailure("room");
     if (planned) return planned;
     const r = myRoom(Number(params.roomId));
     if (r === undefined) return fail(404);
@@ -401,7 +419,7 @@ export const retailChatHandlers = [
   http.get(
     "*/api/retail/chat/rooms/:roomId/messages",
     async ({ params, request }) => {
-      const planned = plannedFailure("messages");
+      const planned = await plannedFailure("messages");
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
       if (r === undefined) return fail(404);
@@ -464,7 +482,7 @@ export const retailChatHandlers = [
   http.post(
     "*/api/retail/chat/rooms/:roomId/messages",
     async ({ params, request }) => {
-      const planned = plannedFailure("send");
+      const planned = await plannedFailure("send");
       if (planned) return planned;
       const key = request.headers.get("Idempotency-Key");
       if (key === null || !chatStore.UUID_PATTERN.test(key))
@@ -571,7 +589,7 @@ export const retailChatHandlers = [
   http.post(
     "*/api/retail/chat/rooms/:roomId/read",
     async ({ params, request }) => {
-      const planned = plannedFailure("read");
+      const planned = await plannedFailure("read");
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
       if (r === undefined) return fail(404);
@@ -676,7 +694,7 @@ export const retailChatHandlers = [
       return invalid("amount", "INVALID", "amount(1 이상 숫자)가 필요합니다.");
     try {
       recordMockPayment({
-        retailerId: CHAT_ME_RETAILER_ID,
+        retailerId: meRetailerId,
         amount: input.amount,
         allocations: input.allocations ?? [],
       });
@@ -739,7 +757,32 @@ export const retailChatHandlers = [
   }),
 
   /**
-   * 시드로 되돌린다(도매 목의 시드와 미송 목도 같이). 소매 쪽 실패, 지연 계획도 비운다.
+   * 목의 "나"를 바꾼다 `{retailerId}`(loop-08c S1-4). 저장소는 그대로라 그 소매처의 시드 방이 보인다(소매처 2는
+   * 방 2). 방이 없는 소매처면 빈 목록. 1 이상 정수가 아니면 400. `reset`이 기본(1, 봄봄상회)으로 되돌린다
+   */
+  http.post("*/__mock/chat/me", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      retailerId?: unknown;
+    };
+    const id = input.retailerId;
+    if (typeof id !== "number" || !Number.isInteger(id) || id < 1)
+      return invalid(
+        "retailerId",
+        "INVALID",
+        "retailerId(1 이상 정수)가 필요합니다.",
+      );
+    meRetailerId = id;
+    return HttpResponse.json({
+      data: {
+        retailerId: meRetailerId,
+        rooms: chatStore.rooms().filter((r) => r.retailerId === meRetailerId)
+          .length,
+      },
+    });
+  }),
+
+  /**
+   * 시드로 되돌린다(도매 목의 시드와 미송 목도 같이). 소매 쪽 실패, 지연 계획도 비운다. "나"도 기본으로(loop-08c S1-4).
    * `{empty: true}` 내 방 0개(목록 빈 상태), `{noBackorders: true}` 미송 0건(자동 답 후보 0개),
    * `{rooms: n}`(n ≥ 2) 내 방 n개 = 시드 방 1, 33 + 가짜 방 n − 2개(loop-08 S1-7, 목록 두 장)
    */
@@ -768,9 +811,8 @@ export const retailChatHandlers = [
     });
     return HttpResponse.json({
       data: {
-        rooms: chatStore
-          .rooms()
-          .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID).length,
+        rooms: chatStore.rooms().filter((r) => r.retailerId === meRetailerId)
+          .length,
       },
     });
   }),
@@ -785,12 +827,9 @@ export const retailChatHandlers = [
 function addFillerRooms(total: number) {
   const mine = chatStore
     .rooms()
-    .filter((r) => r.retailerId === CHAT_ME_RETAILER_ID).length;
+    .filter((r) => r.retailerId === meRetailerId).length;
   for (let i = 0; i < total - mine; i++) {
-    const r = chatStore.addRoom(
-      FILLER_WHOLESALER_BASE + i,
-      CHAT_ME_RETAILER_ID,
-    );
+    const r = chatStore.addRoom(FILLER_WHOLESALER_BASE + i, meRetailerId);
     chatStore.append(r, {
       sender: "WHOLESALER",
       body: "이번 주 신상 올라왔어요",
@@ -813,8 +852,9 @@ export function resetRetailChatMock(
   options: { empty?: boolean; noBackorders?: boolean; rooms?: number } = {},
 ) {
   resetChatMock(undefined, { noBackorders: options.noBackorders === true });
-  if (options.empty === true)
-    chatStore.removeRetailerRooms(CHAT_ME_RETAILER_ID);
+  // "나"를 먼저 되돌린다 — 아래 empty, rooms가 기본 소매처 기준이다
+  meRetailerId = RETAIL_ME_RETAILER_ID;
+  if (options.empty === true) chatStore.removeRetailerRooms(meRetailerId);
   else if (options.rooms !== undefined) addFillerRooms(options.rooms);
   failPlan.clear();
   delayPlan.clear();
