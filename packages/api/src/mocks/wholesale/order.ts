@@ -359,6 +359,14 @@ export function allocateMockPayment(order: MockOrder, amount: number): void {
   order.allocatedAmount += amount;
 }
 
+/**
+ * 배분 취소 — 정산 목의 `POST /allocations/{id}/cancel`이 부른다. 그 줄 금액만큼 배정액을 빼서 주문 미수가
+ * 다시 는다(스펙). 줄 하나가 붙인 돈만 빼므로 0 밑으로 가지 않는다
+ */
+export function releaseMockAllocation(order: MockOrder, amount: number): void {
+  order.allocatedAmount -= amount;
+}
+
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
 
 function sum(items: readonly MockLine[], pick: (l: MockLine) => number) {
