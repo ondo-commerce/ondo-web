@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { CHAT_PATH } from "./queries";
+import { useChatCache } from "./scope";
 import { guardSession } from "./session";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import type { ChatReadResult, ChatSendResult } from "../types";
@@ -61,7 +62,7 @@ export function useSendMessageMutation() {
  * 호출마다 결과를 받는 `mutateAsync`를 쓴다.
  */
 export function useMarkReadMutation() {
-  const queryClient = useQueryClient();
+  const chat = useChatCache();
   return useMutation({
     mutationFn: ({
       roomId,
@@ -70,7 +71,7 @@ export function useMarkReadMutation() {
       roomId: number;
       lastReadSequence: number;
     }) =>
-      guardSession(queryClient, () =>
+      guardSession(chat, () =>
         apiFetch<ChatReadResult>(CHAT_PATH.read(roomId), {
           method: "POST",
           body: { lastReadSequence },

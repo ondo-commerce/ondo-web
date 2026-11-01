@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createDraftStore, type DraftStorage } from "./draftStore";
+import {
+  createDraftStore,
+  DRAFT_META_KEY,
+  type DraftStorage,
+} from "./draftStore";
 import { draftKey, pendingOfRoom, withRoomPending } from "./derive";
 import type { PendingMessage } from "./types";
 
@@ -141,7 +145,9 @@ describe("S3-6 S3-13 로그아웃 지우기(clear)", () => {
     });
     const store = createDraftStore(() => storage);
     store.clear();
-    expect([...map.keys()]).toEqual(["ondo.wholesale.session"]);
+    expect([...map.keys()].sort()).toEqual(
+      [DRAFT_META_KEY, "ondo.wholesale.session"].sort(),
+    );
   });
 
   it("메모리 대체 값도 지운다", () => {
@@ -171,6 +177,72 @@ describe("S3-6 S3-13 로그아웃 지우기(clear)", () => {
     expect(store.read(KEY_1)).toBeNull();
     store.write(KEY_1, "다시 로그인 뒤 글", store.generation());
     expect(store.read(KEY_1)).toBe("다시 로그인 뒤 글");
+  });
+});
+
+/*
+ * 메타 리뷰 M3, M4. "새 문서"는 같은 가짜 저장소에 store를 새로 만든 것이다 — 새로고침하면 메모리 Map은 없고
+ * sessionStorage만 남는다.
+ */
+describe("M3 M4 로그아웃 정리가 실패해도 다음 문서가 옛 글을 안 읽는다", () => {
+  it("M3 key() 열거가 던진 로그아웃 → 저장소 복구 → 같은 문서도 새 문서도 옛 글 null", () => {
+    const { storage, fail, map } = fakeStorage({ [KEY_1]: "옛 글" });
+    const store = createDraftStore(() => storage);
+    fail.add("key");
+    store.clear();
+    fail.delete("key");
+    expect(map.get(KEY_1)).toBe("옛 글");
+    expect(store.read(KEY_1)).toBeNull();
+    expect(createDraftStore(() => storage).read(KEY_1)).toBeNull();
+  });
+
+  it("M4 removeItem이 던진 로그아웃 → 새로고침(새 문서) → 옛 글 null", () => {
+    const { storage, fail, map } = fakeStorage({ [KEY_1]: "옛 글" });
+    fail.add("removeItem");
+    createDraftStore(() => storage).clear();
+    fail.delete("removeItem");
+    expect(map.get(KEY_1)).toBe("옛 글");
+    expect(createDraftStore(() => storage).read(KEY_1)).toBeNull();
+  });
+
+  it("M4 재로그인 뒤 새로 쓴 글은 새 문서에서도 읽힌다. 다음 로그아웃이면 다시 null", () => {
+    const { storage, fail } = fakeStorage({ [KEY_1]: "옛 글" });
+    fail.add("removeItem");
+    const first = createDraftStore(() => storage);
+    first.clear();
+    first.write(KEY_2, "새 계정 글", first.generation());
+    const reloaded = createDraftStore(() => storage);
+    expect(reloaded.read(KEY_1)).toBeNull();
+    expect(reloaded.read(KEY_2)).toBe("새 계정 글");
+    reloaded.clear();
+    expect(createDraftStore(() => storage).read(KEY_2)).toBeNull();
+  });
+
+  it("세대 칸 쓰기마저 던지면 이 문서 동안 저장소를 안 읽고, 쓰기는 메모리로 받는다", () => {
+    const { storage, fail, map } = fakeStorage({ [KEY_1]: "옛 글" });
+    const store = createDraftStore(() => storage);
+    fail.add("setItem");
+    fail.add("removeItem");
+    store.clear();
+    fail.delete("setItem");
+    fail.delete("removeItem");
+    expect(store.read(KEY_1)).toBeNull();
+    store.write(KEY_2, "메모리 글", store.generation());
+    expect(map.has(KEY_2)).toBe(false);
+    expect(store.read(KEY_2)).toBe("메모리 글");
+  });
+
+  it("로그아웃한 적 없는 탭(세대 칸 없음)은 저장소 값을 그대로 믿는다", () => {
+    const { storage } = fakeStorage({ [KEY_1]: "남은 글" });
+    expect(createDraftStore(() => storage).read(KEY_1)).toBe("남은 글");
+  });
+
+  it("깨진 세대 칸은 아무것도 못 믿는다", () => {
+    const { storage } = fakeStorage({
+      [KEY_1]: "글",
+      [DRAFT_META_KEY]: "{깨짐",
+    });
+    expect(createDraftStore(() => storage).read(KEY_1)).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ import {
   knob,
   log,
   ME,
+  openRoomById,
   openRoomReady,
   OTHER,
   pendingBubbles,
@@ -260,12 +261,12 @@ test("S3-10 S3-11 실패 말풍선은 방 왕복 뒤에도 1개, 다시 보내�
   });
 });
 
-test("S3-12 보내는 중에 방 2로 → 방 2엔 0, 방 1로 돌아오면 보내는 중이거나 보낸 것, 끝나면 1개, 보류 0", async ({
+test("S3-12 보내는 중에 방 2로 → 방 2엔 0, 방 1로 돌아온 직후 보내는 중 말풍선 1개(polling 늦춤), 끝나면 서버 말풍선 1개, 보류 0", async ({
   page,
 }) => {
   const body = "보내는 중에 옮긴 글";
   await openRoomReady(page, ROOM_1);
-  await knob(page, "delay", { op: "send", ms: 3000 });
+  await knob(page, "delay", { op: "send", ms: 6000 });
   await typeInRoom(page, body);
   await composer(page).press("Enter");
   await expect(pendingBubbles(page)).toHaveCount(1);
@@ -275,9 +276,19 @@ test("S3-12 보내는 중에 방 2로 → 방 2엔 0, 방 1로 돌아오면 보�
   await expect(log(page).getByText(body)).toHaveCount(0);
   await expect(pendingBubbles(page)).toHaveCount(0);
 
-  await openRoomReady(page, ROOM_1);
-  /* 응답 전이면 "보내는 중" 보류 말풍선, 그 사이 polling이 먼저 가져왔으면 서버 말풍선. 어느 쪽이든 1개 */
-  await expect(log(page).getByText(body, { exact: true })).toHaveCount(1);
+  /* 메타 리뷰 M6: 돌아온 직후 polling이 서버 사본을 먼저 가져오면 보류 말풍선이 사라져도 "1개"가 맞아 보인다.
+     방 1 메시지 응답을 보내기 응답보다 늦춰서, 돌아온 순간 보이는 1개가 **보존된 보내는 중 말풍선**이게 한다 */
+  await knob(page, "delay", { op: "messages", ms: 10_000, times: 5 });
+  await openRoomById(page, ROOM_1);
+  await expect(pendingBubbles(page)).toHaveCount(1);
+  await expect(pendingBubbles(page).first()).toHaveAttribute(
+    "data-pending",
+    "sending",
+  );
+  await expect(pendingBubbles(page).first()).toContainText(body);
+  await expect(bubbles(page).filter({ hasText: body })).toHaveCount(0);
+
+  /* 보내기 응답이 오면 보류가 서버 말풍선으로 바뀐다 */
   await expect(pendingBubbles(page)).toHaveCount(0, { timeout: 10_000 });
   await expect(bubbles(page).filter({ hasText: body })).toHaveCount(1);
 
@@ -313,6 +324,14 @@ test("S3-13 ① 옛 글 + 쓰기 실패 → 새 글 유지 ② 메모리 대체�
     await expect(pendingBubbles(page)).toHaveCount(1);
     await openRoomReady(page, ROOM_1);
     await expect(composer(page)).toHaveValue("새 글");
+    /* 메타 리뷰 M6: 로그아웃 **직전에** 실패 말풍선이 방 2에 남아 있는지 먼저 본다. 안 보면 보존이 원래 없어도
+       "로그아웃 뒤 보류 0"이 통과한다 */
+    await openRoomReady(page, ROOM_2);
+    await expect(pendingBubbles(page)).toHaveCount(1);
+    await expect(pendingBubbles(page).first()).toHaveAttribute(
+      "data-pending",
+      "failed",
+    );
 
     await breakRemoveItem(page);
     await signOut(page);

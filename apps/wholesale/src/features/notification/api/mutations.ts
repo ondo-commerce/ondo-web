@@ -6,7 +6,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
-import { notificationKeys } from "./keys";
+import { useNotificationKeys } from "./scope";
 import { refreshHeaderCounts } from "@/shared/api/headerCountsKey";
 import { NOTIFICATION_PATH } from "../constants";
 import { markPagesRead, withUnread } from "../derive";
@@ -48,6 +48,7 @@ interface ReadContext {
  */
 export function useMarkNotificationsReadMutation() {
   const queryClient = useQueryClient();
+  const notificationKeys = useNotificationKeys();
   return useMutation({
     mutationFn: (request: MarkNotificationsReadRequest) =>
       apiFetch<MarkNotificationsReadResult>(NOTIFICATION_PATH.read, {

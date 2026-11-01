@@ -1,8 +1,7 @@
 import { AccountMenu, ErpGuard } from "@/features/account";
-import { HeaderInbox } from "@/features/notification";
 import { AppShell } from "@/shared/components/AppShell";
 import type { ReactNode } from "react";
-import { SignOutCleanup } from "./SignOutCleanup";
+import { ErpInbox } from "./ErpInbox";
 
 /**
  * route group `(erp)` — URL에 나타나지 않는다. 레이아웃 도구일 뿐이고 그 자체가
@@ -16,8 +15,7 @@ import { SignOutCleanup } from "./SignOutCleanup";
 export default function ErpLayout({ children }: { children: ReactNode }) {
   return (
     <ErpGuard>
-      <SignOutCleanup />
-      <AppShell accountMenu={<AccountMenu />} inbox={<HeaderInbox />}>
+      <AppShell accountMenu={<AccountMenu />} inbox={<ErpInbox />}>
         {children}
       </AppShell>
     </ErpGuard>
