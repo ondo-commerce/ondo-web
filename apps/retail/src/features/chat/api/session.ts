@@ -91,6 +91,31 @@ export class ChatStaleResponseError extends Error {
   }
 }
 
+export function isChatStaleResponseError(
+  error: unknown,
+): error is ChatStaleResponseError {
+  return error instanceof ChatStaleResponseError;
+}
+
+/**
+ * 세대 검사만 한다(리뷰 R7 — 방 만들기). `guardSession`과 달리 401을 끊김으로 바꾸지 않는다: 입구의 방 만들기는
+ * 쓴 글이 없어 지금 세대의 401은 공용 처리(`/login` 이동)가 맞다(01-plan §4-1 2). 하지만 A가 누른 요청의 응답이
+ * 로그아웃, B 로그인 뒤에 오면 401이든 성공이든 버린다 — 401이면 B가 `/login`으로 튕기며 쓰던 글을 잃고,
+ * 성공이면 부르는 쪽이 A의 방으로 옮긴다. 버리는 오류는 `ApiError`가 아니라 공용 처리가 지나친다
+ */
+export async function dropStaleSession<T>(run: () => Promise<T>): Promise<T> {
+  const epoch = sessionEpoch;
+  let result: T;
+  try {
+    result = await run();
+  } catch (error) {
+    if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+    throw error;
+  }
+  if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+  return result;
+}
+
 /**
  * 세션 세대. 로그아웃, 로그인 때 오른다(`clearChatCache`). 요청은 시작 때 값을 쥐고, 끝났을 때 값이 바뀌었으면
  * 결과를 캐시와 화면에 넣지 않는다 — A가 띄운 요청의 응답이 B 로그인 뒤에 도착하는 경우

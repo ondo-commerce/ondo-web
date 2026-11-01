@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { CHAT_PATH } from "./queries";
-import { guardSession } from "./session";
+import { dropStaleSession, guardSession } from "./session";
 import type {
   ChatInquiry,
   ChatReadResult,
@@ -17,16 +17,20 @@ import type {
  * 방 만들기(멱등). 이미 있으면 200, 없으면 201 — 화면은 둘을 똑같이 다룬다(Q3, 확인 창 없음).
  * 목 모드면 worker 준비를 먼저 기다린다(S5-12). `guardSession`을 **거치지 않는다** — 401은 공용 처리
  * (`providers.tsx`)가 `/login`으로 보낸다. 이 단계엔 쓴 글이 없다(01-plan §4-1 2).
+ *
+ * 세대 검사는 한다(리뷰 R7, `dropStaleSession`). 누른 뒤 로그아웃, 다른 계정 로그인이 끼면 그 응답은 401이든 성공이든
+ * 버린다 — 다음 계정을 `/login`으로 튕기거나 앞 계정 방으로 옮기지 않게. 부르는 쪽(`InquiryEntry`)은 버린 응답에 아무것도 안 한다
  */
 export function useCreateRoomMutation() {
   return useMutation({
-    mutationFn: async (body: CreateChatRoomRequest) => {
-      await chatMockReady();
-      return apiFetch<ChatRoomDetail>(CHAT_PATH.rooms, {
-        method: "POST",
-        body,
-      });
-    },
+    mutationFn: (body: CreateChatRoomRequest) =>
+      dropStaleSession(async () => {
+        await chatMockReady();
+        return apiFetch<ChatRoomDetail>(CHAT_PATH.rooms, {
+          method: "POST",
+          body,
+        });
+      }),
   });
 }
 
