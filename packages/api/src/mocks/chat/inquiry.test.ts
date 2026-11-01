@@ -68,24 +68,42 @@ const SCORE = goldenScore(RESULTS, GOLDEN);
 const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
 
 describe("골든셋 모양", () => {
-  it("v4 시나리오 84개 = 필수 5 + 재고 답 17 + 넘김 22 + 미송 23 + 미수 17, id 중복 없음, v4 몫 25", () => {
+  it("v5 시나리오 109개 = 필수 5 + 재고 답 17 + 넘김 46 + 미송 24 + 미수 17, id 중복 없음, v4 몫 25, v5 몫 25", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.version).toBe(4);
-    expect(GOLDEN.scenarios).toHaveLength(84);
+    expect(GOLDEN.version).toBe(5);
+    expect(GOLDEN.scenarios).toHaveLength(109);
+    // v4 84개(넘김 22, 미송 23) + v5 넘김 24(N 12 + U 9 + X 3), 미송 1(G01)
     expect([
       count("required"),
       count("stock"),
       count("handoff"),
       count("backorder"),
       count("receivable"),
-    ]).toEqual([5, 17, 22, 23, 17]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(84);
+    ]).toEqual([5, 17, 46, 24, 17]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(109);
+    // S3-6 v5는 뒤에 붙이기만 했다: 앞 84개는 since 5가 아니고, 판정 투영을 고른 건 G01뿐
+    expect(GOLDEN.scenarios.slice(0, 84).every((s) => (s.since ?? 0) < 5)).toBe(
+      true,
+    );
+    expect(
+      GOLDEN.scenarios
+        .filter((s) => s.projection !== undefined)
+        .map((s) => s.id),
+    ).toEqual(["G01"]);
+    const two = (p: string, n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) => `${p}${String(i + 1).padStart(2, "0")}`,
+      );
+    expect(
+      GOLDEN.scenarios.filter((s) => s.since === 5).map((s) => s.id),
+    ).toEqual([...two("N", 12), ...two("U", 9), "G01", ...two("X", 3)]);
     expect(GOLDEN.scenarios.filter((s) => s.required).map((s) => s.id)).toEqual(
       ["P1", "P2", "P3", "P4", "P5"],
     );
     // v4 = 미수 18(P5 + R01~R17) + 넘김 7(H16~H22). 기존 59개는 since 없이 그대로다
-    const v4 = GOLDEN.scenarios.filter((s) => (s.since ?? 0) >= 4);
+    const v4 = GOLDEN.scenarios.filter((s) => s.since === 4);
     expect(v4.map((s) => s.id)).toEqual([
       "P5",
       ...Array.from(
@@ -187,7 +205,7 @@ describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
   });
 });
 
-describe("S7-3, S1-2 골든셋 84개 지표", () => {
+describe("S7-3, S1-2, 08c S3-6 골든셋 109개 지표(v4 84개 포함 전 단계)", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),
@@ -776,5 +794,106 @@ describe("자동 답 문장 — 소매에게 가는 글에 정확 수량이 없�
     expect(lines[0]?.body).toBe("레드 L은 지금은 재고가 없어요");
     expect(lines[0]?.autoReply?.facts.stock?.availableQty).toBe(0);
     expect(lines[0]?.autoReply?.replyToSequence).toBe(7);
+  });
+});
+
+describe("08c S3 골든 v5 넘김 낱말 — 시나리오별 이유", () => {
+  /** 시나리오 단계들의 넘김 줄 (이유, 의도). 줄 투영이 아니면(G01) 빈 배열 */
+  const handoffs = (id: string) =>
+    RESULTS.filter((r) => r.scenario === id).map((r) => {
+      const lines = (r.actual.lines ?? []) as {
+        reason?: string;
+        intent?: string | null;
+      }[];
+      return lines.map((l) => [l.reason, l.intent]);
+    });
+  const ids = (p: string, from: number, to: number) =>
+    Array.from(
+      { length: to - from + 1 },
+      (_, i) => `${p}${String(from + i).padStart(2, "0")}`,
+    );
+
+  it("S3-1 N01~N12 → 넘김 줄 하나, NEGOTIATION, intent null, 기대값과 정확 일치", () => {
+    for (const id of ids("N", 1, 12)) {
+      expect(handoffs(id), id).toEqual([[["NEGOTIATION", null]]]);
+      for (const r of RESULTS.filter((x) => x.scenario === id))
+        expect(r.actual, id).toEqual(r.expect);
+    }
+  });
+
+  it("S3-2 U01~U06 → 넘김 줄 하나, HUMAN_REQUEST, intent null", () => {
+    for (const id of ids("U", 1, 6))
+      expect(handoffs(id), id).toEqual([[["HUMAN_REQUEST", null]]]);
+  });
+
+  it("S3-3 U07 → HUMAN_REQUEST(협상 낱말 가격이 같이 있어도), U08 → OFF, U09 → NEGOTIATION 줄 뒤 HUMAN_REQUEST 새 줄", () => {
+    expect(handoffs("U07")).toEqual([[["HUMAN_REQUEST", null]]]);
+    expect(handoffs("U08")).toEqual([[["OFF", null]]]);
+    expect(handoffs("U09")).toEqual([
+      [["NEGOTIATION", null]],
+      [["HUMAN_REQUEST", null]],
+    ]);
+  });
+
+  it("S3-4 G01 = B01 판정, X01 NO_INTENT, X02 PAYMENT_REPORT(RECEIVABLE), X03 NEGOTIATION", () => {
+    const only = (id: string) => RESULTS.find((r) => r.scenario === id);
+    expect(only("G01")?.actual).toEqual(only("B01")?.actual);
+    expect(only("G01")?.actual).toEqual(only("G01")?.expect);
+    expect(handoffs("X01")).toEqual([[["NO_INTENT", null]]]);
+    expect(handoffs("X02")).toEqual([[["PAYMENT_REPORT", "RECEIVABLE"]]]);
+    expect(handoffs("X03")).toEqual([[["NEGOTIATION", null]]]);
+  });
+});
+
+describe("08c S3 넘김 낱말 — 사람 요청, 협상 17개 + DC", () => {
+  const handoffOf = (reason: string, intent: string | null = null) => ({
+    kind: "HANDOFF",
+    reason,
+    intent,
+  });
+
+  it('S3-4 DC 경계: "ADC 셔츠 재고 있어요?", "DC100 재고" → 협상 아님, "DC 돼요" "dc 되나요" → 협상', () => {
+    // 시드에 그 상품이 없어 다른 이유로 넘기긴 한다. 협상으로 넘기지 않는 것만 본다
+    const reasonOf = (body: string) => {
+      const d = decideOnce(body);
+      return d.kind === "HANDOFF" ? d.reason : d.kind;
+    };
+    expect(reasonOf("ADC 셔츠 재고 있어요?")).not.toBe("NEGOTIATION");
+    expect(reasonOf("DC100 재고")).not.toBe("NEGOTIATION");
+    expect(decideOnce("DC 돼요")).toEqual(handoffOf("NEGOTIATION"));
+    expect(decideOnce("dc 되나요")).toEqual(handoffOf("NEGOTIATION"));
+  });
+
+  it("S3-3 같은 사람 요청이 두 번 오면 둘째 줄 0(열린 넘김과 이유가 같다)", () => {
+    const self = (reason: string) => ({
+      lines: [
+        { kind: "HANDOFF", reason, intent: null, sourceSequence: "self" },
+      ],
+    });
+    const results = runScenario({
+      id: "U-twice",
+      title: "U-twice",
+      required: false,
+      group: "handoff",
+      since: 4,
+      room: { wholesalerId: 101, context: null, autoReply: true },
+      steps: [
+        {
+          text: "사장님이랑 통화하고 싶어요",
+          inquiry: null,
+          expect: self("HUMAN_REQUEST"),
+        },
+        { text: "전화 주세요", inquiry: null, expect: { lines: [] } },
+      ],
+    });
+    expect(results.map((r) => r.actual)).toEqual([
+      self("HUMAN_REQUEST"),
+      { lines: [] },
+    ]);
+  });
+
+  it('S3-4 "사장님, 제 미수 얼마예요?", "외상 얼마예요?"는 금액 답 그대로(호칭만으로 안 넘긴다)', () => {
+    for (const body of ["사장님, 제 미수 얼마예요?", "외상 얼마예요?"])
+      expect(decideOnce(body).kind, body).toBe("AUTO_REPLY");
   });
 });

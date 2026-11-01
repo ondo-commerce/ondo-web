@@ -152,7 +152,8 @@ async function replay(s: GoldenScenario) {
     const res = await send(step.text, step.inquiry);
     expect(res.status, `${s.id} ${step.text}`).toBe(201);
     out.push(
-      (s.since ?? 0) >= 4
+      // v5 G01(projection "decision")은 B01과 같은 판정 투영이라 v3 쪽으로 본다
+      (s.since ?? 0) >= 4 && s.projection !== "decision"
         ? {
             expect: visibleV4Expect(step.expect),
             // 목 원본은 요청 시각에 장부를 읽는다 — 그래서 이 방 행의 asOf = 그 요청 시각이다
@@ -187,14 +188,14 @@ async function expectScenario(id: string) {
 }
 
 describe("골든셋을 소매 목 HTTP로 — 판정 함수와 같은 결과", () => {
-  it("방 1 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다). 재고 35 + 미송 21 + 미수 11 + 넘김 7", async () => {
+  it("방 1 시나리오 전 단계(넘김 reason 은 API 칸이 아니라 빼고 본다). v4 75 + v5 25(넘김 낱말, 전부 방 1)", async () => {
     const room1 = GOLDEN.scenarios.filter(inRoom1);
     // 방 1 밖: 미송 B04 B05, 미수 R01~R03 R05~R07(다른 소매처, 골든 전용 행), R04(방 33 = 102) — 판정 unit 이 받는다.
     // R04 의 HTTP 몫은 `receivableReply.test.ts`(방 33 구조 단언)가 본다
     expect(
       GOLDEN.scenarios.filter((s) => !inRoom1(s)).map((s) => s.id),
     ).toEqual(["B04", "B05", "R01", "R02", "R03", "R04", "R05", "R06", "R07"]);
-    expect(room1).toHaveLength(84 - 9);
+    expect(room1).toHaveLength(109 - 9);
     for (const s of room1) {
       for (const step of await replay(s))
         expect(step.actual, s.id).toEqual(step.expect);
