@@ -430,6 +430,15 @@ export function isUserScrollActive(until: number, now: number): boolean {
   return now <= until;
 }
 
+/**
+ * 터치 한 번의 이동이 위로 스크롤인가(Codex 메타 M4). 손가락이 아래로 가면(화면 y가 커지면) 내용이 내려오고 log는
+ * 위로 간다. 방향 없이 touchmove를 다 사장 위 스크롤로 보면, 맨 위 근처에서 아래로 조금 끈 것도 자동을 부른다.
+ * 직전 좌표가 없으면(첫 이동) 판정하지 않는다
+ */
+export function isTouchScrollUp(prevY: number | null, y: number): boolean {
+  return prevY !== null && y > prevY;
+}
+
 /** 자동 불러오기 판정에 드는 값. 하나라도 거짓이면 부르지 않는다(§4-1 2-1) */
 export interface AutoLoadInput {
   scrollTop: number;

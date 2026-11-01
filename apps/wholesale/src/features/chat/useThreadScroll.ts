@@ -8,12 +8,14 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent,
+  type TouchEvent,
   type WheelEvent,
 } from "react";
 import { fetchOlder, useBeforeOlderMerge } from "./api/queries";
 import { useChatCache } from "./api/scope";
 import {
   isAtBottom,
+  isTouchScrollUp,
   isUserScrollActive,
   nextUserScrollUntil,
   shouldAutoLoadOlder,
@@ -98,6 +100,8 @@ export function useThreadScroll({
     );
   };
   const pointerOnLog = useRef(false);
+  /* 지금 터치의 직전 손가락 y(M4). 터치가 없으면 null */
+  const touchY = useRef<number | null>(null);
   const olderSnapshot = useRef<OlderSnapshot | null>(null);
 
   const measureBottom = () => {
@@ -204,8 +208,15 @@ export function useThreadScroll({
       /* 이미 맨 위면 scroll이 안 난다 — 여기서도 본다 */
       maybeAutoLoad();
     },
-    onTouchMove: () => {
-      markUserScroll("input");
+    /* 위로 끈 이동만 사장 위 스크롤이다(M4). 직전 좌표와 비교한다 — 한 번의 터치 안에서 방향을 바꿀 수 있다 */
+    onTouchStart: (e: TouchEvent<HTMLDivElement>) => {
+      touchY.current = e.touches[0]?.clientY ?? null;
+    },
+    onTouchMove: (e: TouchEvent<HTMLDivElement>) => {
+      const y = e.touches[0]?.clientY;
+      if (y === undefined) return;
+      if (isTouchScrollUp(touchY.current, y)) markUserScroll("input");
+      touchY.current = y;
     },
     onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
       if (SCROLL_UP_KEYS.has(e.key)) markUserScroll("input");

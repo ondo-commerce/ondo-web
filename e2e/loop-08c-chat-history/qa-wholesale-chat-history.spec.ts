@@ -206,6 +206,47 @@ test.describe("S2-19 사용자 스크롤 — 터치, 스크롤바 드래그", ()
   });
 });
 
+test("M4 Shift+Tab으로 맨 위 버튼(포커스 스크롤) → 터치로 아래로 조금(scrollTop ≤ 200 유지) → before 0", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 1470, height: 900 },
+    baseURL: "http://localhost:3100",
+    locale: "ko-KR",
+  });
+  const page = await context.newPage();
+  await openLongRoom(page);
+  await composer(page).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(historyButton(page)).toBeFocused();
+  await expect.poll(async () => (await logMetrics(page)).scrollTop).toBe(0);
+  const box = await log(page).boundingBox();
+  if (box === null) throw new Error("log 없음");
+  const cdp = await context.newCDPSession(page);
+  /* yDistance 음수 = 손가락을 위로 = 내용이 위로 = 아래로 스크롤 */
+  await cdp.send("Input.synthesizeScrollGesture", {
+    x: Math.round(box.x + box.width / 2),
+    y: Math.round(box.y + box.height / 2),
+    yDistance: -100,
+    gestureSourceType: "touch",
+    speed: 800,
+  });
+  await page.waitForTimeout(1_500);
+  /* 자동이 걸리면 이전 장이 붙어 scrollTop이 커진다 — 요청을 먼저 본다 */
+  expect(await beforeSequences(page), "아래로 끈 터치는 자동이 아님").toEqual(
+    [],
+  );
+  const after = (await logMetrics(page)).scrollTop;
+  test.info().annotations.push({
+    type: "evidence",
+    description: `터치 뒤 scrollTop ${after}`,
+  });
+  expect(after).toBeGreaterThan(0);
+  expect(after).toBeLessThanOrEqual(200);
+  await context.close();
+});
+
 test("패턴 3: 위에서 `새 메시지 2개` → 자동으로 이전 장이 붙어도 N, 버튼, 읽음 보류 그대로", async ({
   page,
 }) => {

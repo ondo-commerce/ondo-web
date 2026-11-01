@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   historySlotOf,
   isAtBottom,
+  isTouchScrollUp,
   isUserScrollActive,
   mergeMessages,
   mergeOlder,
@@ -209,6 +210,15 @@ describe("nextUserScrollUntil — 사장 스크롤 창(리뷰 R1, S2-19 ③)", (
     expect(
       isUserScrollActive(nextUserScrollUntil(until, "merged", 10), 20),
     ).toBe(false);
+  });
+});
+
+describe("isTouchScrollUp — 터치 방향(Codex 메타 M4)", () => {
+  it("손가락이 아래로(y 증가) → 위로 스크롤, 위로(y 감소)나 제자리 → 아님, 첫 이동 → 아님", () => {
+    expect(isTouchScrollUp(300, 320)).toBe(true);
+    expect(isTouchScrollUp(300, 280)).toBe(false);
+    expect(isTouchScrollUp(300, 300)).toBe(false);
+    expect(isTouchScrollUp(null, 320)).toBe(false);
   });
 });
 
