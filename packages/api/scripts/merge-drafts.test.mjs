@@ -740,3 +740,108 @@ describe("S1-1 loop-06b 초안: 소매 알림 목록, 읽음, target oneOf, late
     ).toEqual(["`NotificationUnreadCount.latestNotificationId` 사라짐"]);
   });
 });
+
+/**
+ * loop-08b S1-1. 도매 초안 op `chatRooms`에 쿼리 둘(filter, q)을 더했다. op 자체가 초안이라 BE 가 먼저 구현하면
+ * 받은 op 가 통째로 이긴다 — 그때 두 쿼리가 빠지면 화면은 조건을 보내고 서버는 무시한다(컴파일은 통과).
+ */
+const ROOMS_PATH = "/api/wholesale/chat/rooms";
+
+describe("S1-1 loop-08b 초안: chatRooms filter, q", () => {
+  it("drafts 와 스냅샷의 chatRooms 가 같고, 쿼리는 cursor size filter q 순, 새 둘만 x-ondo-draft", () => {
+    for (const doc of [DRAFTS.wholesale, SNAPSHOTS.wholesale]) {
+      const op = doc.paths[ROOMS_PATH].get;
+      expect(op["x-ondo-draft"]).toBe(true);
+      const params = op.parameters;
+      expect(params.map((p) => p.name)).toEqual([
+        "cursor",
+        "size",
+        "filter",
+        "q",
+      ]);
+      const [cursor, size, filter, q] = params;
+      // 기존 칸은 그대로(표시 없음, 모양 그대로)
+      expect(cursor["x-ondo-draft"]).toBeUndefined();
+      expect(size["x-ondo-draft"]).toBeUndefined();
+      expect(size.schema).toEqual({
+        default: 30,
+        format: "int32",
+        maximum: 100,
+        minimum: 1,
+        type: "integer",
+      });
+      for (const p of [filter, q]) {
+        expect(p.in).toBe("query");
+        expect(p.required).toBe(false);
+        expect(p["x-ondo-draft"]).toBe(true);
+      }
+      expect(filter.schema).toEqual({
+        enum: ["UNREAD", "NEEDS_REPLY"],
+        type: "string",
+      });
+      expect(q.schema).toEqual({ maxLength: 50, type: "string" });
+      // 규칙이 설명에 적혀 있다(BE 가 읽는 곳은 여기뿐이다)
+      expect(q.description).toContain(
+        "앞뒤 공백을 지운 뒤 비면 없는 것과 같다",
+      );
+      expect(q.description).toContain("안쪽 공백은 그대로");
+      expect(q.description).toContain("영문 대소문자는 구분하지 않는다");
+      expect(filter.description).toContain("조건을 바꾸면 첫 장부터");
+    }
+    expect(SNAPSHOTS.wholesale.paths[ROOMS_PATH]).toEqual(
+      DRAFTS.wholesale.paths[ROOMS_PATH],
+    );
+  });
+
+  it("빈 BE 스펙과 합치면 chatRooms 가 초안 그대로 들어오고 검사가 빈 배열이다", () => {
+    const { merged, kept } = mergeDrafts(emptyReceived(), DRAFTS.wholesale);
+    expect(kept).toContain(`GET ${ROOMS_PATH}`);
+    expect(merged.paths[ROOMS_PATH].get.parameters).toHaveLength(4);
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("BE 가 filter, q 까지 구현해 내면 받은 쪽이 이기고 검사는 빈 배열이다(거짓 경보 없음)", () => {
+    const received = emptyReceived();
+    received.paths[ROOMS_PATH] = {
+      get: {
+        responses: {},
+        parameters: ["cursor", "size", "filter", "q"].map((name) => ({
+          name,
+          in: "query",
+          schema: { type: "string" },
+        })),
+      },
+    };
+    const { merged, dropped } = mergeDrafts(received, DRAFTS.wholesale);
+    expect(dropped).toContain(`GET ${ROOMS_PATH}`);
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([]);
+  });
+
+  it("가짜 스펙: BE 가 chatRooms 를 cursor, size 만으로 내면 filter, q 둘 다 사라짐으로 실패한다", () => {
+    const received = emptyReceived();
+    const old = clone(DRAFTS.wholesale.paths[ROOMS_PATH].get);
+    old.parameters = old.parameters.filter(
+      (p) => p.name === "cursor" || p.name === "size",
+    );
+    delete old["x-ondo-draft"];
+    received.paths[ROOMS_PATH] = { get: old };
+    const { merged } = mergeDrafts(received, DRAFTS.wholesale);
+    expect(checkDraftSurvival(merged, DRAFTS.wholesale)).toEqual([
+      `GET ${ROOMS_PATH} query \`filter\` 사라짐`,
+      `GET ${ROOMS_PATH} query \`q\` 사라짐`,
+    ]);
+  });
+
+  it("가짜 스펙: 이름은 같아도 q 를 header 로 받으면 사라짐으로 본다", () => {
+    const received = emptyReceived();
+    const moved = clone(DRAFTS.wholesale.paths[ROOMS_PATH].get);
+    for (const p of moved.parameters) if (p.name === "q") p.in = "header";
+    received.paths[ROOMS_PATH] = { get: moved };
+    expect(
+      checkDraftSurvival(
+        mergeDrafts(received, DRAFTS.wholesale).merged,
+        DRAFTS.wholesale,
+      ),
+    ).toEqual([`GET ${ROOMS_PATH} query \`q\` 사라짐`]);
+  });
+});
