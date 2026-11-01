@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   historySlotOf,
   isAtBottom,
+  isUserScrollActive,
   mergeMessages,
   mergeOlder,
   newMessageCount,
   newMessageLabel,
   newMessageText,
+  nextUserScrollUntil,
   shouldAutoLoadOlder,
   type AutoLoadInput,
 } from "./derive";
+import { USER_SCROLL_WINDOW_MS } from "./constants";
 import type { ChatMessage, ChatThread } from "./types";
 
 /**
@@ -172,6 +175,40 @@ describe("shouldAutoLoadOlder (S2-1, D45)", () => {
     ["세션 끊김", { sessionLost: true }],
   ])("%s → false", (_, patch) => {
     expect(shouldAutoLoadOlder({ ...ok, ...patch })).toBe(false);
+  });
+});
+
+describe("nextUserScrollUntil — 사장 스크롤 창(리뷰 R1, S2-19 ③)", () => {
+  const W = USER_SCROLL_WINDOW_MS;
+
+  it("입력하면 지금부터 창이 열린다", () => {
+    expect(nextUserScrollUntil(0, "input", 1000)).toBe(1000 + W);
+    expect(isUserScrollActive(1000 + W, 1000 + W)).toBe(true);
+    expect(isUserScrollActive(1000 + W, 1001 + W)).toBe(false);
+  });
+
+  it("창 안의 scroll은 창을 민다(관성) — 입력이 한 번이어도 이어지는 동안 사장 스크롤", () => {
+    let until = nextUserScrollUntil(0, "input", 0);
+    for (let t = 100; t <= 2000; t += 100)
+      until = nextUserScrollUntil(until, "scroll", t);
+    expect(isUserScrollActive(until, 2000)).toBe(true);
+  });
+
+  it("휠 뒤 멎고 창이 지난 scroll(Tab 포커스 스크롤)은 사장 스크롤이 아니고 창도 안 연다", () => {
+    const until = nextUserScrollUntil(0, "input", 0);
+    const later = W + 100;
+    expect(isUserScrollActive(until, later)).toBe(false);
+    expect(nextUserScrollUntil(until, "scroll", later)).toBe(until);
+  });
+
+  it("창 안이어도 포커스가 들어오면, 이전 장을 합치면 닫힌다", () => {
+    const until = nextUserScrollUntil(0, "input", 0);
+    expect(
+      isUserScrollActive(nextUserScrollUntil(until, "focus", 10), 20),
+    ).toBe(false);
+    expect(
+      isUserScrollActive(nextUserScrollUntil(until, "merged", 10), 20),
+    ).toBe(false);
   });
 });
 

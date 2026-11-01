@@ -15,6 +15,13 @@ export const BOTTOM_SLACK_PX = 48;
  */
 export const HISTORY_AUTO_LOAD_PX = 200;
 
+/**
+ * 사장 입력(wheel, touchmove, ↑ PageUp Home, 스크롤바 누름) 뒤 이 시간 안에 난 scroll만 사장 스크롤로 본다(리뷰 R1).
+ * scroll이 이어지는 동안은 이 시간이 계속 밀린다 — 관성 스크롤, 부드러운 PageUp이 중간에 끊기지 않게.
+ * 입력이 멎고 이만큼 지나면 그 뒤 scroll(Tab 포커스 스크롤, 창 크기 변경)은 자동 불러오기 트리거가 아니다(S2-19 ③)
+ */
+export const USER_SCROLL_WINDOW_MS = 400;
+
 /** 이전 메시지 자리 글(디자인 결정 81~84, 와이어프레임 `_08c.py`) */
 export const HISTORY_TEXT = {
   more: "이전 메시지 보기",

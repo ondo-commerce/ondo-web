@@ -4,6 +4,7 @@ import {
   BODY_MAX,
   BOTTOM_SLACK_PX,
   HISTORY_AUTO_LOAD_PX,
+  USER_SCROLL_WINDOW_MS,
   NEW_MESSAGE_TEXT,
   CHAT_TIME_ZONE,
   DRAFT_KEY_PREFIX,
@@ -398,12 +399,43 @@ export function isAtBottom(
   return scrollHeight - scrollTop - clientHeight <= BOTTOM_SLACK_PX;
 }
 
+/**
+ * 사장 스크롤 창이 무엇으로 바뀌나(리뷰 R1).
+ * - `input`: 사장이 직접 옮겼다(wheel 위로, touchmove, log 안 ↑ PageUp Home, log를 누른 채 scroll)
+ * - `scroll`: 그 밖의 scroll. 창 안이면 이어진 스크롤(관성)이라 창을 민다, 밖이면 그대로
+ * - `focus`: log 안으로 포커스가 들어왔다. 뒤따르는 scroll은 브라우저 포커스 스크롤이다
+ * - `merged`: 이전 장을 합쳤다. 위치 복원은 프로그램 스크롤이고 다음 자동은 새 입력부터(S2-20)
+ */
+export type UserScrollEvent = "input" | "scroll" | "focus" | "merged";
+
+/** 사장 스크롤 창의 끝 시각(ms)을 다음 값으로. 0이면 창이 닫혀 있다 */
+export function nextUserScrollUntil(
+  until: number,
+  event: UserScrollEvent,
+  now: number,
+): number {
+  switch (event) {
+    case "input":
+      return now + USER_SCROLL_WINDOW_MS;
+    case "scroll":
+      return now <= until ? now + USER_SCROLL_WINDOW_MS : until;
+    case "focus":
+    case "merged":
+      return 0;
+  }
+}
+
+/** 지금 난 scroll이 사장 스크롤인가 — 창 안이면 그렇다 */
+export function isUserScrollActive(until: number, now: number): boolean {
+  return now <= until;
+}
+
 /** 자동 불러오기 판정에 드는 값. 하나라도 거짓이면 부르지 않는다(§4-1 2-1) */
 export interface AutoLoadInput {
   scrollTop: number;
   scrollHeight: number;
   clientHeight: number;
-  /** 방을 연 뒤(또는 앞 이전 장을 합친 뒤) 사장이 직접 위로 스크롤했나. 프로그램이 옮긴 스크롤은 아니다 */
+  /** 지금 scroll이 사장 입력에 이어진 것인가(`isUserScrollActive`). 프로그램, 포커스가 옮긴 스크롤은 아니다 */
   userScrolled: boolean;
   historyHasMore: boolean;
   historyStatus: HistoryStatus;

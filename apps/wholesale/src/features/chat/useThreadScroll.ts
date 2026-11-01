@@ -12,7 +12,13 @@ import {
 } from "react";
 import { fetchOlder, useBeforeOlderMerge } from "./api/queries";
 import { useChatCache } from "./api/scope";
-import { isAtBottom, shouldAutoLoadOlder } from "./derive";
+import {
+  isAtBottom,
+  isUserScrollActive,
+  nextUserScrollUntil,
+  shouldAutoLoadOlder,
+  type UserScrollEvent,
+} from "./derive";
 import type { ChatThread } from "./types";
 
 /** 사장이 직접 위로 옮기는 키(§4-1 2-1). Tab은 아니다 — 포커스가 옮겨 가며 브라우저가 해 주는 스크롤이다 */
@@ -43,7 +49,8 @@ function firstVisibleBubble(log: HTMLElement): OlderSnapshot["anchor"] {
  *    따라 내려가고, 바닥이 아니면 스크롤을 안 건드린다. 내가 보내면(보류 말풍선이 늘면) 어디서든 바닥으로.
  * 2. 이전 장 자동 불러오기(D45, §4-1 2-1). 사장이 **직접** 위로 스크롤했을 때만 — wheel(위로), touchmove,
  *    log 안 ↑ PageUp Home, 스크롤바 드래그(log 자체를 누른 채 생긴 scroll). 방을 열 때 바닥으로, 합친 뒤 위치 복원,
- *    새 메시지 따라가기는 프로그램 스크롤이라 트리거가 아니다. 합치면 "직접 스크롤함"을 지운다(S2-20).
+ *    새 메시지 따라가기는 프로그램 스크롤이라 트리거가 아니다. 입력과 그 직후 이어진 scroll만 본다
+ *    (`USER_SCROLL_WINDOW_MS`, 리뷰 R1). 합치거나 log 안으로 포커스가 들어오면 창을 닫는다(S2-20, S2-19 ③).
  * 3. `새 메시지 N개` 버튼(§4-2 3). 바닥을 떠날 때 그려진 가장 큰 sequence(`leftAt`)를 기억해, 그 뒤 붙은 줄이
  *    있으면 보인다. 누르면 바닥으로 가고 포커스는 입력창(결정 87).
  *
@@ -81,7 +88,15 @@ export function useThreadScroll({
   /* 입력창 포커스 박자. 버튼을 누르거나, 포커스가 버튼에 있던 채 바닥에 닿으면 오른다 */
   const [composerFocusTick, setComposerFocusTick] = useState(0);
 
-  const userScrolled = useRef(false);
+  /* 사장 스크롤 창의 끝 시각(R1). "한 번 휠을 썼다"를 계속 들고 있으면 그 뒤 Tab 포커스 스크롤까지 자동을 부른다 */
+  const userScrollUntil = useRef(0);
+  const markUserScroll = (event: UserScrollEvent) => {
+    userScrollUntil.current = nextUserScrollUntil(
+      userScrollUntil.current,
+      event,
+      performance.now(),
+    );
+  };
   const pointerOnLog = useRef(false);
   const olderSnapshot = useRef<OlderSnapshot | null>(null);
 
@@ -109,7 +124,10 @@ export function useThreadScroll({
         scrollTop: log.scrollTop,
         scrollHeight: log.scrollHeight,
         clientHeight: log.clientHeight,
-        userScrolled: userScrolled.current,
+        userScrolled: isUserScrollActive(
+          userScrollUntil.current,
+          performance.now(),
+        ),
         historyHasMore: thread.historyHasMore,
         historyStatus: thread.historyStatus,
         sessionLost,
@@ -138,7 +156,7 @@ export function useThreadScroll({
     prevPending.current = pendingCount;
     const snapshot = olderSnapshot.current;
     olderSnapshot.current = null;
-    if (snapshot !== null) userScrolled.current = false;
+    if (snapshot !== null) markUserScroll("merged");
     if (sent || (snapshot?.atBottom ?? atBottomRef.current)) {
       log.scrollTop = log.scrollHeight;
       return;
@@ -163,23 +181,39 @@ export function useThreadScroll({
     };
   }, []);
 
+  /* 바닥 판정을 scroll에서만 하면 창 높이가 바뀐 뒤(스크롤 위치 그대로) 옛 값이 남는다(리뷰 R2) — 바닥에서 창을 줄이면
+     바닥이 아닌데 새 메시지를 따라가고 읽음을 보냈다. log 크기가 바뀌어도 다시 잰다. 자동 불러오기는 부르지 않는다 */
+  useEffect(() => {
+    const log = logRef.current;
+    if (log === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => measureBottom());
+    observer.observe(log);
+    return () => observer.disconnect();
+    /* measureBottom은 ref와 setState만 쓴다 — 방마다 한 번 건다(부르는 쪽이 key={roomId}로 다시 마운트) */
+  }, []);
+
   const logHandlers = {
     onScroll: () => {
-      if (pointerOnLog.current) userScrolled.current = true;
+      markUserScroll(pointerOnLog.current ? "input" : "scroll");
       measureBottom();
       maybeAutoLoad();
     },
     onWheel: (e: WheelEvent<HTMLDivElement>) => {
       if (e.deltaY >= 0) return;
-      userScrolled.current = true;
+      markUserScroll("input");
       /* 이미 맨 위면 scroll이 안 난다 — 여기서도 본다 */
       maybeAutoLoad();
     },
     onTouchMove: () => {
-      userScrolled.current = true;
+      markUserScroll("input");
     },
     onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
-      if (SCROLL_UP_KEYS.has(e.key)) userScrolled.current = true;
+      if (SCROLL_UP_KEYS.has(e.key)) markUserScroll("input");
+    },
+    /* log 안으로 포커스가 들어오면(Tab, Shift+Tab) 뒤따르는 scroll은 브라우저 포커스 스크롤이다(R1).
+       휠 직후 바로 Tab을 눌러도 창 안에서 자동이 걸리지 않게 닫는다 */
+    onFocus: () => {
+      markUserScroll("focus");
     },
     onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
       if (e.target === e.currentTarget) pointerOnLog.current = true;
