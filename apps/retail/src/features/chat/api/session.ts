@@ -59,8 +59,13 @@ function markSessionLost(queryClient: QueryClient): void {
  *
  * **시작 때 세션 세대를 잡는다**(loop-08c S7, 도매 `session.ts`와 같은 규칙). 로그아웃, 로그인이 캐시를 지운 뒤
  * 도착한 응답은 성공이든 401이든 버린다 — 앞 계정 polling의 늦은 401이 끊김 칸을 true로 만들면 다음에 로그인한
- * 소매처의 방이 첫 조회부터 잠긴다(S7-3). 늦은 성공도 queryFn 안에서 다른 칸을 고치는 경우(방 머리 → 메시지 캐시,
- * 보내기 → 메시지 캐시)가 있어 같이 막는다(S7-2).
+ * 소매처의 방이 첫 조회부터 잠긴다(S7-3).
+ *
+ * 성공 갈래 검사는 `cancelQueries`가 못 닿는 길을 막는다(QA F1). S7-2(늦은 messages 성공)는 취소와 삭제가 이미
+ * 막는 길이라 이 줄의 근거가 아니다. 이 줄이 막는 것: 취소된 조회도 queryFn은 끝까지 돌아 그 안에서 다른 칸에
+ * 쓴다 — 방 머리 queryFn은 받은 상대 읽음을 메시지 캐시에 합치는데, 지운 뒤 다음 계정이 같은 방 번호를 열어 다시
+ * 생긴 칸에 앞 계정 값이 들어간다. mutation(읽음, 보내기)은 취소 대상이 아니라 결과가 부르는 쪽으로 그대로 간다.
+ * 갈래는 `session.test.ts` "성공 갈래"가 가른다(이 줄을 지우면 실패한다).
  */
 export async function guardSession<T>(
   queryClient: QueryClient,

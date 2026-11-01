@@ -2,9 +2,12 @@ import { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
+  ChatSessionLostError,
   ChatStaleResponseError,
   clearChatCache,
   dropStaleSession,
+  guardSession,
+  isSessionLost,
 } from "./session";
 
 /**
@@ -23,6 +26,43 @@ function lateRun<T>(between: () => void, outcome: () => Promise<T>) {
     return outcome();
   };
 }
+
+describe("guardSession 세대 갈래(QA F1)", () => {
+  it("성공 갈래: 응답 전에 세션이 바뀌면 성공 결과를 돌려주지 않는다 — queryFn이 이어서 다른 칸에 쓰지 못하게", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => clearChatCache(qc),
+          async () => ({ counterpartLastReadSequence: 9 }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ChatStaleResponseError);
+  });
+
+  it("오류 갈래: 응답 전에 세션이 바뀐 401은 끊김 칸을 안 켠다(다음 계정 방이 안 잠긴다)", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => clearChatCache(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ChatStaleResponseError);
+    expect(isSessionLost(qc)).toBe(false);
+  });
+
+  it("같은 세대의 401은 끊김으로 바꾸고 칸을 켠다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(qc, () => Promise.reject(unauthorized())),
+    ).rejects.toBeInstanceOf(ChatSessionLostError);
+    expect(isSessionLost(qc)).toBe(true);
+  });
+});
 
 describe("dropStaleSession — 방 만들기(리뷰 R7)", () => {
   it("응답 전에 세션이 바뀌면 성공도 버린다(A 방으로 이동 0)", async () => {
