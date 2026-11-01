@@ -18,6 +18,13 @@ export const ACCOUNT_PATH = {
 export const SESSION_STORAGE_KEY = "ondo.wholesale.session";
 
 /**
+ * 탭 사이 세션 변경을 전하는 BroadcastChannel 이름(loop-08c 리뷰 R8). 세션 표시는 탭마다(`sessionStorage`)지만
+ * 서버 쿠키는 브라우저에 하나라, 다른 탭에서 로그아웃하거나 다른 계정으로 들어오면 이 탭의 표시가 거짓이 된다.
+ * `storage` 이벤트는 `sessionStorage`에선 다른 탭으로 안 가서 채널을 쓴다
+ */
+export const SESSION_CHANNEL_NAME = "ondo.wholesale.session";
+
+/**
  * 입력칸의 DOM id 접두어. 제출 후 **첫 오류 칸으로 포커스를 옮기려면** 칸을 id로
  * 찾아야 하는데, 폼마다 ref를 열 몇 개 드는 것보다 규칙 하나가 낫다.
  */

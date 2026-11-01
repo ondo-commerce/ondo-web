@@ -34,6 +34,29 @@ export function normalizeEmail(raw: string): string {
 }
 
 /**
+ * 다른 탭이 알린 세션(`theirs`, 로그아웃이면 null)을 받고 이 탭의 세션(`mine`)을 끝낼까(loop-08c 리뷰 R8).
+ * 이 탭이 로그인 상태이고 다른 탭의 계정이 다르면(로그아웃 포함) 끝낸다 — 쿠키는 이제 이 탭의 계정 것이 아니다.
+ * 같은 계정으로 들어온 것은 그대로 둔다. 이 탭이 이미 로그아웃이면 할 일이 없다
+ */
+export function shouldEndForOtherTab(
+  mine: string | null,
+  theirs: string | null,
+): boolean {
+  return mine !== null && theirs !== mine;
+}
+
+/** 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다 */
+export function parseSessionBroadcast(
+  data: unknown,
+): { email: string | null } | null {
+  if (typeof data !== "object" || data === null || !("email" in data))
+    return null;
+  const { email } = data;
+  if (email === null) return { email: null };
+  return typeof email === "string" ? { email: normalizeEmail(email) } : null;
+}
+
+/**
  * **더미 계정에서만** 찾는다. 없으면 `null`.
  *
  * ⚠️ 이번 세션에 가입 신청한 계정은 여기 없다 — 그건 세션 덮어쓰기에 산다.
