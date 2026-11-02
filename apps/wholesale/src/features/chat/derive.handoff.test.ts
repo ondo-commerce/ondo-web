@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { HANDOFF_REASON_TEXT } from "./constants";
 import {
@@ -25,39 +26,75 @@ const PLAN_REASONS: Record<string, string> = {
   OFF: "자동 답변이 꺼져 있어요",
 };
 
-/** 계약 enum 20개 중 이번 회차에 글이 없는 12개 */
-const NO_TEXT_REASONS = [
-  "NO_INTENT",
-  "NOT_SUPPORTED",
-  "NO_CONTEXT",
-  "NO_OPTIONS",
-  "INVALID_TARGET",
-  "CLARIFY_AGAIN",
-  "NO_BACKORDER",
-  "NO_MATCH",
-  "NOT_LISTED",
-  "STOCK_ZERO",
-  "ETA_UNKNOWN",
-  "ETA_PAST",
-];
+/** loop-08d 기획 §4-6 1의 13개 글(원문, #353 S6-1) */
+const PLAN_REASONS_08D: Record<string, string> = {
+  NO_INTENT: "무엇을 묻는지 읽지 못했어요",
+  NOT_SUPPORTED: "자동 답변이 없는 질문이에요",
+  NO_CONTEXT: "어느 상품을 묻는지 몰라요",
+  NO_OPTIONS: "게시된 옵션이 없는 상품이에요",
+  INVALID_TARGET: "다른 도매처 상품이거나 없는 상품이에요",
+  CLARIFY_AGAIN: "다시 물었지만 무엇을 묻는지 확인하지 못했어요",
+  NOT_LISTED: "목록에 없는 다른 주문이라고 했어요",
+  NO_BACKORDER: "열린 미송이 없는 소매처예요",
+  NO_MATCH: "말한 미송을 찾지 못했어요",
+  STOCK_ZERO: "재고가 없다고 답했어요. 입고 계획을 알려 주세요",
+  ETA_UNKNOWN: "입고 예정일이 정해지지 않았다고 답했어요",
+  ETA_PAST: "등록된 입고 예정일이 지났다고 답했어요",
+  HUMAN_REQUEST: "사장님과 직접 이야기하고 싶어 해요",
+};
+
+/**
+ * 계약 초안의 `ChatHandoffReason.enum`(읽기만). 생성 타입과 `satisfies`는 codegen이 돈 뒤의 스냅샷만 보므로,
+ * drafts에 값이 늘었는데 codegen 전이면 컴파일은 통과한다. 그 틈을 이 비교가 막는다.
+ * 경로는 import가 아니라 파일 읽기라 앱 → 패키지 import 규칙과 무관하다.
+ */
+function draftEnum(): string[] {
+  const raw = readFileSync(
+    new URL(
+      "../../../../../packages/api/openapi/drafts/wholesale.json",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const spec = JSON.parse(raw) as {
+    components: { schemas: { ChatHandoffReason: { enum: string[] } } };
+  };
+  return spec.components.schemas.ChatHandoffReason.enum;
+}
 
 function handoff(reason: ChatHandoff["reason"]): ChatHandoff {
   return { reason, intent: null, sourceSequence: 3 };
 }
 
-describe("S3-1 넘김 이유 줄", () => {
-  it("8개 이유 → 기획 §4-3 4 글과 정확히 같다", () => {
-    for (const [reason, text] of Object.entries(PLAN_REASONS))
-      expect(handoffReasonText(reason), reason).toBe(text);
-    // 표에 8개만 있다 — 하나 늘면 기획 표도 같이 고쳐야 한다
-    expect(Object.keys(HANDOFF_REASON_TEXT).sort()).toEqual(
-      Object.keys(PLAN_REASONS).sort(),
-    );
+describe("S6-1 넘김 이유 21값", () => {
+  it("표 키 집합 = drafts JSON enum 21개, 모든 글이 비어 있지 않다", () => {
+    const keys = Object.keys(HANDOFF_REASON_TEXT).sort();
+    expect(keys).toEqual([...draftEnum()].sort());
+    expect(keys).toHaveLength(21);
+    for (const reason of keys)
+      expect(handoffReasonText(reason)?.trim(), reason).toBeTruthy();
   });
 
-  it("이번 회차 밖 12개, 모르는 값, 빈 글자, null, undefined → 이유 줄 없음(null)", () => {
-    for (const reason of NO_TEXT_REASONS)
-      expect(handoffReasonText(reason), reason).toBeNull();
+  it("08d 13개 → 기획 §4-6 1 글과 정확히 같다(CLARIFY_AGAIN은 D47 Q1 ① 공통 문안)", () => {
+    for (const [reason, text] of Object.entries(PLAN_REASONS_08D))
+      expect(handoffReasonText(reason), reason).toBe(text);
+  });
+
+  it("08d 13개 + loop-07 8개 = 표 전체(어느 쪽에도 없는 키가 없다)", () => {
+    expect(Object.keys(HANDOFF_REASON_TEXT).sort()).toEqual(
+      [...Object.keys(PLAN_REASONS), ...Object.keys(PLAN_REASONS_08D)].sort(),
+    );
+  });
+});
+
+describe("S3-1 넘김 이유 줄", () => {
+  it("loop-07 8개 이유 → 기획 §4-3 4 글과 정확히 같다", () => {
+    for (const [reason, text] of Object.entries(PLAN_REASONS))
+      expect(handoffReasonText(reason), reason).toBe(text);
+  });
+
+  it("모르는 값, 빈 글자, null, undefined → 이유 줄 없음(null)", () => {
+    expect(handoffReasonText("X")).toBeNull();
     expect(handoffReasonText("SOMETHING_NEW")).toBeNull();
     expect(handoffReasonText("")).toBeNull();
     expect(handoffReasonText(null)).toBeNull();
@@ -70,13 +107,13 @@ describe("S3-1 넘김 이유 줄", () => {
     expect(handoffReasonText("__proto__")).toBeNull();
   });
 
-  it("말 하나: HANDOFF + 8개 이유면 글, handoff null이나 칸 없음이면 null, HANDOFF가 아니면 값이 있어도 null", () => {
+  it("말 하나: HANDOFF + 이유면 글, handoff null이나 칸 없음이면 null, HANDOFF가 아니면 값이 있어도 null", () => {
     expect(
       handoffReasonOf({ kind: "HANDOFF", handoff: handoff("PAYMENT_REPORT") }),
     ).toBe("입금했다는 말이에요. 정산 탭에서 입금을 확인해 주세요");
     expect(
       handoffReasonOf({ kind: "HANDOFF", handoff: handoff("STOCK_ZERO") }),
-    ).toBeNull();
+    ).toBe("재고가 없다고 답했어요. 입고 계획을 알려 주세요");
     expect(handoffReasonOf({ kind: "HANDOFF", handoff: null })).toBeNull();
     expect(handoffReasonOf({ kind: "HANDOFF" })).toBeNull();
     expect(
