@@ -89,6 +89,15 @@ test("QA S2-5 1280 잠긴 동안 실패 말풍선은 지우기만, 맨 위 자�
 test("F1 401 실패 말풍선 → 같은 계정 재로그인 → 다시 보내기 → 서버 말풍선 1, 보류 0", async ({
   page,
 }) => {
+  /* 보내기 POST의 Idempotency-Key(= clientMessageId)와 본문. 다시 보내기가 새 키를 만들면 서버가 두 번 만든다(M2) */
+  const sends: { key: string | null; body: unknown }[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && /\/chat\/rooms\/1\/messages$/.test(r.url()))
+      sends.push({
+        key: r.headers()["idempotency-key"] ?? null,
+        body: r.postDataJSON() as unknown,
+      });
+  });
   await enterChats(page, { email: ME });
   await openRoomReady(page, 1);
   await knob(page, "fail", { op: "send", status: 401 });
@@ -108,4 +117,9 @@ test("F1 401 실패 말풍선 → 같은 계정 재로그인 → 다시 보내�
   await expect(failed).toHaveCount(0, { timeout: 5_000 });
   await expect(bubbles(page).filter({ hasText: "QA 첫 글" })).toHaveCount(1);
   await expect(lostAlert(page)).toHaveCount(0);
+  expect(sends).toHaveLength(2);
+  expect(sends[0]?.key).toBeTruthy();
+  expect(sends[1]?.key, "다시 보내기는 처음 키").toBe(sends[0]?.key);
+  expect(sends[1]?.body, "다시 보내기는 같은 본문").toEqual(sends[0]?.body);
+  expect(sends[0]?.body).toMatchObject({ body: "QA 첫 글" });
 });
