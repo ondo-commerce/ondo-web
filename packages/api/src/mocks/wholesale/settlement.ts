@@ -4,6 +4,7 @@ import { daysBetween, seoulDate } from "../chat/backorderCandidates";
 import type { InquiryReceivable } from "../chat/receivable";
 import {
   allocateMockPayment,
+  releaseMockAllocation,
   mockOrders,
   mockOrderSettlement,
   mockRetailer,
@@ -22,7 +23,9 @@ import {
  *   - 판매(`SALE`) 원장 줄 = **출고 확정**(`POST /outbounds/{id}/ship`)이 남긴다 — 출고 목이 `recordMockSale`을 부른다.
  *     금액은 그 봉투에서 나간 수량 × 단가, 주문 단위로 한 줄. 미수는 여기서 는다
  *   - 입금(`PAYMENT`) 원장 줄 = `POST /payments`. `allocations`가 있으면 주문 목의 배정액을 올려
- *     정산 상태·미수 잔액(`GET /orders?retailerId`)이 함께 움직인다. 비면 선수금(스펙)
+ *     정산 상태·미수 잔액(`GET /orders?retailerId`)이 함께 움직인다. 비면 선수금(스펙). 배분 합계 상한은
+ *     이번 입금 + 남은 선수금이고, 모자라면 옛 입금의 남은 몫을 끌어 쓴다(loop-08c S4)
+ *   - 배분 취소(`POST /allocations/{id}/cancel`) = 줄에 취소 표시, 주문 배정액에서 빼고 그 입금 남은 몫으로 돌린다
  *   - 주문별 미수 = **출고된 금액 − 배정액**(`mockOrderSettlement`). 판매 줄과 같은 식이라 주문별 미수의 합 =
  *     원장 잔액(선수금이 없을 때). 출고 안 된 확정 주문은 미수 0이고 배분하면 `ALLOCATION_EXCEEDS_OUTSTANDING`
  *   - `잔액` = 그 소매처 원장을 시각순으로 누적한 값. `meta.ledgerBalance`는 필터·페이지와 무관한 전체 잔액
@@ -52,12 +55,21 @@ interface MockLedgerEntry {
   paymentId: number | null;
 }
 
+/**
+ * 배분 줄 = (주문, 돈이 나온 입금)마다 하나. 입금 배열 안에 두지 않고 따로 쌓는다 — 한 요청이 이번 입금과
+ * 옛 입금의 남은 몫을 같이 쓰면(스펙: 상한 = 이번 입금 + 남은 선수금) 줄마다 `paymentId`가 다르기 때문이다
+ */
 interface MockAllocation {
   id: number;
+  retailerId: number;
   orderId: number;
   orderNumber: number;
+  /** 돈이 나온 입금. 이 줄을 만든 요청의 입금이 아닐 수 있다 */
+  paymentId: number;
   amount: number;
   createdAt: string;
+  /** 취소 표시. 줄은 지우지 않는다(스펙 `cancelAllocation`). 취소된 줄은 요약, 선수금, 남은 몫에서 빠진다 */
+  cancelledAt: string | null;
 }
 
 interface MockPayment {
@@ -68,11 +80,17 @@ interface MockPayment {
   paidBy: PaidBy;
   method: PaymentMethod;
   memo: string | null;
-  allocations: MockAllocation[];
   createdAt: string;
   /** 같은 키 재요청은 같은 응답(스펙: 멱등). 본문이 다르면 409 */
   idempotencyKey: string;
   bodyJson: string;
+}
+
+/** 배분 계획 한 줄. `paymentId` null = 이번에 저장할 입금 */
+interface PlannedAllocation {
+  order: MockOrder;
+  paymentId: number | null;
+  amount: number;
 }
 
 interface MockBankAccount {
@@ -143,6 +161,15 @@ function seedBankAccounts(): MockBankAccount[] {
 
 let ledger = seedLedger();
 let payments: MockPayment[] = [];
+let allocations: MockAllocation[] = [];
+/**
+ * 입금 id → 처음 201 본문. 같은 키 재요청은 이것을 그대로 돌려준다 — 그 뒤 선수금이 쓰였거나 배분이 취소됐어도
+ * 다시 셈하지 않는다(멱등은 "같은 요청에 같은 답", 기획 §4-5 5)
+ */
+let firstResponses = new Map<
+  number,
+  WholesaleSchema<"PaymentCreatedResponse">
+>();
 let bankAccounts = seedBankAccounts();
 let nextLedgerId = 10202;
 let nextPaymentId = 4401;
@@ -173,45 +200,105 @@ export function recordMockSale(
   });
 }
 
-/** 입금 한 건을 저장소에 넣는다: 배정(주문 목 배정액), 입금, 원장 입금 줄. 검증은 부르는 쪽이 끝냈다 */
-function pushPayment(
-  p: Omit<MockPayment, "id" | "allocations" | "createdAt">,
+/** 입금 하나의 남은 몫 = 입금액 − 그 입금에서 나간 취소 안 된 배분 줄 합 */
+function remainingOf(payment: MockPayment): number {
+  return allocations.reduce(
+    (left, a) =>
+      a.paymentId === payment.id && a.cancelledAt === null
+        ? left - a.amount
+        : left,
+    payment.amount,
+  );
+}
+
+/**
+ * 배분 계획(스펙 `createPayment`). 요청 `allocations` 순서대로 주문을 채우고, 주문마다 이번 입금을 먼저 쓴 뒤
+ * 모자라면 그 소매처의 옛 입금을 paidAt 오름차순(같으면 id)으로 남은 몫부터 끌어 쓴다.
+ * 줄은 (주문, 입금)마다 하나. 합계가 이번 입금 + 남은 선수금을 넘으면 null — 아무것도 저장하지 않는다
+ */
+function planAllocations(
+  retailerId: number,
+  amount: number,
   targets: readonly { order: MockOrder; amount: number }[],
-): MockPayment {
+): PlannedAllocation[] | null {
+  const sources: { paymentId: number | null; left: number }[] = [
+    { paymentId: null, left: amount },
+    ...payments
+      .filter((p) => p.retailerId === retailerId)
+      /* 시각으로 비교한다(리뷰 R6). paidAt은 요청이 준 문자열 그대로라 "+09:00"과 "Z"가 섞이면 글자 순이 시각 순과 다르다 */
+      .sort(
+        (a, b) => Date.parse(a.paidAt) - Date.parse(b.paidAt) || a.id - b.id,
+      )
+      .map((p) => ({ paymentId: p.id, left: remainingOf(p) })),
+  ];
+  const plan: PlannedAllocation[] = [];
+  for (const target of targets) {
+    let need = target.amount;
+    for (const source of sources) {
+      if (need === 0) break;
+      const take = Math.min(need, source.left);
+      if (take <= 0) continue;
+      source.left -= take;
+      need -= take;
+      plan.push({
+        order: target.order,
+        paymentId: source.paymentId,
+        amount: take,
+      });
+    }
+    if (need > 0) return null;
+  }
+  return plan;
+}
+
+/**
+ * 입금 한 건을 저장소에 넣는다: 배분 줄(주문 목 배정액), 입금, 원장 입금 줄, 처음 응답. 검증과 계획은 부르는 쪽이
+ * 끝냈다. 원장 입금 줄은 이번 입금액 그대로다 — 옛 입금의 남은 몫을 끌어 써도 원장은 안 바뀐다(받은 돈은 그대로)
+ */
+function pushPayment(
+  p: Omit<MockPayment, "id" | "createdAt">,
+  plan: readonly PlannedAllocation[],
+): WholesaleSchema<"PaymentCreatedResponse"> {
   const createdAt = new Date().toISOString();
-  const payment: MockPayment = {
-    ...p,
-    id: nextPaymentId++,
-    allocations: targets.map(({ order, amount }) => {
-      allocateMockPayment(order, amount);
-      return {
-        id: nextAllocationId++,
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        amount,
-        createdAt,
-      };
-    }),
-    createdAt,
-  };
-  payments.push(payment);
+  const id = nextPaymentId++;
+  const payment: MockPayment = { ...p, id, createdAt };
+  const lines = plan.map(({ order, paymentId, amount }) => {
+    allocateMockPayment(order, amount);
+    const line: MockAllocation = {
+      id: nextAllocationId++,
+      retailerId: p.retailerId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentId: paymentId ?? id,
+      amount,
+      createdAt,
+      cancelledAt: null,
+    };
+    allocations.push(line);
+    return line;
+  });
   ledger.push({
     id: nextLedgerId++,
-    retailerId: payment.retailerId,
+    retailerId: p.retailerId,
     entryType: "PAYMENT",
-    balanceChange: payment.amount,
-    occurredAt: payment.paidAt,
+    balanceChange: p.amount,
+    occurredAt: p.paidAt,
     orderId: null,
     orderNumber: null,
-    paymentId: payment.id,
+    paymentId: id,
   });
-  return payment;
+  payments.push(payment);
+  // 응답 셈(선수금, 원장 잔액)은 이 입금이 저장된 뒤라야 맞다
+  const response = paymentResponse(payment, lines);
+  firstResponses.set(id, response);
+  return response;
 }
 
 /**
  * 시험 손잡이용 입금(목 전용). 소매 앱 번들에는 정산 핸들러가 없어 소매 화면에서 갚을 돈 0(문장 C), 선수금(D)을
  * 만들 길이 없다 — 소매 채팅 목 `/__mock/chat/payment`가 이 함수로 같은 장부에 입금을 넣는다(loop-07 M5).
- * 규칙은 `POST /payments`와 같은 저장 경로(`pushPayment`)를 탄다. 배분이 미수를 넘거나 남의 주문이면 던진다
+ * 규칙은 `POST /payments`와 같은 저장 경로(`pushPayment`)를 탄다. 배분이 미수를 넘거나 남의 주문이면 던진다.
+ * 상한은 아직 옛 규칙(이번 입금액만)이라 늘 이번 입금에서만 나간다. 선수금까지 쓰는 새 상한은 08d(S4-8)
  */
 export function recordMockPayment(input: {
   retailerId: number;
@@ -229,6 +316,8 @@ export function recordMockPayment(input: {
   });
   if (targets.reduce((s, t) => s + t.amount, 0) > input.amount)
     throw new Error("목: 배분 합계가 입금액을 넘었다");
+  const plan = planAllocations(input.retailerId, input.amount, targets);
+  if (plan === null) throw new Error("목: 배분 합계가 입금액을 넘었다");
   pushPayment(
     {
       retailerId: input.retailerId,
@@ -240,7 +329,7 @@ export function recordMockPayment(input: {
       idempotencyKey: `mock-${nextPaymentId}`,
       bodyJson: "",
     },
-    targets,
+    plan,
   );
 }
 
@@ -336,11 +425,16 @@ function ledgerResponses(
     .reverse();
 }
 
+/** `lines` = 이 요청이 만든 배분 줄. 옛 입금에서 끌어온 줄도 들어간다(`paymentId`가 다르다) */
 function paymentResponse(
   payment: MockPayment,
+  lines: readonly MockAllocation[],
 ): WholesaleSchema<"PaymentCreatedResponse"> {
   const retailer = mockRetailer(payment.retailerId);
-  const allocated = payment.allocations.reduce((acc, a) => acc + a.amount, 0);
+  // 이번 입금에서 안 쓴 돈. 옛 입금에서 끌어온 줄은 빼지 않는다(스펙)
+  const fromThis = lines
+    .filter((a) => a.paymentId === payment.id)
+    .reduce((acc, a) => acc + a.amount, 0);
   return {
     id: payment.id,
     retailerId: payment.retailerId,
@@ -350,31 +444,41 @@ function paymentResponse(
     paidBy: payment.paidBy,
     method: payment.method,
     memo: payment.memo as string,
-    unallocatedAmount: payment.amount - allocated,
+    unallocatedAmount: payment.amount - fromThis,
     // 등록 후 거래처 선수금 전체(스펙: `prepaid = totalPaid − totalAllocated`). 이번 입금만이 아니다
     prepaidRemaining: prepaidOf(payment.retailerId),
-    allocations: payment.allocations.map((a) => ({
+    allocations: lines.map((a) => ({
       id: a.id,
       orderId: a.orderId,
       orderNumber: a.orderNumber,
       amount: a.amount,
       createdAt: a.createdAt,
-      paymentId: payment.id,
+      paymentId: a.paymentId,
     })),
     ledgerBalance: balanceOf(payment.retailerId),
     createdAt: payment.createdAt,
   };
 }
 
-/** 소매처의 남은 선수금 = Σ(입금액 − 그 입금의 배정 합). 목은 입금 취소가 없어 뺄 것이 없다 */
+/** 소매처의 남은 선수금 = Σ 입금별 남은 몫. 취소된 배분 줄은 그 입금으로 돌아와 있다. 목은 입금 취소가 없다 */
 function prepaidOf(retailerId: number): number {
   return payments
     .filter((p) => p.retailerId === retailerId)
-    .reduce(
-      (acc, p) =>
-        acc + p.amount - p.allocations.reduce((s, a) => s + a.amount, 0),
-      0,
-    );
+    .reduce((acc, p) => acc + remainingOf(p), 0);
+}
+
+/**
+ * 요약(`receivableSummary`)이 읽는 입금 모양. 배분 줄을 **돈이 나온 입금** 아래로 모으고 취소 줄은 뺀다 —
+ * 그래야 요약의 선수금 식(입금액 − 그 입금의 배정 합)이 `prepaidOf`와 같은 값을 낸다
+ */
+function summaryPayments(): SummaryPayment[] {
+  return payments.map((p) => ({
+    retailerId: p.retailerId,
+    amount: p.amount,
+    allocations: allocations.filter(
+      (a) => a.paymentId === p.id && a.cancelledAt === null,
+    ),
+  }));
 }
 
 function bankAccountResponse(
@@ -519,7 +623,7 @@ export const settlementHandlers = [
     const seen = payments.find((p) => p.idempotencyKey === key);
     if (seen) {
       if (seen.bodyJson === bodyJson)
-        return HttpResponse.json({ data: paymentResponse(seen) });
+        return HttpResponse.json({ data: firstResponses.get(seen.id) });
       return fail(
         409,
         "IDEMPOTENCY_KEY_REUSED",
@@ -569,9 +673,9 @@ export const settlementHandlers = [
     if (!retailer)
       return fail(404, "RESOURCE_NOT_FOUND", "거래 이력이 없는 소매처입니다.");
 
-    const allocations = body.allocations ?? [];
+    const requested = body.allocations ?? [];
     const targets: { order: MockOrder; amount: number }[] = [];
-    for (const a of allocations) {
+    for (const a of requested) {
       if (typeof a.amount !== "number" || a.amount <= 0)
         return fail(
           400,
@@ -605,12 +709,13 @@ export const settlementHandlers = [
           "ORDER_NOT_CONFIRMED",
           "확정되지 않은 주문에는 배분할 수 없습니다.",
         );
-    const allocated = targets.reduce((acc, t) => acc + t.amount, 0);
-    if (allocated > body.amount)
+    // 상한 = 이번 입금액 + 그 소매처 남은 선수금(스펙). 넘으면 아무것도 저장하지 않는다
+    const plan = planAllocations(body.retailerId, body.amount, targets);
+    if (plan === null)
       return fail(
         409,
         "ALLOCATION_EXCEEDS_PAYMENT",
-        "배분 합계가 입금액을 넘었습니다.",
+        "배분 합계가 입금액과 남은 선수금을 넘었습니다.",
       );
     // 미수 = 출고된 금액 − 배정액. 출고 안 된 주문은 미수 0이라 1원만 붙여도 여기서 막힌다
     for (const { order, amount } of targets)
@@ -621,7 +726,7 @@ export const settlementHandlers = [
           `주문 ${order.orderNumber}의 미수(${mockOrderSettlement(order).outstandingAmount})를 넘었습니다.`,
         );
 
-    const payment = pushPayment(
+    const created = pushPayment(
       {
         retailerId: body.retailerId,
         amount: body.amount,
@@ -632,13 +737,37 @@ export const settlementHandlers = [
         idempotencyKey: key,
         bodyJson,
       },
-      targets,
+      plan,
     );
-    return HttpResponse.json(
-      { data: paymentResponse(payment) },
-      { status: 201 },
-    );
+    return HttpResponse.json({ data: created }, { status: 201 });
   }),
+
+  /**
+   * 배분 취소(스펙 `cancelAllocation`). 줄은 지우지 않고 `cancelledAt`만 찍는다. 원장은 안 바뀐다 — 그 돈은 줄의
+   * 입금 남은 몫(선수금)으로 돌아가고 주문 미수가 다시 는다. 검사 순서 404 → 409
+   */
+  http.post(
+    "*/api/wholesale/allocations/:allocationId/cancel",
+    ({ params }) => {
+      const id = Number(params.allocationId);
+      const line = allocations.find((a) => a.id === id);
+      if (!line) return fail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
+      if (line.cancelledAt !== null)
+        return fail(409, "STATE_CONFLICT", "이미 취소된 배분입니다.");
+      line.cancelledAt = new Date().toISOString();
+      const order = mockOrders().find((o) => o.id === line.orderId);
+      if (order) releaseMockAllocation(order, line.amount);
+      const data: WholesaleSchema<"AllocationCancelledResponse"> = {
+        allocationId: line.id,
+        orderId: line.orderId,
+        paymentId: line.paymentId,
+        amount: line.amount,
+        cancelledAt: line.cancelledAt,
+        prepaidRemaining: prepaidOf(line.retailerId),
+      };
+      return HttpResponse.json({ data });
+    },
+  ),
 
   http.get("*/api/wholesale/bank-accounts", () =>
     HttpResponse.json({ data: sortedBankAccounts().map(bankAccountResponse) }),
@@ -886,7 +1015,7 @@ export function mockReceivableRows(now = Date.now()): InquiryReceivable[] {
     ...receivableSummary({
       ledger,
       orders: mockOrders(),
-      payments,
+      payments: summaryPayments(),
       retailerId,
       today,
       asOf,
@@ -911,6 +1040,8 @@ export function mockReceivable(
 export function resetSettlementMock() {
   ledger = seedLedger();
   payments = [];
+  allocations = [];
+  firstResponses = new Map();
   bankAccounts = seedBankAccounts();
   nextLedgerId = 10202;
   nextPaymentId = 4401;

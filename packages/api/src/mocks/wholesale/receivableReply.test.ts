@@ -96,7 +96,7 @@ async function pay(
   amount: number,
   allocations: { orderId: number; amount: number }[],
 ) {
-  const res = await call<{ data: unknown }>(
+  const res = await call<{ data: WholesaleSchema<"PaymentCreatedResponse"> }>(
     "POST",
     `${API}/payments`,
     {
@@ -110,6 +110,7 @@ async function pay(
     { "Idempotency-Key": key() },
   );
   expect(res.status).toBe(201);
+  return res.body.data;
 }
 
 const B_37500 =
@@ -243,6 +244,52 @@ describe("S1-6 조회 시각과 입금 뒤 새 금액(도매 incoming + 정산 �
     expect(reset.status).toBe(200);
     const [, answer] = await incoming("지금 미수 얼마예요?");
     expect(answer?.body).toBe(B_37500);
+  });
+});
+
+describe("loop-08c S4-7 장면 3 이어 받기: 배분, 취소, 선수금 끌어 쓰기", () => {
+  it("입금 37,500 배분 → C 갚을 돈 0 → 그 배분 취소 → 넘김 AMOUNT_UNSURE → 입금 10,000에 37,500 배분 → 선수금 10,000 금액 답", async () => {
+    const first = await pay(37_500, [{ orderId: 7004, amount: 37_500 }]);
+    const [, paid] = await incoming("지금 미수 얼마예요?");
+    expect(paid?.body).toBe("지금 갚을 돈은 없어요");
+
+    const [line] = first.allocations;
+    if (!line) throw new Error("배분 줄 없음");
+    const cancelled = await call<{ data: { prepaidRemaining: number } }>(
+      "POST",
+      `${API}/allocations/${line.id}/cancel`,
+      {},
+    );
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.data.prepaidRemaining).toBe(37_500);
+    // 갚을 돈 37,500과 선수금 37,500이 같이 있다 — 어느 쪽인지 말할 수 없어 넘긴다(loop-07 MIXED_BALANCE)
+    const [ask, ...mixed] = await incoming("지금 미수 얼마예요?");
+    expect(mixed.map((m) => [m.kind, m.handoff])).toEqual([
+      [
+        "HANDOFF",
+        {
+          reason: "AMOUNT_UNSURE",
+          intent: "RECEIVABLE",
+          sourceSequence: ask.sequence,
+        },
+      ],
+    ]);
+
+    const second = await pay(10_000, [{ orderId: 7004, amount: 37_500 }]);
+    expect(second.allocations.map((a) => [a.paymentId, a.amount])).toEqual([
+      [second.id, 10_000],
+      [first.id, 27_500],
+    ]);
+    const [, answer, ...rest] = await incoming("지금 미수 얼마예요?");
+    expect(rest).toEqual([]);
+    expect(answer?.body).toBe(
+      "지금 갚을 돈은 없어요. 미리 낸 돈(선수금) 10,000원이 남아 있어요",
+    );
+    expect(answer?.autoReply?.facts.receivable).toEqual({
+      outstandingAmount: 0,
+      prepaidAmount: 10_000,
+      overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+    });
   });
 });
 
