@@ -72,11 +72,13 @@ export async function guardSession<T>(
   queryClient: QueryClient,
   run: () => Promise<T>,
   /**
-   * 요청을 띄운 방 화면의 세대(`chatScreenEpoch`, loop-08d R1). 주면 그 화면을 떠난 뒤 도착한 401은 끊김 칸을 켜지 않고
-   * `ChatSessionLostError`만 던진다 — 잠금 범위는 방 화면 하나인데(기획 §4-1), 떠난 방의 늦은 401이 공용 칸을 켜면
-   * 지금 보는 다른 방이 잠긴다. 안 주면(조회, 보내기) 지금처럼. 그쪽은 방을 떠나면 취소되거나 화면이 같이 사라진다
+   * 요청을 띄운 방 화면의 세대(`chatScreenEpoch`, loop-08d R1, 메타 M1). 그 화면을 떠난 뒤 도착한 401은 끊김 칸을 켜지
+   * 않고 `ChatSessionLostError`만 던진다 — 잠금 범위는 방 화면 하나인데(기획 §4-1), 떠난 방의 늦은 401(방 머리, 첫 장,
+   * polling, 읽음, 보내기, 담기, 이전 장)이 공용 칸을 켜면 지금 보는 다른 방이 잠긴다. 성공과 401 아닌 실패는 그대로라
+   * 원래 방 캐시 반영과 실패 말풍선은 지금처럼 간다. 기본값은 부른 순간의 세대다. 이 함수를 부르는 곳은 전부 방 화면
+   * 안이다(목록은 거치지 않는다). 이전 장은 표시를 바꾼 순간의 값을 넘긴다
    */
-  screen?: number,
+  screen: number = screenEpoch,
 ): Promise<T> {
   if (isSessionLost(queryClient)) throw new ChatSessionLostError();
   const account = accountEpoch;
@@ -90,8 +92,7 @@ export async function guardSession<T>(
     if (isUnauthorized(error) && sessionEpoch !== session)
       throw new ChatStaleResponseError();
     if (isUnauthorized(error)) {
-      if (screen === undefined || screen === screenEpoch)
-        markSessionLost(queryClient);
+      if (screen === screenEpoch) markSessionLost(queryClient);
       throw new ChatSessionLostError();
     }
     throw error;
@@ -153,8 +154,8 @@ export function chatSessionEpoch(): number {
 }
 
 /**
- * 방 화면 세대(loop-08d R1). 방 화면을 떠날 때마다 오른다(`leaveChatScreen`). 소매 잠금 범위가 방 화면 하나라서,
- * 화면을 넘겨 도착한 이전 장 401이 다음 화면을 잠그지 않게 `guardSession`의 `screen`으로 쓴다
+ * 방 화면 세대(loop-08d R1, 메타 M1). 방 화면을 떠날 때마다 오른다(`leaveChatScreen`). 소매 잠금 범위가 방 화면 하나라서,
+ * 화면을 넘겨 도착한 방 요청의 401이 다음 화면을 잠그지 않게 `guardSession`의 `screen`으로 쓴다
  */
 let screenEpoch = 0;
 

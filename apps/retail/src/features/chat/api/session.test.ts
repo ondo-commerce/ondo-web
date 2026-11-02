@@ -167,6 +167,22 @@ describe("guardSession 방 화면 세대(loop-08d R1)", () => {
   });
 });
 
+describe("guardSession 화면 세대 기본값(loop-08d 메타 M1)", () => {
+  it("screen을 안 넘겨도 부른 순간의 화면 세대를 잡는다 — 읽음, 보내기, polling의 늦은 401도 떠난 뒤면 안 잠근다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => leaveChatScreen(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ChatSessionLostError);
+    expect(isSessionLost(qc)).toBe(false);
+  });
+});
+
 describe("dropStaleSession — 방 만들기(리뷰 R7)", () => {
   it("응답 전에 세션이 바뀌면 성공도 버린다(A 방으로 이동 0)", async () => {
     const qc = new QueryClient();

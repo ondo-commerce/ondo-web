@@ -35,6 +35,8 @@ import {
   topOf,
   waitBubbles,
   wheelUpTo,
+  READ_POST,
+  SEND_POST,
 } from "./retail-history-helpers";
 
 /**
@@ -314,6 +316,75 @@ test("R1 방 1 이전 장 401(지연) → 방 33 → 늦은 401 도착 → 방 3
   await expect(historyButton(page)).not.toHaveAttribute("aria-busy", "true");
   await historyButton(page).click();
   await waitBubbles(page, 100);
+});
+
+/** 목이 돌려준 계획 실패 중 op 하나(`/__mock/chat/log`) */
+async function plannedOf(
+  page: Page,
+  op: string,
+  status: number,
+): Promise<number> {
+  const data = await page.evaluate(async () => {
+    const r = await fetch("/__mock/chat/log");
+    return ((await r.json()) as { data: { op: string; status: number }[] })
+      .data;
+  });
+  return data.filter((f) => f.op === op && f.status === status).length;
+}
+
+/** 방 33 이 잠기지 않았다 — 끊김 줄 0, 쓰기 가능, 4초 동안 polling 이 나간다 */
+async function expectRoomAlive(page: Page): Promise<void> {
+  await page.waitForTimeout(800);
+  await expect(lostAlert(page)).toHaveCount(0);
+  await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  const at = await count(page, MESSAGES_GET);
+  await page.waitForTimeout(4000);
+  expect(await count(page, MESSAGES_GET), "방 33 polling 4초").toBeGreaterThan(
+    at,
+  );
+}
+
+/**
+ * 08d 메타 M1. R1 과 같은 잠금 범위(방 화면 하나)를 이전 장 밖의 방 요청에도. 떠난 방 1 의 늦은 읽음 401, 보내기 401 이
+ * 방 33 을 잠그지 않는다. 방 1 보내기의 보류 말풍선은 방 화면 수명이라 방을 떠나면 없다(입력 기억은 08e S5)
+ */
+test("M1 방 1 읽음 401(지연) → 방 33 → 늦은 401 도착 → 방 33 잠금 0, polling 계속", async ({
+  page,
+}) => {
+  await openHistoryRoom(page);
+  await chatMock(page, "fail", { op: "read", status: 401 });
+  await chatMock(page, "delay", { op: "read", ms: 3000 });
+  const reads = await count(page, READ_POST);
+  /* 도매가 답하면 바닥에 있는 열린 방이 읽음을 보낸다 — 그 POST 가 지연에 물린다 */
+  await incoming(page, 1, "늦은 읽음 유발");
+  await expect
+    .poll(() => count(page, READ_POST), { timeout: 10_000 })
+    .toBeGreaterThan(reads);
+
+  await enterFromList(page, ROOM_SHORT);
+  await expect(bubbles(page).first()).toBeVisible();
+  await expect
+    .poll(() => plannedOf(page, "read", 401), { timeout: 8000 })
+    .toBe(1);
+  await expectRoomAlive(page);
+});
+
+test("M1 방 1 보내기 401(지연) → 방 33 → 늦은 401 도착 → 방 33 잠금 0, polling 계속", async ({
+  page,
+}) => {
+  await openHistoryRoom(page);
+  await chatMock(page, "fail", { op: "send", status: 401 });
+  await chatMock(page, "delay", { op: "send", ms: 3000 });
+  await composer(page).fill("떠나기 전 보낸 글");
+  await composer(page).press("Enter");
+  await expect.poll(() => count(page, SEND_POST)).toBe(1);
+
+  await enterFromList(page, ROOM_SHORT);
+  await expect(bubbles(page).first()).toBeVisible();
+  await expect
+    .poll(() => plannedOf(page, "send", 401), { timeout: 8000 })
+    .toBe(1);
+  await expectRoomAlive(page);
 });
 
 test.describe("S3-9 ② [같은 계정, 이전 장] 다른 탭 bombom 로그인", () => {
