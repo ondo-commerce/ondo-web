@@ -462,6 +462,9 @@ describe("S4-6 보류 말풍선 합치기", () => {
       failures: 0,
       nextPollMs: 3000,
       counterpartRead: null,
+      historyHasMore: false,
+      historyFetched: false,
+      historyStatus: "idle",
     };
     const next = insertSent(thread, [
       message(7, { sender: "WHOLESALER", clientMessageId: "k-1" }),

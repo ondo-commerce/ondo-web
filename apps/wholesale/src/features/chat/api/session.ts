@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
 import { useEffect } from "react";
 import type { ChatCache } from "./keys";
-import { chatEpoch, useChatCache } from "./scope";
+import { chatEpoch, chatSessionEpoch, useChatCache } from "./scope";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -57,6 +57,9 @@ export function markSessionLost({ queryClient, keys }: ChatCache): void {
  * **시작 때 로그아웃 세대를 잡는다**(loop-08b M7). 로그아웃이 캐시를 지운 뒤 도착한 응답은 성공이든 401이든 버린다 —
  * 늦은 401이 지운 끊김 칸을 다시 true로 만들면, 같은 계정으로 다시 로그인한 사장의 채팅이 첫 조회부터 잠긴다.
  * 늦은 성공도 queryFn 안에서 다른 칸을 고치는 경우(방 머리 → 메시지 캐시)가 있어 같이 막는다.
+ *
+ * 같은 계정 재로그인(`refreshChatSession`, 세션 세대만 오름)을 넘긴 요청은 **401만** 버린다(Codex 메타 M2, M6).
+ * 성공과 다른 실패는 같은 계정의 답이라 그대로 간다 — 보내기가 "보내는 중"에 멈추지 않고 실패 말풍선으로 끝난다.
  */
 export async function guardSession<T>(
   chat: ChatCache,
@@ -64,11 +67,15 @@ export async function guardSession<T>(
 ): Promise<T> {
   if (isSessionLost(chat)) throw new ChatSessionLostError();
   const epoch = chatEpoch();
+  const session = chatSessionEpoch();
   let result: T;
   try {
     result = await run();
   } catch (error) {
     if (chatEpoch() !== epoch) throw new ChatStaleResponseError();
+    /* 같은 계정 재로그인을 넘긴 401은 옛 쿠키의 답이다(M2) — 새 세션을 잠그지 않게 버린다. 다른 실패는 그대로(M6) */
+    if (isUnauthenticated(error) && chatSessionEpoch() !== session)
+      throw new ChatStaleResponseError();
     if (isUnauthenticated(error)) {
       markSessionLost(chat);
       throw new ChatSessionLostError();

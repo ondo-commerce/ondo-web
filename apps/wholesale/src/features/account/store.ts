@@ -1,8 +1,13 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SESSION_STORAGE_KEY } from "./constants";
-import { findAccount, normalizeEmail } from "./derive";
+import { SESSION_CHANNEL_NAME, SESSION_STORAGE_KEY } from "./constants";
+import {
+  findAccount,
+  normalizeEmail,
+  parseSessionBroadcast,
+  otherTabActionOf,
+} from "./derive";
 import type { Account, AccountStatus, BankAccount } from "./types";
 
 /**
@@ -248,6 +253,7 @@ export function signIn(email: string): SessionView {
   };
   writeStorage(next);
   commit(next);
+  broadcastSession(next.email);
   return resolve(next);
 }
 
@@ -278,6 +284,7 @@ export function signInWithStatus(
   };
   writeStorage(next);
   commit(next);
+  broadcastSession(next.email);
   return resolve(next);
 }
 
@@ -286,6 +293,12 @@ export function signInWithStatus(
  * 등록한 계좌가 사라지면 사장은 자기가 한 일이 남지 않는 앱이라고 배운다.
  */
 export function signOut(): void {
+  endSession();
+  broadcastSession(null);
+}
+
+/** 이 탭의 세션을 닫는다(정리 포함). 다른 탭에 알리지는 않는다 — 다른 탭에서 온 알림을 받아 닫을 때도 쓴다 */
+function endSession(): void {
   const current = ensureLoaded();
   const next: SessionState = { ...current, loaded: true, email: null };
   /* 세션을 닫기 **전에** 지운다. 닫으면 가드가 ERP 화면을 내리고, 내려가는 입력창이 마지막 글을 저장한다 —
@@ -313,6 +326,56 @@ export function onSignOut(cleanup: () => void): () => void {
   return () => {
     signOutCleanups.delete(cleanup);
   };
+}
+
+/*
+ * 탭 사이 세션 변경(loop-08c 리뷰 R8). 탭 2에서 로그아웃하고 B로 들어오면 쿠키는 B인데 탭 1은 A라고 믿고 A의 목록,
+ * 대화, 쓰던 글을 계속 그렸다. 로그인, 로그아웃마다 채널로 알리고, 받은 탭은 계정이 다르면 자기 세션을 닫는다 —
+ * 로그아웃과 같은 정리(`onSignOut`: 채팅 캐시와 세대, 헤더 알림 캐시, 쓰던 글)가 돌고 가드가 로그인 화면으로 보낸다.
+ * B를 이 탭에 그대로 열지 않는 이유: 이 탭은 B의 승인 상태를 모른다(로그인 응답이 탭 2에만 왔다).
+ */
+let sessionChannel: BroadcastChannel | null = null;
+
+function channel(): BroadcastChannel | null {
+  if (sessionChannel !== null) return sessionChannel;
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined")
+    return null;
+  try {
+    sessionChannel = new BroadcastChannel(SESSION_CHANNEL_NAME);
+  } catch {
+    /* 채널을 못 열면 탭 사이 전달만 빠진다 — 각 탭의 로그인, 로그아웃은 그대로 돈다 */
+    return null;
+  }
+  return sessionChannel;
+}
+
+function broadcastSession(email: string | null): void {
+  try {
+    channel()?.postMessage({ email });
+  } catch {
+    /* 알림이 실패해도 이 탭의 로그인, 로그아웃은 끝나야 한다 */
+  }
+}
+
+/**
+ * 다른 탭의 세션 알림을 듣는다. 앱 맨 위(`app/SignOutCleanup.tsx`)가 한 번 건다 — 어느 화면이 떠 있든 들어야 한다.
+ * 보낸 탭 자신은 받지 않는다(BroadcastChannel 규칙). 돌려준 함수로 뗀다.
+ *
+ * 같은 계정 재로그인(Codex 메타 M2)은 세션을 닫지 않고 `onRefresh`를 부른다 — 401로 잠긴 채팅을 새 쿠키로 이어 가게.
+ * 무엇을 풀지는 이 feature가 모른다. `app/`이 채팅 쪽 함수를 넘긴다(feature끼리 import 금지)
+ */
+export function watchOtherTabSessions(onRefresh: () => void): () => void {
+  const target = channel();
+  if (target === null) return () => {};
+  const onMessage = (event: MessageEvent) => {
+    const message = parseSessionBroadcast(event.data);
+    if (message === null) return;
+    const action = otherTabActionOf(ensureLoaded().email, message.email);
+    if (action === "end") endSession();
+    else if (action === "refresh") onRefresh();
+  };
+  target.addEventListener("message", onMessage);
+  return () => target.removeEventListener("message", onMessage);
 }
 
 /** 로그인한 이메일(소문자). 판정 전, 로그아웃이면 null */
