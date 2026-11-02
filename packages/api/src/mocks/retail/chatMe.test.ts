@@ -131,6 +131,16 @@ describe("S1-4 me {retailerId}", () => {
     }
     expect(chatMeRetailerId()).toBe(1);
   });
+
+  it('본문이 null, 숫자, 배열, 문자열 → 예외 없이 400 VALIDATION_FAILED(retailerId), "나"는 그대로(CodeRabbit C1)', async () => {
+    for (const json of [null, 2, [2], "2"]) {
+      const res = await knob("/me", json);
+      expect(res.status, JSON.stringify(json)).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_FAILED");
+      expect(res.body.errors[0]?.field).toBe("retailerId");
+    }
+    expect(chatMeRetailerId()).toBe(1);
+  });
 });
 
 describe("S1-3 지연된 실패(소매)", () => {

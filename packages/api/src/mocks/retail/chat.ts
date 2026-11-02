@@ -761,10 +761,12 @@ export const retailChatHandlers = [
    * 방 2). 방이 없는 소매처면 빈 목록. 1 이상 정수가 아니면 400. `reset`이 기본(1, 봄봄상회)으로 되돌린다
    */
   http.post("*/__mock/chat/me", async ({ request }) => {
-    const input = (await request.json().catch(() => ({}))) as {
-      retailerId?: unknown;
-    };
-    const id = input.retailerId;
+    const input: unknown = await request.json().catch(() => ({}));
+    /* 본문이 null, 숫자, 배열이면 칸을 읽다 던진다(CodeRabbit C1) — 객체가 아니면 칸이 없는 것과 같이 400 */
+    const id =
+      typeof input === "object" && input !== null && !Array.isArray(input)
+        ? (input as { retailerId?: unknown }).retailerId
+        : undefined;
     if (typeof id !== "number" || !Number.isInteger(id) || id < 1)
       return invalid(
         "retailerId",
