@@ -1,3 +1,5 @@
+import type { ChatMessage } from "./types";
+
 /**
  * 읽음 표시가 붙을 수 있는 내 쪽 메시지 kind(기획 §4-3 2, 디자인 결정 60). 소매는 내가 쓴 글(RETAILER TEXT)뿐 —
  * 자동 답, 되묻기는 도매 이름으로 나간 상대 쪽 말이다. 서버가 kind를 늘리면 여기 없는 값은 안 붙는다
@@ -41,6 +43,16 @@ export const HISTORY_TEXT = {
   failed: "이전 메시지를 못 불러왔어요",
   retry: "다시 시도",
   end: "대화 처음이에요",
+} as const;
+
+/** 이 앱에서 "상대"(D45 Q3 ①). `새 메시지 N개`의 N은 이 sender의 말만 센다. 도매 앱은 RETAILER다(08c) */
+export const COUNTERPART_SENDER = "WHOLESALER" satisfies ChatMessage["sender"];
+
+/** `새 메시지 N개` 버튼 글(loop-08d S4, 디자인 결정 67). 보이는 글로 이름이 시작한다 — 음성 명령도 맞게. 도매와 같은 말 */
+export const NEW_MESSAGE_TEXT = {
+  countPrefix: "새 메시지 ",
+  countSuffix: "개",
+  jump: "아래로 이동",
 } as const;
 
 /**

@@ -169,6 +169,8 @@ export interface ReadState {
   inFlight: number;
   visible: boolean;
   sessionLost: boolean;
+  /** log가 바닥(48px 안)인가. 아니면 보류한다(loop-08d §4-4 3) */
+  atBottom: boolean;
 }
 
 /**

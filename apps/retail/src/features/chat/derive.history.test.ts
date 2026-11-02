@@ -6,6 +6,9 @@ import {
   isUserScrollActive,
   mergeMessages,
   mergeOlder,
+  newMessageCount,
+  newMessageLabel,
+  newMessageText,
   nextUserScrollUntil,
   shouldAutoLoadOlder,
   type AutoLoadInput,
@@ -111,6 +114,47 @@ describe("isAtBottom — 이전 장을 합칠 때 바닥이었나(48px)", () => 
     expect(isAtBottom(1000, 452, 500)).toBe(true);
     expect(isAtBottom(1000, 451, 500)).toBe(false);
     expect(isAtBottom(400, 0, 500)).toBe(true);
+  });
+});
+
+describe("newMessageCount, newMessageLabel (S4-1, D45 Q3 ①)", () => {
+  const unknownKind = "ORDER_LINK" as unknown as ChatMessage["kind"];
+
+  it("WHOLESALER TEXT 1 + AUTO_REPLY 1 + CLARIFY 1 + SYSTEM 1 + RETAILER 1 → 3, 모르는 kind WHOLESALER 1 더하면 4", () => {
+    const messages = [
+      message(100),
+      message(121, { sender: "WHOLESALER", kind: "TEXT" }),
+      message(122, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(123, { sender: "WHOLESALER", kind: "CLARIFY" }),
+      message(124, { sender: "SYSTEM", kind: "HANDOFF" }),
+      message(125, { sender: "RETAILER", kind: "TEXT" }),
+    ];
+    expect(newMessageCount(messages, 120, "WHOLESALER")).toBe(3);
+    expect(
+      newMessageCount(
+        [
+          ...messages,
+          message(126, { sender: "WHOLESALER", kind: unknownKind }),
+        ],
+        120,
+        "WHOLESALER",
+      ),
+    ).toBe(4);
+  });
+
+  it("바닥을 떠나기 전(since 이하) 줄과 내 다른 기기 글은 안 센다", () => {
+    const messages = [
+      message(120, { sender: "WHOLESALER" }),
+      message(121, { sender: "RETAILER" }),
+    ];
+    expect(newMessageCount(messages, 120, "WHOLESALER")).toBe(0);
+  });
+
+  it("버튼 글과 이름", () => {
+    expect(newMessageLabel(2)).toBe("새 메시지 2개, 아래로 이동");
+    expect(newMessageLabel(0)).toBe("아래로 이동");
+    expect(newMessageText(1)).toBe("새 메시지 1개");
+    expect(newMessageText(0)).toBe("아래로 이동");
   });
 });
 

@@ -39,14 +39,16 @@ test.beforeEach(async ({ page }) => {
 
 /** live 영역에 새 노드가 붙을 때마다 그 글을 모은다 */
 async function watchLive(page: Page) {
-  await page.locator('[aria-live="polite"][data-ac="S6-11"]').evaluate((el) => {
-    const w = window as unknown as { __live: string[] };
-    w.__live = [];
-    new MutationObserver((records) => {
-      for (const r of records)
-        for (const n of r.addedNodes) w.__live.push(n.textContent ?? "");
-    }).observe(el, { childList: true });
-  });
+  await page
+    .locator('[aria-live="polite"][data-ac~="S6-11"]')
+    .evaluate((el) => {
+      const w = window as unknown as { __live: string[] };
+      w.__live = [];
+      new MutationObserver((records) => {
+        for (const r of records)
+          for (const n of r.addedNodes) w.__live.push(n.textContent ?? "");
+      }).observe(el, { childList: true });
+    });
   return () =>
     page.evaluate(() => (window as unknown as { __live: string[] }).__live);
 }
