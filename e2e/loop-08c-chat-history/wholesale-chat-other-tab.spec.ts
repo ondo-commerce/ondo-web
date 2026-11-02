@@ -11,6 +11,7 @@ import {
   MESSAGES_GET,
   openRoomReady,
   OTHER,
+  pendingBubbles,
   requests,
   signIn,
   signOut,
@@ -133,6 +134,67 @@ test("M2 재로그인 전에 떠난 A 방 요청의 늦은 401(지연 3초) → 
   await expect(
     page.getByRole("alert").filter({ hasText: LOST_ALERT }),
   ).toHaveCount(0);
+});
+
+test("M6 보내기 응답 지연 중 탭 2 같은 A 재로그인 → POST 500 도착 → 탭 1 보류 말풍선이 실패로 끝나 다시 보내기, 지우기 보임", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  await knob(page, "fail", { op: "send", status: 500 });
+  await knob(page, "delay", { op: "send", ms: 3_000 });
+  await composer(page).fill("늦게 실패할 글");
+  await composer(page).press("Enter");
+  await expect(pendingBubbles(page)).toHaveCount(1);
+  await expect(pendingBubbles(page)).toContainText("보내는 중");
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, ME);
+
+  await page.bringToFront();
+  await expect(pendingBubbles(page)).toContainText("못 보냈어요", {
+    timeout: 8_000,
+  });
+  await expect(
+    pendingBubbles(page).getByRole("button", { name: /다시 보내기/ }),
+  ).toBeVisible();
+  await expect(
+    pendingBubbles(page).getByRole("button", { name: /지우기/ }),
+  ).toBeVisible();
+});
+
+test("M6 보내기 응답 지연 중 같은 A 재로그인 → POST 성공 도착 → 보류 말풍선 0, 서버 말풍선 1", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  await knob(page, "delay", { op: "send", ms: 3_000 });
+  await composer(page).fill("늦게 성공할 글");
+  await composer(page).press("Enter");
+  await expect(pendingBubbles(page)).toHaveCount(1);
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, ME);
+
+  await page.bringToFront();
+  await expect(pendingBubbles(page)).toHaveCount(0, { timeout: 8_000 });
+  await expect(bubbles(page).filter({ hasText: "늦게 성공할 글" })).toHaveCount(
+    1,
+  );
+});
+
+test("M7 방 첫 messages GET 지연 중 같은 A 재로그인 → 그 방이 다시 조회해 말풍선이 그려진다", async ({
+  page,
+}) => {
+  await enterChats(page, { email: ME });
+  await knob(page, "delay", { op: "messages", ms: 3_000, times: 1 });
+  await page.locator(`a[data-room-id="${ROOM_1}"]`).click();
+  await expect(bubbles(page)).toHaveCount(0);
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, ME);
+
+  await page.bringToFront();
+  await expect(bubbles(page).first()).toBeVisible({ timeout: 8_000 });
+  await expect(composer(page)).toBeVisible();
 });
 
 test("R8 탭 2에서 로그아웃 없이 B로 로그인만 해도 탭 1(A)은 정리되고 로그인 화면", async ({

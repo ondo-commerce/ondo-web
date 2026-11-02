@@ -45,25 +45,40 @@ export function chatEpoch(): number {
 }
 
 /**
+ * 세션 세대. 로그아웃(계정이 바뀔 수 있음)에도, 같은 계정 재로그인(`refreshChatSession`)에도 오른다(Codex 메타 M6).
+ * 둘을 나눈 이유: 같은 계정 갱신을 넘긴 요청의 결과는 그 계정 것이라 버릴 까닭이 없다 — 버리면 보내기가 "보내는 중"에
+ * 영원히 멈춘다. 갱신 뒤에 버려야 하는 건 **늦은 401**뿐이다(새 세션을 다시 잠그지 않게, M2). `guardSession`이 이 값을
+ * 그 갈래에만 쓴다
+ */
+let sessionEpoch = 0;
+
+export function chatSessionEpoch(): number {
+  return sessionEpoch;
+}
+
+/**
  * 로그아웃 때 채팅 캐시를 전부 버린다(계정 무관). 날아가는 조회는 취소하고 지운다 — 취소된 요청의 응답은
  * TanStack이 버린다. 부르는 곳은 `app/`의 로그아웃 연결부다(feature끼리 import 금지)
  */
 export function clearChatCache(queryClient: QueryClient): void {
   signOutEpoch += 1;
+  sessionEpoch += 1;
   void queryClient.cancelQueries({ queryKey: CHAT_KEY_ROOT });
   queryClient.removeQueries({ queryKey: CHAT_KEY_ROOT });
 }
 
 /**
  * 같은 계정이 다른 탭에서 다시 로그인했다(Codex 메타 M2). 캐시와 쓰던 글, 보류 말풍선은 그대로 두고 새 쿠키로 이어 간다.
- * - 세대를 올린다 — 재로그인 전에 떠난 요청의 늦은 401이 새 세션을 다시 잠그지 않게 버려진다(`guardSession`)
+ * - 세션 세대만 올린다(로그아웃 세대는 그대로) — 재로그인 전에 떠난 요청의 늦은 401은 새 세션을 다시 잠그지 않게
+ *   버려지고(`guardSession`), 성공과 401 아닌 실패는 그대로 간다. 보류 보내기가 실패 말풍선으로 끝난다(M6)
  * - 끊김 칸을 전부 내린다 — 입력창 잠김이 풀리고 polling이 다시 돈다
  * - 버려진 이전 장 요청이 남긴 "불러오는 중"을 되돌린다 — 그대로 두면 이전 메시지 자리가 잠긴 채 남는다
- * - 채팅 조회를 다시 부른다. 끊긴 동안 멈춘 polling 간격은 칸 값만 바꿔서는 다시 안 잡힌다
+ * - 날아가는 채팅 조회를 **취소한 뒤** 다시 부른다(M7). invalidate만 하면 TanStack이 날아가던 옛 요청을 그대로 쓴다 —
+ *   그 요청이 옛 쿠키의 401로 끝나면 버려져 다시 조회가 없다. 끊긴 동안 멈춘 polling 간격도 다시 잡힌다
  * 부르는 곳은 `app/SignOutCleanup.tsx`다(feature끼리 import 금지)
  */
 export function refreshChatSession(queryClient: QueryClient): void {
-  signOutEpoch += 1;
+  sessionEpoch += 1;
   const chatQuery = (index: number, value: string) => ({
     queryKey: CHAT_KEY_ROOT,
     predicate: (query: { queryKey: readonly unknown[] }) =>
@@ -75,5 +90,7 @@ export function refreshChatSession(queryClient: QueryClient): void {
       ? { ...thread, historyStatus: "idle" }
       : thread,
   );
-  void queryClient.invalidateQueries({ queryKey: CHAT_KEY_ROOT });
+  void queryClient
+    .cancelQueries({ queryKey: CHAT_KEY_ROOT })
+    .then(() => queryClient.invalidateQueries({ queryKey: CHAT_KEY_ROOT }));
 }
