@@ -3,6 +3,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { CHAT_KEY_ROOT, chatKeysFor, type ChatCache } from "./keys";
+import type { ChatThread } from "../types";
 
 /**
  * 채팅 화면이 보는 계정(loop-08b M1). 키 팩토리를 계정마다 하나 만들어 아래 훅들에 내린다.
@@ -51,4 +52,28 @@ export function clearChatCache(queryClient: QueryClient): void {
   signOutEpoch += 1;
   void queryClient.cancelQueries({ queryKey: CHAT_KEY_ROOT });
   queryClient.removeQueries({ queryKey: CHAT_KEY_ROOT });
+}
+
+/**
+ * 같은 계정이 다른 탭에서 다시 로그인했다(Codex 메타 M2). 캐시와 쓰던 글, 보류 말풍선은 그대로 두고 새 쿠키로 이어 간다.
+ * - 세대를 올린다 — 재로그인 전에 떠난 요청의 늦은 401이 새 세션을 다시 잠그지 않게 버려진다(`guardSession`)
+ * - 끊김 칸을 전부 내린다 — 입력창 잠김이 풀리고 polling이 다시 돈다
+ * - 버려진 이전 장 요청이 남긴 "불러오는 중"을 되돌린다 — 그대로 두면 이전 메시지 자리가 잠긴 채 남는다
+ * - 채팅 조회를 다시 부른다. 끊긴 동안 멈춘 polling 간격은 칸 값만 바꿔서는 다시 안 잡힌다
+ * 부르는 곳은 `app/SignOutCleanup.tsx`다(feature끼리 import 금지)
+ */
+export function refreshChatSession(queryClient: QueryClient): void {
+  signOutEpoch += 1;
+  const chatQuery = (index: number, value: string) => ({
+    queryKey: CHAT_KEY_ROOT,
+    predicate: (query: { queryKey: readonly unknown[] }) =>
+      query.queryKey[index] === value,
+  });
+  queryClient.setQueriesData<boolean>(chatQuery(2, "session"), false);
+  queryClient.setQueriesData<ChatThread>(chatQuery(2, "thread"), (thread) =>
+    thread !== undefined && thread.historyStatus === "loading"
+      ? { ...thread, historyStatus: "idle" }
+      : thread,
+  );
+  void queryClient.invalidateQueries({ queryKey: CHAT_KEY_ROOT });
 }

@@ -3,7 +3,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { onSignOut, watchOtherTabSessions } from "@/features/account";
-import { clearChatCache, clearChatDrafts } from "@/features/chat";
+import {
+  clearChatCache,
+  clearChatDrafts,
+  refreshChatSession,
+} from "@/features/chat";
 import { clearNotificationCache } from "@/features/notification";
 
 /**
@@ -16,6 +20,8 @@ import { clearNotificationCache } from "@/features/notification";
  *
  * 다른 탭의 로그아웃, 다른 계정 로그인도 여기서 듣는다(loop-08c 리뷰 R8). 받은 탭은 자기 세션을 닫고, 닫기가
  * 위 정리를 그대로 부른다 — 채팅 세대가 오르고 A의 캐시와 쓰던 글이 지워진 뒤 로그인 화면으로 간다.
+ * 같은 계정이 다시 로그인한 것이면(Codex 메타 M2) 닫지 않고 채팅을 새 세션으로 잇는다(`refreshChatSession`) —
+ * 401로 잠긴 입력창이 풀리고 쓰던 글, 보류 말풍선은 남는다.
  */
 export function SignOutCleanup() {
   const queryClient = useQueryClient();
@@ -28,6 +34,9 @@ export function SignOutCleanup() {
       }),
     [queryClient],
   );
-  useEffect(() => watchOtherTabSessions(), []);
+  useEffect(
+    () => watchOtherTabSessions(() => refreshChatSession(queryClient)),
+    [queryClient],
+  );
   return null;
 }

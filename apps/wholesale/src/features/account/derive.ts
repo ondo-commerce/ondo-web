@@ -34,15 +34,20 @@ export function normalizeEmail(raw: string): string {
 }
 
 /**
- * 다른 탭이 알린 세션(`theirs`, 로그아웃이면 null)을 받고 이 탭의 세션(`mine`)을 끝낼까(loop-08c 리뷰 R8).
- * 이 탭이 로그인 상태이고 다른 탭의 계정이 다르면(로그아웃 포함) 끝낸다 — 쿠키는 이제 이 탭의 계정 것이 아니다.
- * 같은 계정으로 들어온 것은 그대로 둔다. 이 탭이 이미 로그아웃이면 할 일이 없다
+ * 다른 탭이 알린 세션(`theirs`, 로그아웃이면 null)을 받은 이 탭(`mine`)이 할 일(loop-08c 리뷰 R8, Codex 메타 M2).
+ * - `end`: 이 탭이 로그인 상태이고 다른 탭의 계정이 다르다(로그아웃 포함) — 쿠키는 이제 이 탭의 계정 것이 아니다
+ * - `refresh`: 같은 계정으로 다시 들어왔다 — 새 쿠키가 이 탭의 계정 것이다. 로그아웃하지 않고 요청 세대를 올리고
+ *   끊김(401 잠금)을 풀어 이어 간다. 쓰던 글, 보류 말풍선은 그대로(D28)
+ * - `none`: 이 탭이 이미 로그아웃이다
  */
-export function shouldEndForOtherTab(
+export type OtherTabAction = "end" | "refresh" | "none";
+
+export function otherTabActionOf(
   mine: string | null,
   theirs: string | null,
-): boolean {
-  return mine !== null && theirs !== mine;
+): OtherTabAction {
+  if (mine === null) return "none";
+  return theirs === mine ? "refresh" : "end";
 }
 
 /** 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다 */

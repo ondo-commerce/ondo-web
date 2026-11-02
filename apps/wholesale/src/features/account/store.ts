@@ -6,7 +6,7 @@ import {
   findAccount,
   normalizeEmail,
   parseSessionBroadcast,
-  shouldEndForOtherTab,
+  otherTabActionOf,
 } from "./derive";
 import type { Account, AccountStatus, BankAccount } from "./types";
 
@@ -359,15 +359,20 @@ function broadcastSession(email: string | null): void {
 
 /**
  * 다른 탭의 세션 알림을 듣는다. 앱 맨 위(`app/SignOutCleanup.tsx`)가 한 번 건다 — 어느 화면이 떠 있든 들어야 한다.
- * 보낸 탭 자신은 받지 않는다(BroadcastChannel 규칙). 돌려준 함수로 뗀다
+ * 보낸 탭 자신은 받지 않는다(BroadcastChannel 규칙). 돌려준 함수로 뗀다.
+ *
+ * 같은 계정 재로그인(Codex 메타 M2)은 세션을 닫지 않고 `onRefresh`를 부른다 — 401로 잠긴 채팅을 새 쿠키로 이어 가게.
+ * 무엇을 풀지는 이 feature가 모른다. `app/`이 채팅 쪽 함수를 넘긴다(feature끼리 import 금지)
  */
-export function watchOtherTabSessions(): () => void {
+export function watchOtherTabSessions(onRefresh: () => void): () => void {
   const target = channel();
   if (target === null) return () => {};
   const onMessage = (event: MessageEvent) => {
     const message = parseSessionBroadcast(event.data);
     if (message === null) return;
-    if (shouldEndForOtherTab(ensureLoaded().email, message.email)) endSession();
+    const action = otherTabActionOf(ensureLoaded().email, message.email);
+    if (action === "end") endSession();
+    else if (action === "refresh") onRefresh();
   };
   target.addEventListener("message", onMessage);
   return () => target.removeEventListener("message", onMessage);

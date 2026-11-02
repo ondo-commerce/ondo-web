@@ -3,11 +3,15 @@ import {
   bubbles,
   chatRows,
   composer,
+  count,
   draftKeys,
   enterChats,
+  knob,
   ME,
+  MESSAGES_GET,
   openRoomReady,
   OTHER,
+  requests,
   signIn,
   signOut,
 } from "./helpers";
@@ -65,6 +69,70 @@ test("R8 탭 1 A 방 열어 둠 → 탭 2 A 로그인, 로그아웃, B 로그인
 
   await page.bringToFront();
   await expectTabOneCleared(page);
+});
+
+const LOST_ALERT = "로그인이 끊겼어요";
+
+test("M2 탭 1 A 방 401로 잠김(쓰던 글 있음) → 탭 2 A 재로그인 → 탭 1은 로그아웃 없이 잠김 풀림, 쓰던 글 그대로, polling 다시", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  await knob(page, "fail", { op: "messages", status: 401 });
+  await expect(
+    page.getByRole("alert").filter({ hasText: LOST_ALERT }).first(),
+  ).toBeVisible({ timeout: 10_000 });
+  await expect(composer(page)).toHaveAttribute("readonly", "");
+  const lockedAt = await count(page, MESSAGES_GET);
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, ME);
+
+  await page.bringToFront();
+  await expect(composer(page)).not.toHaveAttribute("readonly", "", {
+    timeout: 5_000,
+  });
+  await expect(page).toHaveURL(/\/chats/);
+  await expect(composer(page)).toHaveValue("A가 쓰던 글");
+  await expect(
+    page.getByRole("alert").filter({ hasText: LOST_ALERT }),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => count(page, MESSAGES_GET), { timeout: 10_000 })
+    .toBeGreaterThan(lockedAt);
+});
+
+test("M2 재로그인 전에 떠난 A 방 요청의 늦은 401(지연 3초) → 탭 2 A 재로그인 뒤 도착해도 탭 1은 안 잠긴다", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  await knob(page, "fail", { op: "messages", status: 401 });
+  await knob(page, "delay", { op: "messages", ms: 3_000 });
+  /* 지연에 물린 messages 요청이 하나 날아가는 중 */
+  await expect
+    .poll(
+      async () =>
+        (await requests(page, MESSAGES_GET)).some((r) => r.status === null),
+      { timeout: 8_000 },
+    )
+    .toBe(true);
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, ME);
+
+  await page.bringToFront();
+  await expect
+    .poll(
+      async () =>
+        (await requests(page, MESSAGES_GET)).some((r) => r.status === 401),
+      { timeout: 8_000 },
+    )
+    .toBe(true);
+  await page.waitForTimeout(1_000);
+  await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  await expect(composer(page)).toHaveValue("A가 쓰던 글");
+  await expect(
+    page.getByRole("alert").filter({ hasText: LOST_ALERT }),
+  ).toHaveCount(0);
 });
 
 test("R8 탭 2에서 로그아웃 없이 B로 로그인만 해도 탭 1(A)은 정리되고 로그인 화면", async ({

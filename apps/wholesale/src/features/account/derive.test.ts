@@ -1,16 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionBroadcast, shouldEndForOtherTab } from "./derive";
+import {
+  otherTabActionOf,
+  parseSessionBroadcast,
+  type OtherTabAction,
+} from "./derive";
 
-/** loop-08c 리뷰 R8 — 다른 탭의 세션 변경을 받은 탭이 자기 세션을 끝낼지 */
-describe("shouldEndForOtherTab (R8)", () => {
-  it.each<[string, string | null, string | null, boolean]>([
-    ["A 탭, 다른 탭 로그아웃 → 끝냄", "a@ondo.test", null, true],
-    ["A 탭, 다른 탭 B 로그인 → 끝냄", "a@ondo.test", "b@ondo.test", true],
-    ["A 탭, 다른 탭 A 로그인 → 그대로", "a@ondo.test", "a@ondo.test", false],
-    ["로그아웃 탭, 다른 탭 B 로그인 → 그대로", null, "b@ondo.test", false],
-    ["로그아웃 탭, 다른 탭 로그아웃 → 그대로", null, null, false],
+/** loop-08c 리뷰 R8, Codex 메타 M2 — 다른 탭의 세션 변경을 받은 탭이 할 일 */
+describe("otherTabActionOf (R8, M2)", () => {
+  it.each<[string, string | null, string | null, OtherTabAction]>([
+    ["A 탭, 다른 탭 로그아웃 → 끝냄", "a@ondo.test", null, "end"],
+    ["A 탭, 다른 탭 B 로그인 → 끝냄", "a@ondo.test", "b@ondo.test", "end"],
+    [
+      "A 탭, 다른 탭 A 재로그인 → 새 세션으로 이어 감",
+      "a@ondo.test",
+      "a@ondo.test",
+      "refresh",
+    ],
+    ["로그아웃 탭, 다른 탭 B 로그인 → 할 일 없음", null, "b@ondo.test", "none"],
+    ["로그아웃 탭, 다른 탭 로그아웃 → 할 일 없음", null, null, "none"],
   ])("%s", (_, mine, theirs, expected) => {
-    expect(shouldEndForOtherTab(mine, theirs)).toBe(expected);
+    expect(otherTabActionOf(mine, theirs)).toBe(expected);
   });
 });
 
