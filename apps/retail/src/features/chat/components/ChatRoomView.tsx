@@ -6,14 +6,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
+import { ChatHistorySlot } from "./ChatHistorySlot";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { BackorderReplyCard } from "./BackorderReplyCard";
 import { ClarifyChoices } from "./ClarifyChoices";
@@ -43,6 +38,7 @@ import {
   choiceSendFailed,
   confirmedReadOf,
   handoffCauses,
+  historySlotOf,
   liveAnnouncement,
   maxSequenceOf,
   messageAc,
@@ -68,6 +64,7 @@ import type {
 } from "../types";
 import { useChatSend } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
+import { useThreadScroll } from "../useThreadScroll";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -261,12 +258,15 @@ function ChatRoom({
   }, [sendChip, askListing]);
   const now = useNow();
 
-  /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존은 loop-08, 도매와 같다) */
-  const logRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const log = logRef.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [thread.messages.length, shownPending.length]);
+  /* 이전 메시지(loop-08d S3)와 log 위치. 새 메시지가 오거나 내가 보내면 바닥으로 가는 05a 규칙도 이 훅이 맡는다
+     (위를 읽는 중 끌려 내려가는 것은 알려진 한계 — S4 #352에서 바뀐다) */
+  const { logRef, logHandlers, loadOlder } = useThreadScroll({
+    roomId,
+    thread,
+    pendingCount: shownPending.length,
+    sessionLost,
+  });
+  const slot = historySlotOf(thread, sessionLost);
 
   /* 입력창이 늘면(여러 줄, 오류 두 줄) 블록 높이는 그대로라 메시지 영역이 줄어든다(디자인 상태 20).
      줄어든 만큼 마지막 말풍선이 입력창 뒤로 밀려 가리지 않게, 바닥을 보고 있었으면 바닥을 지킨다(S5-15).
@@ -287,7 +287,8 @@ function ChatRoom({
       log.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
-  }, []);
+    /* logRef는 훅이 만든 같은 ref다 — 방마다 한 번 건다(ChatBlock key={roomId}) */
+  }, [logRef]);
 
   const items = toThreadItems(thread.messages);
   /* 상대 읽음은 캐시의 방별 최댓값 하나만 본다(머리와 meta가 이미 합쳐져 있다). 값만 바뀐 polling은
@@ -323,11 +324,15 @@ function ChatRoom({
         /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S6-8)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
         data-cursor={thread.cursor}
         data-poll-failures={thread.failures}
+        data-ac="08d:S3-2 08d:S3-8"
+        {...logHandlers}
         /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
            없으면 기준이 문서라 스크롤에 안 잘리고 문서 높이를 늘려 페이지가 스크롤했다(QA F3) */
         className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
       >
         <div aria-hidden className="mt-auto shrink-0" />
+        {/* 맨 위 자리. mt-auto 뒤라 짧은 방에선 첫 말풍선 바로 위에 붙는다(디자인 결정 67) */}
+        <ChatHistorySlot slot={slot} logRef={logRef} onLoad={loadOlder} />
         {items.length === 0 && shownPending.length === 0 ? (
           <p
             data-ac="S5-8"

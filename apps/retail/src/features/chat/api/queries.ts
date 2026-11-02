@@ -9,13 +9,19 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { apiFetch, apiFetchBody, isApiError } from "@ondo/api";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { chatKeys } from "./keys";
 import { subscribeSharedInterval } from "./sharedInterval";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
-import { guardSession, isChatSessionLostError, isSessionLost } from "./session";
+import {
+  chatSessionEpoch,
+  guardSession,
+  isChatSessionLostError,
+  isChatStaleResponseError,
+  isSessionLost,
+} from "./session";
 import {
   MESSAGE_PAGE_SIZE,
   ROOM_LIST_POLL_MS,
@@ -25,6 +31,7 @@ import {
   advanceCursor,
   mergeCounterpartRead,
   mergeMessages,
+  mergeOlder,
   pollDelayMs,
 } from "../derive";
 import type {
@@ -33,6 +40,7 @@ import type {
   ChatRoomDetail,
   ChatRoomPage,
   ChatThread,
+  HistoryStatus,
 } from "../types";
 
 /**
@@ -264,6 +272,10 @@ async function fetchThread(
       cursor: advanceCursor(0, page.data),
       failures: 0,
       nextPollMs: pollDelayMs(0, 0),
+      /* 첫 장(인자 없음)의 hasMore는 "더 오래된 것이 남았다"(계약 meta 설명). polling은 이 칸을 안 바꾼다(loop-08d §4-3 1) */
+      historyHasMore: page.meta.hasMore,
+      historyFetched: false,
+      historyStatus: "idle",
       /* 방 머리가 먼저 도착했으면 그 값은 캐시가 없어 합쳐지지 못했다 — 여기서 같이 합친다(어느 쪽이 먼저든 하나로) */
       counterpartRead: mergeCounterpartRead(
         page.meta.counterpartLastReadSequence,
@@ -335,4 +347,96 @@ async function fetchThread(
       counterpartRead,
     ),
   };
+}
+
+/* ------------------------------------------------------------------------
+ * 이전 메시지(loop-08d S3, 도매 08c `queries.ts` 복제). 자동(위로 스크롤)과 버튼이 같은 함수를 부른다
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 열린 방 화면이 등록하는 "합치기 직전" 콜백(§4-3 4). 위치는 **합치는 순간에** 잰다 — 누른 순간에 재면
+ * 기다리는 동안 내려가거나 다른 대목으로 옮긴 사장을 누르기 전 자리로 끌고 간다(S3-7).
+ * 소매는 방마다 주소가 달라 화면은 하나뿐이고, 방을 떠나면 콜백이 없어 캐시에만 합친다(S3-6 ③)
+ */
+const beforeOlderMerge = new Map<number, () => void>();
+
+export function useBeforeOlderMerge(roomId: number, measure: () => void) {
+  const ref = useRef(measure);
+  useLayoutEffect(() => {
+    ref.current = measure;
+  });
+  useEffect(() => {
+    const call = () => ref.current();
+    beforeOlderMerge.set(roomId, call);
+    return () => {
+      if (beforeOlderMerge.get(roomId) === call)
+        beforeOlderMerge.delete(roomId);
+    };
+  }, [roomId]);
+}
+
+/** 이전 장 상태만 바꾼다. 캐시가 없으면(로그아웃이 지웠다) 새로 만들지 않는다 */
+function setHistoryStatus(
+  queryClient: QueryClient,
+  roomId: number,
+  historyStatus: HistoryStatus,
+): void {
+  queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
+    thread === undefined || thread.historyStatus === historyStatus
+      ? thread
+      : { ...thread, historyStatus },
+  );
+}
+
+/**
+ * 이전 장 하나(`beforeSequence = 지금 가장 작은 sequence`, 50개). 실패는 던지지 않고 캐시의 `historyStatus`에 남긴다.
+ *
+ * - 한 번에 하나: `loading`이면 아무것도 안 한다. 확인과 표시가 같은 동기 구간이라 연타, 스크롤 연발이 못 끼어든다(S3-3).
+ *   worker 준비(`chatMockReady`)는 표시 **뒤에** 기다린다 — 앞에 두면 그 사이 두 번째 호출이 끼어든다
+ * - 오프라인이면 요청을 만들지 않고 바로 `failed`(§4-3 6). 온라인이 돼도 저절로 다시 안 묻는다(S3-4)
+ * - 끝날 때의 캐시를 다시 읽어 합친다 — 기다리는 사이 polling, 보내기가 붙인 것을 안 지운다(S3-6)
+ * - 로그아웃, 다른 계정 로그인을 넘어 온 응답은 `guardSession`이 버린다(S3-9 ①). 상태 칸도 안 건드린다 — 지운 캐시가 되살아난다
+ * - 401은 세션 끊김 흐름. 버튼은 끊김 표시가 잠근다(`historySlotOf`, S3-5)
+ * - **요청 토큰**(S3-9 ②, 도매 08d M9를 처음부터): 시작 때 세션 세대를 잡는다. 같은 소매처 재로그인(`refreshChatSession`)과
+ *   로그아웃이 세대를 올리고, 갱신은 "불러오는 중"을 되돌려 새 요청(B)을 받는다. 끝났을 때 세대가 다르면 이 요청은 대체된
+ *   것이라 200, 500, 401 모두 캐시, `historyStatus`, 잠금, 합치기 직전 콜백을 안 건드린다 — 늦은 200이 끝까지 본 방에
+ *   버튼을 되살리거나, 늦은 500이 B의 "불러오는 중"을 실패로 바꾸지 않게. 잠금(`markSessionLost`)은 세대를 안 바꾸므로
+ *   잠긴 뒤 도착한 같은 세션의 200은 그대로 합친다
+ */
+export async function fetchOlder(queryClient: QueryClient, roomId: number) {
+  const key = chatKeys.thread(roomId);
+  const start = queryClient.getQueryData<ChatThread>(key);
+  if (start === undefined || !start.historyHasMore) return;
+  if (start.historyStatus === "loading" || isSessionLost(queryClient)) return;
+  const oldest = start.messages[0]?.sequence;
+  if (oldest === undefined) return;
+  if (!onlineManager.isOnline()) {
+    setHistoryStatus(queryClient, roomId, "failed");
+    return;
+  }
+  setHistoryStatus(queryClient, roomId, "loading");
+  const token = chatSessionEpoch();
+  const replaced = () => chatSessionEpoch() !== token;
+  let page: ChatMessagePage;
+  try {
+    await chatMockReady();
+    page = await guardSession(queryClient, () =>
+      apiFetchBody<ChatMessagePage>(CHAT_PATH.messages(roomId), {
+        searchParams: { beforeSequence: oldest, size: MESSAGE_PAGE_SIZE },
+      }),
+    );
+  } catch (error) {
+    if (replaced() || isChatStaleResponseError(error)) return;
+    setHistoryStatus(
+      queryClient,
+      roomId,
+      isChatSessionLostError(error) ? "idle" : "failed",
+    );
+    return;
+  }
+  if (replaced()) return;
+  const latest = queryClient.getQueryData<ChatThread>(key);
+  if (latest === undefined) return;
+  beforeOlderMerge.get(roomId)?.();
+  queryClient.setQueryData<ChatThread>(key, mergeOlder(latest, page));
 }
