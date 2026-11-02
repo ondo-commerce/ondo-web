@@ -33,6 +33,7 @@ import {
   pollDelayMs,
   sendFailureOf,
   staleSendFailure,
+  canRetrySend,
   toClarifyChoicesView,
   toFactsView,
   toggledSettings,
@@ -409,6 +410,11 @@ describe("S4-5 S4-7 S4-8 보내기 실패 종류", () => {
     expect(staleSendFailure("session", false)).toBe("session");
     expect(staleSendFailure("server", true)).toBe("server");
     expect(staleSendFailure("offline", true)).toBe("offline");
+  });
+
+  it("loop-08d F1 다시 보내기는 잠긴 동안만 빠진다 — 401 실패도 잠금이 풀리면 보임", () => {
+    expect(canRetrySend(true)).toBe(false);
+    expect(canRetrySend(false)).toBe(true);
   });
 
   it("S4-8 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {

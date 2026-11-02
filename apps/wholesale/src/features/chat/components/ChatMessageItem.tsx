@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PENDING_TEXT, ROOM_TEXT } from "../constants";
 import {
   bubbleKindOf,
+  canRetrySend,
   factLineText,
   failureText,
   formatClock,
@@ -135,8 +136,8 @@ export function ChatMessageItem({
  * 아직 sequence가 없는 내 말풍선 — 보내는 중, 못 보냄. 방 맨 아래에 붙는다(디자인 결정 14).
  *
  * 보내는 중은 말풍선 대비를 그대로 두고 시각 자리에 스피너 + 글(결정 9 — 흐리게 하면 흰 글자가 2.4:1).
- * 못 보냄은 흰 면 + destructive 선 + 문구(업로드 실패 칸과 같은 규칙). 401이면 `다시 보내기`를 빼고
- * `지우기`만 둔다 — 다시 보내도 401이다(결정 10).
+ * 못 보냄은 흰 면 + destructive 선 + 문구(업로드 실패 칸과 같은 규칙). 잠겨 있는 동안은 `다시 보내기`를 빼고
+ * `지우기`만 둔다 — 다시 보내도 401이다(결정 10). 같은 계정 재로그인으로 풀리면 401 실패도 다시 보낼 수 있다(08d F1).
  */
 export function PendingItem({
   item,
@@ -176,7 +177,7 @@ export function PendingItem({
           className="text-destructive-strong flex items-center gap-1.5 text-xs leading-4"
         >
           {failureText(item.failure)}
-          {sessionLost || item.failure === "session" ? null : (
+          {canRetrySend(sessionLost) ? (
             <Button
               type="button"
               variant="link"
@@ -187,7 +188,7 @@ export function PendingItem({
             >
               {PENDING_TEXT.retry}
             </Button>
-          )}
+          ) : null}
           <Button
             type="button"
             variant="link"

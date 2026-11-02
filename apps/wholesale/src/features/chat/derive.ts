@@ -859,6 +859,15 @@ export function staleSendFailure(
   return failure === "session" && sessionChanged ? "server" : failure;
 }
 
+/**
+ * 실패 말풍선에 `다시 보내기`를 둘까(loop-08d F1, D48). **잠겨 있는 동안만 뺀다** — 실패 종류는 묻지 않는다.
+ * 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리면 다시 보낼 수 있다. 처음 `clientMessageId`
+ * 그대로라 서버엔 하나만 생긴다(08c S3-11 규칙). 지우고 다시 치게 하지 않으려는 것
+ */
+export function canRetrySend(sessionLost: boolean): boolean {
+  return !sessionLost;
+}
+
 /** 실패 말풍선 아래 문구 */
 export function failureText(failure: SendFailure | null): string {
   return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;

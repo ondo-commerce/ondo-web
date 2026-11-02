@@ -139,7 +139,7 @@ export type ChatSendResult = WholesaleSchema<"ChatSendResult">;
  * 왜 못 보냈나. 화면이 다르게 반응해야 하는 셋뿐이다.
  * - `server` 500 등 — `다시 보내기`(같은 키) `지우기`
  * - `offline` 보낼 때 오프라인이었거나 서버까지 못 갔다 — 같은 버튼, 문구만 다르다. 자동 재전송은 없다
- * - `session` 401 — `지우기`만. 다시 보내도 401이다
+ * - `session` 401 — 잠긴 동안 `지우기`만(다시 보내도 401). 같은 계정 재로그인으로 풀리면 `다시 보내기`도(08d F1)
  */
 export type SendFailure = "server" | "offline" | "session";
 
