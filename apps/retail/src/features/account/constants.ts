@@ -17,6 +17,13 @@ export const ACCOUNT_PATH = {
 } as const;
 
 /**
+ * 탭 사이 세션 변경을 전하는 BroadcastChannel 이름(loop-08c 리뷰 R8). 세션은 쿠키라 브라우저에 하나인데, 화면(라우터
+ * 캐시, QueryClient)은 탭마다라 다른 탭에서 로그아웃하거나 다른 계정으로 들어와도 이 탭은 앞 계정 화면을 계속 그린다.
+ * 도매 `account/constants.ts`와 이름만 다르다(앱 사이 import 금지라 복제)
+ */
+export const SESSION_CHANNEL_NAME = "ondo.retail.session";
+
+/**
  * 입력칸의 DOM id 접두어.
  *
  * 제출 후 **첫 오류 칸으로 포커스를 옮기려면** 칸을 id로 찾아야 한다. 폼마다

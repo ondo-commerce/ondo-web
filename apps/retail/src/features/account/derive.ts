@@ -57,6 +57,44 @@ export function normalizeStoreName(
 }
 
 /**
+ * 탭 사이에 오가는 세션 변경(loop-08c 리뷰 R8, Codex 메타 M1). 로그인은 **소매처 id**를 싣는다 — 로그인 응답과 셸의
+ * `/me`가 같은 `RetailerResponse.retailerId`를 준다. 이메일이 아니라 id인 이유: 받는 쪽(헤더 칩)은 셸이 `/me`로 읽은 값만
+ * 갖고, 로그인 폼 이메일은 대소문자, 공백이 서버 판정과 다를 수 있다. id를 못 얻으면 null — 받은 탭은 다른 계정으로 본다
+ */
+export type SessionBroadcast =
+  { change: "logout" } | { change: "login"; retailerId: number | null };
+
+/** 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다 */
+export function parseSessionBroadcast(data: unknown): SessionBroadcast | null {
+  if (typeof data !== "object" || data === null || !("change" in data))
+    return null;
+  const { change } = data;
+  if (change === "logout") return { change };
+  if (change !== "login") return null;
+  const id = "retailerId" in data ? data.retailerId : null;
+  return {
+    change,
+    retailerId: typeof id === "number" && Number.isInteger(id) ? id : null,
+  };
+}
+
+/**
+ * 다른 탭의 알림을 받은 로그인 탭(소매처 `mine`)이 할 일(Codex 메타 M1).
+ * - `refresh`: 같은 소매처가 다시 들어왔다 — 이동 없이 채팅 세대를 올리고 401 잠금을 푼다. 쓰던 글, 보류 말풍선은 그대로
+ * - `end`: 로그아웃, 다른 소매처, 또는 어느 쪽이든 id를 모름 — 정리하고 로그인 화면으로(안전한 쪽)
+ */
+export function otherTabActionOf(
+  mine: number | null,
+  message: SessionBroadcast,
+): "refresh" | "end" {
+  return message.change === "login" &&
+    mine !== null &&
+    message.retailerId === mine
+    ? "refresh"
+    : "end";
+}
+
+/**
  * 승인 상태별로 사장이 있어야 할 화면.
  *
  * 승인 전 계정을 마켓 홈으로 보내면 도매가가 보인다(RT-09 위반). 상태별 목적지를

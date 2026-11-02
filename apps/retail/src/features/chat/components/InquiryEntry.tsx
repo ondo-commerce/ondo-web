@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { useCreateRoomMutation } from "../api/mutations";
+import { isChatStaleResponseError } from "../api/session";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { APPROVAL_PATH, ENTRY_TEXT } from "../constants";
 import { chatRoomHref, entryFailureOf } from "../derive";
@@ -79,6 +80,8 @@ export function InquiryEntry({
       (failure: unknown) => {
         busy.current = false;
         setOpening(false);
+        /* 누른 뒤 세션이 바뀌었다(리뷰 R7). 그 응답은 지금 사람 것이 아니라 아무것도 띄우지 않는다 */
+        if (isChatStaleResponseError(failure)) return;
         const reaction = entryFailureOf(failure);
         if (reaction === "approval") router.push(APPROVAL_PATH);
         // 401은 공용 처리가 `/login`으로 보낸다. 여기선 아무것도 띄우지 않는다
