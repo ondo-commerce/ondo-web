@@ -32,6 +32,8 @@ import {
   toServerFilter,
   pollDelayMs,
   sendFailureOf,
+  staleSendFailure,
+  canRetrySend,
   toClarifyChoicesView,
   toFactsView,
   toggledSettings,
@@ -401,6 +403,18 @@ describe("S4-5 S4-7 S4-8 보내기 실패 종류", () => {
     expect(sendFailureOf(err(500, "INTERNAL_ERROR"))).toBe("server");
     expect(sendFailureOf(err(409, "IDEMPOTENCY_KEY_REUSED"))).toBe("server");
     expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+
+  it("loop-08d S2-1 M8 세션 세대가 바뀐 뒤 도착한 401만 server(잠그지 않음), 나머지는 그대로", () => {
+    expect(staleSendFailure("session", true)).toBe("server");
+    expect(staleSendFailure("session", false)).toBe("session");
+    expect(staleSendFailure("server", true)).toBe("server");
+    expect(staleSendFailure("offline", true)).toBe("offline");
+  });
+
+  it("loop-08d F1 다시 보내기는 잠긴 동안만 빠진다 — 401 실패도 잠금이 풀리면 보임", () => {
+    expect(canRetrySend(true)).toBe(false);
+    expect(canRetrySend(false)).toBe(true);
   });
 
   it("S4-8 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {

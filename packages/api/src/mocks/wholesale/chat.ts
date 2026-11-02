@@ -137,6 +137,27 @@ export const CHAT_ROOM_QUERY_MAX = 50;
 /** 필터, 검색 시험용 시드 이름(`reset {seed: "rooms-70"}`). 기본 시드를 대신한다 */
 export const ROOMS_70_SEED_NAME = "rooms-70";
 
+/**
+ * 소매 이전 메시지 시험용 시드 이름(`reset {seed: "retail-history"}`, loop-08d §5-2 4). 기본 시드에서 방 1만 바꾼다.
+ * 도매 `reset`, 소매 `reset` 둘 다 받는다(저장소가 하나)
+ */
+export const RETAIL_HISTORY_SEED_NAME = "retail-history";
+
+/** 목이 받는 시드 이름 전부. 없으면 기본 시드 */
+const CHAT_SEED_NAMES = [
+  STATS_SEED_NAME,
+  ROOMS_70_SEED_NAME,
+  RETAIL_HISTORY_SEED_NAME,
+] as const;
+
+/** `reset`의 `seed` 값 검사. 맞는 이름이면 true */
+export function isChatSeedName(raw: unknown): raw is string {
+  return CHAT_SEED_NAMES.some((s) => s === raw);
+}
+
+/** 모르는 `seed`의 400 메시지(도매, 소매 같은 글) */
+export const CHAT_SEED_INVALID_MESSAGE = `seed는 ${CHAT_SEED_NAMES.join(" | ")}`;
+
 /** 문의 지표 조회 기간 상한(일). 스펙 `to` 설명과 같다 */
 export const STATS_MAX_DAYS = 62;
 
@@ -762,6 +783,29 @@ function seedRooms70(): MockRoom[] {
   return list;
 }
 
+/**
+ * `retail-history` 시드(loop-08d §5-2 4). 기본 시드를 짓고 **방 1만** 메시지 120개로 바꾼다 — 소매 "나"(봄봄상회)가
+ * 50개 페이지를 두 번 넘기는 방이 기본 시드엔 없다(소매가 보는 방은 1, 33뿐). 꼴은 방 3과 같다: 전부 TEXT,
+ * 홀수 RETAILER(소매 화면의 "나"), 짝수 WHOLESALER. 소매 읽음 100(안 읽은 도매 글 10개), 도매 읽음 끝까지.
+ * 시각은 방 생성(26시간 전) 뒤 1분 간격이라 날짜 구분선이 시험 사이에 흔들리지 않는다
+ */
+function seedRetailHistoryRooms(): MockRoom[] {
+  const list = seedRooms();
+  const lines: SeedLine[] = [];
+  for (let i = 1; i <= 120; i++) {
+    lines.push({
+      sender: i % 2 === 1 ? "RETAILER" : "WHOLESALER",
+      body: `메시지 ${i}`,
+      sentAt: at(60 * 26 - i),
+    });
+  }
+  const history = room(1, 0, at(60 * 26), lines, {
+    wholesaler: 120,
+    retailer: 100,
+  });
+  return list.map((r) => (r.roomId === 1 ? history : r));
+}
+
 function seedIdempotency() {
   idempotency.clear();
   const r = rooms.find((x) => x.roomId === 6);
@@ -1051,6 +1095,14 @@ export const chatSharedKnobs = [
     };
     return HttpResponse.json({ data: autoReplySettings });
   }),
+
+  /**
+   * `GET /__mock/chat/log` 목이 돌려준 계획 실패(`fail`로 건 것) 기록, 오래된 것부터(loop-08d §5-2 3-1).
+   * 본문 손잡이(`auth401` 등)의 실패는 적지 않는다. `reset`이 비운다
+   */
+  http.get("*/__mock/chat/log", () =>
+    HttpResponse.json({ data: plannedFailureLog }),
+  ),
 ];
 
 /* --- 응답 --------------------------------------------------------------- */
@@ -1164,8 +1216,57 @@ function knobPageInvalid() {
 async function plannedFailure(op: ChatFailOp, page?: ChatMessagesPage) {
   const plan = takePlan(failPlan, planKeys(op, page));
   if (plan === null) return null;
-  if (isDelayOp(op)) await plannedDelay(op, page);
+  const epoch = resetEpoch;
+  const delayMs = isDelayOp(op) ? await plannedDelay(op, page) : 0;
+  recordPlannedFailure({ op, page, status: plan.status, delayMs, epoch });
   return fail(plan.status);
+}
+
+/**
+ * 목이 실제로 돌려준 계획 실패 한 건(loop-08d §5-2 3-1). 지연을 다 기다린 **뒤에** 적는다 — 브라우저가 그 요청을
+ * 취소해도 목은 끝까지 돌고 적는다. 시험은 "옛 요청이 늦은 401로 끝났는가"를 브라우저 쪽 결과(401인지 취소인지
+ * 갈린다) 대신 이 기록으로 본다(S2-4 ②)
+ */
+export interface PlannedFailureLog {
+  op: string;
+  /** messages 요청 종류. messages 밖이면 null */
+  page: ChatMessagesPage | null;
+  status: number;
+  /** 기다린 ms. 지연이 안 걸렸으면 0 */
+  delayMs: number;
+  /** 응답을 돌려준 시각 */
+  sentAt: string;
+}
+
+let plannedFailureLog: PlannedFailureLog[] = [];
+
+/**
+ * reset 세대. `resetChatMock`마다 오른다. 계획 실패는 지연 **전에** 이 값을 잡고, 지연 뒤 적을 때 값이 바뀌었으면
+ * 적지 않는다 — reset 전에 출발한 늦은 실패가 reset으로 비운 기록을 다시 채우면 다음 시험이 남의 401을 센다
+ */
+let resetEpoch = 0;
+
+function plannedFailureEpoch(): number {
+  return resetEpoch;
+}
+
+/** 계획 실패 한 건을 적는다. 도매, 소매 목이 같이 부른다(기록은 앱마다 브라우저 안에 하나) */
+function recordPlannedFailure(entry: {
+  op: string;
+  page: ChatMessagesPage | undefined;
+  status: number;
+  delayMs: number;
+  /** 지연 전에 잡은 reset 세대(`plannedFailureEpoch`) */
+  epoch: number;
+}) {
+  if (entry.epoch !== resetEpoch) return;
+  plannedFailureLog.push({
+    op: entry.op,
+    page: entry.page ?? null,
+    status: entry.status,
+    delayMs: entry.delayMs,
+    sentAt: new Date().toISOString(),
+  });
 }
 
 /** 걸어 둔 실패가 있으면 1회 소모하고 true. HTTP 응답이 아닌 실패(미수 원본 조회)도 이걸로 본다 */
@@ -1177,10 +1278,14 @@ function consumeFailure(op: ChatFailOp): boolean {
  * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 먼저 떠난 방 머리가 polling 뒤에 옛 읽음 값으로
  * 도착한다(S3-3). 소매 목, 도매 알림 목과 같은 규칙
  */
-async function plannedDelay(op: ChatDelayOp, page?: ChatMessagesPage) {
+async function plannedDelay(
+  op: ChatDelayOp,
+  page?: ChatMessagesPage,
+): Promise<number> {
   const plan = takePlan(delayPlan, planKeys(op, page));
-  if (plan === null) return;
+  if (plan === null) return 0;
   await delay(plan.ms);
+  return plan.ms;
 }
 
 /** `YYYY-MM-DD`이고 달력에 있는 날이면 true(`2026-13-01`, `2026-02-30`은 false) */
@@ -1771,7 +1876,8 @@ export const chatHandlers = [
   /**
    * 시드로 되돌린다. `{rooms: 0}`이면 내 방을 비운다(빈 상태), `{rooms: n}`이면 최근 n개만.
    * `{seed: "stats-v1"}`이면 기본 시드 대신 문의 지표 fixture(F1~F12, F14~F16)를 넣는다.
-   * `{seed: "rooms-70"}`이면 필터, 검색 시드(내 방 70 + 남의 방 1, `seedRooms70`)
+   * `{seed: "rooms-70"}`이면 필터, 검색 시드(내 방 70 + 남의 방 1, `seedRooms70`).
+   * `{seed: "retail-history"}`이면 기본 시드에서 방 1만 메시지 120개(`seedRetailHistoryRooms`)
    */
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
@@ -1779,16 +1885,8 @@ export const chatHandlers = [
       noBackorders?: boolean;
       seed?: string;
     };
-    if (
-      input.seed !== undefined &&
-      input.seed !== STATS_SEED_NAME &&
-      input.seed !== ROOMS_70_SEED_NAME
-    )
-      return invalid(
-        "seed",
-        "INVALID",
-        `seed는 ${STATS_SEED_NAME} | ${ROOMS_70_SEED_NAME}`,
-      );
+    if (input.seed !== undefined && !isChatSeedName(input.seed))
+      return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
     resetChatMock(input.rooms, {
       noBackorders: input.noBackorders === true,
       seed: input.seed,
@@ -1814,7 +1912,9 @@ export function resetChatMock(
       ? seedStatsRooms()
       : options.seed === ROOMS_70_SEED_NAME
         ? seedRooms70()
-        : seedRooms();
+        : options.seed === RETAIL_HISTORY_SEED_NAME
+          ? seedRetailHistoryRooms()
+          : seedRooms();
   // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
   resetBackorderMock({ empty: options.noBackorders === true });
   // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는
@@ -1838,6 +1938,8 @@ export function resetChatMock(
   failedOnceKeys.clear();
   failPlan.clear();
   delayPlan.clear();
+  resetEpoch += 1;
+  plannedFailureLog = [];
   autoReplySettings = structuredClone(DEFAULT_AUTO_REPLY_SETTINGS);
   // 방 1은 빈티지 플라워 셔츠(2001)에서 연 방이다. 문맥 시각은 reset 시각 — 시드 메시지 시각(10/28 고정)으로
   // 박으면 늘 30분이 지나 시연 장면 2가 넘김으로 끝난다
@@ -1908,4 +2010,11 @@ export const chatStore = {
   idempotency,
   UUID_PATTERN,
   MESSAGE_PAGE_DEFAULT,
+  /** 소매 손잡이도 도매와 같은 규칙으로 `page`를 가른다(loop-08d §5-2 1). 400 응답만 소매 어휘로 따로 만든다 */
+  messagesPageOf,
+  knobPage,
+  takePlan,
+  planKeys,
+  recordPlannedFailure,
+  plannedFailureEpoch,
 } as const;

@@ -181,20 +181,66 @@ test("M6 보내기 응답 지연 중 같은 A 재로그인 → POST 성공 도�
   );
 });
 
-test("M7 방 첫 messages GET 지연 중 같은 A 재로그인 → 그 방이 다시 조회해 말풍선이 그려진다", async ({
+/** 목이 돌려준 계획 실패(`GET /__mock/chat/log`, loop-08d S1). 브라우저가 취소한 요청도 목은 끝까지 돌고 적는다 */
+async function plannedFailures(
+  page: Page,
+): Promise<{ op: string; status: number; delayMs: number }[]> {
+  return page.evaluate(async () => {
+    const r = await fetch("/__mock/chat/log");
+    return ((await r.json()) as { data: never[] }).data;
+  });
+}
+
+/*
+ * M7, loop-08d S2-4(M10). 옛 요청을 **늦은 401**로 끝낸다 — 지연만 걸면 옛 요청이 200으로 끝나 화면이 그려져,
+ * `refreshChatSession`의 취소 줄을 지워도 통과했다(08c 메타 M10). 첫 조회는 캐시에 값이 없어 TanStack
+ * `invalidateQueries`의 `cancelRefetch`가 날아가던 요청을 취소하지 않고 그 promise를 그대로 쓴다 — 취소 줄이 없으면
+ * 옛 401(버려짐)로 끝나고 다시 조회가 없다.
+ * 관찰은 둘로 나눠 따로 단언한다: ① 방송 뒤 시작한 새 GET 200과 화면 회복 ② 목 기록의 지연된 401 1건.
+ * 옛 요청이 브라우저에서 401로 보였는지 취소로 보였는지는 묻지 않는다
+ */
+test("M7 S2-4 방 첫 messages GET 지연 401 중 같은 A 재로그인 → 새 GET 200으로 말풍선, 쓰기 가능, 끊김 0 / 목 기록 지연 401 1건", async ({
   page,
 }) => {
   await enterChats(page, { email: ME });
+  await knob(page, "fail", { op: "messages", status: 401, times: 1 });
   await knob(page, "delay", { op: "messages", ms: 3_000, times: 1 });
   await page.locator(`a[data-room-id="${ROOM_1}"]`).click();
   await expect(bubbles(page)).toHaveCount(0);
+  await expect
+    .poll(async () => (await requests(page, MESSAGES_GET)).length)
+    .toBe(1);
 
   const tab = await openSecondTab(page);
   await signIn(tab, ME);
-
   await page.bringToFront();
-  await expect(bubbles(page).first()).toBeVisible({ timeout: 8_000 });
-  await expect(composer(page)).toBeVisible();
+
+  /* ① 첫 요청(지연된 옛 요청) 뒤에 시작한 GET 중 200이 있고, 화면이 돌아왔다 */
+  await expect
+    .poll(
+      async () =>
+        (await requests(page, MESSAGES_GET))
+          .slice(1)
+          .some((r) => r.status === 200),
+      { timeout: 8_000 },
+    )
+    .toBe(true);
+  await expect(bubbles(page).first()).toBeVisible();
+  await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  await expect(
+    page.getByRole("alert").filter({ hasText: LOST_ALERT }),
+  ).toHaveCount(0);
+
+  /* ② 옛 요청은 목에서 지연된 401로 끝났다 */
+  await expect
+    .poll(
+      async () =>
+        (await plannedFailures(page)).filter(
+          (f) => f.op === "messages" && f.status === 401 && f.delayMs > 0,
+        ).length,
+      { timeout: 8_000 },
+    )
+    .toBe(1);
 });
 
 test("R8 탭 2에서 로그아웃 없이 B로 로그인만 해도 탭 1(A)은 정리되고 로그인 화면", async ({

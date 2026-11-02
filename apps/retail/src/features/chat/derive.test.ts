@@ -524,6 +524,9 @@ describe("S6-4 S6-5 S6-6 보내기 실패와 보류 말풍선", () => {
       failures: 0,
       nextPollMs: 3000,
       counterpartRead: null,
+      historyHasMore: false,
+      historyFetched: false,
+      historyStatus: "idle",
     };
     const next = insertSent(thread, [message(7, { clientMessageId: "k-1" })]);
     expect(next.cursor).toBe(5);
@@ -1071,6 +1074,9 @@ describe("S8-14 S8-15 응답의 자동 답, polling, 다시 보내기", () => {
       failures: 0,
       nextPollMs: 3000,
       counterpartRead: null,
+      historyHasMore: false,
+      historyFetched: false,
+      historyStatus: "idle",
     };
     const sent = insertSent(thread, [
       message(8, { clientMessageId: "k-8" }),

@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   ChatSessionLostError,
   ChatStaleResponseError,
+  chatScreenEpoch,
   clearChatCache,
+  leaveChatScreen,
   dropStaleSession,
   guardSession,
   isSessionLost,
@@ -121,6 +123,63 @@ describe("guardSession 세대 갈래(QA F1)", () => {
       guardSession(qc, () => Promise.reject(unauthorized())),
     ).rejects.toBeInstanceOf(ChatSessionLostError);
     expect(isSessionLost(qc)).toBe(true);
+  });
+});
+
+describe("guardSession 방 화면 세대(loop-08d R1)", () => {
+  it("띄운 방 화면을 떠난 뒤 온 401은 끊김 칸을 안 켠다 — 지금 보는 다른 방이 안 잠긴다", async () => {
+    const qc = new QueryClient();
+    const screen = chatScreenEpoch();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => leaveChatScreen(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+        screen,
+      ),
+    ).rejects.toBeInstanceOf(ChatSessionLostError);
+    expect(isSessionLost(qc)).toBe(false);
+  });
+
+  it("같은 방 화면의 401은 지금처럼 잠근다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(qc, () => Promise.reject(unauthorized()), chatScreenEpoch()),
+    ).rejects.toBeInstanceOf(ChatSessionLostError);
+    expect(isSessionLost(qc)).toBe(true);
+  });
+
+  it("화면 세대를 넘긴 성공은 그대로 돌려준다 — 원래 방 캐시에 합친다", async () => {
+    const qc = new QueryClient();
+    const screen = chatScreenEpoch();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => leaveChatScreen(qc),
+          async () => "ok",
+        ),
+        screen,
+      ),
+    ).resolves.toBe("ok");
+  });
+});
+
+describe("guardSession 화면 세대 기본값(loop-08d 메타 M1)", () => {
+  it("screen을 안 넘겨도 부른 순간의 화면 세대를 잡는다 — 읽음, 보내기, polling의 늦은 401도 떠난 뒤면 안 잠근다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => leaveChatScreen(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ChatSessionLostError);
+    expect(isSessionLost(qc)).toBe(false);
   });
 });
 

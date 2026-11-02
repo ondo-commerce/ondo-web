@@ -19,12 +19,15 @@ import { checkComposer } from "../derive";
  */
 export const ChatComposer = memo(function ChatComposer({
   counterpartName,
+  focusTick,
   sessionLost,
   onSend,
   askBusy,
   onAsk,
 }: {
   counterpartName: string;
+  /** `새 메시지 N개` 버튼을 누르면 1씩 오른다. 오르면 입력창으로 포커스(loop-08d §4-4 4) */
+  focusTick: number;
   /** 401 — 쓴 글은 지키고 보내기만 잠근다(D28). 입력창은 읽기 전용, 글은 선택해 복사할 수 있다(S6-5) */
   sessionLost: boolean;
   onSend: (body: string) => void;
@@ -46,9 +49,10 @@ export const ChatComposer = memo(function ChatComposer({
   const boxRef = useRef<HTMLDivElement>(null);
   const focusInput = () => boxRef.current?.querySelector("textarea")?.focus();
 
+  /* 방을 열 때(0) 한 번, 그 뒤 박자가 오를 때마다 */
   useEffect(() => {
     boxRef.current?.querySelector("textarea")?.focus();
-  }, []);
+  }, [focusTick]);
 
   /* 보내면 입력창은 비우고 포커스는 남긴다(S6-1). 비우는 게 연타 방지다 — 두 번째 Enter·클릭은 빈 칸을
      본다(S6-2). React는 키·클릭 같은 사용자 이벤트의 state를 다음 이벤트 전에 반영한다 */
