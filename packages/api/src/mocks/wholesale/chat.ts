@@ -1216,8 +1216,9 @@ function knobPageInvalid() {
 async function plannedFailure(op: ChatFailOp, page?: ChatMessagesPage) {
   const plan = takePlan(failPlan, planKeys(op, page));
   if (plan === null) return null;
+  const epoch = resetEpoch;
   const delayMs = isDelayOp(op) ? await plannedDelay(op, page) : 0;
-  recordPlannedFailure({ op, page, status: plan.status, delayMs });
+  recordPlannedFailure({ op, page, status: plan.status, delayMs, epoch });
   return fail(plan.status);
 }
 
@@ -1239,13 +1240,26 @@ export interface PlannedFailureLog {
 
 let plannedFailureLog: PlannedFailureLog[] = [];
 
+/**
+ * reset 세대. `resetChatMock`마다 오른다. 계획 실패는 지연 **전에** 이 값을 잡고, 지연 뒤 적을 때 값이 바뀌었으면
+ * 적지 않는다 — reset 전에 출발한 늦은 실패가 reset으로 비운 기록을 다시 채우면 다음 시험이 남의 401을 센다
+ */
+let resetEpoch = 0;
+
+function plannedFailureEpoch(): number {
+  return resetEpoch;
+}
+
 /** 계획 실패 한 건을 적는다. 도매, 소매 목이 같이 부른다(기록은 앱마다 브라우저 안에 하나) */
 function recordPlannedFailure(entry: {
   op: string;
   page: ChatMessagesPage | undefined;
   status: number;
   delayMs: number;
+  /** 지연 전에 잡은 reset 세대(`plannedFailureEpoch`) */
+  epoch: number;
 }) {
+  if (entry.epoch !== resetEpoch) return;
   plannedFailureLog.push({
     op: entry.op,
     page: entry.page ?? null,
@@ -1924,6 +1938,7 @@ export function resetChatMock(
   failedOnceKeys.clear();
   failPlan.clear();
   delayPlan.clear();
+  resetEpoch += 1;
   plannedFailureLog = [];
   autoReplySettings = structuredClone(DEFAULT_AUTO_REPLY_SETTINGS);
   // 방 1은 빈티지 플라워 셔츠(2001)에서 연 방이다. 문맥 시각은 reset 시각 — 시드 메시지 시각(10/28 고정)으로
@@ -2001,4 +2016,5 @@ export const chatStore = {
   takePlan,
   planKeys,
   recordPlannedFailure,
+  plannedFailureEpoch,
 } as const;

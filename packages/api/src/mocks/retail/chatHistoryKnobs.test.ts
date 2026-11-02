@@ -155,11 +155,21 @@ describe("S1-1 소매 fail, delay {op: messages, page}", () => {
 describe("S1-2 소매 보내기 지연, 지연된 실패, 응답 기록", () => {
   it("delay {op: send} → 메시지는 바로 저장(그 사이 latest에 보임), 응답만 늦다", async () => {
     await knob("/delay", { op: "send", ms: SLOW_MS });
-    const pending = send("지연 보내기", KEY_A);
-    // 저장은 요청 시점이다. 응답 전 조회에 그 메시지가 있다
-    await new Promise((r) => setTimeout(r, 100));
-    const mid = await get(LATEST);
-    expect(mid.body.data.some((m) => m.clientMessageId === KEY_A)).toBe(true);
+    let settled = false;
+    const pending = send("지연 보내기", KEY_A).finally(() => {
+      settled = true;
+    });
+    // 저장은 요청 시점이다. 응답 전 조회에 그 메시지가 있다. 고정 대기 대신 보일 때까지 짧게 묻는다(지연보다 짧은 제한)
+    const saved = async () =>
+      (await get(LATEST)).body.data.some((m) => m.clientMessageId === KEY_A);
+    const deadline = performance.now() + SLOW_MS - 150;
+    let seen = await saved();
+    while (!seen && performance.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+      seen = await saved();
+    }
+    expect(seen).toBe(true);
+    expect(settled, "보였을 때 응답은 아직 안 끝났다").toBe(false);
     const res = await pending;
     expect(res.status).toBe(201);
     expect(res.ms).toBeGreaterThanOrEqual(SLOW_MS - 50);
@@ -187,6 +197,16 @@ describe("S1-2 소매 보내기 지연, 지연된 실패, 응답 기록", () => 
     });
     // 같은 키로 다시 보내면 계획이 다 쓰여 201(다시 보내기 경로)
     expect((await send("늦은 401", KEY_A)).status).toBe(201);
+  });
+
+  it("reset 전에 출발한 지연된 401은 reset 뒤에 도착해도 기록을 안 채운다(reset 세대)", async () => {
+    await knob("/fail", { op: "send", status: 401 });
+    await knob("/delay", { op: "send", ms: SLOW_MS });
+    const late = send("reset 넘는 401", KEY_A);
+    await new Promise((r) => setTimeout(r, 50));
+    await knob("/reset");
+    expect((await late).status).toBe(401);
+    expect(await failureLog()).toEqual([]);
   });
 
   it("fail {page: before, 500 | 401} + delay {page: before} → 그 결과가 늦게, 기록에 page before", async () => {

@@ -225,6 +225,16 @@ describe("loop-08d S1-2 도매 보내기 지연된 실패와 응답 기록", () 
     await knob("/reset", {});
     expect(await failureLog()).toEqual([]);
   });
+
+  it("reset 전에 출발한 지연된 401은 reset 뒤에 도착해도 기록을 안 채운다(reset 세대)", async () => {
+    await knob("/fail", { op: "send", status: 401 });
+    await knob("/delay", { op: "send", ms: SLOW_MS });
+    const late = sendTimed("reset 넘는 401", SEND_KEY);
+    await new Promise((r) => setTimeout(r, 50));
+    await knob("/reset", {});
+    expect((await late).status).toBe(401);
+    expect(await failureLog()).toEqual([]);
+  });
 });
 
 describe('loop-08d S1-3 도매 reset {seed: "retail-history"}', () => {

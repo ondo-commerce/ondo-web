@@ -273,8 +273,16 @@ function invalid(field: string, code: string, message: string) {
 async function plannedFailure(op: FailOp, page?: ChatMessagesPage) {
   const plan = chatStore.takePlan(failPlan, chatStore.planKeys(op, page));
   if (plan === null) return null;
+  // reset 세대는 지연 전에 잡는다 — reset을 넘은 늦은 실패는 비운 기록에 안 적는다(도매 목과 같다)
+  const epoch = chatStore.plannedFailureEpoch();
   const delayMs = isDelayOp(op) ? await plannedDelay(op, page) : 0;
-  chatStore.recordPlannedFailure({ op, page, status: plan.status, delayMs });
+  chatStore.recordPlannedFailure({
+    op,
+    page,
+    status: plan.status,
+    delayMs,
+    epoch,
+  });
   return fail(plan.status);
 }
 
