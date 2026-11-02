@@ -847,6 +847,18 @@ export function sendFailureOf(error: unknown): SendFailure {
   return "server";
 }
 
+/**
+ * 같은 계정 재로그인을 넘긴 보내기의 실패 종류(loop-08d S2-1, M8). 세션 세대가 바뀐 뒤 도착한 401은 옛 쿠키의 답이라
+ * 세션 끊김이 아니라 `server`(다시 보내기, 지우기)로 본다 — 끊김으로 보면 새 세션을 다시 잠근다.
+ * 다시 보내기는 같은 `clientMessageId`라 서버가 한 번만 만든다. 401 아닌 실패는 그대로(M6)
+ */
+export function staleSendFailure(
+  failure: SendFailure,
+  sessionChanged: boolean,
+): SendFailure {
+  return failure === "session" && sessionChanged ? "server" : failure;
+}
+
 /** 실패 말풍선 아래 문구 */
 export function failureText(failure: SendFailure | null): string {
   return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
