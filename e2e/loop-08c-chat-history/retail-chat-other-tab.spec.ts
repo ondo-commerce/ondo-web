@@ -2,8 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   assertStubServers,
   bubbles,
+  chatMock,
   chatNav,
+  composer,
+  count,
   log,
+  MESSAGES_GET,
   roomRow,
   start,
 } from "../loop-08-chat-polish/retail-helpers";
@@ -79,6 +83,45 @@ test("R8 탭 1 A 방 1 → 탭 2 로그아웃 뒤 B 로그인 → 탭 1은 로�
 
   await page.bringToFront();
   await expectTabOneLeft(page);
+});
+
+test("M5 탭 1 A 방 1 → 탭 2에서 로그아웃 없이 B로 바로 로그인 → 탭 1은 로그인 화면, A 말풍선 0", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  const tab = await page.context().newPage();
+  await tab.goto("/login");
+  await loginAs(tab, "miso");
+
+  await page.bringToFront();
+  await expectTabOneLeft(page);
+});
+
+test("M1 M5 탭 1 A 방 401로 잠김(쓰던 글 있음) → 탭 2 같은 A로 로그인 → 탭 1은 이동 없이 잠김 풀림, 쓰던 글 그대로, polling 다시", async ({
+  page,
+}) => {
+  await tabOneWithRoom(page);
+  await composer(page).fill("A가 쓰던 글");
+  await chatMock(page, "fail", { op: "messages", status: 401 });
+  await expect(composer(page)).toHaveAttribute("readonly", "", {
+    timeout: 8_000,
+  });
+  const lockedAt = await count(page, MESSAGES_GET);
+
+  const tab = await page.context().newPage();
+  await tab.goto("/login");
+  await loginAs(tab, "bombom");
+
+  await page.bringToFront();
+  await expect(composer(page)).not.toHaveAttribute("readonly", "", {
+    timeout: 5_000,
+  });
+  await expect(page).toHaveURL("/chats/1?from=/chats");
+  await expect(composer(page)).toHaveValue("A가 쓰던 글");
+  await expect(log(page).getByText(A_BODY)).toBeVisible();
+  await expect
+    .poll(() => count(page, MESSAGES_GET), { timeout: 10_000 })
+    .toBeGreaterThan(lockedAt);
 });
 
 test("R8 로그아웃한 탭은 다른 탭의 로그인에 끌려가지 않는다", async ({

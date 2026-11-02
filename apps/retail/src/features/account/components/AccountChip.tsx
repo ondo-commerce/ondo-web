@@ -7,10 +7,11 @@ import { clearHeaderSession } from "@/shared/api/headerCounts";
 import { AccountMenu } from "@/shared/components/AccountMenu";
 import { useLogoutMutation } from "../api/session";
 import { ACCOUNT_PATH } from "../constants";
-import { storeInitial } from "../derive";
+import { otherTabActionOf, storeInitial } from "../derive";
 import {
   broadcastSessionChange,
   runSessionChange,
+  runSessionRefresh,
   watchOtherTabSessions,
 } from "../sessionChange";
 
@@ -30,7 +31,14 @@ import {
  * 이니셜을 여기서 한 번에 뽑아 같이 넘긴다 — 메뉴가 따로 계산하면 이름과
  * 이니셜이 서로 다른 값을 보게 된다.
  */
-export function AccountChip({ storeName }: { storeName: string }) {
+export function AccountChip({
+  storeName,
+  retailerId,
+}: {
+  storeName: string;
+  /** 셸 `/me`의 소매처 id. 다른 탭의 로그인이 같은 계정인지 가른다(M1). 모르면 null — 다른 계정으로 본다 */
+  retailerId: number | null;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const logoutMutation = useLogoutMutation();
@@ -42,7 +50,7 @@ export function AccountChip({ storeName }: { storeName: string }) {
     /* 채팅 목록, 대화, 끊김 표시도 같이(loop-08c S7-1) */
     runSessionChange();
     /* 같은 쿠키를 보는 다른 탭에도(loop-08c 리뷰 R8) */
-    broadcastSessionChange("logout");
+    broadcastSessionChange({ change: "logout" });
     /* 서버 세션을 먼저 끊고 나서 옮긴다. 실패해도 옮긴다 — 쿠키가 남아도 이
        브라우저에서 할 수 있는 일이 없고, 로그아웃을 누른 사람을 네트워크 사정
        때문에 붙잡아 두면 안 된다. `refresh`로 서버 컴포넌트가 끊긴 세션을 다시
@@ -57,19 +65,26 @@ export function AccountChip({ storeName }: { storeName: string }) {
   };
 
   /*
-   * 다른 탭에서 로그아웃하거나 로그인했다(loop-08c 리뷰 R8). 쿠키는 이제 이 탭이 그린 계정 것이 아니다 — 로그아웃과
-   * 같은 정리(헤더, 채팅 캐시와 세대)를 하고 로그인 화면으로 **전체 이동**한다. 클라이언트 이동이면 라우터 캐시가
-   * 앞 계정 서버 컴포넌트 결과를 되돌려 준다. 서버 로그아웃은 부르지 않는다 — 부르면 다른 탭의 새 세션까지 끊는다.
+   * 다른 탭에서 로그아웃하거나 로그인했다(loop-08c 리뷰 R8, Codex 메타 M1).
+   * - 같은 소매처가 다시 들어왔으면 이동하지 않는다 — 채팅 세대를 올리고 401 잠금을 풀어 새 쿠키로 잇는다. 쓰던 글,
+   *   보류 말풍선은 그대로(D28). 재로그인 전에 떠난 늦은 401은 세대가 달라 버려진다
+   * - 그 밖(로그아웃, 다른 소매처, id 모름)은 쿠키가 이 탭이 그린 계정 것이 아니다 — 로그아웃과 같은 정리(헤더, 채팅
+   *   캐시와 세대)를 하고 로그인 화면으로 **전체 이동**한다. 클라이언트 이동이면 라우터 캐시가 앞 계정 서버 컴포넌트
+   *   결과를 되돌려 준다. 서버 로그아웃은 부르지 않는다 — 부르면 다른 탭의 새 세션까지 끊는다
    * 이 칩은 로그인한 셸에만 떠서, 로그아웃 상태의 탭(로그인, 가입 화면)은 끌려가지 않는다
    */
   useEffect(
     () =>
-      watchOtherTabSessions(() => {
+      watchOtherTabSessions((message) => {
+        if (otherTabActionOf(retailerId, message) === "refresh") {
+          runSessionRefresh();
+          return;
+        }
         void clearHeaderSession(queryClient);
         runSessionChange();
         window.location.assign(ACCOUNT_PATH.login);
       }),
-    [queryClient],
+    [queryClient, retailerId],
   );
 
   return (

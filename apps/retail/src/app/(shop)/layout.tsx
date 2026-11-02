@@ -75,7 +75,12 @@ export default async function ShopLayout({
       /* 종은 채팅 링크가 내는 count 하나를 같이 읽는다(06b S2-1). 목록은 패널을 열 때만 브라우저가 받는다 */
       notifications={<NotificationBell />}
       cart={<CartButton count={cartCount} />}
-      account={<AccountChip storeName={storeNameLabel(me.shopName)} />}
+      account={
+        <AccountChip
+          storeName={storeNameLabel(me.shopName)}
+          retailerId={me.retailerId ?? null}
+        />
+      }
     >
       {children}
     </AppShell>

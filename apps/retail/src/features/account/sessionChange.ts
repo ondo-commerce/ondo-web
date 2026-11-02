@@ -38,9 +38,9 @@ function channel(): BroadcastChannel | null {
 }
 
 /** 로그인 성공, 로그아웃 누름 지점이 부른다 */
-export function broadcastSessionChange(change: SessionBroadcast): void {
+export function broadcastSessionChange(message: SessionBroadcast): void {
   try {
-    channel()?.postMessage({ change });
+    channel()?.postMessage(message);
   } catch {
     /* 알림이 실패해도 이 탭의 로그인, 로그아웃은 끝나야 한다 */
   }
@@ -58,6 +58,29 @@ export function watchOtherTabSessions(
   };
   target.addEventListener("message", onMessage);
   return () => target.removeEventListener("message", onMessage);
+}
+
+/**
+ * 같은 소매처가 다른 탭에서 다시 로그인했을 때 이어 갈 것(Codex 메타 M1 — 채팅 세대 올림, 401 잠금 해제).
+ * 지우지 않고 잇는다. 무엇을 잇는지는 이 feature가 모른다 — `app/`이 끼워 넣는다
+ */
+const refreshes = new Set<() => void>();
+
+export function onSessionRefresh(refresh: () => void): () => void {
+  refreshes.add(refresh);
+  return () => {
+    refreshes.delete(refresh);
+  };
+}
+
+export function runSessionRefresh(): void {
+  for (const refresh of refreshes) {
+    try {
+      refresh();
+    } catch {
+      /* 다음으로 */
+    }
+  }
 }
 
 /** 로그아웃, 로그인 지점이 부른다. 정리 하나가 실패해도 나머지와 로그아웃 자체는 끝나야 한다 */

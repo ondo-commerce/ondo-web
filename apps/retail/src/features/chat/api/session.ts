@@ -141,6 +141,20 @@ export function clearChatCache(queryClient: QueryClient): void {
   queryClient.removeQueries({ queryKey: chatKeys.all });
 }
 
+/**
+ * 같은 소매처가 다른 탭에서 다시 로그인했다(Codex 메타 M1, 도매 `refreshChatSession`과 같다). 캐시, 쓰던 글, 보류
+ * 말풍선은 그대로 두고 새 쿠키로 잇는다.
+ * - 세대를 올린다 — 재로그인 전에 떠난 늦은 401이 새 세션을 다시 잠그지 않게 버려진다(`guardSession`)
+ * - 끊김 칸을 내린다 — 입력창 잠김이 풀린다
+ * - 채팅 조회를 다시 부른다 — 끊긴 동안 멈춘 polling 간격은 칸 값만 바꿔서는 다시 안 잡힌다
+ * 부르는 곳은 `app/SessionChangeCleanup.tsx`다(feature끼리 import 금지)
+ */
+export function refreshChatSession(queryClient: QueryClient): void {
+  sessionEpoch += 1;
+  queryClient.setQueryData<boolean>(chatKeys.session(), false);
+  void queryClient.invalidateQueries({ queryKey: chatKeys.all });
+}
+
 /** 화면이 보는 값. 요청을 내지 않는 캐시 칸이다(`queryFn`은 쓰지 않는 기본값) */
 export function useChatSessionLost(): boolean {
   const { data } = useQuery({

@@ -96,8 +96,12 @@ export function LoginView() {
     await clearHeaderSession(queryClient);
     /* 채팅 캐시도 한 번 더 — 로그아웃 응답을 기다리는 사이 방 polling이 앞 계정 값을 다시 채웠을 수 있다(loop-08c S7) */
     runSessionChange();
-    /* 같은 쿠키를 보는 다른 탭은 앞 계정 화면을 그리고 있을 수 있다(loop-08c 리뷰 R8) */
-    broadcastSessionChange("login");
+    /* 같은 쿠키를 보는 다른 탭은 앞 계정 화면을 그리고 있을 수 있다(loop-08c 리뷰 R8). 소매처 id를 실어 같은
+       계정이면 받은 탭이 정리 없이 이어 가게 한다(Codex 메타 M1) */
+    broadcastSessionChange({
+      change: "login",
+      retailerId: me.retailerId ?? null,
+    });
     router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };
