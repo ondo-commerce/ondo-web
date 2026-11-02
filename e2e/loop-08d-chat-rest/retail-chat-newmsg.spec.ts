@@ -1,0 +1,545 @@
+import { expect, test, type Page } from "@playwright/test";
+import {
+  AFTER_GET,
+  alignTop,
+  assertStubServers,
+  BEFORE_GET,
+  bubbles,
+  chatMock,
+  composer,
+  count,
+  historyButton,
+  historyFail,
+  incoming,
+  log,
+  logMetrics,
+  openHistoryRoom,
+  READ_POST,
+  readBodies,
+  requests,
+  retryButton,
+  scrollToBottom,
+  setScrollTop,
+  settled,
+  setVisibility,
+  topOf,
+  waitBubbles,
+  wheel,
+  wheelUpTo,
+} from "./retail-history-helpers";
+
+/**
+ * loop-08d #352 S4 — 소매 `새 메시지 N개`, 읽음 보류, 바닥 판정 통합(48px), 리사이즈 순서(① 바닥 붙임 ② 다시 잼),
+ * 낭독 기록, 긴 왕복. `pnpm e2e:stub`.
+ *
+ * 시드 `retail-history` 방 1: 1~120, 홀수 RETAILER 짝수 WHOLESALER, 소매 읽음 100 — 열면 읽음 POST 120이 한 번 나간다.
+ * 읽음 세는 법(01-plan S4 머리): 그 첫 POST가 응답을 받고 1초 지난 때를 기준점으로 잡고 그 뒤 방 1 POST만 센다.
+ */
+
+assertStubServers();
+
+test.use({ viewport: { width: 1280, height: 800 } });
+
+const ROOM1_READ = {
+  path: /\/api\/retail\/chat\/rooms\/1\/read$/,
+  method: "POST",
+} as const;
+
+interface ReadMark {
+  requests: number;
+  bodies: number;
+}
+
+/** 첫 읽음 POST가 끝나고 1초 뒤를 기준점으로 */
+async function markReads(page: Page): Promise<ReadMark> {
+  await expect.poll(() => count(page, ROOM1_READ)).toBeGreaterThan(0);
+  await settled(page, ROOM1_READ);
+  await page.waitForTimeout(1000);
+  return {
+    requests: await count(page, ROOM1_READ),
+    bodies: (await readBodies(page)).length,
+  };
+}
+
+/** 기준점 뒤 방 1 읽음 POST — 응답 상태와 `lastReadSequence`. 다른 방 POST가 있으면 실패 */
+async function readsSince(
+  page: Page,
+  mark: ReadMark,
+): Promise<{ status: number | null; seq: number | undefined }[]> {
+  expect(await count(page, READ_POST)).toBe(await count(page, ROOM1_READ));
+  const list = (await requests(page, ROOM1_READ)).slice(mark.requests);
+  const bodies = (await readBodies(page)).slice(mark.bodies);
+  return list.map((r, i) => ({
+    status: r.status,
+    seq: bodies[i]?.lastReadSequence,
+  }));
+}
+
+/** polling 한 번이 더 나가고 응답까지 */
+async function nextPoll(page: Page): Promise<void> {
+  const before = await count(page, AFTER_GET);
+  await expect
+    .poll(() => count(page, AFTER_GET), { timeout: 8000 })
+    .toBeGreaterThan(before);
+  await settled(page, AFTER_GET);
+  await page.waitForTimeout(100);
+}
+
+function jumpButton(page: Page) {
+  return page.locator('button[data-ac~="08d:S4-2"]');
+}
+
+/** 말풍선 n이 그려질 때까지(polling이 받아 옴) */
+async function waitSequence(page: Page, n: number): Promise<void> {
+  await expect(log(page).locator(`[data-sequence="${n}"]`)).toBeAttached({
+    timeout: 8000,
+  });
+}
+
+/** 100을 log 위끝에 두고 바닥까지 ≥ 200px 확인 */
+async function readAbove(page: Page): Promise<void> {
+  await alignTop(page, 100);
+  await page.waitForTimeout(100);
+  expect((await logMetrics(page)).fromBottom).toBeGreaterThanOrEqual(200);
+}
+
+/** 내 다른 기기에서 보낸 글(보내기 POST 직접). 이 화면의 보류 말풍선은 안 는다 */
+async function sendFromOtherDevice(page: Page, body: string): Promise<void> {
+  const status = await page.evaluate(async (text) => {
+    const response = await fetch("/api/retail/chat/rooms/1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ body: text }),
+    });
+    return response.status;
+  }, body);
+  expect(status).toBe(201);
+}
+
+/** 마지막 말풍선 rect가 log 안에 전부, 입력창 위 */
+async function expectLastBubbleShown(page: Page): Promise<void> {
+  const box = await log(page).evaluate((el) => {
+    const nodes = el.querySelectorAll("[data-sequence]");
+    const last = nodes[nodes.length - 1]!.getBoundingClientRect();
+    const logRect = el.getBoundingClientRect();
+    return {
+      top: last.top,
+      bottom: last.bottom,
+      logTop: logRect.top,
+      logBottom: logRect.bottom,
+    };
+  });
+  const input = await composer(page).boundingBox();
+  if (input === null) throw new Error("입력창 없음");
+  expect(box.bottom).toBeLessThanOrEqual(box.logBottom + 0.5);
+  expect(box.top).toBeGreaterThanOrEqual(box.logTop - 0.5);
+  expect(box.bottom).toBeLessThanOrEqual(input.y);
+}
+
+test.describe("S4-2 위를 읽는 중 새 메시지 → 보류, 버튼", () => {
+  async function arrive(page: Page): Promise<{ mark: ReadMark; top: number }> {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    await readAbove(page);
+    const top = await topOf(page, 100);
+    await incoming(page, 1, "도매 답");
+    /* 그 사이 내 다른 기기 글이 끼어도 N은 그대로 */
+    await sendFromOtherDevice(page, "다른 기기에서 보낸 글");
+    await incoming(page, 1, "자동 답", { kind: "AUTO_REPLY" });
+    /* 121 도매 TEXT, 122 내 다른 기기 글, 123 목 자동 답의 넘김 줄(SYSTEM), 124 AUTO_REPLY — N에 드는 건 121, 124 */
+    await waitSequence(page, 124);
+    await page.waitForTimeout(300);
+    return { mark, top };
+  }
+
+  test("incoming 2(TEXT + AUTO_REPLY) → 읽음 0, 100 top ≤ 4px, '새 메시지 2개, 아래로 이동' → 누름 → 바닥, POST 1(그린 최대), 버튼 0, 포커스 입력창", async ({
+    page,
+  }) => {
+    const { mark, top } = await arrive(page);
+    expect(await readsSince(page, mark)).toEqual([]);
+    expect(Math.abs((await topOf(page, 100)) - top)).toBeLessThanOrEqual(4);
+    await expect(jumpButton(page)).toHaveAccessibleName(
+      "새 메시지 2개, 아래로 이동",
+    );
+    await expect(jumpButton(page)).toHaveText("새 메시지 2개");
+
+    await jumpButton(page).click();
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeLessThanOrEqual(1);
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(1);
+    await page.waitForTimeout(6000);
+    expect(await readsSince(page, mark)).toEqual([{ status: 200, seq: 124 }]);
+    await expect(jumpButton(page)).toHaveCount(0);
+    await expect(composer(page)).toBeFocused();
+  });
+
+  test("버튼 대신 휠로 바닥까지 → POST 1, 버튼 0", async ({ page }) => {
+    const { mark } = await arrive(page);
+    for (let i = 0; i < 40; i++) {
+      if ((await logMetrics(page)).fromBottom <= 1) break;
+      await wheel(page, 400);
+    }
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(1);
+    await page.waitForTimeout(6000);
+    expect(await readsSince(page, mark)).toEqual([{ status: 200, seq: 124 }]);
+    await expect(jumpButton(page)).toHaveCount(0);
+  });
+});
+
+test.describe("S4-3 N 세는 법", () => {
+  test("위로 올린 채 AUTO_REPLY 1개만 → '새 메시지 1개'", async ({ page }) => {
+    await openHistoryRoom(page);
+    await readAbove(page);
+    await incoming(page, 1, "자동 답", { kind: "AUTO_REPLY" });
+    await waitSequence(page, 121);
+    await expect(jumpButton(page)).toHaveAccessibleName(
+      "새 메시지 1개, 아래로 이동",
+    );
+  });
+
+  test("위로 올린 채 내 다른 기기 글만 → '아래로 이동'", async ({ page }) => {
+    await openHistoryRoom(page);
+    await readAbove(page);
+    await sendFromOtherDevice(page, "다른 기기에서 보낸 글");
+    await waitSequence(page, 121);
+    await expect(jumpButton(page)).toHaveAccessibleName("아래로 이동");
+    await expect(jumpButton(page)).toHaveText("아래로 이동");
+  });
+});
+
+test("S4-4 바닥에서 incoming 8개(300자, 묶음 > log 높이) → 바닥 거리 ≤ 1px, 마지막 말풍선 log 안, POST 1", async ({
+  page,
+}) => {
+  await openHistoryRoom(page);
+  const mark = await markReads(page);
+  await incoming(page, 1, "가".repeat(300), { count: 8 });
+  await waitSequence(page, 128);
+  await page.waitForTimeout(200);
+  const batch = await log(page).evaluate((el) => {
+    let sum = 0;
+    for (let s = 121; s <= 128; s++)
+      sum += el
+        .querySelector(`[data-sequence="${s}"]`)!
+        .getBoundingClientRect().height;
+    return { sum, clientHeight: el.clientHeight };
+  });
+  expect(batch.sum).toBeGreaterThan(batch.clientHeight);
+  expect((await logMetrics(page)).fromBottom).toBeLessThanOrEqual(1);
+  await expectLastBubbleShown(page);
+  await page.waitForTimeout(6000);
+  expect(await readsSince(page, mark)).toEqual([{ status: 200, seq: 128 }]);
+});
+
+test.describe("S4-5 리사이즈 순서(390, ① 바닥 붙임 ② 다시 잼)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  const steps: [string, (page: Page) => Promise<void>][] = [
+    ["① 입력창 3줄", (page) => composer(page).fill("첫 줄\n둘째 줄\n셋째 줄")],
+    ["② 1,001자 오류 두 줄", (page) => composer(page).fill("가".repeat(1001))],
+    [
+      "③ 창 높이 844 → 600",
+      (page) => page.setViewportSize({ width: 390, height: 600 }),
+    ],
+    [
+      "④ 600 → 844",
+      (page) => page.setViewportSize({ width: 390, height: 844 }),
+    ],
+  ];
+
+  test("바닥 출발: 각 단계 뒤 바닥 거리 ≤ 1px, 마지막 말풍선 입력창 위. ③ 뒤 incoming 1 → 따라가고 POST 1", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    for (const [name, step] of steps) {
+      await step(page);
+      await page.waitForTimeout(200);
+      expect((await logMetrics(page)).fromBottom, name).toBeLessThanOrEqual(1);
+      await expectLastBubbleShown(page);
+      if (name.startsWith("③")) {
+        await incoming(page, 1, "창이 줄어든 뒤 답");
+        await waitSequence(page, 121);
+        await page.waitForTimeout(200);
+        expect(
+          (await logMetrics(page)).fromBottom,
+          "③ 뒤 incoming",
+        ).toBeLessThanOrEqual(1);
+        await expect.poll(() => readsSince(page, mark)).toHaveLength(1);
+        expect(await readsSince(page, mark)).toEqual([
+          { status: 200, seq: 121 },
+        ]);
+        await expect(jumpButton(page)).toHaveCount(0);
+      }
+    }
+  });
+
+  test("위 출발: 각 단계 뒤 첫 보이던 말풍선 top 이동 ≤ 4px, 버튼과 읽음 POST 변화 0", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    await readAbove(page);
+    const top = await topOf(page, 100);
+    for (const [name, step] of steps) {
+      await step(page);
+      await page.waitForTimeout(200);
+      expect(
+        Math.abs((await topOf(page, 100)) - top),
+        name,
+      ).toBeLessThanOrEqual(4);
+      await expect(jumpButton(page)).toHaveCount(0);
+    }
+    expect(await readsSince(page, mark)).toEqual([]);
+  });
+});
+
+test.describe("S4-6 탭 숨김과 읽음 실패", () => {
+  test("위로 올린 채 숨김 → incoming → 복귀 → polling 1회 뒤 '새 메시지 1개', POST 0", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    await readAbove(page);
+    await setVisibility(page, "hidden");
+    await incoming(page, 1, "숨긴 사이 답");
+    await page.waitForTimeout(500);
+    await setVisibility(page, "visible");
+    await nextPoll(page);
+    await waitSequence(page, 121);
+    await expect(jumpButton(page)).toHaveAccessibleName(
+      "새 메시지 1개, 아래로 이동",
+    );
+    await page.waitForTimeout(6000);
+    expect(await readsSince(page, mark)).toEqual([]);
+  });
+
+  test("바닥에서 숨김 → incoming → 복귀 → POST 1", async ({ page }) => {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    await setVisibility(page, "hidden");
+    await incoming(page, 1, "숨긴 사이 답");
+    await page.waitForTimeout(500);
+    await setVisibility(page, "visible");
+    await waitSequence(page, 121);
+    await page.waitForTimeout(6000);
+    expect(await readsSince(page, mark)).toEqual([{ status: 200, seq: 121 }]);
+  });
+
+  test("read 500 + 바닥 incoming → POST 1(500), 다음 polling 뒤 POST 1(200, 같은 값). 다시 500 뒤 위로 올리면 0, 바닥에 오면 1", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    const mark = await markReads(page);
+    await chatMock(page, "fail", { op: "read", status: 500 });
+    await incoming(page, 1, "첫 답");
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(1);
+    await settled(page, ROOM1_READ);
+    expect(await readsSince(page, mark)).toEqual([{ status: 500, seq: 121 }]);
+    await nextPoll(page);
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(2);
+    await settled(page, ROOM1_READ);
+    expect((await readsSince(page, mark))[1]).toEqual({
+      status: 200,
+      seq: 121,
+    });
+
+    /* 다시 500 — 응답을 받자마자 위로. 보류 중엔 다시 보내지 않는다 */
+    await chatMock(page, "fail", { op: "read", status: 500 });
+    await incoming(page, 1, "둘째 답");
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(3);
+    await settled(page, ROOM1_READ);
+    await readAbove(page);
+    expect((await readsSince(page, mark))[2]).toEqual({
+      status: 500,
+      seq: 122,
+    });
+    await nextPoll(page);
+    await nextPoll(page);
+    expect(await readsSince(page, mark)).toHaveLength(3);
+    await scrollToBottom(page);
+    await expect.poll(() => readsSince(page, mark)).toHaveLength(4);
+    await settled(page, ROOM1_READ);
+    expect((await readsSince(page, mark))[3]).toEqual({
+      status: 200,
+      seq: 122,
+    });
+  });
+});
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1280, height: 800 },
+]) {
+  test.describe(`S4-7 ${viewport.width} 버튼 자리와 크기`, () => {
+    test.use({ viewport });
+
+    async function size(locator: ReturnType<typeof historyButton>) {
+      return locator.evaluate((el) => ({
+        h: el.getBoundingClientRect().height,
+        f: getComputedStyle(el).fontSize,
+      }));
+    }
+
+    test("새 메시지 버튼 bottom ≤ 입력창 top, 좌우 log 안. 새 메시지, 이전 메시지 보기, 불러오는 중, 다시 시도 높이 44/28 글자 14/12", async ({
+      page,
+    }) => {
+      const phone = viewport.width === 390;
+      const expected = phone ? { h: 44, f: "14px" } : { h: 28, f: "12px" };
+      await openHistoryRoom(page);
+      await readAbove(page);
+      await incoming(page, 1, "새 답");
+      await waitSequence(page, 121);
+      const jump = await jumpButton(page).boundingBox();
+      const logBox = await log(page).boundingBox();
+      const composerBox = await page.locator('[data-ac="S5-9"]').boundingBox();
+      if (jump === null || logBox === null || composerBox === null)
+        throw new Error("자리 없음");
+      expect(jump.y + jump.height).toBeLessThanOrEqual(composerBox.y);
+      expect(jump.x).toBeGreaterThanOrEqual(logBox.x);
+      expect(jump.x + jump.width).toBeLessThanOrEqual(logBox.x + logBox.width);
+      expect(await size(jumpButton(page))).toEqual(expected);
+
+      await setScrollTop(page, 0);
+      expect(await size(historyButton(page))).toEqual(expected);
+      await chatMock(page, "delay", {
+        op: "messages",
+        page: "before",
+        ms: 2000,
+      });
+      await historyButton(page).click();
+      await expect(historyButton(page)).toHaveAttribute("aria-busy", "true");
+      expect(await size(historyButton(page))).toEqual(expected);
+      await waitBubbles(page, 101);
+
+      await chatMock(page, "fail", {
+        op: "messages",
+        page: "before",
+        status: 500,
+      });
+      await setScrollTop(page, 0);
+      await historyButton(page).click();
+      await expect(historyFail(page)).toBeVisible();
+      expect((await size(retryButton(page))).h).toBe(expected.h);
+    });
+  });
+}
+
+/**
+ * 채팅 live 영역 하나(`data-ac~="08d:S4-8"`)를 MutationObserver로 센다. 영역은 방을 열 때 생겨서 init script가
+ * 찾을 때까지 기다렸다 붙는다. `__live.reset()`으로 비운다
+ */
+async function watchLive(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const record = {
+      added: 0,
+      chars: 0,
+      reset() {
+        record.added = 0;
+        record.chars = 0;
+      },
+    };
+    (window as unknown as { __live: typeof record }).__live = record;
+    let attached: Element | null = null;
+    const observer = new MutationObserver((list) => {
+      for (const m of list) {
+        if (m.type === "childList") record.added += m.addedNodes.length;
+        if (m.type === "characterData") record.chars += 1;
+      }
+    });
+    setInterval(() => {
+      const el = document.querySelector('[data-ac~="08d:S4-8"]');
+      if (el === attached) return;
+      observer.disconnect();
+      attached = el;
+      if (el !== null)
+        observer.observe(el, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
+    }, 50);
+  });
+}
+
+function liveRecord(page: Page): Promise<{ added: number; chars: number }> {
+  return page.evaluate(() => {
+    const r = (
+      window as unknown as { __live: { added: number; chars: number } }
+    ).__live;
+    return { added: r.added, chars: r.chars };
+  });
+}
+
+test("S4-8 낭독 기록: 옛 메시지 자동, 버튼으로 붙이는 동안 0. 위로 올린 채 incoming 1 → 1. 이어서 옛 메시지 → 그대로 1", async ({
+  page,
+}) => {
+  await watchLive(page);
+  await openHistoryRoom(page);
+  await page.waitForTimeout(1000);
+  await page.evaluate(() =>
+    (window as unknown as { __live: { reset: () => void } }).__live.reset(),
+  );
+
+  await wheelUpTo(page);
+  await waitBubbles(page, 100);
+  await page.waitForTimeout(300);
+  expect(await liveRecord(page)).toEqual({ added: 0, chars: 0 });
+
+  await incoming(page, 1, "위를 읽는 중 온 답");
+  await waitSequence(page, 121);
+  await page.waitForTimeout(300);
+  expect(await liveRecord(page)).toEqual({ added: 1, chars: 0 });
+
+  await setScrollTop(page, 0);
+  await historyButton(page).click();
+  await waitBubbles(page, 121);
+  await page.waitForTimeout(300);
+  expect(await liveRecord(page)).toEqual({ added: 1, chars: 0 });
+});
+
+test.describe("S4-10 긴 왕복", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("21~70 불러온 채 위 → 입력창 포커스, 844 → 600 → 844 → incoming 1 → '새 메시지 1개' → 상품 상세 → 뒤로 → 바닥에서 시작, 21~70 있음, before 0, 버튼 0", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    await wheelUpTo(page);
+    await waitBubbles(page, 100);
+    await composer(page).focus();
+    await page.setViewportSize({ width: 390, height: 600 });
+    await page.waitForTimeout(200);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(200);
+    await incoming(page, 1, "왕복 전 답");
+    await waitSequence(page, 121);
+    await expect(jumpButton(page)).toHaveAccessibleName(
+      "새 메시지 1개, 아래로 이동",
+    );
+
+    /* 상품 상세 — 클라이언트 이동이라 목과 캐시가 남는다. 홈 로고 → 첫 상품 */
+    await page.getByRole("banner").getByRole("link").first().click();
+    await expect(page).toHaveURL("/");
+    await page.locator('a[href^="/products/"]').first().click();
+    await expect(page).toHaveURL(/\/products\/\d+/);
+    const before = await count(page, BEFORE_GET);
+    await page.goBack();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/chats\/1/);
+
+    await waitBubbles(page, 101);
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeLessThanOrEqual(1);
+    await expect(jumpButton(page)).toHaveCount(0);
+    await setScrollTop(page, 0);
+    await expect(log(page).locator('[data-sequence="21"]')).toBeAttached();
+    await page.waitForTimeout(500);
+    expect(await count(page, BEFORE_GET)).toBe(before);
+    expect(await bubbles(page).count()).toBe(101);
+  });
+});

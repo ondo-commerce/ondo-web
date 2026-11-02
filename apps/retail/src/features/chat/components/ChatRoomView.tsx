@@ -2,7 +2,7 @@
 
 import { Button, Panel } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,7 @@ import {
 } from "../api/session";
 import {
   APPROVAL_PATH,
+  COUNTERPART_SENDER,
   LOGIN_PATH,
   ROOM_TEXT,
   SESSION_FIRST_TEXT,
@@ -42,6 +43,9 @@ import {
   liveAnnouncement,
   maxSequenceOf,
   messageAc,
+  newMessageCount,
+  newMessageLabel,
+  newMessageText,
   nextReadTarget,
   readMarkerSequence,
   returnLinkOf,
@@ -220,17 +224,44 @@ function ChatRoom({
   const [baseline] = useState(maxSequenceOf(thread.messages));
   const live = liveAnnouncement(thread.messages, baseline, name);
   const sessionLost = useChatSessionLost();
-  useMarkRead(
-    roomId,
-    room.myLastReadSequence,
-    maxSequenceOf(thread.messages),
-    threadUpdatedAt,
-    sessionLost,
-  );
+  const maxSequence = maxSequenceOf(thread.messages);
 
   const { pending, send, retry, remove } = useChatSend(roomId);
   const shownPending = visiblePending(pending, thread.messages);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
+
+  /* 이전 메시지(loop-08d S3), 바닥 따라가기, `새 메시지 N개`, 리사이즈 때 바닥 지키기(S4)를 이 훅이 맡는다 */
+  const {
+    logRef,
+    jumpRef,
+    logHandlers,
+    loadOlder,
+    jumpToBottom,
+    composerFocusTick,
+    atBottom,
+    leftAt,
+    jumpVisible,
+  } = useThreadScroll({
+    roomId,
+    thread,
+    maxSequence,
+    pendingCount: shownPending.length,
+    sessionLost,
+  });
+  const slot = historySlotOf(thread, sessionLost);
+  const newCount =
+    leftAt === null
+      ? 0
+      : newMessageCount(thread.messages, leftAt, COUNTERPART_SENDER);
+
+  useMarkRead(
+    roomId,
+    room.myLastReadSequence,
+    maxSequence,
+    threadUpdatedAt,
+    sessionLost,
+    atBottom,
+  );
 
   /* 입력창 위 `재고 문의` 칩(S8-1). 상품 상세에서 연 방만. `onAsk`는 같은 함수로 남아야 입력창(memo)이
      polling마다 다시 그려지지 않는다 */
@@ -258,37 +289,8 @@ function ChatRoom({
   }, [sendChip, askListing]);
   const now = useNow();
 
-  /* 이전 메시지(loop-08d S3)와 log 위치. 새 메시지가 오거나 내가 보내면 바닥으로 가는 05a 규칙도 이 훅이 맡는다
-     (위를 읽는 중 끌려 내려가는 것은 알려진 한계 — S4 #352에서 바뀐다) */
-  const { logRef, logHandlers, loadOlder } = useThreadScroll({
-    roomId,
-    thread,
-    pendingCount: shownPending.length,
-    sessionLost,
-  });
-  const slot = historySlotOf(thread, sessionLost);
-
-  /* 입력창이 늘면(여러 줄, 오류 두 줄) 블록 높이는 그대로라 메시지 영역이 줄어든다(디자인 상태 20).
-     줄어든 만큼 마지막 말풍선이 입력창 뒤로 밀려 가리지 않게, 바닥을 보고 있었으면 바닥을 지킨다(S5-15).
-     위를 읽던 중이면 건드리지 않는다 */
-  useEffect(() => {
-    const log = logRef.current;
-    if (log === null) return;
-    let atBottom = true;
-    const onScroll = () => {
-      atBottom = log.scrollHeight - log.scrollTop - log.clientHeight <= 4;
-    };
-    const observer = new ResizeObserver(() => {
-      if (atBottom) log.scrollTop = log.scrollHeight;
-    });
-    log.addEventListener("scroll", onScroll, { passive: true });
-    observer.observe(log);
-    return () => {
-      log.removeEventListener("scroll", onScroll);
-      observer.disconnect();
-    };
-    /* logRef는 훅이 만든 같은 ref다 — 방마다 한 번 건다(ChatBlock key={roomId}) */
-  }, [logRef]);
+  /* 입력창이 늘면(여러 줄, 오류 두 줄) 블록 높이는 그대로라 메시지 영역이 줄어든다(디자인 상태 20). 바닥을 보고
+     있었으면 바닥을 지키는 일(S5-15)은 `useThreadScroll`의 리사이즈 순서가 맡는다(loop-08d §4-4 6) */
 
   const items = toThreadItems(thread.messages);
   /* 상대 읽음은 캐시의 방별 최댓값 하나만 본다(머리와 meta가 이미 합쳐져 있다). 값만 바뀐 polling은
@@ -313,74 +315,99 @@ function ChatRoom({
     >
       <RoomHead name={name} back={back} documentNav={sessionLost} />
 
-      {/* 첫 자식의 mt-auto가 짧은 대화를 아래로 붙이고, 넘치면 0이 되어 위로 스크롤된다
+      {/* log를 relative 상자로 한 번 감싼다 — 새 메시지 버튼이 그 위에 뜬다(디자인 결정 67). log 안에 넣으면 같이
+          스크롤되고, 흐름 안에 넣으면 버튼이 생길 때 log가 줄어 읽던 자리가 밀린다. DOM 순서 log → 버튼 → 입력창 → live */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* 첫 자식의 mt-auto가 짧은 대화를 아래로 붙이고, 넘치면 0이 되어 위로 스크롤된다
           (도매 디자인 결정 17 — `justify-content:flex-end`는 위쪽이 잘려 쓰지 않는다) */}
-      <div
-        ref={logRef}
-        role="log"
-        aria-label={ROOM_TEXT.logLabel}
-        aria-live="off"
-        tabIndex={-1}
-        /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S6-8)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
-        data-cursor={thread.cursor}
-        data-poll-failures={thread.failures}
-        data-ac="08d:S3-2 08d:S3-8"
-        {...logHandlers}
-        /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
+        <div
+          ref={logRef}
+          role="log"
+          aria-label={ROOM_TEXT.logLabel}
+          aria-live="off"
+          tabIndex={-1}
+          /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S6-8)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
+          data-cursor={thread.cursor}
+          data-poll-failures={thread.failures}
+          data-ac="08d:S3-2 08d:S3-8"
+          {...logHandlers}
+          /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
            없으면 기준이 문서라 스크롤에 안 잘리고 문서 높이를 늘려 페이지가 스크롤했다(QA F3) */
-        className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
-      >
-        <div aria-hidden className="mt-auto shrink-0" />
-        {/* 맨 위 자리. mt-auto 뒤라 짧은 방에선 첫 말풍선 바로 위에 붙는다(디자인 결정 67) */}
-        <ChatHistorySlot slot={slot} logRef={logRef} onLoad={loadOlder} />
-        {items.length === 0 && shownPending.length === 0 ? (
-          <p
-            data-ac="S5-8"
-            className="text-muted-foreground py-12 text-center text-sm"
+          className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
+        >
+          <div aria-hidden className="mt-auto shrink-0" />
+          {/* 맨 위 자리. mt-auto 뒤라 짧은 방에선 첫 말풍선 바로 위에 붙는다(디자인 결정 67) */}
+          <ChatHistorySlot slot={slot} logRef={logRef} onLoad={loadOlder} />
+          {items.length === 0 && shownPending.length === 0 ? (
+            <p
+              data-ac="S5-8"
+              className="text-muted-foreground py-12 text-center text-sm"
+            >
+              {ROOM_TEXT.empty}
+            </p>
+          ) : (
+            items.map((item) =>
+              item.type === "divider" ? (
+                <DateDivider key={item.key}>{item.label}</DateDivider>
+              ) : (
+                <ChatMessageItem
+                  key={item.key}
+                  message={item.message}
+                  counterpartName={name}
+                  now={now}
+                  ac={messageAc(item.message, baseline, pendingIds, acContext)}
+                  readMark={item.message.sequence === readSequence}
+                  extra={
+                    <AutoReplyExtra
+                      message={item.message}
+                      messages={thread.messages}
+                      wholesalerId={room.counterpart.id}
+                      pending={shownPending}
+                      now={now}
+                      sessionLost={sessionLost}
+                      addToCart={addToCart}
+                      onChoose={sendChip}
+                    />
+                  }
+                />
+              ),
+            )
+          )}
+          {shownPending.map((item) => (
+            <PendingItem
+              key={item.clientMessageId}
+              item={item}
+              sessionLost={sessionLost}
+              onRetry={() => retry(item)}
+              onRemove={() => remove(item.clientMessageId)}
+            />
+          ))}
+        </div>
+        {jumpVisible ? (
+          /* 버튼 등장과 N 변화는 낭독하지 않는다 — 알림 통로는 아래 live 영역 하나. 폰은 높이 44, 글자 14(결정 68) */
+          <div
+            ref={jumpRef}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2"
           >
-            {ROOM_TEXT.empty}
-          </p>
-        ) : (
-          items.map((item) =>
-            item.type === "divider" ? (
-              <DateDivider key={item.key}>{item.label}</DateDivider>
-            ) : (
-              <ChatMessageItem
-                key={item.key}
-                message={item.message}
-                counterpartName={name}
-                now={now}
-                ac={messageAc(item.message, baseline, pendingIds, acContext)}
-                readMark={item.message.sequence === readSequence}
-                extra={
-                  <AutoReplyExtra
-                    message={item.message}
-                    messages={thread.messages}
-                    wholesalerId={room.counterpart.id}
-                    pending={shownPending}
-                    now={now}
-                    sessionLost={sessionLost}
-                    addToCart={addToCart}
-                    onChoose={sendChip}
-                  />
-                }
-              />
-            ),
-          )
-        )}
-        {shownPending.map((item) => (
-          <PendingItem
-            key={item.clientMessageId}
-            item={item}
-            sessionLost={sessionLost}
-            onRetry={() => retry(item)}
-            onRemove={() => remove(item.clientMessageId)}
-          />
-        ))}
+            <Button
+              type="button"
+              variant="line"
+              size="sm"
+              aria-label={newMessageLabel(newCount)}
+              data-ac="08d:S4-2 08d:S4-7"
+              className="shadow-dropdown whitespace-nowrap phone:h-11 phone:text-sm"
+              onClick={jumpToBottom}
+            >
+              <ArrowDown aria-hidden className="size-3.5" />
+              {newMessageText(newCount)}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <ChatComposer
         counterpartName={name}
+        focusTick={composerFocusTick}
         sessionLost={sessionLost}
         onSend={send}
         askBusy={askListing === null ? null : askChipBusy(shownPending)}
@@ -393,7 +420,7 @@ function ChatRoom({
         aria-live="polite"
         aria-atomic="true"
         className="sr-only"
-        data-ac="S6-11"
+        data-ac="S6-11 08d:S4-8"
       >
         {live ? (
           <span key={live.sequence} data-ac="S8-12">
@@ -407,7 +434,8 @@ function ChatRoom({
 
 /**
  * 방 읽음(loop-06 S2-5, S2-6 가). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고,
- * 세션이 살아 있을 때 보낸다(`nextReadTarget`). 도매 `ChatRoomPanel`과 같은 규칙이다.
+ * 세션이 살아 있고, **log가 바닥일 때** 보낸다(`nextReadTarget`, loop-08d §4-4 3). 도매 `ChatRoomPanel`과 같은 규칙이다.
+ * 위로 올려 읽는 중 온 메시지엔 보류하고, 바닥에 내려오는 순간(`atBottom`) 그린 최대로 1회 보낸다.
  * - 확인된 위치(confirmed)와 날아가는 중인 위치(inFlight)를 나눈다. 응답 전에 다시 그려져도 POST는 1회,
  *   실패하면 inFlight만 풀려 다음 polling 응답(`threadUpdatedAt`) 때 같은 값을 다시 보낸다
  * - 늦게 온 작은 응답은 확인된 위치를 내리지 않는다(`confirmedReadOf`). 그 응답으로 배지도 다시 받지 않는다
@@ -420,6 +448,7 @@ function useMarkRead(
   drawn: number,
   threadUpdatedAt: number,
   sessionLost: boolean,
+  atBottom: boolean,
 ): void {
   const queryClient = useQueryClient();
   const visible = useDocumentVisible();
@@ -434,6 +463,7 @@ function useMarkRead(
       inFlight: inFlight.current,
       visible,
       sessionLost,
+      atBottom,
     });
     if (target === null) return;
     inFlight.current = target;
@@ -448,7 +478,15 @@ function useMarkRead(
         if (inFlight.current === target) inFlight.current = 0;
       },
     );
-  }, [drawn, visible, sessionLost, threadUpdatedAt, markRead, queryClient]);
+  }, [
+    drawn,
+    visible,
+    sessionLost,
+    atBottom,
+    threadUpdatedAt,
+    markRead,
+    queryClient,
+  ]);
 }
 
 /**

@@ -66,6 +66,7 @@ describe("S2-5 S2-6 (가) nextReadTarget, confirmedReadOf — 방 읽음", () =>
     inFlight: 0,
     visible: true,
     sessionLost: false,
+    atBottom: true,
   };
 
   it("그린 위치가 확인된 위치보다 크면 그 위치를 보낸다", () => {
@@ -84,6 +85,13 @@ describe("S2-5 S2-6 (가) nextReadTarget, confirmedReadOf — 방 읽음", () =>
   it("탭 숨김, 세션 끊김이면 보내지 않는다", () => {
     expect(nextReadTarget({ ...base, visible: false })).toBeNull();
     expect(nextReadTarget({ ...base, sessionLost: true })).toBeNull();
+  });
+
+  it("log가 바닥이 아니면 보류한다(loop-08d S4-1, §4-4 3)", () => {
+    expect(nextReadTarget({ ...base, atBottom: false })).toBeNull();
+    expect(
+      nextReadTarget({ ...base, atBottom: false, drawn: 12, inFlight: 10 }),
+    ).toBeNull();
   });
 
   it("실패 뒤(inFlight 풀림) 같은 값을 다시 보낸다", () => {

@@ -33,7 +33,7 @@ const ROOM = 33;
 
 /** 숨긴 알림 통로(방 하나에 하나, S6-11) */
 const liveRegion = (page: Parameters<typeof log>[0]) =>
-  page.locator('[aria-live="polite"][data-ac="S6-11"]');
+  page.locator('[aria-live="polite"][data-ac~="S6-11"]');
 
 test("S4-2 ① 빈 응답 갱신: 읽음 0(표시 없음) → counterpart-read 2 → 새 메시지 없는 polling 뒤 seq 2 밑 읽음 1개, 7 → seq 6, 입력창 위", async ({
   page,

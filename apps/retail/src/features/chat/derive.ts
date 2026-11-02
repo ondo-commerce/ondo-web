@@ -13,6 +13,7 @@ import {
   IDEMPOTENCY_KEY_REUSED,
   LIST_TEXT,
   NAV_TEXT,
+  NEW_MESSAGE_TEXT,
   PENDING_TEXT,
   READ_MARK_KINDS,
   RECEIVABLE_TEXT,
@@ -382,6 +383,37 @@ export function historySlotOf(
 }
 
 /**
+ * 바닥을 떠난 뒤 붙은 메시지 중 상대가 보낸 수(§4-4 3-1, D45 Q3 ①). `since` = 바닥을 떠날 때 그려져 있던 가장 큰
+ * sequence — 그 사이 위에 붙은 옛 메시지는 sequence가 작아 안 센다. 소매 상대는 WHOLESALER(`COUNTERPART_SENDER`):
+ * TEXT, AUTO_REPLY, CLARIFY, 모르는 kind 전부 센다. 넘김 줄(SYSTEM)과 내 글(RETAILER)은 안 센다 —
+ * `liveAnnouncement`가 읽어 주는 집합과 같다. 도매 `newMessageCount` 복제(상대만 다르다)
+ */
+export function newMessageCount(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+  since: number,
+  counterpart: ChatMessage["sender"],
+): number {
+  return messages.filter(
+    (m) =>
+      m.sequence > since && m.sender === counterpart && m.kind !== "HANDOFF",
+  ).length;
+}
+
+/** 새 메시지 버튼에 보이는 글. 상대 말이 0개여도 새 줄이 있으면 내려갈 길은 남긴다(§4-4 3-2) */
+export function newMessageText(count: number): string {
+  return count >= 1
+    ? `${NEW_MESSAGE_TEXT.countPrefix}${count}${NEW_MESSAGE_TEXT.countSuffix}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/** 새 메시지 버튼 이름. 보이는 글로 시작해 할 일을 붙인다 — "새 메시지 2개, 아래로 이동" */
+export function newMessageLabel(count: number): string {
+  return count >= 1
+    ? `${newMessageText(count)}, ${NEW_MESSAGE_TEXT.jump}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/**
  * `읽음`을 붙일 말풍선의 sequence(기획 §4-3 2, Q1). 상대가 읽은 위치 이하인 내 글(RETAILER TEXT) 중 가장 아래
  * 하나. 값이 null이거나 대상이 없으면 null — "안 읽음"은 쓰지 않는다(디자인 결정 61).
  * 도매와 대상만 다르다: 소매에겐 자동 답, 되묻기가 상대 쪽이다(결정 60).
@@ -689,11 +721,13 @@ export function chatBadgeLabel(counts: HeaderCounts | undefined): BadgeView {
  * 지금 읽음을 보낼 위치. 보낼 게 없으면 null. 도매 `ChatRoomPanel`의 읽음 규칙과 같다.
  * - 탭이 안 보이면 보내지 않는다 — 사장이 못 본 걸 읽었다고 하지 않는다. 다시 보이는 순간 평가한다
  * - 세션이 끊겼으면 보내지 않는다(05a 끊김 상태, 요청 0)
+ * - log가 바닥이 아니면 보류한다(loop-08d §4-4 3, D45 Q1 ①) — 읽음 뜻이 "여기까지 봤다"다. 위를 읽는 중 온
+ *   도매 답에 읽음이 먼저 나가지 않는다. 바닥에 내려오는 순간 그린 최대로 1회 보낸다
  * - 그린 위치가 확인된 위치 이하이거나, 같은 위치가 이미 날아가는 중이면 보내지 않는다 — 응답 전에 다시
  *   그려져도 POST는 1회다. 날아가는 중인 위치보다 **큰** 것이 새로 그려지면 바로 보낸다(10 응답 전 12)
  */
 export function nextReadTarget(state: ReadState): number | null {
-  if (!state.visible || state.sessionLost) return null;
+  if (!state.visible || state.sessionLost || !state.atBottom) return null;
   if (state.drawn <= state.confirmed || state.drawn <= state.inFlight)
     return null;
   return state.drawn;
