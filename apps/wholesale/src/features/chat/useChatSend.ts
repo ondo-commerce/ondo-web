@@ -3,12 +3,13 @@
 import { onlineManager } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useSendMessageMutation } from "./api/mutations";
-import { chatEpoch, useChatCache } from "./api/scope";
+import { chatEpoch, chatSessionEpoch, useChatCache } from "./api/scope";
 import { markSessionLost } from "./api/session";
 import {
   insertSent,
   pendingOfRoom,
   sendFailureOf,
+  staleSendFailure,
   upsertPending,
   withRoomPending,
 } from "./derive";
@@ -59,6 +60,9 @@ export function useChatOutbox() {
          결과를 버린다 — 지운 캐시에 A의 말풍선을 다시 넣거나 B의 화면에 끊김 표시를 남기지 않게 */
       const { queryClient, keys } = chat;
       const epoch = chatEpoch();
+      /* 보낸 순간의 세션 세대(loop-08d S2-1, M8). 보내기는 `guardSession`을 안 거친다 — 같은 계정 재로그인을 넘긴
+         늦은 401로 새 세션을 다시 잠그지 않게 여기서 직접 본다 */
+      const session = chatSessionEpoch();
       mutateAsync({
         roomId,
         clientMessageId: item.clientMessageId,
@@ -85,7 +89,10 @@ export function useChatOutbox() {
         },
         (error: unknown) => {
           if (chatEpoch() !== epoch) return;
-          const failure = sendFailureOf(error);
+          const failure = staleSendFailure(
+            sendFailureOf(error),
+            session !== chatSessionEpoch(),
+          );
           // 401 — 채팅 세션 끊김 하나로(`api/session.ts`). polling 전부와 입력창이 같이 멈춘다
           if (failure === "session") markSessionLost(chat);
           update(roomId, (list) =>

@@ -12,7 +12,7 @@ import {
 import { apiFetch, apiFetchBody } from "@ondo/api";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatCache } from "./keys";
-import { useChatCache } from "./scope";
+import { chatSessionEpoch, useChatCache } from "./scope";
 import {
   ChatStaleResponseError,
   guardSession,
@@ -395,6 +395,11 @@ function setHistoryStatus(
  * - 끝날 때의 캐시를 다시 읽어 합친다 — 기다리는 사이 polling, 보내기가 붙인 것을 안 지운다(S2-6, S2-7)
  * - 로그아웃을 넘어 온 응답은 `guardSession`이 버린다(S2-14). 상태 칸도 안 건드린다 — 지운 캐시가 되살아난다
  * - 401은 세션 끊김 흐름. 버튼은 끊김 표시가 잠근다(`historySlotOf`)
+ * - **요청 토큰**(loop-08d S2-3, M9): 시작 때 세션 세대를 잡는다. 같은 계정 재로그인(`refreshChatSession`)과 로그아웃이
+ *   세대를 올리고, 갱신은 "불러오는 중"을 되돌려 새 요청(B)을 받는다. 끝났을 때 세대가 다르면 이 요청은 대체된 것이라
+ *   200, 500, 401 모두 캐시, `historyStatus`, 잠금, 합치기 직전 콜백을 안 건드린다 — 늦은 200이 끝까지 본 방에
+ *   버튼을 되살리거나, 늦은 500이 B의 "불러오는 중"을 실패로 바꾸지 않게. 잠금(`markSessionLost`)은 세대를 안 바꾸므로
+ *   잠긴 뒤 도착한 같은 세션의 200은 그대로 합친다(S2-5 ②)
  */
 export async function fetchOlder(chat: ChatCache, roomId: number) {
   const key = chat.keys.thread(roomId);
@@ -408,6 +413,8 @@ export async function fetchOlder(chat: ChatCache, roomId: number) {
     return;
   }
   setHistoryStatus(chat, roomId, "loading");
+  const token = chatSessionEpoch();
+  const replaced = () => chatSessionEpoch() !== token;
   let page: ChatMessagePage;
   try {
     page = await guardSession(chat, () =>
@@ -416,7 +423,7 @@ export async function fetchOlder(chat: ChatCache, roomId: number) {
       }),
     );
   } catch (error) {
-    if (error instanceof ChatStaleResponseError) return;
+    if (replaced() || error instanceof ChatStaleResponseError) return;
     setHistoryStatus(
       chat,
       roomId,
@@ -424,6 +431,7 @@ export async function fetchOlder(chat: ChatCache, roomId: number) {
     );
     return;
   }
+  if (replaced()) return;
   const latest = chat.queryClient.getQueryData<ChatThread>(key);
   if (latest === undefined) return;
   beforeOlderMerge.get(roomId)?.();

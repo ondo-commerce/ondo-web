@@ -255,25 +255,67 @@ test("M6 보내기가 선 채 같은 A 재로그인 → POST 500 도착 → 실�
   ).toBeVisible();
 });
 
-test("M7 방 첫 messages GET 지연 중 같은 A 재로그인 → 그 방이 다시 조회해 말풍선이 그려진다", async ({
+/** 목이 돌려준 계획 실패(`GET /__mock/chat/log`, loop-08d S1). 브라우저가 취소한 요청도 목은 끝까지 돌고 적는다 */
+async function plannedFailures(
+  page: Page,
+): Promise<{ op: string; status: number; delayMs: number }[]> {
+  return page.evaluate(async () => {
+    const r = await fetch("/__mock/chat/log");
+    return ((await r.json()) as { data: never[] }).data;
+  });
+}
+
+/*
+ * M7, loop-08d S2-4(M10). 옛 요청을 늦은 401로 끝낸다 — 지연만 걸면 옛 요청이 200으로 끝나 화면이 그려져
+ * 갱신의 취소 줄을 지워도 통과했다(08c 메타 M10). 관찰 둘을 따로 단언한다: ① 방송 뒤 시작한 새 GET 200과 화면 회복
+ * ② 목 기록의 지연된 401 1건. 옛 요청이 브라우저에서 401인지 취소인지는 묻지 않는다
+ */
+test("M7 S2-4 방 첫 messages GET 지연 401 중 같은 A 재로그인 → 새 GET 200으로 말풍선, 쓰기 가능, 끊김 0 / 목 기록 지연 401 1건", async ({
   page,
 }) => {
   await routeAuth(page);
   await start(page, "/");
   await chatNav(page).click();
   await expect(page).toHaveURL("/chats");
+  await chatMock(page, "fail", { op: "messages", status: 401, times: 1 });
   await chatMock(page, "delay", { op: "messages", ms: 3_000, times: 1 });
+  const before = await count(page, MESSAGES_GET);
   await roomRow(page, 1).click();
   await expect(page).toHaveURL("/chats/1?from=/chats");
   await expect(bubbles(page)).toHaveCount(0);
+  await expect.poll(() => count(page, MESSAGES_GET)).toBe(before + 1);
 
   const tab = await page.context().newPage();
   await tab.goto("/login");
   await loginAs(tab, "bombom");
-
   await page.bringToFront();
-  await expect(log(page).getByText(A_BODY)).toBeVisible({ timeout: 8_000 });
+
+  /* ① 옛 요청 뒤에 시작한 GET 중 200이 있고, 화면이 돌아왔다 */
+  await expect
+    .poll(
+      async () =>
+        (await requests(page, MESSAGES_GET))
+          .slice(before + 1)
+          .some((r) => r.status === 200),
+      { timeout: 8_000 },
+    )
+    .toBe(true);
+  await expect(log(page).getByText(A_BODY)).toBeVisible();
   await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "로그인이 끊겼어요" }),
+  ).toHaveCount(0);
+
+  /* ② 옛 요청은 목에서 지연된 401로 끝났다 */
+  await expect
+    .poll(
+      async () =>
+        (await plannedFailures(page)).filter(
+          (f) => f.op === "messages" && f.status === 401 && f.delayMs > 0,
+        ).length,
+      { timeout: 8_000 },
+    )
+    .toBe(1);
 });
 
 test("R8 로그아웃한 탭은 다른 탭의 로그인에 끌려가지 않는다", async ({
