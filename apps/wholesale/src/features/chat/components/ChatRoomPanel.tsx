@@ -1,25 +1,30 @@
 "use client";
 
-import { Badge, Panel } from "@ondo/ui";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { Badge, Button, Panel } from "@ondo/ui";
+import { ArrowDown } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
+import { ChatHistorySlot } from "./ChatHistorySlot";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { useMarkReadMutation } from "../api/mutations";
 import { useRoomNamePeek, useRoomQueries } from "../api/queries";
 import { useChatCache } from "../api/scope";
 import { isChatSessionLostError, useChatSessionLost } from "../api/session";
-import { LIST_TEXT, ROOM_TEXT, SESSION_LOST_TEXT } from "../constants";
 import {
+  COUNTERPART_SENDER,
+  LIST_TEXT,
+  ROOM_TEXT,
+  SESSION_LOST_TEXT,
+} from "../constants";
+import {
+  historySlotOf,
   liveAnnouncement,
   maxSequenceOf,
   handoffCauses,
   messageAc,
+  newMessageCount,
+  newMessageLabel,
+  newMessageText,
   readMarkerSequence,
   toThreadItems,
   visiblePending,
@@ -27,6 +32,7 @@ import {
 import type { ChatReadResult, RoomListParams } from "../types";
 import type { ChatOutbox } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
+import { useThreadScroll } from "../useThreadScroll";
 import { QueryBoundary, QueryErrorView } from "@/shared/api/QueryBoundary";
 
 interface RoomCallbacks {
@@ -158,15 +164,37 @@ function ChatRoom({
     void queryClient.invalidateQueries({ queryKey: keys.room(roomId) });
   }, [thread.cursor, openedCursor, queryClient, keys, roomId]);
 
-  /* 읽음(S3-7). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고, 세션이 살아 있을 때.
+  const pending = outbox.pendingOf(roomId);
+  const shownPending = visiblePending(pending, thread.messages);
+  const {
+    logRef,
+    jumpRef,
+    logHandlers,
+    loadOlder,
+    jumpToBottom,
+    composerFocusTick,
+    atBottom,
+    leftAt,
+    jumpVisible,
+  } = useThreadScroll({
+    roomId,
+    thread,
+    maxSequence,
+    pendingCount: shownPending.length,
+    sessionLost,
+  });
+
+  /* 읽음(S3-7). 그린 가장 큰 sequence가 서버가 **확인해 준** 위치보다 크고, 탭이 보이고, 세션이 살아 있고,
+     **log가 바닥일 때**(loop-08c Q1 ①). 위로 올려 읽는 중 온 메시지엔 읽음을 안 보낸다 — 읽음 뜻이 "여기까지 봤다"다(D40).
+     바닥에 내려오는 순간(`atBottom`) 그린 최대로 1회 보낸다(S2-9)
      - 확인된 위치(confirmed)와 날아가는 중인 위치(inFlight)를 나눈다(리뷰 F2). 응답 전 다시 그려져도 1회,
-       실패하면 inFlight만 풀려 다음 polling 응답(threadUpdatedAt) 때 다시 보낸다
+       실패하면 inFlight만 풀려 다음 polling 응답(threadUpdatedAt) 때 다시 보낸다. 바닥이 아닌 동안은 그것도 보류(S2-11)
      - 숨김 중 쌓인 것은 다시 보이는 순간(visible) 평가한다(리뷰 F3) */
   const { mutateAsync: markRead } = useMarkReadMutation();
   const confirmedRead = useRef(room.myLastReadSequence);
   const inFlightRead = useRef(0);
   useEffect(() => {
-    if (!visible || sessionLost) return;
+    if (!visible || sessionLost || !atBottom) return;
     if (
       maxSequence <= confirmedRead.current ||
       maxSequence <= inFlightRead.current
@@ -191,28 +219,25 @@ function ChatRoom({
     maxSequence,
     visible,
     sessionLost,
+    atBottom,
     threadUpdatedAt,
     markRead,
     onRead,
     roomId,
   ]);
 
-  const pending = outbox.pendingOf(roomId);
   /* 입력창이 memo라 보내기 함수는 방이 같으면 같은 참조여야 한다 */
   const { send: sendTo } = outbox;
   const send = useCallback(
     (body: string) => sendTo(roomId, body),
     [sendTo, roomId],
   );
-  const shownPending = visiblePending(pending, thread.messages);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
-
-  /* 새 메시지가 오거나 내가 보내면 항상 바닥으로(알려진 한계 — 위치 보존과 `새 메시지 N개`는 loop-08) */
-  const logRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const log = logRef.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [thread.messages.length, shownPending.length]);
+  const slot = historySlotOf(thread, sessionLost);
+  const newCount =
+    leftAt === null
+      ? 0
+      : newMessageCount(thread.messages, leftAt, COUNTERPART_SENDER);
 
   const items = toThreadItems(thread.messages);
   const causes = handoffCauses(thread.messages);
@@ -237,61 +262,88 @@ function ChatRoom({
         {name}
       </Panel.Title>
 
-      {/* Panel.Body와 같은 스크롤 자리. ref가 필요해 직접 그린다(Panel.Body는 ref를 받지 않는다).
+      {/* log를 relative 상자로 감싼다 — 새 메시지 버튼이 그 위에 뜬다(디자인 결정 85). 흐름 안에 넣으면 버튼이
+          생길 때 log가 줄어 읽던 자리가 밀린다. DOM 순서 log → 버튼 → 입력창(결정 86) */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* Panel.Body와 같은 스크롤 자리. ref가 필요해 직접 그린다(Panel.Body는 ref를 받지 않는다).
           첫 자식의 mt-auto가 짧은 대화를 아래로 붙이고, 넘치면 0이 되어 위로 스크롤된다(디자인 결정 17) */}
-      <div
-        ref={logRef}
-        role="log"
-        aria-label={ROOM_TEXT.logLabel}
-        aria-live="off"
-        tabIndex={-1}
-        /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S3-6)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
-        data-cursor={thread.cursor}
-        data-poll-failures={thread.failures}
-        className="scroll-slim flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
-      >
-        <div aria-hidden className="mt-auto shrink-0" />
-        {items.length === 0 && shownPending.length === 0 ? (
-          <p
-            data-ac="S3-9"
-            className="text-muted-foreground py-12 text-center text-sm"
-          >
-            {ROOM_TEXT.empty}
-          </p>
-        ) : (
-          items.map((item) =>
-            item.type === "divider" ? (
-              <DateDivider key={item.key}>{item.label}</DateDivider>
-            ) : (
-              <ChatMessageItem
-                key={item.key}
-                message={item.message}
-                counterpartName={name}
-                ac={messageAc(item.message, baseline, pendingIds, causes)}
-                readMark={item.message.sequence === readSequence}
-                /* "오늘"의 기준 = 지금 시각(1분 tick). 마지막 polling 응답 시각을 쓰면 응답이 끊긴 동안(오프라인,
+        <div
+          ref={logRef}
+          role="log"
+          aria-label={ROOM_TEXT.logLabel}
+          aria-live="off"
+          tabIndex={-1}
+          /* polling 상태. 화면엔 안 보인다 — e2e가 간격(S3-6)을 잴 때 "응답이 반영됐다"를 이걸로 안다 */
+          data-cursor={thread.cursor}
+          data-poll-failures={thread.failures}
+          data-ac="08c:S2-2 08c:S2-9 08c:S2-10"
+          {...logHandlers}
+          className="scroll-slim flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
+        >
+          <div aria-hidden className="mt-auto shrink-0" />
+          <ChatHistorySlot slot={slot} logRef={logRef} onLoad={loadOlder} />
+          {items.length === 0 && shownPending.length === 0 ? (
+            <p
+              data-ac="S3-9"
+              className="text-muted-foreground py-12 text-center text-sm"
+            >
+              {ROOM_TEXT.empty}
+            </p>
+          ) : (
+            items.map((item) =>
+              item.type === "divider" ? (
+                <DateDivider key={item.key}>{item.label}</DateDivider>
+              ) : (
+                <ChatMessageItem
+                  key={item.key}
+                  message={item.message}
+                  counterpartName={name}
+                  ac={messageAc(item.message, baseline, pendingIds, causes)}
+                  readMark={item.message.sequence === readSequence}
+                  /* "오늘"의 기준 = 지금 시각(1분 tick). 마지막 polling 응답 시각을 쓰면 응답이 끊긴 동안(오프라인,
                    세션 끊김) 자정을 넘겨도 날짜가 안 붙는다(리뷰 M4, D38 ⑤). 소매(`useNow`)와 같은 방식 */
-                nowMs={now}
-              />
-            ),
-          )
-        )}
-        {shownPending.map((item) => (
-          <PendingItem
-            key={item.clientMessageId}
-            item={item}
-            sessionLost={sessionLost}
-            onRetry={() => outbox.retry(roomId, item)}
-            onRemove={() => outbox.remove(roomId, item.clientMessageId)}
-          />
-        ))}
+                  nowMs={now}
+                />
+              ),
+            )
+          )}
+          {shownPending.map((item) => (
+            <PendingItem
+              key={item.clientMessageId}
+              item={item}
+              sessionLost={sessionLost}
+              onRetry={() => outbox.retry(roomId, item)}
+              onRemove={() => outbox.remove(roomId, item.clientMessageId)}
+            />
+          ))}
+        </div>
+        {jumpVisible ? (
+          /* 버튼 등장과 N 변화는 낭독하지 않는다 — 알림 통로는 아래 live 영역 하나(결정 88) */
+          <div
+            ref={jumpRef}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2"
+          >
+            <Button
+              type="button"
+              variant="line"
+              size="sm"
+              aria-label={newMessageLabel(newCount)}
+              data-ac="08c:S2-1 08c:S2-9 08c:S2-12"
+              className="shadow-dropdown"
+              onClick={jumpToBottom}
+            >
+              <ArrowDown aria-hidden className="size-3.5" />
+              {newMessageText(newCount)}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <ChatComposer
         key={draftKey ?? "no-draft"}
         draftKey={draftKey}
         counterpartName={name}
-        focusTick={focusTick}
+        focusTick={focusTick + composerFocusTick}
         sessionLost={sessionLost}
         onSend={send}
         onEscape={onEscape}
@@ -303,7 +355,7 @@ function ChatRoom({
         aria-live="polite"
         aria-atomic="true"
         className="sr-only"
-        data-ac="S3-8"
+        data-ac="S3-8 08c:S2-13"
       >
         {live ? <span key={live.sequence}>{live.text}</span> : null}
       </div>

@@ -1,6 +1,58 @@
 import { describe, expect, it } from "vitest";
 import { STORE_NAME_FALLBACK } from "./constants";
-import { consentRecords, storeNameLabel } from "./derive";
+import {
+  consentRecords,
+  otherTabActionOf,
+  parseSessionBroadcast,
+  storeNameLabel,
+} from "./derive";
+
+describe("otherTabActionOf (Codex 메타 M1)", () => {
+  it.each<
+    [string, number | null, Parameters<typeof otherTabActionOf>[1], string]
+  >([
+    [
+      "같은 소매처 로그인 → 이어 감",
+      1,
+      { change: "login", retailerId: 1 },
+      "refresh",
+    ],
+    ["다른 소매처 로그인 → 정리", 1, { change: "login", retailerId: 2 }, "end"],
+    ["로그아웃 → 정리", 1, { change: "logout" }, "end"],
+    ["알림 id 모름 → 정리", 1, { change: "login", retailerId: null }, "end"],
+    ["내 id 모름 → 정리", null, { change: "login", retailerId: 1 }, "end"],
+  ])("%s", (_, mine, message, expected) => {
+    expect(otherTabActionOf(mine, message)).toBe(expected);
+  });
+});
+
+describe("parseSessionBroadcast (loop-08c 리뷰 R8, M1)", () => {
+  it("logout, login(소매처 id)만 읽는다. id가 없거나 정수가 아니면 null", () => {
+    expect(parseSessionBroadcast({ change: "logout" })).toEqual({
+      change: "logout",
+    });
+    expect(parseSessionBroadcast({ change: "login", retailerId: 2 })).toEqual({
+      change: "login",
+      retailerId: 2,
+    });
+    expect(parseSessionBroadcast({ change: "login" })).toEqual({
+      change: "login",
+      retailerId: null,
+    });
+    expect(parseSessionBroadcast({ change: "login", retailerId: "2" })).toEqual(
+      { change: "login", retailerId: null },
+    );
+  });
+
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["문자열", "logout"],
+    ["change 없음", {}],
+    ["모르는 값", { change: "refresh" }],
+  ])("모양이 다르면(%s) 무시한다", (_, data) => {
+    expect(parseSessionBroadcast(data)).toBeNull();
+  });
+});
 
 /**
  * 헤더 칩·설정·주문 상세 수령 상호가 전부 `storeNameLabel`을 지난다. 예전에는

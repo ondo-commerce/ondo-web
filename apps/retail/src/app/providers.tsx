@@ -10,6 +10,7 @@ import {
 import { isApiError } from "@ondo/api";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 import { isSessionLossInline } from "@/shared/api/headerCounts";
+import { SessionChangeCleanup } from "./SessionChangeCleanup";
 
 /**
  * 브라우저에서 세션이 끊긴 걸 알아채는 유일한 지점. 서버 쪽은
@@ -70,6 +71,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <SessionChangeCleanup />
+      {children}
+    </QueryClientProvider>
   );
 }

@@ -25,6 +25,7 @@ export function chatKeysFor(account: string) {
     roomList: (filter: RoomListFilter, q: string | null) =>
       [...keys.rooms(), filter, q] as const,
     room: (roomId: number) => [...all, "room", roomId] as const,
+    /** 메시지 캐시. 이전 장 상태(`historyStatus`)도 여기 산다 — 로그아웃 정리가 같이 지운다 */
     thread: (roomId: number) => [...all, "thread", roomId] as const,
     /** 자동 답 설정(도매처 하나에 한 벌, `settings.ts`). 메시지 polling과 상관없다 */
     autoReplySettings: () => [...all, "auto-reply-settings"] as const,

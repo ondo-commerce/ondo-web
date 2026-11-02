@@ -186,6 +186,17 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 도매 | `POST /__mock/chat/reset {seed: "rooms-70"}` | 기본 시드 **대신** 내 방 70개(roomId 100 + i, "소매처 i", i 작을수록 최근). 홀수 안 읽음(자동 답이 답해 답 필요 아님) 35, 4의 배수 답 필요 17, 나머지 18. 남의 방 171(도매처 102, "소매처 6") |
 | 도매 | `POST /__mock/chat/delay {op: rooms\|send, ms, times = 1}` | 08a 의 room, messages 에 둘을 더했다. `rooms`는 값을 정한 뒤 늦게 도착, `send`는 저장한 뒤 응답만 늦다(기본 300ms 위에 더함) |
 
+### 이전 메시지, 늦은 401, 소매 계정 (loop-08c, #338)
+
+계약 테스트는 `wholesale/chatHistoryKnobs.test.ts`, `retail/chatMe.test.ts`. 기본 응답은 그대로다(손잡이를 안 걸면 예전과 같다).
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 도매 | `POST /__mock/chat/fail {op: messages, page?, status, times}` | `page`(`latest` `before` `after`)면 그 종류의 messages 요청만 실패. 종류는 쿼리로 가른다(`beforeSequence` 있음 = before, `afterSequence` 있음 = after, 둘 다 없음 = latest). `page`가 맞는 계획이 `page` 없는 계획보다 먼저 쓰인다. 모르는 값, messages 밖 op 에 붙이면 400 |
+| 도매 | `POST /__mock/chat/delay {op: messages, page?, ms, times}` | 위와 같은 `page` 규칙으로 그 종류만 늦춘다 |
+| 도매, 소매 | `fail` + `delay` 같은 op | 실패 응답도 지연만큼 늦게 온다(지연 계획 1회 소모). 지연이 없으면 예전처럼 바로. 로그아웃 뒤 도착하는 늦은 401용 |
+| 소매 | `POST /__mock/chat/me {retailerId}` | 목의 "나"를 바꾼다. 목록, 방, 메시지, 보내기, 읽음, 헤더 채팅 배지, `payment` 손잡이가 이 값을 쓴다. 저장소는 그대로라 소매처 2면 방 2가 보인다. 1 이상 정수가 아니면 400. `reset`이 1로 되돌린다. 알림 목은 안 바뀐다 |
+
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
 
 초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.

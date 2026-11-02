@@ -74,7 +74,8 @@ function countLoginNavigations(page: Page): () => number {
 }
 
 function liveRegion(page: Page) {
-  return page.locator('[aria-live="polite"][data-ac="S3-8"]');
+  /* `~=` — loop-08c가 같은 요소에 `08c:S2-13`을 덧붙였다(Q10) */
+  return page.locator('[aria-live="polite"][data-ac~="S3-8"]');
 }
 
 function sendButton(page: Page) {
