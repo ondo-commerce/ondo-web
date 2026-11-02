@@ -254,6 +254,68 @@ test("S3-9 ① [로그아웃, 이전 장] before 응답 전 로그아웃 → mis
   expect(errors).toEqual([]);
 });
 
+/**
+ * 08d R2: 위 ①은 miso 가 방 1 을 안 열어 늦은 200 이 "캐시 없음"에서 끝난다 — 세대 검사를 다 지워도 통과했다.
+ * 여기서는 같은 소매처로 다시 들어와 방 1 캐시를 **새로 만든 뒤** 옛 before 200 이 도착하게 한다. 세대 검사가 없으면
+ * 옛 응답(21~70)이 새 캐시에 합쳐진다. 기대(§4-1 로그아웃 × 이전 장): 버림 — 71~120 그대로, 상태 칸도 안 씀
+ */
+test("S3-9 ① R2 before 응답 전 로그아웃 → 같은 소매처 로그인 → 방 1 다시 엶 → 옛 200 도착 → 71~120만, 이전 메시지 보기", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await routeAuth(page);
+  await openHistoryRoom(page);
+  await chatMock(page, "delay", { op: "messages", page: "before", ms: 8000 });
+  await historyButton(page).click();
+  await expect(historyButton(page)).toHaveAttribute("aria-busy", "true");
+  await logout(page);
+  await loginAs(page, "bombom");
+  await enterFromList(page, ROOM_LONG);
+  await waitBubbles(page, 50);
+  expect(await beforeStatus(page, 0), "새 캐시가 먼저 생김").toBeNull();
+
+  await expect.poll(() => beforeStatus(page, 0), { timeout: 12_000 }).toBe(200);
+  await page.waitForTimeout(1000);
+  expect(await drawnSequences(page)).toEqual(range(71, 120));
+  await expect(historyButton(page)).toHaveText("이전 메시지 보기");
+  await expect(historyButton(page)).not.toHaveAttribute("aria-busy", "true");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * 08d R1(§4-1 잠금 범위: 소매는 방 화면 하나). 방 1 이전 장을 401(지연)로 띄워 둔 채 방 33 으로 옮긴다. 늦은 401 은 떠난
+ * 방 화면의 것이라 방 33 을 잠그지 않는다 — 끊김 줄 0, 쓰기 가능, polling 계속. 방 1 로 돌아오면 자리는
+ * `이전 메시지 보기`(불러오는 중에 갇히지 않음). 다시 누르면 새 요청이 나간다
+ */
+test("R1 방 1 이전 장 401(지연) → 방 33 → 늦은 401 도착 → 방 33 잠금 0, polling 계속 → 방 1 자리 이전 메시지 보기", async ({
+  page,
+}) => {
+  await openHistoryRoom(page);
+  await chatMock(page, "fail", { op: "messages", page: "before", status: 401 });
+  await chatMock(page, "delay", { op: "messages", page: "before", ms: 3000 });
+  await historyButton(page).click();
+  await expect(historyButton(page)).toHaveAttribute("aria-busy", "true");
+
+  await enterFromList(page, ROOM_SHORT);
+  await expect(bubbles(page).first()).toBeVisible();
+  await expect.poll(() => plannedBefore(page, 401), { timeout: 8000 }).toBe(1);
+  await page.waitForTimeout(800);
+  await expect(lostAlert(page)).toHaveCount(0);
+  await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  const at = await count(page, MESSAGES_GET);
+  await page.waitForTimeout(4000);
+  expect(await count(page, MESSAGES_GET), "방 33 polling 4초").toBeGreaterThan(
+    at,
+  );
+
+  await enterFromList(page, ROOM_LONG);
+  await waitBubbles(page, 50);
+  await expect(historyButton(page)).toHaveText("이전 메시지 보기");
+  await expect(historyButton(page)).not.toHaveAttribute("aria-busy", "true");
+  await historyButton(page).click();
+  await waitBubbles(page, 100);
+});
+
 test.describe("S3-9 ② [같은 계정, 이전 장] 다른 탭 bombom 로그인", () => {
   /** A = 늦춘 before 71. 출발 → 같은 소매처 로그인 → 자리가 `이전 메시지 보기`로 돌아옴 */
   async function startLateOlder(page: Page): Promise<void> {

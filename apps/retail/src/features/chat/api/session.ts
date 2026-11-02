@@ -71,6 +71,12 @@ function markSessionLost(queryClient: QueryClient): void {
 export async function guardSession<T>(
   queryClient: QueryClient,
   run: () => Promise<T>,
+  /**
+   * 요청을 띄운 방 화면의 세대(`chatScreenEpoch`, loop-08d R1). 주면 그 화면을 떠난 뒤 도착한 401은 끊김 칸을 켜지 않고
+   * `ChatSessionLostError`만 던진다 — 잠금 범위는 방 화면 하나인데(기획 §4-1), 떠난 방의 늦은 401이 공용 칸을 켜면
+   * 지금 보는 다른 방이 잠긴다. 안 주면(조회, 보내기) 지금처럼. 그쪽은 방을 떠나면 취소되거나 화면이 같이 사라진다
+   */
+  screen?: number,
 ): Promise<T> {
   if (isSessionLost(queryClient)) throw new ChatSessionLostError();
   const account = accountEpoch;
@@ -84,7 +90,8 @@ export async function guardSession<T>(
     if (isUnauthorized(error) && sessionEpoch !== session)
       throw new ChatStaleResponseError();
     if (isUnauthorized(error)) {
-      markSessionLost(queryClient);
+      if (screen === undefined || screen === screenEpoch)
+        markSessionLost(queryClient);
       throw new ChatSessionLostError();
     }
     throw error;
@@ -146,6 +153,22 @@ export function chatSessionEpoch(): number {
 }
 
 /**
+ * 방 화면 세대(loop-08d R1). 방 화면을 떠날 때마다 오른다(`leaveChatScreen`). 소매 잠금 범위가 방 화면 하나라서,
+ * 화면을 넘겨 도착한 이전 장 401이 다음 화면을 잠그지 않게 `guardSession`의 `screen`으로 쓴다
+ */
+let screenEpoch = 0;
+
+export function chatScreenEpoch(): number {
+  return screenEpoch;
+}
+
+/** 방 화면을 떠났다. 끊김 칸을 내리고 화면 세대를 올린다 */
+export function leaveChatScreen(queryClient: QueryClient): void {
+  screenEpoch += 1;
+  queryClient.setQueryData<boolean>(chatKeys.session(), false);
+}
+
+/**
  * 세션이 바뀔 때(로그아웃 누름, 로그인 성공) 채팅 캐시를 전부 버린다. 날아가는 조회는 취소하고 지운다 — 취소된
  * 요청의 응답은 TanStack이 버린다. QueryClient는 루트(`providers.tsx`)라 클라이언트 이동으로는 안 지워진다.
  *
@@ -204,13 +227,9 @@ export function useChatSessionLost(): boolean {
 /**
  * 방 화면을 떠날 때 끊김 표시를 지운다. 들어올 때 지우면 늦다 — 자식(방 블록)의 첫 요청이 부모 effect보다
  * 먼저 시작해 지난 표시를 보고 요청을 안 만든다(도매와 같다).
+ * `roomId`가 바뀌어도 떠난 것으로 본다 — 같은 컴포넌트가 다른 방으로 다시 그려질 때도 화면 세대가 올라야 한다(R1).
  */
-export function useResetChatSessionOnLeave(): void {
+export function useResetChatSessionOnLeave(roomId: number): void {
   const queryClient = useQueryClient();
-  useEffect(
-    () => () => {
-      queryClient.setQueryData<boolean>(chatKeys.session(), false);
-    },
-    [queryClient],
-  );
+  useEffect(() => () => leaveChatScreen(queryClient), [queryClient, roomId]);
 }

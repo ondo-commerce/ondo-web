@@ -16,6 +16,7 @@ import { chatKeys } from "./keys";
 import { subscribeSharedInterval } from "./sharedInterval";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import {
+  chatScreenEpoch,
   chatSessionEpoch,
   guardSession,
   isChatSessionLostError,
@@ -396,7 +397,8 @@ function setHistoryStatus(
  * - 오프라인이면 요청을 만들지 않고 바로 `failed`(§4-3 6). 온라인이 돼도 저절로 다시 안 묻는다(S3-4)
  * - 끝날 때의 캐시를 다시 읽어 합친다 — 기다리는 사이 polling, 보내기가 붙인 것을 안 지운다(S3-6)
  * - 로그아웃, 다른 계정 로그인을 넘어 온 응답은 `guardSession`이 버린다(S3-9 ①). 상태 칸도 안 건드린다 — 지운 캐시가 되살아난다
- * - 401은 세션 끊김 흐름. 버튼은 끊김 표시가 잠근다(`historySlotOf`, S3-5)
+ * - 401은 세션 끊김 흐름. 버튼은 끊김 표시가 잠근다(`historySlotOf`, S3-5). 단 띄운 방 화면을 떠난 뒤 온 401은 잠그지
+ *   않는다(R1, 소매 잠금 범위는 방 화면 하나) — 지금 보는 다른 방이 잠긴다. 성공은 그대로 원래 방 캐시에 합친다(S3-6 ③)
  * - **요청 토큰**(S3-9 ②, 도매 08d M9를 처음부터): 시작 때 세션 세대를 잡는다. 같은 소매처 재로그인(`refreshChatSession`)과
  *   로그아웃이 세대를 올리고, 갱신은 "불러오는 중"을 되돌려 새 요청(B)을 받는다. 끝났을 때 세대가 다르면 이 요청은 대체된
  *   것이라 200, 500, 401 모두 캐시, `historyStatus`, 잠금, 합치기 직전 콜백을 안 건드린다 — 늦은 200이 끝까지 본 방에
@@ -417,13 +419,18 @@ export async function fetchOlder(queryClient: QueryClient, roomId: number) {
   setHistoryStatus(queryClient, roomId, "loading");
   const token = chatSessionEpoch();
   const replaced = () => chatSessionEpoch() !== token;
+  /* 띄운 방 화면(R1). 그 화면을 떠난 뒤 온 401은 잠그지 않고 이 방 자리만 idle로 — 다시 열면 다시 부를 수 있다 */
+  const screen = chatScreenEpoch();
   let page: ChatMessagePage;
   try {
     await chatMockReady();
-    page = await guardSession(queryClient, () =>
-      apiFetchBody<ChatMessagePage>(CHAT_PATH.messages(roomId), {
-        searchParams: { beforeSequence: oldest, size: MESSAGE_PAGE_SIZE },
-      }),
+    page = await guardSession(
+      queryClient,
+      () =>
+        apiFetchBody<ChatMessagePage>(CHAT_PATH.messages(roomId), {
+          searchParams: { beforeSequence: oldest, size: MESSAGE_PAGE_SIZE },
+        }),
+      screen,
     );
   } catch (error) {
     if (replaced() || isChatStaleResponseError(error)) return;

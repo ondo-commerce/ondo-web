@@ -97,7 +97,7 @@ export function ChatRoomView({
    */
   addToCart?: AddToCart | null;
 }) {
-  useResetChatSessionOnLeave();
+  useResetChatSessionOnLeave(roomId);
   return (
     <div className="mx-auto max-w-wrap">
       <ChatBlock
