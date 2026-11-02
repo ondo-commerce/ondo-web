@@ -197,6 +197,17 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 도매, 소매 | `fail` + `delay` 같은 op | 실패 응답도 지연만큼 늦게 온다(지연 계획 1회 소모). 지연이 없으면 예전처럼 바로. 로그아웃 뒤 도착하는 늦은 401용 |
 | 소매 | `POST /__mock/chat/me {retailerId}` | 목의 "나"를 바꾼다. 목록, 방, 메시지, 보내기, 읽음, 헤더 채팅 배지, `payment` 손잡이가 이 값을 쓴다. 저장소는 그대로라 소매처 2면 방 2가 보인다. 1 이상 정수가 아니면 400. `reset`이 1로 되돌린다. 알림 목은 안 바뀐다 |
 
+### 소매 이전 메시지, 보내기 지연, 응답 기록 (loop-08d, #350)
+
+계약 테스트는 `retail/chatHistoryKnobs.test.ts`, `wholesale/chatHistoryKnobs.test.ts` 끝 두 묶음. 기본 시드와 기본 응답은 그대로다.
+
+| 앱 | 손잡이 | 동작 |
+|---|---|---|
+| 소매 | `POST /__mock/chat/fail {op: messages, page?, ...}`, `delay {op: messages, page?, ...}` | 도매 08c 와 같은 `page` 규칙. 모르는 값, messages 밖 op 에 붙이면 400 `VALIDATION_FAILED` |
+| 소매 | `POST /__mock/chat/delay {op: send, ms, times}` | 저장은 요청 시점, 응답만 늦다(기본 300ms 위에 더함). `fail {op: send}`와 같이 걸면 실패가 그만큼 늦다(만들지 않음). 방 만들기(`create`) 지연은 아직 없다(08e) |
+| 도매, 소매 | `GET /__mock/chat/log` | 목이 돌려준 계획 실패(`fail`로 건 것)를 오래된 순으로 `[{op, page, status, delayMs, sentAt}]`. 지연을 다 기다린 뒤 적어서, 브라우저가 요청을 취소해도 남는다. 본문 손잡이(`auth401` 등) 실패는 안 적는다. `reset`이 비운다 |
+| 도매, 소매 | `POST /__mock/chat/reset {seed: "retail-history"}` | 기본 시드에서 방 1(도매처 101 x 봄봄상회)만 메시지 120개로. 전부 TEXT, 홀수 RETAILER, 짝수 WHOLESALER. 소매 읽음 100(안 읽은 도매 글 10), 도매 읽음 120. 첫 장 71~120, before 71 → 21~70, before 21 → 1~20 끝 |
+
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)
 
 초안 op 3개(도매 `notifications` `notificationUnreadCount` `markNotificationsRead`). BE 코드가 없어 시드를 여기서 지었다.

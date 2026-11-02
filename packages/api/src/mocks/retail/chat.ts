@@ -6,10 +6,14 @@ import {
   CHAT_BODY_HOOK,
   CHAT_BODY_MAX,
   CHAT_SEND_DELAY_MS,
+  CHAT_MESSAGES_PAGES,
+  CHAT_SEED_INVALID_MESSAGE,
   CHAT_SLOW_MS,
   chatSharedKnobs,
   chatStore,
+  isChatSeedName,
   resetChatMock,
+  type ChatMessagesPage,
   type ChatMockRoom,
   type IdempotencyRecord,
 } from "../wholesale/chat";
@@ -76,7 +80,9 @@ type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
 
 /**
  * `/__mock/chat/delay`가 고르는 op. 응답 순서 역전을 만든다: 늦은 count가 읽음 뒤에 도착(06a), 늦은 방 머리가
- * polling 뒤에 옛 읽음 값으로 도착, 늦은 목록 장이 갱신과 겹침(loop-08 §5-4 3)
+ * polling 뒤에 옛 읽음 값으로 도착, 늦은 목록 장이 갱신과 겹침(loop-08 §5-4 3).
+ * `send`(loop-08d §5-2 2)는 **저장은 요청 시점, 응답만 늦다** — 도매 목과 같다. 같은 탭이 다시 로그인한 사이 옛
+ * 보내기가 늦은 401로 도착하는 장면(#344 소매 확인)을 `fail {op: send}`와 같이 걸어 만든다
  */
 export const RETAIL_CHAT_DELAY_OPS = [
   "count",
@@ -84,8 +90,13 @@ export const RETAIL_CHAT_DELAY_OPS = [
   "room",
   "messages",
   "rooms",
+  "send",
 ] as const;
 type DelayOp = (typeof RETAIL_CHAT_DELAY_OPS)[number];
+
+/** 계획 저장 키. `page` 없는 계획은 op 이름, 있는 계획은 `messages:before`처럼(도매 목과 같다) */
+type FailKey = FailOp | `messages:${ChatMessagesPage}`;
+type DelayKey = DelayOp | `messages:${ChatMessagesPage}`;
 
 /** 방 목록 한 장 기본 크기. 소매 `/chats`가 첫 장으로 받는 수 */
 const ROOM_PAGE_DEFAULT = 30;
@@ -98,8 +109,8 @@ const FILLER_WHOLESALER_BASE = 1001;
 /** 가짜 방 마지막 메시지 시각의 시작. 시드 방 1, 33(10/28 아침)보다 이르게 둬 둘이 맨 위에 남는다 */
 const FILLER_BASE_MS = Date.parse("2026-10-27T12:00:00+09:00");
 
-const failPlan = new Map<FailOp, { status: number; times: number }>();
-const delayPlan = new Map<DelayOp, { ms: number; times: number }>();
+const failPlan = new Map<FailKey, { status: number; times: number }>();
+const delayPlan = new Map<DelayKey, { ms: number; times: number }>();
 const failedOnceKeys = new Set<string>();
 
 /* --- 계산 --------------------------------------------------------------- */
@@ -255,16 +266,16 @@ function invalid(field: string, code: string, message: string) {
 
 /**
  * 걸어 둔 실패. 같은 op에 지연도 걸려 있으면 실패도 그만큼 늦게 보낸다(loop-08c §5-3 2, 도매 목과 같다) —
- * 앞 계정의 polling이 로그아웃 뒤에 401로 도착하는 장면(S7-3)을 만든다. 지연이 없으면 예전처럼 바로
+ * 앞 계정의 polling이 로그아웃 뒤에 401로 도착하는 장면(S7-3)을 만든다. 지연이 없으면 예전처럼 바로.
+ * messages는 `page`(latest | before | after)가 맞는 계획을 먼저 쓴다(loop-08d §5-2 1). 돌려준 실패는 응답 기록에
+ * 남는다(`/__mock/chat/log`)
  */
-async function plannedFailure(op: FailOp) {
-  const plan = failPlan.get(op);
-  if (plan === undefined || plan.times <= 0) return null;
-  plan.times -= 1;
-  if (plan.times === 0) failPlan.delete(op);
-  const { status } = plan;
-  if (isDelayOp(op)) await plannedDelay(op);
-  return fail(status);
+async function plannedFailure(op: FailOp, page?: ChatMessagesPage) {
+  const plan = chatStore.takePlan(failPlan, chatStore.planKeys(op, page));
+  if (plan === null) return null;
+  const delayMs = isDelayOp(op) ? await plannedDelay(op, page) : 0;
+  chatStore.recordPlannedFailure({ op, page, status: plan.status, delayMs });
+  return fail(plan.status);
 }
 
 function isDelayOp(op: string): op is DelayOp {
@@ -273,14 +284,25 @@ function isDelayOp(op: string): op is DelayOp {
 
 /**
  * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 "먼저 시작한 count가 읽음 뒤에 옛 숫자로 도착"을
- * 만들 수 있다(S2-6). 도매 알림 목(`../wholesale/notification.ts`)과 같은 규칙
+ * 만들 수 있다(S2-6). 도매 알림 목(`../wholesale/notification.ts`)과 같은 규칙. 기다린 ms를 돌려준다(없으면 0)
  */
-async function plannedDelay(op: DelayOp) {
-  const plan = delayPlan.get(op);
-  if (plan === undefined || plan.times <= 0) return;
-  plan.times -= 1;
-  if (plan.times === 0) delayPlan.delete(op);
+async function plannedDelay(
+  op: DelayOp,
+  page?: ChatMessagesPage,
+): Promise<number> {
+  const plan = chatStore.takePlan(delayPlan, chatStore.planKeys(op, page));
+  if (plan === null) return 0;
   await delay(plan.ms);
+  return plan.ms;
+}
+
+/** 손잡이 `page`가 틀렸을 때. 소매 어휘의 400(`VALIDATION_FAILED`) */
+function knobPageInvalid() {
+  return invalid(
+    "page",
+    "INVALID",
+    `page는 op messages에만, ${CHAT_MESSAGES_PAGES.join(" | ")}`,
+  );
 }
 
 /** 헤더 채팅 배지 = 내 방 unreadCount 합. 방 목록과 같은 `unreadCount`를 지나 두 숫자가 갈라지지 않는다 */
@@ -419,12 +441,13 @@ export const retailChatHandlers = [
   http.get(
     "*/api/retail/chat/rooms/:roomId/messages",
     async ({ params, request }) => {
-      const planned = await plannedFailure("messages");
+      const url = new URL(request.url);
+      const kind = chatStore.messagesPageOf(url);
+      const planned = await plannedFailure("messages", kind);
       if (planned) return planned;
       const r = myRoom(Number(params.roomId));
       if (r === undefined) return fail(404);
 
-      const url = new URL(request.url);
       const size = chatStore.sizeOf(url, chatStore.MESSAGE_PAGE_DEFAULT);
       if (size === null) return chatStore.sizeInvalid();
       const after = chatStore.intParam(url, "afterSequence", null);
@@ -466,14 +489,15 @@ export const retailChatHandlers = [
           counterpartLastReadSequence: r.wholesalerLastRead,
         },
       };
-      await plannedDelay("messages");
+      await plannedDelay("messages", kind);
       return HttpResponse.json(body);
     },
   ),
 
   /**
    * 보내기. 검사 순서는 도매 목과 같다: 키 헤더 → 본문 형식 → 인증 손잡이 → 방 → 멱등 → 글자 수 →
-   * 500 손잡이 → 만들기 → 자동 답 → `failAfterCommit` → 지연 → 201.
+   * 500 손잡이 → 만들기 → 자동 답 → 걸어 둔 지연(`delay {op: send}`) → 기본 지연 → `failAfterCommit` → 201.
+   * 맨 앞의 걸어 둔 실패(`fail {op: send}`)는 만들지 않고, 지연도 같이 걸렸으면 그만큼 늦게 돌아온다.
    *
    * 자동 답은 요청 안에서 동기로 만든다(`generation: DONE`, §4-3). 멱등 replay는 처음 결과를 그대로
    * 돌려준다 — 자동 답의 id, sequence, `checkedAt`도 처음 값이다(S7-10). 넘김이 이미 열려 있어 붙일 줄이
@@ -571,6 +595,8 @@ export const retailChatHandlers = [
         generation: generatedMessages.length > 0 ? "DONE" : "NONE",
       };
 
+      // 저장은 끝났고 응답만 늦다(loop-08d §5-2 2). 같은 키로 다시 보내면 이 응답을 기다렸다가 replay 한다
+      await plannedDelay("send");
       await delay(
         text.includes(CHAT_BODY_HOOK.SLOW_5S)
           ? CHAT_SLOW_MS
@@ -657,10 +683,14 @@ export const retailChatHandlers = [
     },
   ),
 
-  /** 다음 n회 실패. `{op, status = 500, times = 1}` */
+  /**
+   * 다음 n회 실패. `{op, page?, status = 500, times = 1}`. `page`(latest | before | after)는 op messages에만 —
+   * 그 종류의 요청만 실패한다(loop-08d S1-1, 도매 목과 같은 규칙). 모르는 값이나 다른 op에 붙이면 400
+   */
   http.post("*/__mock/chat/fail", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
+      page?: unknown;
       status?: number;
       times?: number;
     };
@@ -671,13 +701,18 @@ export const retailChatHandlers = [
         "INVALID",
         `op는 ${RETAIL_CHAT_FAIL_OPS.join(" | ")}`,
       );
-    if (op === "receivable") chatStore.failReceivable(input.times ?? 1);
-    else
-      failPlan.set(op, {
-        status: input.status ?? 500,
-        times: input.times ?? 1,
-      });
-    return HttpResponse.json({ data: { op, ...failPlan.get(op) } });
+    const page = chatStore.knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
+    if (op === "receivable") {
+      chatStore.failReceivable(input.times ?? 1);
+      return HttpResponse.json({ data: { op } });
+    }
+    const key: FailKey = page === undefined ? op : `messages:${page}`;
+    failPlan.set(key, {
+      status: input.status ?? 500,
+      times: input.times ?? 1,
+    });
+    return HttpResponse.json({ data: { op, page, ...failPlan.get(key) } });
   }),
 
   /**
@@ -736,10 +771,14 @@ export const retailChatHandlers = [
     },
   ),
 
-  /** 다음 n회 응답을 ms 늦춘다. `{op: count|read|room|messages|rooms, ms, times = 1}`. 값은 요청 시점에 정한다 */
+  /**
+   * 다음 n회 응답을 ms 늦춘다. `{op: count|read|room|messages|rooms|send, page?, ms, times = 1}`. 값은 요청 시점에
+   * 정한다. `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08d S1-1)
+   */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
+      page?: unknown;
       ms?: number;
       times?: number;
     };
@@ -750,10 +789,13 @@ export const retailChatHandlers = [
         "INVALID",
         `op는 ${RETAIL_CHAT_DELAY_OPS.join(" | ")}`,
       );
+    const page = chatStore.knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
     if (typeof input.ms !== "number" || input.ms < 0)
       return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
-    delayPlan.set(op, { ms: input.ms, times: input.times ?? 1 });
-    return HttpResponse.json({ data: { op, ...delayPlan.get(op) } });
+    const key: DelayKey = page === undefined ? op : `messages:${page}`;
+    delayPlan.set(key, { ms: input.ms, times: input.times ?? 1 });
+    return HttpResponse.json({ data: { op, page, ...delayPlan.get(key) } });
   }),
 
   /**
@@ -786,14 +828,19 @@ export const retailChatHandlers = [
   /**
    * 시드로 되돌린다(도매 목의 시드와 미송 목도 같이). 소매 쪽 실패, 지연 계획도 비운다. "나"도 기본으로(loop-08c S1-4).
    * `{empty: true}` 내 방 0개(목록 빈 상태), `{noBackorders: true}` 미송 0건(자동 답 후보 0개),
-   * `{rooms: n}`(n ≥ 2) 내 방 n개 = 시드 방 1, 33 + 가짜 방 n − 2개(loop-08 S1-7, 목록 두 장)
+   * `{rooms: n}`(n ≥ 2) 내 방 n개 = 시드 방 1, 33 + 가짜 방 n − 2개(loop-08 S1-7, 목록 두 장).
+   * `{seed: "retail-history"}` 방 1을 메시지 120개로(loop-08d S1-3, 시드는 도매 목 `seedRetailHistoryRooms`).
+   * 모르는 seed는 400
    */
   http.post("*/__mock/chat/reset", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       empty?: boolean;
       noBackorders?: boolean;
       rooms?: unknown;
+      seed?: unknown;
     };
+    if (input.seed !== undefined && !isChatSeedName(input.seed))
+      return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
     if (
       input.rooms !== undefined &&
       (typeof input.rooms !== "number" ||
@@ -810,6 +857,7 @@ export const retailChatHandlers = [
       empty: input.empty === true,
       noBackorders: input.noBackorders === true,
       rooms: input.rooms,
+      seed: input.seed,
     });
     return HttpResponse.json({
       data: {
@@ -851,9 +899,17 @@ function toRetailResult(
 }
 
 export function resetRetailChatMock(
-  options: { empty?: boolean; noBackorders?: boolean; rooms?: number } = {},
+  options: {
+    empty?: boolean;
+    noBackorders?: boolean;
+    rooms?: number;
+    seed?: string;
+  } = {},
 ) {
-  resetChatMock(undefined, { noBackorders: options.noBackorders === true });
+  resetChatMock(undefined, {
+    noBackorders: options.noBackorders === true,
+    seed: options.seed,
+  });
   // "나"를 먼저 되돌린다 — 아래 empty, rooms가 기본 소매처 기준이다
   meRetailerId = RETAIL_ME_RETAILER_ID;
   if (options.empty === true) chatStore.removeRetailerRooms(meRetailerId);

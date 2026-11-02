@@ -1,6 +1,6 @@
 import { setupServer } from "msw/node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { chatHandlers, resetChatMock } from "./chat";
+import { chatHandlers, resetChatMock, type PlannedFailureLog } from "./chat";
 
 /**
  * 도매 messages 손잡이를 요청 종류별로(loop-08c S1-1 ~ S1-3, #338). 목을 `msw/node`로 띄워 실제 HTTP로 부른다.
@@ -176,5 +176,82 @@ describe("S1-3 지연된 실패(도매)", () => {
     resetChatMock();
     expect((await timed(AFTER)).status).toBe(200);
     expect((await timed(BEFORE)).ms).toBeLessThan(FAST_MS);
+  });
+});
+
+/* --- loop-08d S1-2 S1-3 (#350): 보내기 지연된 실패, 응답 기록, retail-history 시드 ------------- */
+
+const SEND = `${ORIGIN}/api/wholesale/chat/rooms/1/messages`;
+const SEND_KEY = "33333333-3333-4333-8333-333333333333";
+
+/** 상태 코드, 걸린 시간, 본문 */
+async function sendTimed(body: string, key: string) {
+  const start = performance.now();
+  const res = await fetch(SEND, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify({ body }),
+  });
+  const json = (await res.json()) as { code?: string };
+  return { status: res.status, code: json.code, ms: performance.now() - start };
+}
+
+async function failureLog() {
+  const res = await fetch(`${KNOB}/log`);
+  return ((await res.json()) as { data: PlannedFailureLog[] }).data;
+}
+
+describe("loop-08d S1-2 도매 보내기 지연된 실패와 응답 기록", () => {
+  it("fail {op: send, 401} + delay {op: send} → 401이 지연 뒤, 기록 1건(delayMs). 다시 보내면 201", async () => {
+    await knob("/fail", { op: "send", status: 401 });
+    await knob("/delay", { op: "send", ms: SLOW_MS });
+    const res = await sendTimed("늦은 401", SEND_KEY);
+    expect(res.status).toBe(401);
+    expect(res.code).toBe("UNAUTHENTICATED");
+    expect(res.ms).toBeGreaterThanOrEqual(SLOW_MS - 50);
+    expect(await failureLog()).toMatchObject([
+      { op: "send", page: null, status: 401, delayMs: SLOW_MS },
+    ]);
+    expect((await sendTimed("늦은 401", SEND_KEY)).status).toBe(201);
+  });
+
+  it("messages 지연된 401도 기록에 page와 같이 남는다. reset이 기록을 비운다", async () => {
+    await knob("/fail", { op: "messages", page: "latest", status: 401 });
+    await knob("/delay", { op: "messages", page: "latest", ms: SLOW_MS });
+    expect((await timed(LATEST)).status).toBe(401);
+    expect(await failureLog()).toMatchObject([
+      { op: "messages", page: "latest", status: 401, delayMs: SLOW_MS },
+    ]);
+    await knob("/reset", {});
+    expect(await failureLog()).toEqual([]);
+  });
+});
+
+describe('loop-08d S1-3 도매 reset {seed: "retail-history"}', () => {
+  it("저장소가 하나라 도매 reset도 받는다: 도매 방 1 = 1~120, 첫 장 71~120 hasMore, 도매 읽음 끝까지", async () => {
+    const res = await knob("/reset", { seed: "retail-history" });
+    expect(res.status).toBe(200);
+    const page = await fetch(`${ORIGIN}/api/wholesale/chat/rooms/1/messages`);
+    const body = (await page.json()) as {
+      data: { sequence: number; sender: string; kind: string }[];
+      meta: { hasMore: boolean };
+    };
+    expect(body.data.map((m) => m.sequence)).toEqual(
+      Array.from({ length: 50 }, (_, i) => 71 + i),
+    );
+    expect(body.meta.hasMore).toBe(true);
+    expect(body.data.every((m) => m.kind === "TEXT")).toBe(true);
+    const head = await fetch(`${ORIGIN}/api/wholesale/chat/rooms/1`);
+    const detail = (await head.json()) as {
+      data: { myLastReadSequence: number; unreadCount: number };
+    };
+    expect(detail.data.myLastReadSequence).toBe(120);
+    expect(detail.data.unreadCount).toBe(0);
+  });
+
+  it("모르는 seed → 400(seed), 메시지에 세 이름", async () => {
+    const res = await knob("/reset", { seed: "nope" });
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0]?.field).toBe("seed");
   });
 });
