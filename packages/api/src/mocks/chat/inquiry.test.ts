@@ -939,6 +939,22 @@ describe("08c 리뷰 R3 R4 R5 — 사람 요청은 요청형만, 보조 낱말 �
       expect(reasonOf(body), body).toBe("HUMAN_REQUEST");
   });
 
+  it('M3 "직원분 부탁드려요. 레드 M 재고 있어요?" 같은 부탁, 불러 달라는 꼴 → 재고보다 먼저 HUMAN_REQUEST', () => {
+    for (const body of [
+      "직원분 부탁드려요. 레드 M 재고 있어요?",
+      "직원분 부탁해요",
+      "직원 부탁합니다",
+      "직원분 좀 불러 주세요",
+      "사장님 바꿔 주세요",
+    ])
+      expect(reasonOf(body), body).toBe("HUMAN_REQUEST");
+  });
+
+  it('M3 "직원분이 입금했어요", "직원분이 주문했어요"는 사람 요청 아님', () => {
+    expect(reasonOf("직원분이 입금했어요")).toBe("PAYMENT_REPORT");
+    expect(reasonOf("직원분이 주문했어요")).not.toBe("HUMAN_REQUEST");
+  });
+
   it("R3 R4 사람 요청 요청형은 그대로(U01~U06 문장)", () => {
     for (const body of [
       "사장님이랑 통화하고 싶어요",
