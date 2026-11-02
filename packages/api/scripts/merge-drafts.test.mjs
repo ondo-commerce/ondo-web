@@ -353,10 +353,12 @@ const HANDOFF_REASONS = [
   "NO_RELATION",
   "AMOUNT_UNSURE",
   "LOOKUP_FAILED",
+  // loop-08c §5-2(#340): 사장, 직원과 직접 이야기하길 원함. 끝에 붙여 기존 값 순서는 그대로다
+  "HUMAN_REQUEST",
 ];
 
 describe("S1-1 loop-07 초안: ChatHandoffReason, ChatHandoff, ChatMessage.handoff (도매만)", () => {
-  it("도매 drafts 와 스냅샷에 같은 모양: 이유 enum 20개, ChatHandoff 필수 3칸, ChatMessage.handoff 는 x-ondo-draft + required 아님 + null 허용", () => {
+  it("도매 drafts 와 스냅샷에 같은 모양: 이유 enum 21개(08c HUMAN_REQUEST), ChatHandoff 필수 3칸, ChatMessage.handoff 는 x-ondo-draft + required 아님 + null 허용", () => {
     for (const doc of [DRAFTS.wholesale, SNAPSHOTS.wholesale]) {
       const s = doc.components.schemas;
       expect(s.ChatHandoffReason.enum).toEqual(HANDOFF_REASONS);

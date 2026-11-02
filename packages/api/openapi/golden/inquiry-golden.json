@@ -1,6 +1,7 @@
 {
-  "version": 4,
-  "about": "재고, 미송, 미수 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6, loop-07 §5-4 5). 목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 5(P1~P5)는 모든 단계가 정확히 일치해야 한다. v4(since 4 인 시나리오)의 expect 는 판정이 아니라 **방에 들어간 줄** 투영이다: {lines: [...]} 이고 열린 넘김과 이유가 같은 넘김 줄은 빠진다(줄 0 = lines []). 미수 AUTO_REPLY 줄은 kind intent outstanding prepaid overdue{count amount maxDaysOverdue} body checkedAt(asOf = 그 행의 asOf, now = 그 단계 시각). HANDOFF 줄은 kind reason intent sourceSequence(self = 그 단계 소매 메시지). 재고 CLARIFY 줄은 kind intent choices. step.sender WHOLESALER 는 사장이 직접 쓴 글이고 expect 는 {openHandoff}. room.receivableFailTimes 는 미수 원본 조회가 그 횟수만큼 던진다(LOOKUP_FAILED). receivables 표는 도매처 × 소매처 정산 요약 원본 한 줄이고(balance 플러스 = 갚을 돈) 판정에는 거르지 않은 채 전부 넘긴다. source 가 settlement.ts seed, extraReceivables.ts 인 행은 목 시드와 같아야 한다(asOf 제외). receivableAnomalies 는 toReceivableFacts 이상값 표다(\"NaN\" 글자는 NaN). 아래 aboutV3 은 v3 설명 그대로다.",
+  "version": 5,
+  "aboutV5": "v5(since 5, loop-08c §5-4)는 넘김 낱말 25개다: 협상 N01~N12, 사람 요청 HUMAN_REQUEST U01~U09, 낱말 경계 G01 X01~X03. 기대값은 v4 와 같은 줄 투영(`{lines}`)이다. 시나리오에 projection \"decision\" 이 있으면(G01) 그 시나리오만 v3 판정 투영이다 — B01 과 같은 판정임을 같은 모양으로 비교하려고. 판정 순서는 꺼짐 → 사람 요청 → 협상 → 입금 알림 이하 그대로.",
+  "about": "재고, 미송, 미수 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6, loop-07 §5-4 5).목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 5(P1~P5)는 모든 단계가 정확히 일치해야 한다. v4(since 4 인 시나리오)의 expect 는 판정이 아니라 **방에 들어간 줄** 투영이다: {lines: [...]} 이고 열린 넘김과 이유가 같은 넘김 줄은 빠진다(줄 0 = lines []). 미수 AUTO_REPLY 줄은 kind intent outstanding prepaid overdue{count amount maxDaysOverdue} body checkedAt(asOf = 그 행의 asOf, now = 그 단계 시각). HANDOFF 줄은 kind reason intent sourceSequence(self = 그 단계 소매 메시지). 재고 CLARIFY 줄은 kind intent choices. step.sender WHOLESALER 는 사장이 직접 쓴 글이고 expect 는 {openHandoff}. room.receivableFailTimes 는 미수 원본 조회가 그 횟수만큼 던진다(LOOKUP_FAILED). receivables 표는 도매처 × 소매처 정산 요약 원본 한 줄이고(balance 플러스 = 갚을 돈) 판정에는 거르지 않은 채 전부 넘긴다. source 가 settlement.ts seed, extraReceivables.ts 인 행은 목 시드와 같아야 한다(asOf 제외). receivableAnomalies 는 toReceivableFacts 이상값 표다(\"NaN\" 글자는 NaN). 아래 aboutV3 은 v3 설명 그대로다.",
   "aboutV3": "필수 4(P1~P4)는 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다. 재고: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지). 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. 미송: AUTO_REPLY 는 kind intent target(backorderId) remainingQty(facts.backorder.qty) eta{date: D±n | null, state: FUTURE TODAY NONE PAST(본문 문장으로 읽는다)} reason checkedAt(now = 그 단계 시각), 입고일 미정, 지남은 kinds [AUTO_REPLY, HANDOFF]. CLARIFY 는 kind intent choices[{kind, backorderId}](순서까지, 끝은 NOT_LISTED) labels(칩 글자). HANDOFF 는 kind reason. reason 은 골든셋 안 표시이고 API 칸이 아니다. 시각: 첫 단계는 rules.t0 + room.afterDays 일. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. today 는 그 단계 시각의 서울 날짜. 날짜 D±n 은 rules.t0 의 서울 날짜(D+0) 기준이다. room.retailerId 가 없으면 1. room.intents 는 의도별 자동 답 설정(없으면 전부 켜짐). inquiry 의 빠진 칸(backorderId, label)은 null, notListed 는 없으면 칸을 안 싣는다. backorders 표는 도매 미송 목 시드(backorder.ts)와 같아야 하고 판정에는 거르지 않은 채 전부 넘긴다(이 방 도매처, 이 소매처 것만 고르는 건 판정이 한다).",
   "rules": {
     "contextMinutes": 30,
@@ -1394,6 +1395,283 @@
         {"text": "방금 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}},
         {"sender": "WHOLESALER", "text": "확인하고 연락드릴게요", "inquiry": null, "expect": {"openHandoff": false}},
         {"text": "더 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N01",
+      "title": "\"외상으로 해 주세요\" → 협상 넘김(외상을 해 달라는 꼴)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "외상으로 해 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N02",
+      "title": "\"외상 돼요?\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "외상 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N03",
+      "title": "\"외상 가능해요?\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "외상 가능해요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N04",
+      "title": "\"디씨 돼요?\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "디씨 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N05",
+      "title": "\"DC 돼요?\" → 협상 넘김(앞뒤가 라틴 글자, 숫자가 아닌 DC)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "DC 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N06",
+      "title": "\"dc 되나요\" → 소문자도 정규화 뒤 DC라 협상 넘김(재고 낱말 되나요보다 먼저)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "dc 되나요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N07",
+      "title": "\"에누리 좀 해 주세요\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "에누리 좀 해 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N08",
+      "title": "\"조금 빼주세요\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "조금 빼주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N09",
+      "title": "\"더 싸게 안 돼요?\" → 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "더 싸게 안 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N10",
+      "title": "\"다음 주에 낼게요\" → 결제 미루기라 협상 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "다음 주에 낼게요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N11",
+      "title": "\"결제 좀 미뤄 주세요\" → 협상 넘김(요청형 미뤄주)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "결제 좀 미뤄 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "N12",
+      "title": "\"결제 미뤄도 돼요?\" → 협상 넘김(요청형 미뤄도)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "결제 미뤄도 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U01",
+      "title": "\"사장님이랑 통화하고 싶어요\" → 사람 요청 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "사장님이랑 통화하고 싶어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U02",
+      "title": "\"사장님과 이야기하고 싶어요\" → 사람 요청 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "사장님과 이야기하고 싶어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U03",
+      "title": "\"직원분 바꿔 주세요\" → 사람 요청 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "직원분 바꿔 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U04",
+      "title": "\"상담 가능할까요?\" → 사람 요청 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "상담 가능할까요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U05",
+      "title": "\"통화 가능해요?\" → 사람 요청 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "통화 가능해요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U06",
+      "title": "\"전화 주세요\" → 사람 요청 넘김(요청형 전화주)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "전화 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U07",
+      "title": "\"사장님이랑 가격 얘기하고 싶어요\" → 사람 요청이 협상보다 먼저(Q4)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "사장님이랑 가격 얘기하고 싶어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U08",
+      "title": "자동 답 꺼짐 + \"사장님이랑 통화하고 싶어요\" → 꺼짐이 사람 요청보다 먼저(OFF)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "사장님이랑 통화하고 싶어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "U09",
+      "title": "협상 넘김이 열린 채 \"사장님이랑 통화하고 싶어요\" → 이유가 달라 새 넘김 줄",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}},
+        {"text": "사장님이랑 통화하고 싶어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "HUMAN_REQUEST", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "G01",
+      "title": "\"레드 L 미송 미뤄졌나요?\" → 미뤄는 요청형만 협상(Q5). B01과 같은 미송 되묻기",
+      "required": false,
+      "group": "backorder",
+      "since": 5,
+      "projection": "decision",
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "레드 L 미송 미뤄졌나요?", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9001}, {"kind": "BACKORDER", "backorderId": 9006}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001", "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "X01",
+      "title": "\"전화번호 바뀌었어요\" → 사람 요청이 아니다(전화를 통째로 안 씀). 의도 없음 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "전화번호 바뀌었어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_INTENT", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "X02",
+      "title": "\"직원이 입금했어요\" → 사람 요청이 아니다(직원을 통째로 안 씀). 입금 알림 넘김",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "직원이 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "PAYMENT_REPORT", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "X03",
+      "title": "\"입고 미뤄 주세요\" → 요청형 미뤄주라 협상 넘김(미송 낱말 입고보다 먼저)",
+      "required": false,
+      "group": "handoff",
+      "since": 5,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
+      "steps": [
+        {"text": "입고 미뤄 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
       ]
     }
   ]

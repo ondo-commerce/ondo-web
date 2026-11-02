@@ -118,8 +118,91 @@ export const DEFAULT_AUTO_REPLY_SETTINGS: AutoReplySettings = {
   intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
 };
 
-/** 협상어. 하나라도 있으면 inquiry가 있어도 넘긴다(판정 1) */
-const NEGOTIATION_WORDS = ["깎", "할인", "네고", "교환", "반품", "환불"];
+/**
+ * 협상어. 하나라도 있으면 inquiry가 있어도 넘긴다(판정 1-1). 공백 지운 본문에서 찾는다.
+ * "외상"은 통째로 넣지 않는다 — "외상 얼마예요?"는 미수 금액 질문이다(R02, R13). 외상을 **해 달라는** 꼴만.
+ * "미뤄"도 요청형만(08c Q5) — "미송 미뤄졌나요?"는 미송 질문이다(골든 G01).
+ */
+const NEGOTIATION_WORDS = [
+  "깎",
+  "할인",
+  "네고",
+  "교환",
+  "반품",
+  "환불",
+  "외상으로",
+  "외상돼",
+  /* "외상 되나요/될까요/해 주세요/할 수 있어요"(리뷰 R5). 금액 문장(D41)에는 이 꼴이 없다 */
+  "외상되",
+  "외상될",
+  "외상해주",
+  "외상할수",
+  "외상가능",
+  "디씨",
+  "에누리",
+  "빼주",
+  "싸게",
+  "낼게",
+  "미뤄주",
+  "미뤄줄",
+  "미뤄도",
+];
+
+/**
+ * "DC"(할인). 정규화 뒤(대문자) 본문에서 앞뒤가 라틴 글자나 숫자가 아닐 때만(08c Q6) — 정규화가 대문자로 바꿔
+ * 품번 "DC100", 상품명 "ADC 셔츠"도 걸리기 때문이다. 공백 있는 본문을 본다: "DC 100장"의 DC는 낱말로 떨어져 있다
+ */
+const NEGOTIATION_DC =
+  /(?<![\p{Script=Latin}\p{N}])DC(?![\p{Script=Latin}\p{N}])/u;
+
+/**
+ * 사람 요청어(08c Q11). 사장, 직원과 직접 이야기하겠다는 **요청형**만. 하나라도 있으면 협상어보다 먼저 넘긴다(Q4).
+ * "직원", "전화"를 통째로 쓰지 않는다 — "직원이 입금했어요"(입금 알림), "전화번호 바뀌었어요"(사람 찾는 말 아님)가
+ * 걸린다(골든 X01 X02). 호칭 "사장님,"만으로도 안 넘긴다(R17 "사장님, 제 미수 얼마예요?"는 금액 답).
+ * "직원분"도 통째로 안 쓴다 — "직원분이 입금했어요"는 입금 알림이다(리뷰 R3). 바꿔 달라, 이야기하자는 꼴만.
+ *
+ * 공백 지운 본문에서 보조 낱말(`HUMAN_REQUEST_FILLERS`)까지 지운 뒤 찾는다 — "전화 좀 주세요"가 "전화주"로 이어져야
+ * 재고 질문이 같이 와도 놓치지 않는다(리뷰 R4)
+ */
+const HUMAN_REQUEST_WORDS = [
+  "사장님이랑",
+  "사장님과",
+  "직원분이랑",
+  "직원분과",
+  "직원분바꿔",
+  "직원바꿔",
+  "직원분연결",
+  "직원연결",
+  /* 부탁, 불러 달라는 꼴(Codex 메타 M3). "직원분이 …"(주어)는 여전히 안 걸린다 */
+  "직원분부탁",
+  "직원부탁",
+  "직원분불러",
+  "직원불러",
+  "사장님바꿔",
+  "직원이랑",
+  "직원과",
+  "전화주",
+  "전화줘",
+  "전화부탁",
+  "전화가능",
+  "전화해",
+];
+
+/** 요청형 사이에 끼는 말. "전화 좀 주세요", "전화 한 번 부탁드려요" */
+const HUMAN_REQUEST_FILLERS = /좀|한번/g;
+
+/**
+ * "상담", "통화"는 낱말 머리일 때만(리뷰 R3). 공백을 지우면 "보통 화이트"가 "보통화이트"가 되어 "통화"가 생기고,
+ * "보상 담당"이 "상담"을 만든다. 그래서 공백 있는 본문에서 앞이 글자, 숫자가 아닐 때만 본다.
+ * "사장님이랑통화"처럼 붙여 쓴 것은 앞 낱말("사장님이랑")이 잡는다
+ */
+const HUMAN_REQUEST_HEAD = /(?<![\p{L}\p{N}])(?:상담|통화)/u;
+
+function isHumanRequest(text: string, flat: string): boolean {
+  if (HUMAN_REQUEST_HEAD.test(text)) return true;
+  const bare = flat.replace(HUMAN_REQUEST_FILLERS, "");
+  return HUMAN_REQUEST_WORDS.some((w) => bare.includes(w));
+}
 
 /** 의도 키워드. 공백을 지운 본문에서 찾는다. 재고의 `있어요` 무리는 옵션어가 같이 있을 때만 */
 const STOCK_WORDS = ["몇장", "남았", "재고", "수량", "품절"];
@@ -379,7 +462,9 @@ export function choiceOrder(listing: InquiryListing): InquiryVariant[] {
 export type HandoffReason =
   /** 판정 0. 자동 답이 꺼졌거나 그 의도가 꺼졌다 */
   | "OFF"
-  /** 판정 1. 협상어 */
+  /** 판정 1. 사장, 직원과 직접 이야기하길 원함(08c). 의도는 null */
+  | "HUMAN_REQUEST"
+  /** 판정 1-1. 협상어 */
   | "NEGOTIATION"
   /** 판정 1. 의도 키워드가 둘 이상 */
   | "MULTI_INTENT"
@@ -740,7 +825,8 @@ function decideReceivable(input: InquiryInput): InquiryDecision {
 /**
  * 판정 순서 0~9(§4-2). 위에서부터 처음 걸린 것으로 정한다.
  *
- * 순서가 규칙이다 — 특히 협상어(1)가 inquiry(4)보다 먼저다. 칩을 눌러도 본문이 협상이면 넘긴다.
+ * 순서가 규칙이다 — 특히 협상어(1-1)가 inquiry(4)보다 먼저다. 칩을 눌러도 본문이 협상이면 넘긴다.
+ * 사람 요청(1, 08c)이 협상어보다 먼저다 — 둘 다 넘김이라 안전은 같고, 사장이 할 일(직접 연락)이 더 바로 보인다(Q4).
  * 입금 알림(1-2, loop-07)은 협상어 바로 뒤, 의도 둘보다 먼저다.
  */
 export function decideInquiry(input: InquiryInput): InquiryDecision {
@@ -751,8 +837,12 @@ export function decideInquiry(input: InquiryInput): InquiryDecision {
   // 0. 꺼짐(전체). 의도별 꺼짐은 의도를 안 뒤에 본다
   if (!settings.enabled) return handoff("OFF");
 
-  // 1. 협상어, 의도 둘 이상
-  if (NEGOTIATION_WORDS.some((w) => flat.includes(w)))
+  // 1. 사람 요청. 1-1. 협상어(의도 둘 이상은 아래)
+  if (isHumanRequest(text, flat)) return handoff("HUMAN_REQUEST");
+  if (
+    NEGOTIATION_WORDS.some((w) => flat.includes(w)) ||
+    NEGOTIATION_DC.test(text)
+  )
     return handoff("NEGOTIATION");
   // 1-2. 입금 알림. 미수 낱말이 같이 있어도 금액을 말하지 않는다(H17)
   if (PAYMENT_REPORT_WORDS.some((w) => flat.includes(w)))

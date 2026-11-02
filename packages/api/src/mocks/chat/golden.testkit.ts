@@ -96,6 +96,11 @@ export interface GoldenScenario {
   group: "required" | "stock" | "handoff" | "backorder" | "receivable";
   /** 4 이상이면 expect 가 방에 들어간 줄 투영(`{lines}`)이다(loop-07). 없으면 판정 투영(v3까지) */
   since?: number;
+  /**
+   * "decision"이면 since 와 상관없이 판정 투영(v3 모양)으로 비교한다. v5 G01만 쓴다 — B01과 같은 미송 되묻기임을
+   * B01 기대값을 그대로 복사해 보이려고(loop-08c §5-4)
+   */
+  projection?: "decision";
   room: {
     wholesalerId: number;
     /** 없으면 1(봄봄상회) */
@@ -680,7 +685,7 @@ export function runScenario(
       sender: "RETAILER",
       expect: step.expect,
       actual:
-        (s.since ?? 0) >= 4
+        (s.since ?? 0) >= 4 && s.projection !== "decision"
           ? projectV4Lines(kept, { self: mine, nowMs: now, asOf: rowAsOf })
           : projectStep(decision, lines, now),
       sent: kept.map((line) => line.kind),
