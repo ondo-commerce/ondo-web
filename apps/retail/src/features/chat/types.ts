@@ -62,7 +62,29 @@ export interface ChatThread {
    * 아직 안 읽었으면 null. 도매 `ChatThread.counterpartRead`와 같은 규칙(앱 사이 import 금지라 따로 둔다)
    */
   counterpartRead: number | null;
+  /**
+   * 더 오래된 메시지가 서버에 남았나(loop-08d §4-3 1, 도매 08c와 같은 칸). 첫 장(인자 없음)과 이전 장(before)
+   * 응답의 `meta.hasMore`만 이 칸을 바꾼다. polling(after)의 `hasMore`는 "더 새 것이 남았다"라 뜻이 달라 안 건드린다
+   */
+  historyHasMore: boolean;
+  /** 이 방에서 이전 장을 한 번이라도 받았나. 끝에 닿았을 때 `대화 처음이에요`를 그릴지(§4-3 5) */
+  historyFetched: boolean;
+  /**
+   * 이전 장 요청 상태. 방 화면이 아니라 캐시에 둔다 — 소매는 방을 나가면 방 화면이 사라지는데, 응답 전에 나갔다
+   * 돌아와도 날아가는 중이면 다시 안 보내고(§4-3 2-3), 실패면 자동 불러오기가 멈춘 채로 남는다
+   */
+  historyStatus: HistoryStatus;
 }
+
+/**
+ * 이전 장 요청 상태(loop-08d §4-3, 도매 08c 복제). `loading`이면 같은 방의 이전 장 요청은 더 만들지 않는다(S3-3).
+ * `failed`면 자동 불러오기를 멈추고 사장이 `다시 시도`를 눌러야 다시 묻는다(S3-4)
+ */
+export type HistoryStatus = "idle" | "loading" | "failed";
+
+/** log 맨 위 자리 하나가 그릴 것(디자인 결정 67~70). `ChatRoom`이 `historySlotOf`로만 만든다 */
+export type HistorySlot =
+  "none" | "more" | "loading" | "failed" | "locked" | "end";
 
 /**
  * `/chats` 끝 `더 보기` 자리(loop-08 S4-4 S4-5 S4-7, 와이어프레임 `list_more`).
@@ -147,6 +169,8 @@ export interface ReadState {
   inFlight: number;
   visible: boolean;
   sessionLost: boolean;
+  /** log가 바닥(48px 안)인가. 아니면 보류한다(loop-08d §4-4 3) */
+  atBottom: boolean;
 }
 
 /**

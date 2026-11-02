@@ -1,3 +1,5 @@
+import type { ChatMessage } from "./types";
+
 /**
  * 읽음 표시가 붙을 수 있는 내 쪽 메시지 kind(기획 §4-3 2, 디자인 결정 60). 소매는 내가 쓴 글(RETAILER TEXT)뿐 —
  * 자동 답, 되묻기는 도매 이름으로 나간 상대 쪽 말이다. 서버가 kind를 늘리면 여기 없는 값은 안 붙는다
@@ -7,8 +9,51 @@ export const READ_MARK_KINDS: ReadonlySet<string> = new Set(["TEXT"]);
 /** 화면 시각은 전부 이 시간대로 읽는다. 서버는 오프셋을 붙인 ISO를 준다 */
 export const CHAT_TIME_ZONE = "Asia/Seoul";
 
-/** 방을 열 때 받는 최신 메시지 수, polling 한 번에 이어 받는 수 */
+/** 방을 열 때 받는 최신 메시지 수, polling 한 번에 이어 받는 수, 이전 장 한 번에 받는 수 */
 export const MESSAGE_PAGE_SIZE = 50;
+
+/*
+ * 이전 메시지(loop-08d S3). 값은 도매 `features/chat/constants.ts`(08c)와 같다 — 같은 기능이 두 앱에서 다르게
+ * 움직이면 안 된다(디자인 결정 67). 앱 사이 import 금지라 복제한다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
+ */
+
+/**
+ * "바닥"의 너비. log 아래 끝에서 이만큼 안이면 바닥이다. 이전 장을 합치는 순간 바닥이었으면 바닥에 남긴다(§4-3 4).
+ * 말풍선 한 줄(36px)보다 조금 넉넉하게. 0으로 두면 소수점 스크롤 하나로 바닥을 놓친다
+ */
+export const BOTTOM_SLACK_PX = 48;
+
+/**
+ * 위로 스크롤해 log `scrollTop`이 이만큼 이하가 되면 이전 장을 자동으로 부른다(§4-3 2-1).
+ * 맨 위에 닿기 전에 요청이 떠나 있어 사장은 대개 "불러오는 중"부터 본다
+ */
+export const HISTORY_AUTO_LOAD_PX = 200;
+
+/**
+ * 사장 입력(wheel 위로, 위로 끄는 터치, ↑ PageUp Home, 스크롤바 누름) 뒤 이 시간 안에 난 scroll만 사장 스크롤로 본다.
+ * scroll이 이어지는 동안은 계속 밀린다 — 관성 스크롤이 중간에 끊기지 않게. 입력이 멎고 이만큼 지나면 그 뒤 scroll
+ * (Tab 포커스 스크롤, 창 크기 변경)은 자동 불러오기 트리거가 아니다(S3-8 ③)
+ */
+export const USER_SCROLL_WINDOW_MS = 400;
+
+/** 이전 메시지 자리 글(디자인 결정 67, 와이어프레임 `_08d.py`). 도매와 같은 말 */
+export const HISTORY_TEXT = {
+  more: "이전 메시지 보기",
+  loading: "불러오는 중",
+  failed: "이전 메시지를 못 불러왔어요",
+  retry: "다시 시도",
+  end: "대화 처음이에요",
+} as const;
+
+/** 이 앱에서 "상대"(D45 Q3 ①). `새 메시지 N개`의 N은 이 sender의 말만 센다. 도매 앱은 RETAILER다(08c) */
+export const COUNTERPART_SENDER = "WHOLESALER" satisfies ChatMessage["sender"];
+
+/** `새 메시지 N개` 버튼 글(loop-08d S4, 디자인 결정 67). 보이는 글로 이름이 시작한다 — 음성 명령도 맞게. 도매와 같은 말 */
+export const NEW_MESSAGE_TEXT = {
+  countPrefix: "새 메시지 ",
+  countSuffix: "개",
+  jump: "아래로 이동",
+} as const;
 
 /**
  * 열린 방 polling. 도매와 같은 값 — 활성 탭당 분당 20회. 소매 사장도 문의를 남기고 답을 기다리는 동안

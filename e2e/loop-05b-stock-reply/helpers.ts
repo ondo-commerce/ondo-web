@@ -112,7 +112,7 @@ export function handoffLines(page: Page): Locator {
 
 /** live 영역(방에 하나) */
 export function liveRegion(page: Page): Locator {
-  return page.locator('[aria-live="polite"][data-ac="S6-11"]');
+  return page.locator('[aria-live="polite"][data-ac~="S6-11"]');
 }
 
 /** 보내기 요청의 키와 본문을 쌓는다 */

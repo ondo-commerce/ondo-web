@@ -4,13 +4,16 @@ import {
   BADGE_MAX,
   BODY_COUNTER_FROM,
   BODY_MAX,
+  BOTTOM_SLACK_PX,
   CHAT_TIME_ZONE,
   CHATS_HREF,
   CLARIFY_WINDOW_MS,
   ENTRY_TEXT,
+  HISTORY_AUTO_LOAD_PX,
   IDEMPOTENCY_KEY_REUSED,
   LIST_TEXT,
   NAV_TEXT,
+  NEW_MESSAGE_TEXT,
   PENDING_TEXT,
   READ_MARK_KINDS,
   RECEIVABLE_TEXT,
@@ -22,6 +25,7 @@ import {
   SETTLEMENTS_HREF,
   STOCK_BAND_LABEL,
   STOCK_TEXT,
+  USER_SCROLL_WINDOW_MS,
   WEEKDAY_LABEL,
 } from "./constants";
 import type {
@@ -32,6 +36,7 @@ import type {
   ChatChoice,
   ChatInquiry,
   ChatMessage,
+  ChatMessagePageMeta,
   ChatReadResult,
   ChatRoomRowView,
   ChatRoomSummary,
@@ -39,6 +44,8 @@ import type {
   ClarifyView,
   ComposerCheck,
   HeaderCounts,
+  HistorySlot,
+  HistoryStatus,
   MoreInput,
   MoreState,
   PendingMessage,
@@ -248,6 +255,162 @@ export function mergeCounterpartRead(
   if (incoming === null || incoming === undefined) return known;
   if (known === null) return incoming;
   return Math.max(known, incoming);
+}
+
+/* ------------------------------------------------------------------------
+ * 이전 메시지와 위치 보존(loop-08d S3). 도매 08c `derive.ts` 같은 이름 함수의 복제다 — 한쪽을 고치면 다른 쪽도
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 이전 장(before) 응답을 캐시에 합친다(§4-3 3). 겹치는 sequence는 하나만, **cursor는 그대로**다 — cursor는
+ * polling이 빠짐없이 이어 받은 위쪽 끝이라 옛 메시지와 상관없다. `historyHasMore`는 이 응답의 `hasMore`
+ * ("더 오래된 것이 남았다")로 바꾼다. 상대 읽음은 meta에도 와서 큰 쪽으로 합친다(내려가지 않는다).
+ * 부르는 쪽이 **끝날 때의** 캐시를 넘긴다 — 기다리는 사이 polling이 붙인 메시지를 덮지 않게(S3-6)
+ */
+export function mergeOlder(
+  thread: ChatThread,
+  page: { data: readonly ChatMessage[]; meta: ChatMessagePageMeta },
+): ChatThread {
+  return {
+    ...thread,
+    messages: mergeMessages(thread.messages, page.data),
+    historyHasMore: page.meta.hasMore,
+    historyFetched: true,
+    historyStatus: "idle",
+    counterpartRead: mergeCounterpartRead(
+      thread.counterpartRead,
+      page.meta.counterpartLastReadSequence,
+    ),
+  };
+}
+
+/** log가 바닥인가. 아래 끝까지 남은 거리가 `BOTTOM_SLACK_PX` 이하 */
+export function isAtBottom(
+  scrollHeight: number,
+  scrollTop: number,
+  clientHeight: number,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= BOTTOM_SLACK_PX;
+}
+
+/**
+ * 사장 스크롤 창이 무엇으로 바뀌나(§4-3 2-1).
+ * - `input`: 사장이 직접 옮겼다(wheel 위로, 위로 끄는 터치, log 안 ↑ PageUp Home, log를 누른 채 scroll)
+ * - `scroll`: 그 밖의 scroll. 창 안이면 이어진 스크롤(관성)이라 창을 민다, 밖이면 그대로
+ * - `focus`: log 안으로 포커스가 들어왔다. 뒤따르는 scroll은 브라우저 포커스 스크롤이다
+ * - `merged`: 이전 장을 합쳤다. 위치 복원은 프로그램 스크롤이고 다음 자동은 새 입력부터(S3-8 ①)
+ */
+export type UserScrollEvent = "input" | "scroll" | "focus" | "merged";
+
+/** 사장 스크롤 창의 끝 시각(ms)을 다음 값으로. 0이면 창이 닫혀 있다 */
+export function nextUserScrollUntil(
+  until: number,
+  event: UserScrollEvent,
+  now: number,
+): number {
+  switch (event) {
+    case "input":
+      return now + USER_SCROLL_WINDOW_MS;
+    case "scroll":
+      return now <= until ? now + USER_SCROLL_WINDOW_MS : until;
+    case "focus":
+    case "merged":
+      return 0;
+  }
+}
+
+/** 지금 난 scroll이 사장 스크롤인가 — 창 안이면 그렇다 */
+export function isUserScrollActive(until: number, now: number): boolean {
+  return now <= until;
+}
+
+/**
+ * 터치 한 번의 이동이 위로 스크롤인가(§4-3 2-1). 손가락 화면 y가 커지면(손가락이 아래로) 내용이 내려와 위 대화가
+ * 보인다. 방향 없이 touchmove를 다 위 스크롤로 보면 맨 위 근처에서 아래로 조금 민 것도 자동을 부른다.
+ * 직전 좌표가 없으면(첫 이동) 판정하지 않는다
+ */
+export function isTouchScrollUp(prevY: number | null, y: number): boolean {
+  return prevY !== null && y > prevY;
+}
+
+/** 자동 불러오기 판정에 드는 값. 하나라도 거짓이면 부르지 않는다(§4-3 2-1) */
+export interface AutoLoadInput {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  /** 지금 scroll이 사장 입력에 이어진 것인가(`isUserScrollActive`). 프로그램, 포커스가 옮긴 스크롤은 아니다 */
+  userScrolled: boolean;
+  historyHasMore: boolean;
+  historyStatus: HistoryStatus;
+  sessionLost: boolean;
+}
+
+/**
+ * 위로 스크롤했을 때 이전 장을 자동으로 부를까(§4-3 2-1). 온라인 여부는 여기서 안 본다 — 오프라인이면 부르는 쪽
+ * (`fetchOlder`)이 요청 없이 실패 줄을 바로 띄운다(§4-3 6). 짧은 방(내용이 log를 못 넘침)은 스크롤이 없어
+ * 자동이 못 걸린다 — 그 방은 버튼이 길이다
+ */
+export function shouldAutoLoadOlder(input: AutoLoadInput): boolean {
+  return (
+    input.historyHasMore &&
+    input.historyStatus === "idle" &&
+    !input.sessionLost &&
+    input.userScrolled &&
+    input.scrollHeight > input.clientHeight &&
+    input.scrollTop <= HISTORY_AUTO_LOAD_PX
+  );
+}
+
+/**
+ * 맨 위 자리에 무엇을 그리나(디자인 결정 67, 70). 세션이 끊겼으면 다른 무엇보다 잠긴 버튼이다 — 이유는 입력창 아래
+ * 끊김 줄이 말한다. 끝(`hasMore` false)은 이전 장을 받아 본 방에서만 문구를 쓴다 — 처음부터 50개 이하인 방은
+ * 아무것도 없다(§4-3 5)
+ */
+export function historySlotOf(
+  thread: Pick<
+    ChatThread,
+    "historyHasMore" | "historyFetched" | "historyStatus"
+  >,
+  sessionLost: boolean,
+): HistorySlot {
+  if (thread.historyHasMore) {
+    if (sessionLost) return "locked";
+    if (thread.historyStatus === "loading") return "loading";
+    if (thread.historyStatus === "failed") return "failed";
+    return "more";
+  }
+  return thread.historyFetched ? "end" : "none";
+}
+
+/**
+ * 바닥을 떠난 뒤 붙은 메시지 중 상대가 보낸 수(§4-4 3-1, D45 Q3 ①). `since` = 바닥을 떠날 때 그려져 있던 가장 큰
+ * sequence — 그 사이 위에 붙은 옛 메시지는 sequence가 작아 안 센다. 소매 상대는 WHOLESALER(`COUNTERPART_SENDER`):
+ * TEXT, AUTO_REPLY, CLARIFY, 모르는 kind 전부 센다. 넘김 줄(SYSTEM)과 내 글(RETAILER)은 안 센다 —
+ * `liveAnnouncement`가 읽어 주는 집합과 같다. 도매 `newMessageCount` 복제(상대만 다르다)
+ */
+export function newMessageCount(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+  since: number,
+  counterpart: ChatMessage["sender"],
+): number {
+  return messages.filter(
+    (m) =>
+      m.sequence > since && m.sender === counterpart && m.kind !== "HANDOFF",
+  ).length;
+}
+
+/** 새 메시지 버튼에 보이는 글. 상대 말이 0개여도 새 줄이 있으면 내려갈 길은 남긴다(§4-4 3-2) */
+export function newMessageText(count: number): string {
+  return count >= 1
+    ? `${NEW_MESSAGE_TEXT.countPrefix}${count}${NEW_MESSAGE_TEXT.countSuffix}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/** 새 메시지 버튼 이름. 보이는 글로 시작해 할 일을 붙인다 — "새 메시지 2개, 아래로 이동" */
+export function newMessageLabel(count: number): string {
+  return count >= 1
+    ? `${newMessageText(count)}, ${NEW_MESSAGE_TEXT.jump}`
+    : NEW_MESSAGE_TEXT.jump;
 }
 
 /**
@@ -558,11 +721,13 @@ export function chatBadgeLabel(counts: HeaderCounts | undefined): BadgeView {
  * 지금 읽음을 보낼 위치. 보낼 게 없으면 null. 도매 `ChatRoomPanel`의 읽음 규칙과 같다.
  * - 탭이 안 보이면 보내지 않는다 — 사장이 못 본 걸 읽었다고 하지 않는다. 다시 보이는 순간 평가한다
  * - 세션이 끊겼으면 보내지 않는다(05a 끊김 상태, 요청 0)
+ * - log가 바닥이 아니면 보류한다(loop-08d §4-4 3, D45 Q1 ①) — 읽음 뜻이 "여기까지 봤다"다. 위를 읽는 중 온
+ *   도매 답에 읽음이 먼저 나가지 않는다. 바닥에 내려오는 순간 그린 최대로 1회 보낸다
  * - 그린 위치가 확인된 위치 이하이거나, 같은 위치가 이미 날아가는 중이면 보내지 않는다 — 응답 전에 다시
  *   그려져도 POST는 1회다. 날아가는 중인 위치보다 **큰** 것이 새로 그려지면 바로 보낸다(10 응답 전 12)
  */
 export function nextReadTarget(state: ReadState): number | null {
-  if (!state.visible || state.sessionLost) return null;
+  if (!state.visible || state.sessionLost || !state.atBottom) return null;
   if (state.drawn <= state.confirmed || state.drawn <= state.inFlight)
     return null;
   return state.drawn;
