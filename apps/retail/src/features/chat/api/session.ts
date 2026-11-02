@@ -72,19 +72,23 @@ export async function guardSession<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   if (isSessionLost(queryClient)) throw new ChatSessionLostError();
-  const epoch = sessionEpoch;
+  const account = accountEpoch;
+  const session = sessionEpoch;
   let result: T;
   try {
     result = await run();
   } catch (error) {
-    if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+    if (accountEpoch !== account) throw new ChatStaleResponseError();
+    /* 같은 소매처 재로그인을 넘긴 401은 옛 쿠키의 답이다(M1) — 새 세션을 잠그지 않게 버린다. 다른 실패는 그대로(M6) */
+    if (isUnauthorized(error) && sessionEpoch !== session)
+      throw new ChatStaleResponseError();
     if (isUnauthorized(error)) {
       markSessionLost(queryClient);
       throw new ChatSessionLostError();
     }
     throw error;
   }
-  if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+  if (accountEpoch !== account) throw new ChatStaleResponseError();
   return result;
 }
 
@@ -109,21 +113,28 @@ export function isChatStaleResponseError(
  * 성공이면 부르는 쪽이 A의 방으로 옮긴다. 버리는 오류는 `ApiError`가 아니라 공용 처리가 지나친다
  */
 export async function dropStaleSession<T>(run: () => Promise<T>): Promise<T> {
-  const epoch = sessionEpoch;
+  const epoch = accountEpoch;
   let result: T;
   try {
     result = await run();
   } catch (error) {
-    if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+    if (accountEpoch !== epoch) throw new ChatStaleResponseError();
     throw error;
   }
-  if (sessionEpoch !== epoch) throw new ChatStaleResponseError();
+  if (accountEpoch !== epoch) throw new ChatStaleResponseError();
   return result;
 }
 
 /**
- * 세션 세대. 로그아웃, 로그인 때 오른다(`clearChatCache`). 요청은 시작 때 값을 쥐고, 끝났을 때 값이 바뀌었으면
+ * 계정 세대. 로그아웃, 로그인 때 오른다(`clearChatCache`). 요청은 시작 때 값을 쥐고, 끝났을 때 값이 바뀌었으면
  * 결과를 캐시와 화면에 넣지 않는다 — A가 띄운 요청의 응답이 B 로그인 뒤에 도착하는 경우
+ */
+let accountEpoch = 0;
+
+/**
+ * 세션 세대. 계정 세대가 오를 때와 같은 소매처 재로그인(`refreshChatSession`) 때 오른다(Codex 메타 M6, 도매와 같다).
+ * 같은 소매처 갱신을 넘긴 요청의 결과는 그 계정 것이라 버리지 않는다 — 버리면 성공한 보내기가 실패 말풍선으로 보인다.
+ * 갱신 뒤에 버려야 하는 건 늦은 401뿐이다(`guardSession`이 이 값을 그 갈래에만 쓴다)
  */
 let sessionEpoch = 0;
 
@@ -136,6 +147,7 @@ let sessionEpoch = 0;
  * 헤더 count(`clearHeaderSession`)와 같은 두 지점이다. 부르는 곳은 `app/`의 연결부다(feature끼리 import 금지)
  */
 export function clearChatCache(queryClient: QueryClient): void {
+  accountEpoch += 1;
   sessionEpoch += 1;
   void queryClient.cancelQueries({ queryKey: chatKeys.all });
   queryClient.removeQueries({ queryKey: chatKeys.all });
@@ -144,15 +156,19 @@ export function clearChatCache(queryClient: QueryClient): void {
 /**
  * 같은 소매처가 다른 탭에서 다시 로그인했다(Codex 메타 M1, 도매 `refreshChatSession`과 같다). 캐시, 쓰던 글, 보류
  * 말풍선은 그대로 두고 새 쿠키로 잇는다.
- * - 세대를 올린다 — 재로그인 전에 떠난 늦은 401이 새 세션을 다시 잠그지 않게 버려진다(`guardSession`)
+ * - 세션 세대만 올린다(계정 세대는 그대로) — 재로그인 전에 떠난 늦은 401은 새 세션을 다시 잠그지 않게 버려지고
+ *   (`guardSession`), 성공과 401 아닌 실패는 그대로 간다. 보류 보내기가 성공이면 정리, 실패면 실패 말풍선으로 끝난다(M6)
  * - 끊김 칸을 내린다 — 입력창 잠김이 풀린다
- * - 채팅 조회를 다시 부른다 — 끊긴 동안 멈춘 polling 간격은 칸 값만 바꿔서는 다시 안 잡힌다
+ * - 날아가는 채팅 조회를 **취소한 뒤** 다시 부른다(M7). invalidate만 하면 TanStack이 날아가던 옛 요청을 그대로 쓴다 —
+ *   그 요청이 옛 쿠키의 401로 끝나면 버려져 다시 조회가 없다. 끊긴 동안 멈춘 polling 간격도 다시 잡힌다
  * 부르는 곳은 `app/SessionChangeCleanup.tsx`다(feature끼리 import 금지)
  */
 export function refreshChatSession(queryClient: QueryClient): void {
   sessionEpoch += 1;
   queryClient.setQueryData<boolean>(chatKeys.session(), false);
-  void queryClient.invalidateQueries({ queryKey: chatKeys.all });
+  void queryClient
+    .cancelQueries({ queryKey: chatKeys.all })
+    .then(() => queryClient.invalidateQueries({ queryKey: chatKeys.all }));
 }
 
 /** 화면이 보는 값. 요청을 내지 않는 캐시 칸이다(`queryFn`은 쓰지 않는 기본값) */

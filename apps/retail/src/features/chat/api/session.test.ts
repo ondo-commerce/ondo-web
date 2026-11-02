@@ -8,6 +8,7 @@ import {
   dropStaleSession,
   guardSession,
   isSessionLost,
+  refreshChatSession,
 } from "./session";
 
 /**
@@ -26,6 +27,65 @@ function lateRun<T>(between: () => void, outcome: () => Promise<T>) {
     return outcome();
   };
 }
+
+describe("같은 소매처 갱신(refreshChatSession)을 넘긴 요청(Codex 메타 M6)", () => {
+  it("성공은 그대로 돌려준다 — 보내기가 실패 말풍선으로 안 보인다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => refreshChatSession(qc),
+          async () => "ok",
+        ),
+      ),
+    ).resolves.toBe("ok");
+  });
+
+  it("401 아닌 실패는 그대로 던진다 — 실패 말풍선으로 끝난다", async () => {
+    const qc = new QueryClient();
+    const serverError = new ApiError({
+      status: 500,
+      code: "INTERNAL_ERROR",
+      message: "x",
+    });
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(serverError),
+        ),
+      ),
+    ).rejects.toBe(serverError);
+  });
+
+  it("401은 버리고 끊김 칸을 안 켠다 — 새 세션을 잠그지 않는다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      guardSession(
+        qc,
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ChatStaleResponseError);
+    expect(isSessionLost(qc)).toBe(false);
+  });
+
+  it("방 만들기도 같은 소매처 갱신이면 버리지 않는다", async () => {
+    const qc = new QueryClient();
+    await expect(
+      dropStaleSession(
+        lateRun(
+          () => refreshChatSession(qc),
+          async () => ({ roomId: 1 }),
+        ),
+      ),
+    ).resolves.toEqual({ roomId: 1 });
+  });
+});
 
 describe("guardSession 세대 갈래(QA F1)", () => {
   it("성공 갈래: 응답 전에 세션이 바뀌면 성공 결과를 돌려주지 않는다 — queryFn이 이어서 다른 칸에 쓰지 못하게", async () => {
