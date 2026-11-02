@@ -156,7 +156,8 @@ export const HANDOFF_REASON_TEXT: Readonly<
   NOT_SUPPORTED: "자동 답변이 없는 질문이에요",
   NO_CONTEXT: "어느 상품을 묻는지 몰라요",
   NO_OPTIONS: "게시된 옵션이 없는 상품이에요",
-  INVALID_TARGET: "다른 도매처 상품이거나 없는 상품이에요",
+  // 다른 도매처 상품만이 아니라 30분 지난 미송 칩, 미게시 옵션도 이 값이다(08d R4, D48). 원인을 하나로 단정하지 않는다
+  INVALID_TARGET: "선택한 상품이나 미송을 확인하지 못했어요",
   CLARIFY_AGAIN: "다시 물었지만 무엇을 묻는지 확인하지 못했어요",
   NOT_LISTED: "목록에 없는 다른 주문이라고 했어요",
   NO_BACKORDER: "열린 미송이 없는 소매처예요",

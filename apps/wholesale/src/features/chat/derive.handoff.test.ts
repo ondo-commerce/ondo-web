@@ -32,7 +32,8 @@ const PLAN_REASONS_08D: Record<string, string> = {
   NOT_SUPPORTED: "자동 답변이 없는 질문이에요",
   NO_CONTEXT: "어느 상품을 묻는지 몰라요",
   NO_OPTIONS: "게시된 옵션이 없는 상품이에요",
-  INVALID_TARGET: "다른 도매처 상품이거나 없는 상품이에요",
+  // D48(08d R4): 만료된 미송 칩, 미게시 옵션에서도 나는 값이라 원인을 하나로 단정하지 않는다
+  INVALID_TARGET: "선택한 상품이나 미송을 확인하지 못했어요",
   CLARIFY_AGAIN: "다시 물었지만 무엇을 묻는지 확인하지 못했어요",
   NOT_LISTED: "목록에 없는 다른 주문이라고 했어요",
   NO_BACKORDER: "열린 미송이 없는 소매처예요",
