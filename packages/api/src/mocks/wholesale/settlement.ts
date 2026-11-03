@@ -298,27 +298,30 @@ function pushPayment(
  * 시험 손잡이용 입금(목 전용). 소매 앱 번들에는 정산 핸들러가 없어 소매 화면에서 갚을 돈 0(문장 C), 선수금(D)을
  * 만들 길이 없다 — 소매 채팅 목 `/__mock/chat/payment`가 이 함수로 같은 장부에 입금을 넣는다(loop-07 M5).
  * 규칙은 `POST /payments`와 같은 저장 경로(`pushPayment`)를 탄다. 배분이 미수를 넘거나 남의 주문이면 던진다.
- * 상한은 아직 옛 규칙(이번 입금액만)이라 늘 이번 입금에서만 나간다. 선수금까지 쓰는 새 상한은 08d(S4-8)
+ * 상한도 `POST /payments`와 같다: 이번 입금 + 그 소매처 남은 선수금(loop-08e S1-2). 모자라면 옛 입금의 남은 몫을
+ * 오래된 것부터 끌어 쓴다(`planAllocations`). 던지면 아무것도 저장하지 않는다. 돌려주는 값은 `POST /payments` 201의
+ * `data`와 같은 모양이다 — 소매 e2e가 배분 줄 `id`를 받아 `allocation-cancel`에 넘긴다
  */
 export function recordMockPayment(input: {
   retailerId: number;
   amount: number;
   allocations: readonly { orderId: number; amount: number }[];
   paidAt?: string;
-}): void {
+}): WholesaleSchema<"PaymentCreatedResponse"> {
   const targets = input.allocations.map((a) => {
     const order = mockOrders().find((o) => o.id === a.orderId);
     if (order === undefined || order.retailerId !== input.retailerId)
       throw new Error(`목: 배분할 주문 ${a.orderId}이 없다`);
+    if (typeof a.amount !== "number" || a.amount <= 0)
+      throw new Error(`목: 주문 ${a.orderId} 배분액은 1 이상이어야 한다`);
     if (a.amount > mockOrderSettlement(order).outstandingAmount)
       throw new Error(`목: 주문 ${a.orderId} 미수를 넘는 배분`);
     return { order, amount: a.amount };
   });
-  if (targets.reduce((s, t) => s + t.amount, 0) > input.amount)
-    throw new Error("목: 배분 합계가 입금액을 넘었다");
   const plan = planAllocations(input.retailerId, input.amount, targets);
-  if (plan === null) throw new Error("목: 배분 합계가 입금액을 넘었다");
-  pushPayment(
+  if (plan === null)
+    throw new Error("목: 배분 합계가 입금액과 남은 선수금을 넘었다");
+  return pushPayment(
     {
       retailerId: input.retailerId,
       amount: input.amount,
@@ -331,6 +334,57 @@ export function recordMockPayment(input: {
     },
     plan,
   );
+}
+
+/** 배분 취소 결과. 응답 본문은 부르는 쪽이 자기 어휘로 만든다(도매 핸들러, 소매 손잡이) */
+export type MockAllocationCancel =
+  | { status: 200; data: WholesaleSchema<"AllocationCancelledResponse"> }
+  | { status: 404 }
+  | { status: 409 };
+
+/**
+ * 배분 취소 저장 경로 하나(스펙 `cancelAllocation`). 줄은 지우지 않고 `cancelledAt`만 찍는다. 원장은 안 바뀐다 —
+ * 그 돈은 줄의 입금 남은 몫(선수금)으로 돌아가고 주문 미수가 다시 는다. 검사 순서 404 → 409.
+ * `ownerRetailerId`가 있으면 그 소매처 배분만 찾는다 — 남의 배분은 없는 것과 같이 404이고 아무것도 안 바뀐다.
+ * 도매 핸들러는 소유 검사가 없어 null을 넘긴다(소매 손잡이만 "나"를 넘긴다, loop-08e §5-2 3)
+ */
+function cancelAllocationLine(
+  allocationId: number,
+  ownerRetailerId: number | null,
+): MockAllocationCancel {
+  const line = allocations.find(
+    (a) =>
+      a.id === allocationId &&
+      (ownerRetailerId === null || a.retailerId === ownerRetailerId),
+  );
+  if (line === undefined) return { status: 404 };
+  if (line.cancelledAt !== null) return { status: 409 };
+  const cancelledAt = new Date().toISOString();
+  line.cancelledAt = cancelledAt;
+  const order = mockOrders().find((o) => o.id === line.orderId);
+  if (order) releaseMockAllocation(order, line.amount);
+  return {
+    status: 200,
+    data: {
+      allocationId: line.id,
+      orderId: line.orderId,
+      paymentId: line.paymentId,
+      amount: line.amount,
+      cancelledAt,
+      prepaidRemaining: prepaidOf(line.retailerId),
+    },
+  };
+}
+
+/**
+ * 시험 손잡이용 배분 취소(목 전용). 소매 채팅 목 `/__mock/chat/allocation-cancel`이 "나"의 배분만 취소한다
+ * (loop-08e S1-3). 저장 경로는 도매 `POST /allocations/{id}/cancel`과 같다
+ */
+export function cancelMockAllocation(
+  retailerId: number,
+  allocationId: number,
+): MockAllocationCancel {
+  return cancelAllocationLine(allocationId, retailerId);
 }
 
 /* --- 조회 --------------------------------------------------------------- */
@@ -749,23 +803,12 @@ export const settlementHandlers = [
   http.post(
     "*/api/wholesale/allocations/:allocationId/cancel",
     ({ params }) => {
-      const id = Number(params.allocationId);
-      const line = allocations.find((a) => a.id === id);
-      if (!line) return fail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
-      if (line.cancelledAt !== null)
+      const result = cancelAllocationLine(Number(params.allocationId), null);
+      if (result.status === 404)
+        return fail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
+      if (result.status === 409)
         return fail(409, "STATE_CONFLICT", "이미 취소된 배분입니다.");
-      line.cancelledAt = new Date().toISOString();
-      const order = mockOrders().find((o) => o.id === line.orderId);
-      if (order) releaseMockAllocation(order, line.amount);
-      const data: WholesaleSchema<"AllocationCancelledResponse"> = {
-        allocationId: line.id,
-        orderId: line.orderId,
-        paymentId: line.paymentId,
-        amount: line.amount,
-        cancelledAt: line.cancelledAt,
-        prepaidRemaining: prepaidOf(line.retailerId),
-      };
-      return HttpResponse.json({ data });
+      return HttpResponse.json({ data: result.data });
     },
   ),
 

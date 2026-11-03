@@ -17,7 +17,10 @@ import {
   type ChatMockRoom,
   type IdempotencyRecord,
 } from "../wholesale/chat";
-import { recordMockPayment } from "../wholesale/settlement";
+import {
+  cancelMockAllocation,
+  recordMockPayment,
+} from "../wholesale/settlement";
 import { retailNotificationCount } from "./notification";
 import { RETAIL_ME_RETAILER_ID, RETAIL_WHOLESALERS } from "./parties";
 
@@ -82,7 +85,9 @@ type FailOp = (typeof RETAIL_CHAT_FAIL_OPS)[number];
  * `/__mock/chat/delay`가 고르는 op. 응답 순서 역전을 만든다: 늦은 count가 읽음 뒤에 도착(06a), 늦은 방 머리가
  * polling 뒤에 옛 읽음 값으로 도착, 늦은 목록 장이 갱신과 겹침(loop-08 §5-4 3).
  * `send`(loop-08d §5-2 2)는 **저장은 요청 시점, 응답만 늦다** — 도매 목과 같다. 같은 탭이 다시 로그인한 사이 옛
- * 보내기가 늦은 401로 도착하는 장면(#344 소매 확인)을 `fail {op: send}`와 같이 걸어 만든다
+ * 보내기가 늦은 401로 도착하는 장면(#344 소매 확인)을 `fail {op: send}`와 같이 걸어 만든다.
+ * `create`(loop-08e §5-2 1)도 같은 규칙: 방은 요청 시점에 생기고(그 사이 rooms 조회에 보인다) 응답만 늦다.
+ * `fail {op: create}`와 같이 걸면 실패가 늦다(방을 만들지 않음) — 방 만들기 늦은 401 장면용
  */
 export const RETAIL_CHAT_DELAY_OPS = [
   "count",
@@ -91,6 +96,7 @@ export const RETAIL_CHAT_DELAY_OPS = [
   "messages",
   "rooms",
   "send",
+  "create",
 ] as const;
 type DelayOp = (typeof RETAIL_CHAT_DELAY_OPS)[number];
 
@@ -265,6 +271,17 @@ function invalid(field: string, code: string, message: string) {
 }
 
 /**
+ * 손잡이 전용 오류. 정산 손잡이의 409는 멱등 충돌이 아니라 상태 충돌(`STATE_CONFLICT`)이라 `fail`의 상태별 코드를
+ * 못 쓴다. 코드는 도매 cancel 핸들러와 같게 둔다
+ */
+function knobFail(status: number, code: string, message: string) {
+  return HttpResponse.json(
+    { code, message, errors: [], traceId: null },
+    { status },
+  );
+}
+
+/**
  * 걸어 둔 실패. 같은 op에 지연도 걸려 있으면 실패도 그만큼 늦게 보낸다(loop-08c §5-3 2, 도매 목과 같다) —
  * 앞 계정의 polling이 로그아웃 뒤에 401로 도착하는 장면(S7-3)을 만든다. 지연이 없으면 예전처럼 바로.
  * messages는 `page`(latest | before | after)가 맞는 계획을 먼저 쓴다(loop-08d §5-2 1). 돌려준 실패는 응답 기록에
@@ -415,6 +432,7 @@ export const retailChatHandlers = [
       );
     if (known !== undefined) {
       chatStore.setContext(known, input.listingId);
+      await plannedDelay("create");
       return HttpResponse.json(
         {
           data: {
@@ -427,6 +445,8 @@ export const retailChatHandlers = [
     }
     const created = chatStore.addRoom(wholesalerId, meRetailerId);
     chatStore.setContext(created, input.listingId);
+    // 저장은 끝났고 응답만 늦다(loop-08e §5-2 1, send와 같다)
+    await plannedDelay("create");
     return HttpResponse.json(
       { data: { ...summaryOf(created), counterpartLastReadSequence: 0 } },
       { status: 201 },
@@ -724,8 +744,10 @@ export const retailChatHandlers = [
   }),
 
   /**
-   * 정산 장부에 입금 한 건 `{amount, allocations: [{orderId, amount}]}`(loop-07 M5). "나"(봄봄상회)의 도매처 101
+   * 정산 장부에 입금 한 건 `{amount, allocations: [{orderId, amount}]}`(loop-07 M5). "나"의 도매처 101
    * 장부다. 소매 화면에서 미수 답 C(갚을 돈 0), D(선수금)를 보려고 둔다 — 소매 번들엔 정산 핸들러가 없다.
+   * 상한은 `POST /payments`와 같다: 이번 입금 + 남은 선수금(loop-08e S1-2). 201 `{data: PaymentCreatedResponse}`
+   * (배분 줄마다 `id`). 상한 넘김, 남의 주문, 미수 넘김은 400 `INVALID`(errors[0].field allocations)이고 저장 0.
    * reset이 정산 목까지 되돌린다
    */
   http.post("*/__mock/chat/payment", async ({ request }) => {
@@ -735,16 +757,44 @@ export const retailChatHandlers = [
     };
     if (typeof input.amount !== "number" || input.amount <= 0)
       return invalid("amount", "INVALID", "amount(1 이상 숫자)가 필요합니다.");
+    if (input.allocations !== undefined && !Array.isArray(input.allocations))
+      return invalid("allocations", "INVALID", "allocations는 배열입니다.");
     try {
-      recordMockPayment({
+      const data = recordMockPayment({
         retailerId: meRetailerId,
         amount: input.amount,
         allocations: input.allocations ?? [],
       });
+      return HttpResponse.json({ data }, { status: 201 });
     } catch (e) {
       return invalid("allocations", "INVALID", String(e));
     }
-    return HttpResponse.json({ data: { ok: true } }, { status: 201 });
+  }),
+
+  /**
+   * 배분 하나 취소 `{allocationId}`(loop-08e S1-3). "나"의 배분만 — 남의 배분은 없는 id와 같이 404이고 아무것도
+   * 안 바뀐다(도매 cancel 핸들러는 소유 검사가 없어 여기서 먼저 본다). 저장 경로는 도매 `POST
+   * /allocations/{id}/cancel`과 같다(`cancelMockAllocation`). 200 `{data: AllocationCancelledResponse}`, 이미 취소
+   * 409 `STATE_CONFLICT`, allocationId가 정수가 아니면 400. reset이 되돌린다
+   */
+  http.post("*/__mock/chat/allocation-cancel", async ({ request }) => {
+    const input: unknown = await request.json().catch(() => ({}));
+    const id =
+      typeof input === "object" && input !== null && !Array.isArray(input)
+        ? (input as { allocationId?: unknown }).allocationId
+        : undefined;
+    if (typeof id !== "number" || !Number.isInteger(id))
+      return invalid(
+        "allocationId",
+        "INVALID",
+        "allocationId(정수)가 필요합니다.",
+      );
+    const result = cancelMockAllocation(meRetailerId, id);
+    if (result.status === 404)
+      return knobFail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
+    if (result.status === 409)
+      return knobFail(409, "STATE_CONFLICT", "이미 취소된 배분입니다.");
+    return HttpResponse.json({ data: result.data });
   }),
 
   /**
@@ -780,8 +830,9 @@ export const retailChatHandlers = [
   ),
 
   /**
-   * 다음 n회 응답을 ms 늦춘다. `{op: count|read|room|messages|rooms|send, page?, ms, times = 1}`. 값은 요청 시점에
-   * 정한다. `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08d S1-1)
+   * 다음 n회 응답을 ms 늦춘다. `{op: count|read|room|messages|rooms|send|create, page?, ms, times = 1}`. 값은 요청
+   * 시점에 정한다. `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `create`도 방을 만든 뒤
+   * 응답만 늦춘다(loop-08e S1-1). `page`는 `fail`과 같다(loop-08d S1-1)
    */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
