@@ -2,6 +2,7 @@
 
 import {
   focusManager,
+  keepPreviousData,
   onlineManager,
   queryOptions,
   useInfiniteQuery,
@@ -129,13 +130,20 @@ function threadOptions(roomId: number, queryClient: QueryClient) {
 /**
  * 방 머리와 메시지를 **같이** 부른다(폭포 없이). Suspense를 쓰지 않는 이유: 소매엔 도매의
  * `QueryBoundary`가 없고, 블록이 로딩, 없는 방, 실패를 한 패널 안에서 직접 가른다.
+ *
+ * `leaving`(로그아웃 응답 대기, loop-08e §4-2 9): 캐시는 로그아웃이 이미 지웠다. 방 화면이 아직 떠 있어 그대로면 새
+ * 조회(A 쿠키라 계정 세대가 같아 버려지지도 않는다)가 나간다 — 끈다(`enabled: false`). 화면은 지우기 전 값을
+ * 그대로 보인다(`keepPreviousData`, 지운 쿼리의 마지막 값). 이동 전까지 방이 로딩 막대로 바뀌지 않게
  */
-export function useRoomQueries(roomId: number) {
+export function useRoomQueries(roomId: number, leaving = false) {
   const queryClient = useQueryClient();
+  const gate = leaving
+    ? { enabled: false, placeholderData: keepPreviousData }
+    : {};
   const [room, thread] = useQueries({
     queries: [
-      roomOptions(roomId, queryClient),
-      threadOptions(roomId, queryClient),
+      { ...roomOptions(roomId, queryClient), ...gate },
+      { ...threadOptions(roomId, queryClient), ...gate },
     ],
   });
   return { room, thread };

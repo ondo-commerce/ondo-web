@@ -25,6 +25,7 @@ export const ChatComposer = memo(function ChatComposer({
   counterpartName,
   focusTick,
   sessionLost,
+  leaving = false,
   onSend,
   askBusy,
   onAsk,
@@ -36,6 +37,11 @@ export const ChatComposer = memo(function ChatComposer({
   focusTick: number;
   /** 401 — 쓴 글은 지키고 보내기만 잠근다(D28). 입력창은 읽기 전용, 글은 선택해 복사할 수 있다(S6-5) */
   sessionLost: boolean;
+  /**
+   * 로그아웃 응답 대기(loop-08e §4-2 9, S2-15). 읽기 전용과 보내기 잠금은 끊김과 같고 안내 줄은 없다 — 로그인이 끊긴 게
+   * 아니라 나가는 중이다. 모양은 기존 readOnly 그대로(새 모양 0)
+   */
+  leaving?: boolean;
   onSend: (body: string) => void;
   /**
    * 맨 위 줄 `재고 문의` 칩(loop-05b S8-1, 디자인 결정 21). null이면 줄 자체가 없다 — 상품 상세에서 연 방이
@@ -53,7 +59,8 @@ export const ChatComposer = memo(function ChatComposer({
   } = useRoomDraft(draftKey);
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const canSend = !check.blank && !check.over && !sessionLost;
+  const locked = sessionLost || leaving;
+  const canSend = !check.blank && !check.over && !locked;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
   const boxRef = useRef<HTMLDivElement>(null);
@@ -120,7 +127,7 @@ export const ChatComposer = memo(function ChatComposer({
      키보드로 누른 경우엔 칩이 곧 disabled가 되어 포커스가 페이지로 떨어지니 입력창으로 돌려준다
      (textarea는 포커스를 잃어도 선택 범위를 기억한다) */
   const ask = () => {
-    if (askBusy !== false || sessionLost) return;
+    if (askBusy !== false || locked) return;
     onAsk();
     focusInput();
   };
@@ -135,7 +142,7 @@ export const ChatComposer = memo(function ChatComposer({
           <ToggleChip
             /* 토글이 아니라 한 번 보내는 버튼이라 aria-pressed를 뺀다. 모양만 ToggleChip(결정 21) */
             aria-pressed={undefined}
-            disabled={askBusy || sessionLost}
+            disabled={askBusy || locked}
             aria-busy={askBusy || undefined}
             onMouseDown={(e) => e.preventDefault()}
             onClick={ask}
@@ -158,7 +165,7 @@ export const ChatComposer = memo(function ChatComposer({
           aria-label={COMPOSER_TEXT.label}
           placeholder={`${counterpartName}${COMPOSER_TEXT.placeholderSuffix}`}
           value={draft}
-          readOnly={sessionLost}
+          readOnly={locked}
           aria-invalid={check.over || undefined}
           aria-describedby={noteId}
           onChange={(e) => {
@@ -171,7 +178,7 @@ export const ChatComposer = memo(function ChatComposer({
           className={cn(
             "field-sizing-content max-h-40 min-w-0 flex-1 resize-none phone:min-h-16.5",
             check.over && "border-destructive",
-            sessionLost && "bg-muted",
+            locked && "bg-muted",
           )}
         />
         <Button

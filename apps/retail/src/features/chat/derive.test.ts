@@ -44,6 +44,9 @@ import {
   toThreadItems,
   upsertPending,
   visiblePending,
+  canRetrySend,
+  pendingOfRoom,
+  withRoomPending,
 } from "./derive";
 import type {
   ChatMessage,
@@ -1237,5 +1240,40 @@ describe("S4-1 목록 중복, 더 보기 (loop-08)", () => {
     [{ isFetchNextPageError: true, sessionLost: true }, "locked"],
   ])("moreStateOf %o → %s", (patch, expected) => {
     expect(moreStateOf({ ...base, ...patch })).toBe(expected);
+  });
+});
+
+describe("S2-13 canRetrySend(loop-08e, 도매 08d F1 복제)", () => {
+  it("잠긴 동안만 뺀다 — 실패 종류는 묻지 않는다", () => {
+    expect(canRetrySend(true)).toBe(false);
+    expect(canRetrySend(false)).toBe(true);
+  });
+});
+
+describe("loop-08e 방별 보류 말풍선(도매 S3-10 복제)", () => {
+  const failed: PendingMessage = {
+    clientMessageId: "a",
+    body: "레드 L 두 장 돼요?",
+    inquiry: null,
+    status: "failed",
+    failure: "server",
+  };
+
+  it("한 방만 바꾸고 다른 방은 그대로. 없는 방은 같은 빈 배열", () => {
+    const one = withRoomPending({}, 1, (list) => [...list, failed]);
+    expect(pendingOfRoom(one, 1)).toEqual([failed]);
+    expect(pendingOfRoom(one, 2)).toEqual([]);
+    expect(pendingOfRoom(one, 2)).toBe(pendingOfRoom({}, 3));
+    const both = withRoomPending(one, 2, (list) => [
+      ...list,
+      { ...failed, clientMessageId: "b" },
+    ]);
+    expect(pendingOfRoom(both, 1)).toBe(pendingOfRoom(one, 1));
+  });
+
+  it("비면 그 방 칸을 지운다. 이미 없으면 같은 객체", () => {
+    const one = withRoomPending({}, 1, () => [failed]);
+    expect(withRoomPending(one, 1, () => [])).toEqual({});
+    expect(withRoomPending(one, 2, () => [])).toBe(one);
   });
 });

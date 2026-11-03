@@ -1,16 +1,20 @@
 import { QueryClient } from "@tanstack/react-query";
-import { ApiError } from "@ondo/api";
-import { describe, expect, it } from "vitest";
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  beginChatSignOut,
   ChatSessionLostError,
   ChatStaleResponseError,
   chatScreenEpoch,
   clearChatCache,
+  endChatSignOut,
+  isChatLeaving,
   leaveChatScreen,
   dropStaleSession,
   guardSession,
   isSessionLost,
   refreshChatSession,
+  sendOutcomeOf,
 } from "./session";
 
 /**
@@ -218,5 +222,197 @@ describe("dropStaleSession — 방 만들기(리뷰 R7)", () => {
     await expect(
       dropStaleSession(async () => ({ roomId: 2 })),
     ).resolves.toEqual({ roomId: 2 });
+  });
+});
+
+/** 던진 것을 잡아 돌려준다 */
+async function caught(run: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("던지지 않았다");
+}
+
+const serverError = (status: number, code: string) =>
+  new ApiError({ status, code, message: "x" });
+
+describe("S2-13 dropStaleSession 갈래(loop-08e Q6)", () => {
+  it("계정 변경 → stale account(입구 무표시)", async () => {
+    const qc = new QueryClient();
+    const error = await caught(() =>
+      dropStaleSession(
+        lateRun(
+          () => clearChatCache(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    );
+    expect(error).toBeInstanceOf(ChatStaleResponseError);
+    expect((error as ChatStaleResponseError).reason).toBe("account");
+  });
+
+  it("같은 계정 갱신 뒤 401 → stale session(입구 문구, /login 아님)", async () => {
+    const qc = new QueryClient();
+    const error = await caught(() =>
+      dropStaleSession(
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    );
+    expect(error).toBeInstanceOf(ChatStaleResponseError);
+    expect((error as ChatStaleResponseError).reason).toBe("session");
+  });
+
+  it("같은 계정 갱신 뒤 201 → 결과 그대로(방으로 이동)", async () => {
+    const qc = new QueryClient();
+    await expect(
+      dropStaleSession(
+        lateRun(
+          () => refreshChatSession(qc),
+          async () => ({ roomId: 3 }),
+        ),
+      ),
+    ).resolves.toEqual({ roomId: 3 });
+  });
+
+  it("같은 계정 갱신 뒤 401 아닌 실패 → 원래 오류(입구 실패 문구)", async () => {
+    const qc = new QueryClient();
+    const boom = serverError(500, "INTERNAL_ERROR");
+    await expect(
+      dropStaleSession(
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(boom),
+        ),
+      ),
+    ).rejects.toBe(boom);
+  });
+
+  it("같은 세션 401 → 원래 ApiError(공용 처리가 /login)", async () => {
+    const boom = unauthorized();
+    await expect(dropStaleSession(() => Promise.reject(boom))).rejects.toBe(
+      boom,
+    );
+  });
+});
+
+describe("S2-13 guardSession stale 갈래 이유", () => {
+  it("계정 변경을 넘긴 성공과 실패 → account", async () => {
+    const qc = new QueryClient();
+    for (const outcome of [
+      async () => "ok",
+      () => Promise.reject(serverError(500, "INTERNAL_ERROR")),
+    ]) {
+      const error = await caught(() =>
+        guardSession(
+          qc,
+          lateRun(() => clearChatCache(qc), outcome),
+        ),
+      );
+      expect((error as ChatStaleResponseError).reason).toBe("account");
+    }
+  });
+
+  it("같은 계정 갱신을 넘긴 401 → session", async () => {
+    const qc = new QueryClient();
+    const error = await caught(() =>
+      guardSession(
+        qc,
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    );
+    expect((error as ChatStaleResponseError).reason).toBe("session");
+  });
+});
+
+describe("S2-13 보내기 결과 갈래 sendOutcomeOf", () => {
+  const offline = new ApiError({
+    status: 0,
+    code: TRANSPORT_ERROR_CODE.NETWORK,
+    message: "x",
+  });
+
+  it("계정 변경 stale(성공이든 실패든 부르는 쪽이 계정 세대로 알린다) → drop", () => {
+    expect(sendOutcomeOf(new ChatStaleResponseError("account"), false)).toBe(
+      "drop",
+    );
+    expect(sendOutcomeOf(serverError(500, "INTERNAL_ERROR"), true)).toBe(
+      "drop",
+    );
+    expect(sendOutcomeOf(new ChatSessionLostError(), true)).toBe("drop");
+    expect(sendOutcomeOf(new ChatStaleResponseError("session"), true)).toBe(
+      "drop",
+    );
+  });
+
+  it("같은 계정 갱신 stale 401 → server(R+D, 잠금 0)", () => {
+    expect(sendOutcomeOf(new ChatStaleResponseError("session"), false)).toBe(
+      "server",
+    );
+  });
+
+  it("ChatSessionLostError → session", () => {
+    expect(sendOutcomeOf(new ChatSessionLostError(), false)).toBe("session");
+  });
+
+  it("ApiError 500, 403, 404 → server", () => {
+    expect(sendOutcomeOf(serverError(500, "INTERNAL_ERROR"), false)).toBe(
+      "server",
+    );
+    expect(sendOutcomeOf(serverError(403, "FORBIDDEN"), false)).toBe("server");
+    expect(sendOutcomeOf(serverError(404, "RESOURCE_NOT_FOUND"), false)).toBe(
+      "server",
+    );
+  });
+
+  it("네트워크 → offline", () => {
+    expect(sendOutcomeOf(offline, false)).toBe("offline");
+  });
+});
+
+describe("S2-15 로그아웃 응답 대기(나가는 중) — 새 요청 0", () => {
+  afterEach(() => endChatSignOut());
+
+  it("guardSession은 요청을 만들지 않고 stale account를 던진다", async () => {
+    const qc = new QueryClient();
+    beginChatSignOut();
+    expect(isChatLeaving()).toBe(true);
+    let called = 0;
+    const error = await caught(() =>
+      guardSession(qc, async () => {
+        called += 1;
+        return "ok";
+      }),
+    );
+    expect(called).toBe(0);
+    expect((error as ChatStaleResponseError).reason).toBe("account");
+    expect(isSessionLost(qc)).toBe(false);
+  });
+
+  it("방 만들기도 요청 0", async () => {
+    beginChatSignOut();
+    let called = 0;
+    await expect(
+      dropStaleSession(async () => {
+        called += 1;
+        return { roomId: 1 };
+      }),
+    ).rejects.toBeInstanceOf(ChatStaleResponseError);
+    expect(called).toBe(0);
+  });
+
+  it("로그인 성공 갈래(endChatSignOut) 뒤엔 다시 보낸다", async () => {
+    beginChatSignOut();
+    endChatSignOut();
+    await expect(
+      dropStaleSession(async () => ({ roomId: 1 })),
+    ).resolves.toEqual({ roomId: 1 });
   });
 });

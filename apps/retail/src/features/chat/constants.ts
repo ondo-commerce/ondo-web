@@ -95,6 +95,8 @@ export const ENTRY_TEXT = {
   open: "문의하기",
   opening: "여는 중",
   failed: "대화방을 열지 못했어요. 다시 눌러 주세요",
+  /** 같은 소매처 재로그인을 넘긴 방 만들기 401(loop-08e Q6). `failed`와 같은 꼴 */
+  relogin: "로그인이 바뀌어 방을 못 열었어요. 다시 눌러 주세요",
   notFound: "이 도매처와는 대화할 수 없어요",
 } as const;
 

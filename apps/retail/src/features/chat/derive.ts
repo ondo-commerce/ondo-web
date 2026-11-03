@@ -49,6 +49,7 @@ import type {
   HistoryStatus,
   MoreInput,
   MoreState,
+  PendingByRoom,
   PendingMessage,
   ReadState,
   ReceivableCardView,
@@ -902,6 +903,15 @@ export function sendFailureOf(error: unknown): SendFailure {
   return "server";
 }
 
+/**
+ * 실패 말풍선에 `다시 보내기`를 둘까(loop-08e §4-1, 도매 08d F1 D48 복제). **잠겨 있는 동안만 뺀다** — 실패 종류는
+ * 묻지 않는다. 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리거나 다른 방 화면에서 실패했으면(잠금 0)
+ * 다시 보낼 수 있다. 처음 `clientMessageId` 그대로라 서버엔 하나만 생긴다
+ */
+export function canRetrySend(sessionLost: boolean): boolean {
+  return !sessionLost;
+}
+
 /** 실패 말풍선 아래 문구 */
 export function failureText(failure: SendFailure | null): string {
   return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
@@ -944,6 +954,30 @@ export function upsertPending(
   );
   if (index < 0) return [...pending, next];
   return pending.map((p, i) => (i === index ? next : p));
+}
+
+const NO_PENDING: readonly PendingMessage[] = [];
+
+/** 방 하나의 보류 말풍선(도매 복제). 없으면 같은 빈 배열 — 렌더마다 새 배열이면 memo가 매번 깨진다 */
+export function pendingOfRoom(
+  all: PendingByRoom,
+  roomId: number,
+): readonly PendingMessage[] {
+  return all[roomId] ?? NO_PENDING;
+}
+
+/** 방 하나의 보류 말풍선만 바꾼다. 비면 그 방 칸을 지운다 — 다른 방 칸은 그대로(도매 복제) */
+export function withRoomPending(
+  all: PendingByRoom,
+  roomId: number,
+  change: (list: readonly PendingMessage[]) => PendingMessage[],
+): PendingByRoom {
+  const next = change(pendingOfRoom(all, roomId));
+  if (next.length > 0) return { ...all, [roomId]: next };
+  if (!(roomId in all)) return all;
+  const rest = { ...all };
+  delete rest[roomId];
+  return rest;
 }
 
 /* ------------------------------------------------------------------------

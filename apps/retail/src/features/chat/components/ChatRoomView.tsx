@@ -19,6 +19,7 @@ import { useMarkReadMutation } from "../api/mutations";
 import { useRoomQueries } from "../api/queries";
 import {
   isChatSessionLostError,
+  useChatLeaving,
   useChatSessionLost,
   useResetChatSessionOnLeave,
 } from "../api/session";
@@ -67,8 +68,7 @@ import type {
   PendingMessage,
   ReturnLink,
 } from "../types";
-import { useChatShell } from "../ChatShellProvider";
-import { useChatSend } from "../useChatSend";
+import { useChatShell, useRoomOutbox } from "../ChatShellProvider";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { useThreadScroll } from "../useThreadScroll";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
@@ -130,7 +130,9 @@ function ChatBlock({
   addToCart: AddToCart | null;
 }) {
   const router = useRouter();
-  const { room, thread } = useRoomQueries(roomId);
+  /* 로그아웃 응답 대기(loop-08e S2-15) — 새 조회 0, 지우기 전 화면 그대로 */
+  const leaving = useChatLeaving();
+  const { room, thread } = useRoomQueries(roomId, leaving);
   const errors = [room.error, thread.error];
   const notApproved = errors.some((e) =>
     hasCode(e, RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED),
@@ -198,6 +200,7 @@ function ChatBlock({
       threadUpdatedAt={thread.dataUpdatedAt}
       from={from}
       addToCart={addToCart}
+      leaving={leaving}
     />
   );
 }
@@ -209,6 +212,7 @@ function ChatRoom({
   threadUpdatedAt,
   from,
   addToCart,
+  leaving,
 }: {
   roomId: number;
   room: ChatRoomDetail;
@@ -217,6 +221,11 @@ function ChatRoom({
   threadUpdatedAt: number;
   from: string | null;
   addToCart: AddToCart | null;
+  /**
+   * 로그아웃을 눌렀고 이동 전이다(loop-08e §4-2 9). 끊김(`sessionLost`)과 같이 잠그되 끊김 안내는 안 띄운다 —
+   * 로그인이 끊긴 게 아니다. 보류 말풍선은 셸 outbox가 이미 비웠다
+   */
+  leaving: boolean;
 }) {
   const name = room.counterpart.name;
   const back = returnLinkOf(from, room.counterpart.id);
@@ -229,9 +238,12 @@ function ChatRoom({
   const [baseline] = useState(maxSequenceOf(thread.messages));
   const live = liveAnnouncement(thread.messages, baseline, name);
   const sessionLost = useChatSessionLost();
+  /* 새 요청을 막는 잠금. 끊김 안내와 돌아가기 전체 이동은 `sessionLost`만 본다 */
+  const locked = sessionLost || leaving;
   const maxSequence = maxSequenceOf(thread.messages);
 
-  const { pending, send, retry, remove } = useChatSend(roomId);
+  /* 보류 말풍선은 셸 수명(loop-08e §4-2 7) — 방을 떠났다 와도 남는다. 이 방 몫만 읽는다 */
+  const { pending, send, retry, remove } = useRoomOutbox(roomId);
   const shownPending = visiblePending(pending, thread.messages);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
@@ -251,9 +263,9 @@ function ChatRoom({
     thread,
     maxSequence,
     pendingCount: shownPending.length,
-    sessionLost,
+    sessionLost: locked,
   });
-  const slot = historySlotOf(thread, sessionLost);
+  const slot = historySlotOf(thread, locked);
   const newCount =
     leftAt === null
       ? 0
@@ -264,7 +276,7 @@ function ChatRoom({
     room.myLastReadSequence,
     maxSequence,
     threadUpdatedAt,
-    sessionLost,
+    locked,
     atBottom,
   );
 
@@ -369,7 +381,7 @@ function ChatRoom({
                       wholesalerId={room.counterpart.id}
                       pending={shownPending}
                       now={now}
-                      sessionLost={sessionLost}
+                      sessionLost={locked}
                       addToCart={addToCart}
                       onChoose={sendChip}
                     />
@@ -382,7 +394,7 @@ function ChatRoom({
             <PendingItem
               key={item.clientMessageId}
               item={item}
-              sessionLost={sessionLost}
+              sessionLost={locked}
               onRetry={() => retry(item)}
               onRemove={() => remove(item.clientMessageId)}
             />
@@ -415,6 +427,7 @@ function ChatRoom({
         counterpartName={name}
         focusTick={composerFocusTick}
         sessionLost={sessionLost}
+        leaving={leaving}
         onSend={send}
         askBusy={askListing === null ? null : askChipBusy(shownPending)}
         onAsk={onAsk}

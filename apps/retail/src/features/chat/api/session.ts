@@ -6,10 +6,11 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { isApiError } from "@ondo/api";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { chatKeys } from "./keys";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
-import type { ChatThread } from "../types";
+import { sendFailureOf } from "../derive";
+import type { ChatThread, SendFailure } from "../types";
 
 /**
  * 채팅 화면의 "세션이 끊겼다" 상태 하나(01-plan §4-3, codex-meta 4-1). 도매 `chat/api/session.ts`와 짝이다.
@@ -80,6 +81,8 @@ export async function guardSession<T>(
    */
   screen: number = screenEpoch,
 ): Promise<T> {
+  /* 로그아웃 응답 대기 구간(loop-08e §4-2 9) — 새 요청을 만들지 않는다. 계정이 바뀌는 중이라 계정 변경과 같은 갈래 */
+  if (leaving) throw new ChatStaleResponseError("account");
   if (isSessionLost(queryClient)) throw new ChatSessionLostError();
   const account = accountEpoch;
   const session = sessionEpoch;
@@ -87,25 +90,34 @@ export async function guardSession<T>(
   try {
     result = await run();
   } catch (error) {
-    if (accountEpoch !== account) throw new ChatStaleResponseError();
+    if (accountEpoch !== account) throw new ChatStaleResponseError("account");
     /* 같은 소매처 재로그인을 넘긴 401은 옛 쿠키의 답이다(M1) — 새 세션을 잠그지 않게 버린다. 다른 실패는 그대로(M6) */
     if (isUnauthorized(error) && sessionEpoch !== session)
-      throw new ChatStaleResponseError();
+      throw new ChatStaleResponseError("session");
     if (isUnauthorized(error)) {
       if (screen === screenEpoch) markSessionLost(queryClient);
       throw new ChatSessionLostError();
     }
     throw error;
   }
-  if (accountEpoch !== account) throw new ChatStaleResponseError();
+  if (accountEpoch !== account) throw new ChatStaleResponseError("account");
   return result;
 }
 
+/**
+ * 버린 응답이 왜 버려졌나(loop-08e §4-1 판정 세대). 부르는 쪽이 하는 일이 다르다.
+ * - `account`: 계정이 바뀌었다(로그아웃, 다른 계정 로그인, 로그아웃 대기). 아무 데도 안 쓴다
+ * - `session`: 같은 소매처 재로그인을 넘긴 옛 쿠키의 401. 그 계정 것이라 보내기는 실패 R+D, 방 만들기는 입구 문구
+ */
+export type StaleReason = "account" | "session";
+
 /** 세션이 바뀌기 전에 떠난 채팅 응답. 지운 캐시에 아무것도 쓰지 않으려고 던진다. `ApiError`가 아니라 공용 처리가 무시한다 */
 export class ChatStaleResponseError extends Error {
-  constructor() {
+  readonly reason: StaleReason;
+  constructor(reason: StaleReason) {
     super("세션이 바뀌기 전에 떠난 채팅 응답");
     this.name = "ChatStaleResponseError";
+    this.reason = reason;
   }
 }
 
@@ -119,19 +131,92 @@ export function isChatStaleResponseError(
  * 세대 검사만 한다(리뷰 R7 — 방 만들기). `guardSession`과 달리 401을 끊김으로 바꾸지 않는다: 입구의 방 만들기는
  * 쓴 글이 없어 지금 세대의 401은 공용 처리(`/login` 이동)가 맞다(01-plan §4-1 2). 하지만 A가 누른 요청의 응답이
  * 로그아웃, B 로그인 뒤에 오면 401이든 성공이든 버린다 — 401이면 B가 `/login`으로 튕기며 쓰던 글을 잃고,
- * 성공이면 부르는 쪽이 A의 방으로 옮긴다. 버리는 오류는 `ApiError`가 아니라 공용 처리가 지나친다
+ * 성공이면 부르는 쪽이 A의 방으로 옮긴다. 버리는 오류는 `ApiError`가 아니라 공용 처리가 지나친다.
+ *
+ * 세션 세대도 본다(loop-08e Q6, S2-8). 같은 소매처가 다른 탭에서 다시 로그인한 뒤 도착한 401은 옛 쿠키의 답이다 —
+ * 그대로 던지면 공용 처리가 이미 새 세션인 사장을 `/login`으로 보내고 보던 상품 화면을 잃는다. `session` 갈래로
+ * 던져 부르는 쪽이 "다시 눌러 주세요"를 띄운다. 같은 소매처 갱신 뒤 성공은 그 계정 방이라 그대로 돌려준다
  */
 export async function dropStaleSession<T>(run: () => Promise<T>): Promise<T> {
+  if (leaving) throw new ChatStaleResponseError("account");
   const epoch = accountEpoch;
+  const session = sessionEpoch;
   let result: T;
   try {
     result = await run();
   } catch (error) {
-    if (accountEpoch !== epoch) throw new ChatStaleResponseError();
+    if (accountEpoch !== epoch) throw new ChatStaleResponseError("account");
+    if (isUnauthorized(error) && sessionEpoch !== session)
+      throw new ChatStaleResponseError("session");
     throw error;
   }
-  if (accountEpoch !== epoch) throw new ChatStaleResponseError();
+  if (accountEpoch !== epoch) throw new ChatStaleResponseError("account");
   return result;
+}
+
+/**
+ * 보내기 결과 갈래(loop-08e S2-13, §4-1 판정 세대). 셸 outbox가 보낼 때 쥔 계정 세대와 지금 값을 비교해 넘긴다.
+ * - `drop`: 계정이 바뀌었다 — 성공이든 실패든 아무 데도 안 쓴다(다음 소매처 화면에 앞 소매처 말풍선 0)
+ * - 같은 계정 갱신을 넘긴 401(`session` 갈래 stale) → `server`(R+D, 잠금 0). 새 세션을 다시 잠그지 않는다
+ * - `ChatSessionLostError`(지금 세션 401, 떠난 화면의 401) → `session`. `다시 보내기`는 잠금으로만 가린다(`canRetrySend`)
+ * - 그 밖은 `sendFailureOf`(500, 403, 404 → server, 네트워크 → offline)
+ * 성공 갈래는 여기 없다 — 계정이 같으면 `guardSession`이 결과를 돌려준다(같은 계정 갱신 뒤 201은 그대로 쓴다)
+ */
+export function sendOutcomeOf(
+  error: unknown,
+  accountChanged: boolean,
+): SendFailure | "drop" {
+  if (accountChanged) return "drop";
+  if (isChatStaleResponseError(error))
+    return error.reason === "account" ? "drop" : "server";
+  if (isChatSessionLostError(error)) return "session";
+  return sendFailureOf(error);
+}
+
+/** 지금 계정 세대. 셸 outbox가 보낼 때 쥐고 결과 때 비교한다 */
+export function chatAccountEpoch(): number {
+  return accountEpoch;
+}
+
+/*
+ * 로그아웃 응답 대기 구간(loop-08e §4-2 9, S2-15). `AccountChip.logout`은 정리 → 서버 로그아웃 응답 → 이동 순이라
+ * 그 사이 셸과 방 화면이 살아 있다. 채팅은 "나가는 중"이다: 방 조회, polling, 읽음, 보내기, 담기, 방 만들기 새 요청 0,
+ * 입력창 읽기 전용, 보류 말풍선 비움. 끊김 안내는 안 띄운다(로그인이 끊긴 게 아니다).
+ * 켜는 곳: 로그아웃 갈래(`runSignOut`). 끄는 곳: 로그인 성공 갈래(`runSignIn`) — 로그아웃은 클라이언트 이동이라 이
+ * 모듈 값이 다음 로그인까지 산다. 다른 탭 정리 갈래는 전체 이동이라 모듈이 새로 뜬다
+ */
+let leaving = false;
+const leavingListeners = new Set<() => void>();
+
+function setLeaving(next: boolean): void {
+  if (leaving === next) return;
+  leaving = next;
+  for (const listener of leavingListeners) listener();
+}
+
+export function beginChatSignOut(): void {
+  setLeaving(true);
+}
+
+export function endChatSignOut(): void {
+  setLeaving(false);
+}
+
+export function isChatLeaving(): boolean {
+  return leaving;
+}
+
+/** "나가는 중"이 바뀔 때 부른다. 돌려준 함수로 뗀다 */
+export function subscribeChatLeaving(listener: () => void): () => void {
+  leavingListeners.add(listener);
+  return () => {
+    leavingListeners.delete(listener);
+  };
+}
+
+/** 화면이 보는 "나가는 중". 서버 렌더에선 늘 false */
+export function useChatLeaving(): boolean {
+  return useSyncExternalStore(subscribeChatLeaving, isChatLeaving, () => false);
 }
 
 /**
