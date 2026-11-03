@@ -83,6 +83,55 @@ export function runSessionRefresh(): void {
   }
 }
 
+/*
+ * 로그아웃 갈래만(loop-08e §4-2 4). `runSessionChange`는 로그아웃과 로그인이 같이 부르는데, 쓰던 글은 둘에서 하는
+ * 일이 다르다 — 로그아웃은 전부 지우고(D43 Q2), 로그인은 그 소매처 글만 남긴다(Q1 ①). 그래서 등록부를 나눈다.
+ * 부르는 곳: 이 탭의 로그아웃 버튼, 다른 탭 알림으로 이 탭이 정리될 때(`AccountChip`). 401 끊김은 안 부른다(D28)
+ */
+const signOuts = new Set<() => void>();
+
+export function onSignOut(cleanup: () => void): () => void {
+  signOuts.add(cleanup);
+  return () => {
+    signOuts.delete(cleanup);
+  };
+}
+
+export function runSignOut(): void {
+  for (const cleanup of signOuts) {
+    try {
+      cleanup();
+    } catch {
+      /* 다음 정리로 */
+    }
+  }
+}
+
+/*
+ * 로그인 성공 갈래(Q1 ①). 인자는 로그인 응답의 소매처 id — 모르면 null. 로그인 화면이 `runSessionChange`보다,
+ * 이동보다 먼저 부른다 — 새 셸의 첫 입력창이 앞 소매처 글을 못 읽게(§4-2 5)
+ */
+const signIns = new Set<(retailerId: number | null) => void>();
+
+export function onSignIn(
+  cleanup: (retailerId: number | null) => void,
+): () => void {
+  signIns.add(cleanup);
+  return () => {
+    signIns.delete(cleanup);
+  };
+}
+
+export function runSignIn(retailerId: number | null): void {
+  for (const cleanup of signIns) {
+    try {
+      cleanup(retailerId);
+    } catch {
+      /* 다음 정리로 */
+    }
+  }
+}
+
 /** 로그아웃, 로그인 지점이 부른다. 정리 하나가 실패해도 나머지와 로그아웃 자체는 끝나야 한다 */
 export function runSessionChange(): void {
   for (const cleanup of cleanups) {

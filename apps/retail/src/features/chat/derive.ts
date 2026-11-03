@@ -8,6 +8,7 @@ import {
   CHAT_TIME_ZONE,
   CHATS_HREF,
   CLARIFY_WINDOW_MS,
+  DRAFT_KEY_PREFIX,
   ENTRY_TEXT,
   HISTORY_AUTO_LOAD_PX,
   IDEMPOTENCY_KEY_REUSED,
@@ -153,6 +154,32 @@ export function parseRoomId(raw: string): number | null {
   if (!/^\d+$/.test(raw)) return null;
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/* ------------------------------------------------------------------------
+ * 쓰던 글 키 (loop-08e §4-2 1, 도매 `draftKey` 복제)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 한 소매처의 쓰던 글 키 머리. 소매처를 모르면 null — 로그인 정리(`keepOnly`)가 "남길 것 없음"으로 읽는다.
+ * id는 `/me`, 로그인 응답의 `RetailerResponse.retailerId`다. 정수가 아니면 모르는 것으로 본다
+ */
+export function draftPrefixOf(retailerId: number | null): string | null {
+  if (retailerId === null || !Number.isSafeInteger(retailerId)) return null;
+  return `${DRAFT_KEY_PREFIX}${retailerId}:`;
+}
+
+/**
+ * 방별 쓰던 글 키 = 머리 + 소매처 id + 방 id. 도매는 이메일을 넣지만(loop-08b) 소매 셸은 이메일을 안 받는다 —
+ * 셸 `/me`가 이미 주는 `retailerId`를 쓴다. 다른 탭 알림이 같은 계정을 가르는 값과 같다(`otherTabActionOf`).
+ * null이면(스펙상 required 아님) 저장하지 않는다(S2-2 ⑤)
+ */
+export function draftKey(
+  retailerId: number | null,
+  roomId: number,
+): string | null {
+  const prefix = draftPrefixOf(retailerId);
+  return prefix === null ? null : `${prefix}${roomId}`;
 }
 
 /** 지금 경로가 돌아올 곳으로 받을 수 있는 값이면 그대로, 아니면 null */

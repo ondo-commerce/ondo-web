@@ -11,7 +11,11 @@ import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 import { isCredentialFailure, useLoginMutation } from "../api/session";
-import { broadcastSessionChange, runSessionChange } from "../sessionChange";
+import {
+  broadcastSessionChange,
+  runSessionChange,
+  runSignIn,
+} from "../sessionChange";
 import {
   ACCOUNT_PATH,
   CONTACT_LINE,
@@ -89,6 +93,11 @@ export function LoginView() {
       return;
     }
 
+    /* 쓰던 글은 들어온 소매처 것만 남긴다(loop-08e Q1 ①). 맨 먼저 — 이동 뒤 새 셸의 첫 입력창이 앞 소매처 글을
+       읽으면 안 된다. 응답에 id가 없으면 전부 지운다(어느 소매처인지 모르면 남길 근거가 없다) */
+    const retailerId = me.retailerId ?? null;
+    runSignIn(retailerId);
+
     /* `replace`다 — 뒤로 가기로 로그인 화면에 돌아오면 이미 세션이 있는 채로
        폼을 다시 보게 된다. `refresh`는 서버 컴포넌트(셸의 `/me`)가 새 쿠키로
        다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다.
@@ -98,10 +107,7 @@ export function LoginView() {
     runSessionChange();
     /* 같은 쿠키를 보는 다른 탭은 앞 계정 화면을 그리고 있을 수 있다(loop-08c 리뷰 R8). 소매처 id를 실어 같은
        계정이면 받은 탭이 정리 없이 이어 가게 한다(Codex 메타 M1) */
-    broadcastSessionChange({
-      change: "login",
-      retailerId: me.retailerId ?? null,
-    });
+    broadcastSessionChange({ change: "login", retailerId });
     router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };

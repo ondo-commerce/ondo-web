@@ -16,6 +16,8 @@ export { SettingsView } from "./components/SettingsView";
 export { SignupView } from "./components/SignupView";
 /* 로그아웃, 로그인 때 다른 feature 캐시를 지우는 등록부(loop-08c S7). `app/SessionChangeCleanup.tsx`가 잇는다 */
 export { onSessionChange, onSessionRefresh } from "./sessionChange";
+/* 로그아웃 갈래만, 로그인 성공 갈래만(loop-08e §4-2 4 5 — 쓰던 글은 둘에서 하는 일이 다르다) */
+export { onSignIn, onSignOut } from "./sessionChange";
 /*
  * 승인 두 화면의 `page.tsx`가 서버에서 `/me`를 읽고 이 순수 함수들로 "이 화면이
  * 맞는 상태인가"와 "무엇을 그릴까"를 정한다. 세션 읽기(`requireSession`)는

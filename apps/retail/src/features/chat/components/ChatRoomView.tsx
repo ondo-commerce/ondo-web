@@ -38,6 +38,7 @@ import {
   choiceInquiry,
   choiceSendFailed,
   confirmedReadOf,
+  draftKey,
   handoffCauses,
   historySlotOf,
   liveAnnouncement,
@@ -66,6 +67,7 @@ import type {
   PendingMessage,
   ReturnLink,
 } from "../types";
+import { useChatShell } from "../ChatShellProvider";
 import { useChatSend } from "../useChatSend";
 import { useDocumentVisible } from "../useDocumentVisible";
 import { useThreadScroll } from "../useThreadScroll";
@@ -218,6 +220,9 @@ function ChatRoom({
 }) {
   const name = room.counterpart.name;
   const back = returnLinkOf(from, room.counterpart.id);
+  /* 쓰던 글 키(loop-08e S2-2). 이 컴포넌트는 `ChatBlock`의 `key={roomId}` 아래라 방이 바뀌면 키도 새로 마운트된다 */
+  const { retailerId } = useChatShell();
+  const composerDraftKey = draftKey(retailerId, roomId);
 
   /* 기준점 — 방을 연 순간의 마지막 sequence. 이 뒤에 붙은 도매 말풍선이 polling으로 받은 것이다(S6-7).
      state 초깃값이라 polling이 다시 그려도 바뀌지 않는다 */
@@ -406,6 +411,7 @@ function ChatRoom({
       </div>
 
       <ChatComposer
+        draftKey={composerDraftKey}
         counterpartName={name}
         focusTick={composerFocusTick}
         sessionLost={sessionLost}
