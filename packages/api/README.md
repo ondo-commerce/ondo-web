@@ -215,7 +215,7 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 | 앱 | 손잡이 | 동작 |
 |---|---|---|
 | 소매 | `POST /__mock/chat/delay {op: create, ms, times}` | 방은 요청 시점에 생기고(그 사이 rooms 조회에 보인다) 응답만 늦다. `fail {op: create}`와 같이 걸면 실패가 그만큼 늦다(방 안 만듦) |
-| 소매 | `POST /__mock/chat/payment {amount, allocations?}` | 상한이 `POST /payments`와 같다: 이번 입금 + 남은 선수금. 모자라면 옛 입금 남은 몫을 오래된 것부터 끌어 쓴다. 201 `{data: PaymentCreatedResponse}`(배분 줄마다 `id`). 상한 넘김, 미수 넘김, 남의 주문 400 `INVALID`(저장 0), amount 없음 400 |
+| 소매 | `POST /__mock/chat/payment {amount, allocations?, idempotencyKey?}` | 상한이 `POST /payments`와 같다: 이번 입금 + 남은 선수금. 모자라면 옛 입금 남은 몫을 오래된 것부터 끌어 쓴다. 201 `{data: PaymentCreatedResponse}`(배분 줄마다 `id`). 상한 넘김, 미수 넘김, 남의 주문 400 `INVALID`(저장 0), 같은 주문 두 줄 400 `DUPLICATE_ORDER`(저장 0), amount 없음 400. `idempotencyKey`가 있으면 같은 본문 재전송 200 + 처음 응답, 다른 본문 409 `IDEMPOTENCY_KEY_REUSED` |
 | 소매 | `POST /__mock/chat/allocation-cancel {allocationId}` | "나"의 배분만 취소. 저장 경로는 도매 `POST /allocations/{id}/cancel`과 같다. 200 `{data: AllocationCancelledResponse}`, 이미 취소 409 `STATE_CONFLICT`, 없는 id나 남의 배분 404(아무것도 안 바뀜), 정수 아님 400. `reset`이 되돌린다 |
 
 ## 알림 목 (`src/mocks/wholesale/notification.ts`, #290)

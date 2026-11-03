@@ -307,8 +307,19 @@ export function recordMockPayment(input: {
   amount: number;
   allocations: readonly { orderId: number; amount: number }[];
   paidAt?: string;
+  /** 있으면 `POST /payments`의 Idempotency-Key처럼 저장한다. 재전송 판정은 `replayMockPayment`가 먼저 한다 */
+  idempotencyKey?: string;
+  /** 같은 키 재전송의 본문 비교값 */
+  bodyJson?: string;
 }): WholesaleSchema<"PaymentCreatedResponse"> {
-  const targets = input.allocations.map((a) => {
+  const targets: { order: MockOrder; amount: number }[] = [];
+  for (const a of input.allocations) {
+    /* 주문마다 지금 미수와만 비교하므로 같은 주문 두 줄은 각자 통과해 미수를 두 번 채운다(loop-08e R1) */
+    if (repeatsOrder(targets, a.orderId))
+      throw new MockPaymentRejected(
+        "DUPLICATE_ORDER",
+        `목: 주문 ${a.orderId}이 두 번 들어왔다`,
+      );
     const order = mockOrders().find((o) => o.id === a.orderId);
     if (order === undefined || order.retailerId !== input.retailerId)
       throw new Error(`목: 배분할 주문 ${a.orderId}이 없다`);
@@ -316,8 +327,8 @@ export function recordMockPayment(input: {
       throw new Error(`목: 주문 ${a.orderId} 배분액은 1 이상이어야 한다`);
     if (a.amount > mockOrderSettlement(order).outstandingAmount)
       throw new Error(`목: 주문 ${a.orderId} 미수를 넘는 배분`);
-    return { order, amount: a.amount };
-  });
+    targets.push({ order, amount: a.amount });
+  }
   const plan = planAllocations(input.retailerId, input.amount, targets);
   if (plan === null)
     throw new Error("목: 배분 합계가 입금액과 남은 선수금을 넘었다");
@@ -329,11 +340,50 @@ export function recordMockPayment(input: {
       paidBy: "RETAILER",
       method: "BANK_TRANSFER",
       memo: null,
-      idempotencyKey: `mock-${nextPaymentId}`,
-      bodyJson: "",
+      idempotencyKey: input.idempotencyKey ?? `mock-${nextPaymentId}`,
+      bodyJson: input.bodyJson ?? "",
     },
     plan,
   );
+}
+
+/** 손잡이 입금 거절 중 도매 `POST /payments`와 같은 코드를 내야 하는 것. 그 밖의 거절은 그냥 `Error`다 */
+export class MockPaymentRejected extends Error {
+  constructor(
+    readonly code: "DUPLICATE_ORDER",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** 이미 받은 배분 대상에 같은 주문이 있나. 도매 `POST /payments`와 소매 손잡이가 같은 검사를 탄다(loop-08e R1) */
+function repeatsOrder(
+  targets: readonly { order: MockOrder }[],
+  orderId: number,
+): boolean {
+  return targets.some((t) => t.order.id === orderId);
+}
+
+/** 같은 Idempotency-Key 재전송 판정. null = 처음 보는 키 */
+export type MockPaymentReplay =
+  | { status: 200; data: WholesaleSchema<"PaymentCreatedResponse"> }
+  | { status: 409 }
+  | null;
+
+/**
+ * 같은 키 재전송 — 본문이 같으면 처음 응답(멱등), 다르면 409(스펙). 도매 `POST /payments`와 소매 손잡이가 같이 쓴다
+ * (loop-08e R2). 손잡이가 키를 무시하면 재전송마다 입금이 쌓여 선수금이 두 배가 된다
+ */
+export function replayMockPayment(
+  key: string,
+  bodyJson: string,
+): MockPaymentReplay {
+  const seen = payments.find((p) => p.idempotencyKey === key);
+  if (seen === undefined) return null;
+  const first = firstResponses.get(seen.id);
+  if (seen.bodyJson !== bodyJson || first === undefined) return { status: 409 };
+  return { status: 200, data: first };
 }
 
 /** 배분 취소 결과. 응답 본문은 부르는 쪽이 자기 어휘로 만든다(도매 핸들러, 소매 손잡이) */
@@ -674,16 +724,14 @@ export const settlementHandlers = [
     ) as WholesaleSchema<"PaymentCreateRequest">;
 
     // 같은 키 재요청 — 본문이 같으면 200 + 동일 본문(멱등), 다르면 409(스펙)
-    const seen = payments.find((p) => p.idempotencyKey === key);
-    if (seen) {
-      if (seen.bodyJson === bodyJson)
-        return HttpResponse.json({ data: firstResponses.get(seen.id) });
+    const replay = replayMockPayment(key, bodyJson);
+    if (replay?.status === 200) return HttpResponse.json({ data: replay.data });
+    if (replay?.status === 409)
       return fail(
         409,
         "IDEMPOTENCY_KEY_REUSED",
         "같은 키로 다른 입금을 보냈습니다.",
       );
-    }
 
     // 스펙 설명의 에러 코드 순서대로 — 400(형식·정책) → 404 → 409(상태)
     if (typeof body.amount !== "number" || body.amount <= 0)
@@ -737,7 +785,7 @@ export const settlementHandlers = [
           "배분액은 1 이상이어야 합니다.",
           "allocations",
         );
-      if (targets.some((t) => t.order.id === a.orderId))
+      if (repeatsOrder(targets, a.orderId))
         return fail(
           400,
           "DUPLICATE_ORDER",

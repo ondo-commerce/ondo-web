@@ -19,7 +19,9 @@ import {
 } from "../wholesale/chat";
 import {
   cancelMockAllocation,
+  MockPaymentRejected,
   recordMockPayment,
+  replayMockPayment,
 } from "../wholesale/settlement";
 import { retailNotificationCount } from "./notification";
 import { RETAIL_ME_RETAILER_ID, RETAIL_WHOLESALERS } from "./parties";
@@ -274,9 +276,19 @@ function invalid(field: string, code: string, message: string) {
  * 손잡이 전용 오류. 정산 손잡이의 409는 멱등 충돌이 아니라 상태 충돌(`STATE_CONFLICT`)이라 `fail`의 상태별 코드를
  * 못 쓴다. 코드는 도매 cancel 핸들러와 같게 둔다
  */
-function knobFail(status: number, code: string, message: string) {
+function knobFail(
+  status: number,
+  code: string,
+  message: string,
+  field?: string,
+) {
   return HttpResponse.json(
-    { code, message, errors: [], traceId: null },
+    {
+      code,
+      message,
+      errors: field === undefined ? [] : [{ field, code, message }],
+      traceId: null,
+    },
     { status },
   );
 }
@@ -748,13 +760,32 @@ export const retailChatHandlers = [
    * 장부다. 소매 화면에서 미수 답 C(갚을 돈 0), D(선수금)를 보려고 둔다 — 소매 번들엔 정산 핸들러가 없다.
    * 상한은 `POST /payments`와 같다: 이번 입금 + 남은 선수금(loop-08e S1-2). 201 `{data: PaymentCreatedResponse}`
    * (배분 줄마다 `id`). 상한 넘김, 남의 주문, 미수 넘김은 400 `INVALID`(errors[0].field allocations)이고 저장 0.
+   * 같은 주문 두 줄은 400 `DUPLICATE_ORDER`(도매와 같은 코드), 저장 0. `idempotencyKey`가 있으면 같은 본문
+   * 재전송은 200 + 처음 응답, 다른 본문은 409 `IDEMPOTENCY_KEY_REUSED`(loop-08e R1 R2).
    * reset이 정산 목까지 되돌린다
    */
   http.post("*/__mock/chat/payment", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       amount?: number;
       allocations?: { orderId: number; amount: number }[];
+      idempotencyKey?: string;
     };
+    /* 같은 키 재전송 판정은 검증보다 먼저(도매 `POST /payments`와 같은 순서). 키는 비교 본문에서 뺀다 */
+    const key =
+      typeof input.idempotencyKey === "string" && input.idempotencyKey !== ""
+        ? input.idempotencyKey
+        : undefined;
+    const bodyJson = JSON.stringify({
+      retailerId: meRetailerId,
+      amount: input.amount,
+      allocations: input.allocations,
+    });
+    if (key !== undefined) {
+      const replay = replayMockPayment(key, bodyJson);
+      if (replay?.status === 200)
+        return HttpResponse.json({ data: replay.data });
+      if (replay?.status === 409) return fail(409);
+    }
     if (typeof input.amount !== "number" || input.amount <= 0)
       return invalid("amount", "INVALID", "amount(1 이상 숫자)가 필요합니다.");
     if (input.allocations !== undefined && !Array.isArray(input.allocations))
@@ -764,9 +795,13 @@ export const retailChatHandlers = [
         retailerId: meRetailerId,
         amount: input.amount,
         allocations: input.allocations ?? [],
+        idempotencyKey: key,
+        bodyJson,
       });
       return HttpResponse.json({ data }, { status: 201 });
     } catch (e) {
+      if (e instanceof MockPaymentRejected)
+        return knobFail(400, e.code, e.message, "allocations");
       return invalid("allocations", "INVALID", String(e));
     }
   }),

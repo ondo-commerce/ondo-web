@@ -7,7 +7,7 @@ import {
   mockOrderSettlement,
   shipMockPacking,
 } from "../wholesale/order";
-import { mockReceivable } from "../wholesale/settlement";
+import { mockReceivable, recordMockPayment } from "../wholesale/settlement";
 import { resetRetailChatMock, retailChatHandlers } from "./chat";
 
 /**
@@ -225,6 +225,93 @@ describe("loop-08e S1-2 /__mock/chat/payment 상한 = 이번 입금 + 남은 선
     expect(again.body.data.id).toBe(4401);
     expect(again.body.data.allocations[0]?.id).toBe(7701);
     expect(again.body.data.prepaidRemaining).toBe(0);
+  });
+});
+
+describe("loop-08e 리뷰 R1 R2 R4 /__mock/chat/payment가 POST /payments와 같은 규칙", () => {
+  it("R1 같은 주문 7004 두 줄(37,500 × 2, 입금 75,000) → 400 DUPLICATE_ORDER(allocations), 미수, 선수금, 다음 id 그대로", async () => {
+    const before = mockReceivable(101, 1, NOW);
+    const res = await knob<PaymentCreated>("/payment", {
+      amount: DUE * 2,
+      allocations: [
+        { orderId: ORDER, amount: DUE },
+        { orderId: ORDER, amount: DUE },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("DUPLICATE_ORDER");
+    expect(res.body.errors[0]).toMatchObject({
+      field: "allocations",
+      code: "DUPLICATE_ORDER",
+    });
+    expect(mockReceivable(101, 1, NOW)).toEqual(before);
+    expect(outstanding(ORDER)?.outstandingAmount).toBe(DUE);
+    const next = await pay(DUE, DUE);
+    expect(next.body.data.id).toBe(4401);
+    expect(next.body.data.allocations[0]?.id).toBe(7701);
+  });
+
+  it("R2 같은 idempotencyKey 같은 본문 → 200 + 처음 응답, 입금 한 건. 다른 본문 → 409 IDEMPOTENCY_KEY_REUSED, 저장 0", async () => {
+    const body = {
+      amount: 50_000,
+      allocations: [{ orderId: ORDER, amount: DUE }],
+      idempotencyKey: "r2-key",
+    };
+    const first = await knob<PaymentCreated>("/payment", body);
+    expect(first.status).toBe(201);
+    const afterFirst = mockReceivable(101, 1, NOW);
+    expect(afterFirst?.prepaid).toBe(50_000 - DUE);
+
+    const again = await knob<PaymentCreated>("/payment", body);
+    expect(again.status).toBe(200);
+    expect(again.body.data).toEqual(first.body.data);
+    expect(mockReceivable(101, 1, NOW)).toEqual(afterFirst);
+
+    const changed = await knob<PaymentCreated>("/payment", {
+      ...body,
+      amount: 60_000,
+    });
+    expect(changed.status).toBe(409);
+    expect(changed.body.code).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(mockReceivable(101, 1, NOW)).toEqual(afterFirst);
+
+    /* 키 없는 입금은 예전처럼 매번 새 입금 — 다음 id가 하나만 올라 있다 */
+    const plain = await knob<PaymentCreated>("/payment", { amount: 1_000 });
+    expect(plain.body.data.id).toBe(first.body.data.id + 1);
+  });
+
+  it("R4 옛 입금 둘(늦게 저장한 쪽이 더 이른 날짜) → 이번 입금 → 이른 날짜 → 늦은 날짜 순으로 끌어 쓰고 남은 선수금 2,500", async () => {
+    /* id 순서와 날짜 순서를 엇갈리게 둔다 — 최신순이나 id순으로 바꾼 변이가 같은 줄을 못 만든다 */
+    const later = recordMockPayment({
+      retailerId: 1,
+      amount: 20_000,
+      allocations: [],
+      paidAt: "2026-10-20T10:00:00+09:00",
+    });
+    const earlier = recordMockPayment({
+      retailerId: 1,
+      amount: 15_000,
+      allocations: [],
+      paidAt: "2026-10-10T10:00:00+09:00",
+    });
+    expect(earlier.id).toBeGreaterThan(later.id);
+
+    const res = await pay(5_000, DUE);
+    expect(res.status).toBe(201);
+    const data = res.body.data;
+    expect(
+      data.allocations.map((a) => ({
+        paymentId: a.paymentId,
+        amount: a.amount,
+      })),
+    ).toEqual([
+      { paymentId: data.id, amount: 5_000 },
+      { paymentId: earlier.id, amount: 15_000 },
+      { paymentId: later.id, amount: 17_500 },
+    ]);
+    expect(data.prepaidRemaining).toBe(2_500);
+    expect(mockReceivable(101, 1, NOW)?.prepaid).toBe(2_500);
+    expect(outstanding(ORDER)?.outstandingAmount).toBe(0);
   });
 });
 
