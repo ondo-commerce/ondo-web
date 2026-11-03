@@ -58,6 +58,7 @@ import type {
   StockCardView,
   TextPart,
   ThreadItem,
+  VisibleListRow,
 } from "./types";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 import { QTY_UNIT, SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
@@ -853,6 +854,25 @@ export function toRoomRows(
     });
   }
   return rows;
+}
+
+/**
+ * 갱신으로 순서가 바뀔 때 제자리에 둘 행(loop-08e S4-1, 기획 §4-4 1~2). 헤더 아래 맨 위에 걸친 행부터 내려가며,
+ * 새 순서에서 자리가 앞당겨지지 않은 첫 행. 새 메시지를 받은 방은 맨 위로 가니 그 행을 기준으로 잡으면 화면이
+ * 통째로 맨 위로 끌려간다 — 그래서 건너뛴다. 보이던 행이 전부 올라갔거나 보이던 행이 없으면 null(스크롤 그대로).
+ *
+ * "올라감"은 목록 전체 자리(index)가 줄었는지로 본다. 방은 목록에서 빠지지 않아(채팅방 삭제 없음) 자리가 주는 건
+ * 그 행이 맨 위로 간 경우뿐이다. 새 목록에 없는 행도 기준이 될 수 없어 건너뛴다
+ */
+export function pickListAnchor(
+  prevVisible: readonly Pick<VisibleListRow, "roomId" | "index">[],
+  nextOrder: readonly number[],
+): number | null {
+  for (const row of prevVisible) {
+    const nextIndex = nextOrder.indexOf(row.roomId);
+    if (nextIndex >= row.index) return row.roomId;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------------
