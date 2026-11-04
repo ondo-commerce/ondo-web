@@ -85,12 +85,10 @@ test.describe("S2-7 [지금 세션 401, 보내기, 쓰던 글]", () => {
       await expectReadOnly(page);
     });
 
-    await test.step("② 방 33 → 목록 → 방 1, 확인 요청 401 → 다시 잠금", async () => {
+    await test.step("② 방 33 → 바로 방 1(캐시 신선), 확인 요청 401 → 다시 잠금", async () => {
+      /* AC 손잡이 그대로(room + messages latest 각 1회). 시계를 밀지 않는다 — 캐시가 신선해도 잠긴 채 떠난 방은
+         다시 열 때 확인 요청을 낸다(리뷰 R9, 02-dev-362 판단 4 되돌림) */
       await openRoomById(page, ROOM_33);
-      await chatNav(page).click();
-      await expect(page).toHaveURL("/chats");
-      /* 방 1 메시지 캐시가 오래돼야 다시 열 때 확인 요청이 나간다(staleTime 30초). 목록 화면이라 방 요청은 없다 */
-      await advance(page, 31_000);
       await chatMock(page, "fail", { op: "room", status: 401, times: 1 });
       await chatMock(page, "fail", {
         op: "messages",
@@ -98,14 +96,10 @@ test.describe("S2-7 [지금 세션 401, 보내기, 쓰던 글]", () => {
         status: 401,
         times: 1,
       });
-      await chatMock(page, "fail", {
-        op: "messages",
-        page: "after",
-        status: 401,
-        times: 1,
-      });
       const roomBefore = await count(page, ROOM1_GET);
       const messagesBefore = await count(page, ROOM1_MESSAGES_GET);
+      await chatNav(page).click();
+      await expect(page).toHaveURL("/chats");
       await roomRow(page, ROOM_1).click();
       await expect(lostAlert(page)).toBeVisible();
       await expectRemoveOnly(failedBubbles(page).filter({ hasText: "첫 글" }));

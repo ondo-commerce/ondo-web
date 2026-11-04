@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { afterEach, describe, expect, it } from "vitest";
+import { ENTRY_TEXT } from "../constants";
 import {
   beginChatSignOut,
   ChatSessionLostError,
@@ -15,6 +16,9 @@ import {
   isSessionLost,
   refreshChatSession,
   sendOutcomeOf,
+  staleEntryText,
+  confirmRoom,
+  isUnconfirmedRoom,
 } from "./session";
 
 /**
@@ -251,6 +255,8 @@ describe("S2-13 dropStaleSession 갈래(loop-08e Q6)", () => {
     );
     expect(error).toBeInstanceOf(ChatStaleResponseError);
     expect((error as ChatStaleResponseError).reason).toBe("account");
+    /* 입구 문구까지 잇는다(리뷰 R11): 계정 변경 뒤 401은 무표시 */
+    expect(staleEntryText(error as ChatStaleResponseError)).toBeNull();
   });
 
   it("같은 계정 갱신 뒤 401 → stale session(입구 문구, /login 아님)", async () => {
@@ -265,6 +271,26 @@ describe("S2-13 dropStaleSession 갈래(loop-08e Q6)", () => {
     );
     expect(error).toBeInstanceOf(ChatStaleResponseError);
     expect((error as ChatStaleResponseError).reason).toBe("session");
+    expect(staleEntryText(error as ChatStaleResponseError)).toBe(
+      ENTRY_TEXT.relogin,
+    );
+  });
+
+  it("R11 같은 계정 갱신 뒤에 다른 계정 로그인까지 겹친 401 → account(무표시). 세션 세대도 올랐지만 계정이 먼저다", async () => {
+    const qc = new QueryClient();
+    const error = await caught(() =>
+      dropStaleSession(
+        lateRun(
+          () => {
+            refreshChatSession(qc);
+            clearChatCache(qc);
+          },
+          () => Promise.reject(unauthorized()),
+        ),
+      ),
+    );
+    expect((error as ChatStaleResponseError).reason).toBe("account");
+    expect(staleEntryText(error as ChatStaleResponseError)).toBeNull();
   });
 
   it("같은 계정 갱신 뒤 201 → 결과 그대로(방으로 이동)", async () => {
@@ -414,5 +440,40 @@ describe("S2-15 로그아웃 응답 대기(나가는 중) — 새 요청 0", () 
     await expect(
       dropStaleSession(async () => ({ roomId: 1 })),
     ).resolves.toEqual({ roomId: 1 });
+  });
+});
+
+describe("loop-08e R9 잠긴 채 떠난 방은 다시 열 때 확인한다", () => {
+  const lost = (qc: QueryClient) =>
+    qc.setQueryData<boolean>(["chat", "session"], true);
+
+  it("잠긴 채 방 1을 떠남 → 잠금은 풀리고 방 1만 확인 대상. 읽기는 지우지 않고, 확인 성공이 지운다", () => {
+    const qc = new QueryClient();
+    lost(qc);
+    leaveChatScreen(qc, 1);
+    expect(isSessionLost(qc)).toBe(false);
+    expect(isUnconfirmedRoom(33)).toBe(false);
+    expect(isUnconfirmedRoom(1)).toBe(true);
+    expect(isUnconfirmedRoom(1)).toBe(true);
+    confirmRoom(1);
+    expect(isUnconfirmedRoom(1)).toBe(false);
+  });
+
+  it("안 잠긴 채 떠나면 확인 대상 아님", () => {
+    const qc = new QueryClient();
+    leaveChatScreen(qc, 5);
+    expect(isUnconfirmedRoom(5)).toBe(false);
+  });
+
+  it("세션이 바뀌면(로그아웃, 로그인, 같은 소매처 갱신) 확인 대상을 비운다", () => {
+    const qc = new QueryClient();
+    lost(qc);
+    leaveChatScreen(qc, 1);
+    clearChatCache(qc);
+    expect(isUnconfirmedRoom(1)).toBe(false);
+    lost(qc);
+    leaveChatScreen(qc, 2);
+    refreshChatSession(qc);
+    expect(isUnconfirmedRoom(2)).toBe(false);
   });
 });

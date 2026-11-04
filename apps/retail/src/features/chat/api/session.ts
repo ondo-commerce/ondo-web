@@ -9,6 +9,7 @@ import { isApiError } from "@ondo/api";
 import { useEffect, useSyncExternalStore } from "react";
 import { chatKeys } from "./keys";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
+import { ENTRY_TEXT } from "../constants";
 import { sendFailureOf } from "../derive";
 import type { ChatThread, SendFailure } from "../types";
 
@@ -125,6 +126,16 @@ export function isChatStaleResponseError(
   error: unknown,
 ): error is ChatStaleResponseError {
   return error instanceof ChatStaleResponseError;
+}
+
+/**
+ * 버려진 방 만들기 응답에 입구가 띄울 문구(loop-08e S2-8, 리뷰 R11). 같은 소매처 재로그인을 넘긴 401(`session`)만 "다시
+ * 눌러 주세요"이고, 계정이 바뀐 뒤 응답(`account`)은 지금 사람 것이 아니라 아무것도 안 띄운다. 입구 컴포넌트와
+ * unit이 같은 함수를 탄다 — 다른 계정 로그인은 이 탭을 바로 전체 이동시켜 e2e로는 도착 뒤 화면을 못 본다(MSW가
+ * 이동 시작 때 꺼진다, 실측)
+ */
+export function staleEntryText(error: ChatStaleResponseError): string | null {
+  return error.reason === "session" ? ENTRY_TEXT.relogin : null;
 }
 
 /**
@@ -248,10 +259,32 @@ export function chatScreenEpoch(): number {
   return screenEpoch;
 }
 
-/** 방 화면을 떠났다. 끊김 칸을 내리고 화면 세대를 올린다 */
-export function leaveChatScreen(queryClient: QueryClient): void {
+/**
+ * 잠긴 채 떠난 방(loop-08e R9). 떠나면 잠금은 풀리지만 다시 열 때 확인 요청 1회가 나가야 한다(기획 §4-1 잠금 범위,
+ * S2-7 ②). 방 머리는 `staleTime: Infinity`, 메시지도 기본 staleTime 안이라 바로 다시 열면 아무 요청도 안 나가 잠금이
+ * 그냥 풀렸다. 그래서 잠긴 채 떠난 방을 적어 두고 다시 열 때 확인을 강제한다(`useRoomQueries`)
+ */
+const unconfirmedRooms = new Set<number>();
+
+/** 방 화면을 떠났다. 잠겨 있었으면 그 방을 확인 대상으로 적고, 끊김 칸을 내리고 화면 세대를 올린다 */
+export function leaveChatScreen(
+  queryClient: QueryClient,
+  roomId?: number,
+): void {
+  if (roomId !== undefined && isSessionLost(queryClient))
+    unconfirmedRooms.add(roomId);
   screenEpoch += 1;
   queryClient.setQueryData<boolean>(chatKeys.session(), false);
+}
+
+/** 그 방이 잠긴 채 떠나 아직 확인 안 된 방인가. 렌더 중에 읽는다(지우지 않는다) */
+export function isUnconfirmedRoom(roomId: number): boolean {
+  return unconfirmedRooms.has(roomId);
+}
+
+/** 확인 요청이 성공했다. 401이면 지우지 않는다 — 다시 잠기고, 다시 떠날 때도 적혀 있다 */
+export function confirmRoom(roomId: number): void {
+  unconfirmedRooms.delete(roomId);
 }
 
 /**
@@ -265,6 +298,7 @@ export function leaveChatScreen(queryClient: QueryClient): void {
 export function clearChatCache(queryClient: QueryClient): void {
   accountEpoch += 1;
   sessionEpoch += 1;
+  unconfirmedRooms.clear();
   void queryClient.cancelQueries({ queryKey: chatKeys.all });
   queryClient.removeQueries({ queryKey: chatKeys.all });
 }
@@ -283,6 +317,8 @@ export function clearChatCache(queryClient: QueryClient): void {
  */
 export function refreshChatSession(queryClient: QueryClient): void {
   sessionEpoch += 1;
+  /* 새 쿠키로 아래에서 전부 다시 묻는다 — 따로 확인할 방이 없다 */
+  unconfirmedRooms.clear();
   queryClient.setQueryData<boolean>(chatKeys.session(), false);
   queryClient.setQueriesData<ChatThread>(
     {
@@ -317,5 +353,8 @@ export function useChatSessionLost(): boolean {
  */
 export function useResetChatSessionOnLeave(roomId: number): void {
   const queryClient = useQueryClient();
-  useEffect(() => () => leaveChatScreen(queryClient), [queryClient, roomId]);
+  useEffect(
+    () => () => leaveChatScreen(queryClient, roomId),
+    [queryClient, roomId],
+  );
 }

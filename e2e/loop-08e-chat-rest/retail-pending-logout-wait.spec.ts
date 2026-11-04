@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { routeAuth } from "../loop-06b-retail-notify/helpers";
 import { RETAILERS } from "../side-02/retail/stub-api";
 import {
@@ -7,9 +7,12 @@ import {
   cards,
   CART_POST,
   chatMock,
+  chatNav,
   composer,
   count,
+  roomRow,
   SEND_POST,
+  setVisibility,
   start,
   useOwnCart,
 } from "./helpers";
@@ -44,9 +47,14 @@ test.use({ viewport: { width: 1280, height: 800 } });
 /** 방 화면 요청(방 머리, 메시지, 읽음, 보내기). 헤더 count와 목록은 뺀다 */
 const ROOM_REQ = { path: /\/api\/retail\/chat\/rooms\/\d+(\/|$|\?)/ } as const;
 
-test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내 줄 0, 보내기 POST 0 ② 채팅·담기 요청 0 ③ 이동 뒤 B 로그인 → 1: 키 0", async ({
-  page,
-}) => {
+/** 목록 조회(`GET /rooms`, 첫 장과 다음 장) */
+const LIST_GET = {
+  path: /\/api\/retail\/chat\/rooms(\?|$)/,
+  method: "GET",
+} as const;
+
+/** 로그아웃 응답을 붙잡는다. 돌려준 함수를 부르면 답한다 */
+async function holdLogout(page: Page): Promise<() => void> {
   await routeAuth(page);
   let release = () => {};
   const held = new Promise<void>((resolve) => {
@@ -57,6 +65,13 @@ test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내
     await page.context().clearCookies({ name: "stub_retailer" });
     await route.fulfill({ status: 204 });
   });
+  return () => release();
+}
+
+test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내 줄 0, 보내기 POST 0 ② 채팅·담기 요청 0 ③ 이동 뒤 B 로그인 → 1: 키 0", async ({
+  page,
+}) => {
+  const release = await holdLogout(page);
 
   await useOwnCart(page);
   await start(page, "/");
@@ -70,6 +85,9 @@ test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내
     .poll(() => storedDraft(page, RETAILERS.bombom.retailerId, ROOM_1))
     .toBe("나가기 전 쓰던 글");
 
+  /* 경계는 누르기 직전이다(리뷰 R12) — "누른 순간부터 새 요청 0". 누른 뒤에 잡으면 클릭 직후 나간 요청이 기준에 묻힌다 */
+  const roomAtClick = await count(page, ROOM_REQ);
+  const cartAtClick = await count(page, CART_POST);
   await pressLogout(page);
 
   await test.step("① 이동 전 화면: 보류 0, 읽기 전용, 끊김 안내 0 → Enter, 다시 보내기 → POST 0", async () => {
@@ -85,15 +103,13 @@ test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내
     expect(await count(page, SEND_POST)).toBe(sends);
   });
 
-  await test.step("② 3초 동안 messages, room, read, 담기 요청 0", async () => {
-    const room = await count(page, ROOM_REQ);
-    const cart = await count(page, CART_POST);
+  await test.step("② 누른 순간부터 3초 더 messages, room, read, 담기 요청 증가 0", async () => {
     const add = addButton(cards(page, 3002).first());
     await expect(add).toBeDisabled();
     await add.click({ force: true });
     await advance(page, 3_000);
-    expect(await count(page, ROOM_REQ)).toBe(room);
-    expect(await count(page, CART_POST)).toBe(cart);
+    expect(await count(page, ROOM_REQ)).toBe(roomAtClick);
+    expect(await count(page, CART_POST)).toBe(cartAtClick);
     await expect(page).toHaveURL(`/chats/${ROOM_1}?from=/chats`);
   });
 
@@ -108,4 +124,30 @@ test("S2-15 [로그아웃 응답 대기 중] ① 보류 0, 읽기 전용, 안내
       ),
     ).toEqual([]);
   });
+});
+
+test("R8 [로그아웃 응답 대기 중, /chats 목록] 15초 갱신, 탭 복귀 → 목록 GET 증가 0, 행 그대로", async ({
+  page,
+}) => {
+  const release = await holdLogout(page);
+  await start(page, "/");
+  await chatNav(page).click();
+  await expect(page).toHaveURL("/chats");
+  await expect(roomRow(page, ROOM_1)).toBeVisible();
+
+  const listAtClick = await count(page, LIST_GET);
+  await pressLogout(page);
+  await advance(page, 16_000);
+  expect(await count(page, LIST_GET), "15초 갱신").toBe(listAtClick);
+  await setVisibility(page, "hidden");
+  await setVisibility(page, "visible");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await advance(page, 1_000);
+  expect(await count(page, LIST_GET), "탭 복귀").toBe(listAtClick);
+  /* 지운 캐시를 다시 채우지 않았고, 화면은 지우기 전 행을 그대로 보인다 */
+  await expect(page).toHaveURL("/chats");
+  await expect(roomRow(page, ROOM_1)).toBeVisible();
+
+  release();
+  await expect(page).toHaveURL(/\/login$/);
 });

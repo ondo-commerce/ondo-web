@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { useCreateRoomMutation } from "../api/mutations";
-import { isChatStaleResponseError } from "../api/session";
+import { isChatStaleResponseError, staleEntryText } from "../api/session";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { APPROVAL_PATH, ENTRY_TEXT } from "../constants";
 import { chatRoomHref, entryFailureOf } from "../derive";
@@ -83,7 +83,8 @@ export function InquiryEntry({
         /* 누른 뒤 계정이 바뀌었다(리뷰 R7). 그 응답은 지금 사람 것이 아니라 아무것도 띄우지 않는다. 같은 소매처가
            다시 로그인한 뒤 온 옛 쿠키의 401이면(loop-08e Q6, S2-8) `/login` 대신 다시 누르라고 알린다 — 버튼은 위에서 켰다 */
         if (isChatStaleResponseError(failure)) {
-          if (failure.reason === "session") setError(ENTRY_TEXT.relogin);
+          const text = staleEntryText(failure);
+          if (text !== null) setError(text);
           return;
         }
         const reaction = entryFailureOf(failure);

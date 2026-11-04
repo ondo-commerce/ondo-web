@@ -150,15 +150,22 @@ function ChatBlock({
       </Panel>
     );
 
+  /* 잠긴 채 떠난 방을 다시 열 때의 확인 요청이 401이다(loop-08e R9). 받아 둔 방 머리와 대화가 있으니 첫 조회 401
+     화면이 아니라 그대로 그리고 잠근다(끊김 칸은 `guardSession`이 켰다) — 쓰던 글과 실패 말풍선이 남아야 한다 */
+  const lostWithData =
+    errors.some(isChatSessionLostError) &&
+    room.data !== undefined &&
+    thread.data !== undefined;
+
   /* 첫 조회 401(S6-13) — 방 이름도 대화도 못 받았다. 쓴 글이 없어 `로그인하기`를 둔다. 주소는 그대로 */
-  if (errors.some(isChatSessionLostError))
+  if (!lostWithData && errors.some(isChatSessionLostError))
     return (
       <Panel className={BLOCK_HEIGHT} data-ac="S6-13">
         <SessionFirstState />
       </Panel>
     );
 
-  if (room.isError || thread.isError) {
+  if (!lostWithData && (room.isError || thread.isError)) {
     return (
       <Panel className={BLOCK_HEIGHT} data-ac="S5-8">
         {room.data ? (
