@@ -1,13 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { routeAuth } from "../loop-06b-retail-notify/helpers";
-import { RETAILERS, type RetailerKey } from "../side-02/retail/stub-api";
+import { RETAILERS } from "../side-02/retail/stub-api";
 import {
   assertStubServers,
   chatMock,
-  chatNav,
   composer,
+  exposeQueryClient,
   inquiryButton,
   log,
+  loginAs,
   openRoomById,
   setVisibility,
   signIn,
@@ -77,14 +78,6 @@ async function clientGo(page: Page, path: string): Promise<void> {
     ).next.router.push(p);
   }, path);
   await expect(page).toHaveURL(path);
-}
-
-async function loginAs(page: Page, key: RetailerKey): Promise<void> {
-  await page.getByLabel("이메일").fill(RETAILERS[key].email);
-  await page.getByLabel("비밀번호").fill("ondo1234!");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(chatNav(page)).toBeVisible();
 }
 
 /** A로 방 1에 글을 쓰고 저장까지(300ms 타이머) 기다린다 */
@@ -264,6 +257,68 @@ test.describe("S2-9 ② [401 뒤 /login] 1280", () => {
     await expect(page).toHaveURL(/\/login$/);
     expect(await stored(page, keyOf(A, ROOM_1))).toBe(TEXT);
   }
+
+  test("R6 같은 계정 bombom으로 로그인 → 1:1 글 그대로, 방 1 입력창 글. 순서: 초안 정리 → 채팅 캐시 정리 → 방송 → 이동", async ({
+    page,
+  }) => {
+    await draftThenLost(page);
+    await exposeQueryClient(page);
+    /* 로그인 화면의 네 지점을 일어난 순서로 적는다. 초안 정리 = 세대 칸 쓰기(`keepOnly`), 채팅 캐시 정리 =
+       `runSessionChange`의 chat 쿼리 지우기, 방송 = BroadcastChannel, 이동 = 홈으로 가는 history 기록 */
+    await page.evaluate(() => {
+      const events: string[] = [];
+      const w = window as unknown as Record<string, unknown>;
+      w.__loginOrder = events;
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === "ondo.chat.draft-meta.v1") events.push("drafts");
+        return setItem.call(this, key, value);
+      };
+      const client = w.__ondoQueryClient as {
+        removeQueries: (f?: { queryKey?: readonly unknown[] }) => void;
+      };
+      const removeQueries = client.removeQueries.bind(client);
+      client.removeQueries = (filters) => {
+        if (filters?.queryKey?.[0] === "chat") events.push("chat-cache");
+        removeQueries(filters);
+      };
+      const post = BroadcastChannel.prototype.postMessage;
+      BroadcastChannel.prototype.postMessage = function (message: unknown) {
+        events.push("broadcast");
+        post.call(this, message);
+      };
+      for (const name of ["pushState", "replaceState"] as const) {
+        const original = history[name].bind(history);
+        history[name] = (
+          data: unknown,
+          unused: string,
+          url?: string | URL | null,
+        ) => {
+          if (url != null && new URL(url, location.href).pathname === "/")
+            events.push("navigate");
+          original(data, unused, url);
+        };
+      }
+    });
+    await loginAs(page, "bombom");
+    const events = await page.evaluate(
+      () => (window as unknown as { __loginOrder?: string[] }).__loginOrder,
+    );
+    /* 같은 문서에서 이동했다 — 기록이 남아 있어야 순서를 볼 수 있다 */
+    expect(events).toBeDefined();
+    /* 넷 다 있고, 처음 일어난 자리가 이 순서다 */
+    const at = ["drafts", "chat-cache", "broadcast", "navigate"].map(
+      (name) => events?.indexOf(name) ?? -1,
+    );
+    expect(
+      at.every((i, n) => i >= 0 && i > (at[n - 1] ?? -1)),
+      JSON.stringify(events),
+    ).toBe(true);
+
+    expect(await stored(page, keyOf(A, ROOM_1))).toBe(TEXT);
+    await openRoomById(page, ROOM_1);
+    await expect(composer(page)).toHaveValue(TEXT);
+  });
 
   test("miso로 로그인 → 1: 키 0, 방 1 입력창 빈칸", async ({ page }) => {
     await draftThenLost(page);
