@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bottomCheckHeight,
   historySlotOf,
   isAtBottom,
   isTouchScrollUp,
@@ -114,6 +115,60 @@ describe("isAtBottom — 이전 장을 합칠 때 바닥이었나(48px)", () => 
     expect(isAtBottom(1000, 452, 500)).toBe(true);
     expect(isAtBottom(1000, 451, 500)).toBe(false);
     expect(isAtBottom(400, 0, 500)).toBe(true);
+  });
+});
+
+/* loop-08e S3-4(#363). 02-dev-363 값 기록 표의 실측: scrollHeight 3500, 입력창 세 줄 뒤 보정한 scrollTop 2948,
+   ResizeObserver가 본 높이 552, 창이 줄어든 뒤 308 */
+describe("bottomCheckHeight — scroll이 바닥을 잴 높이(S3-4)", () => {
+  it("크기 같음 × 사용자 스크롤 창 밖 → 그 높이", () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: 552,
+        clientHeight: 552,
+        userScrolled: false,
+      }),
+    ).toBe(552);
+  });
+  it("크기 같음 × 창 안 → 그 높이", () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: 552,
+        clientHeight: 552,
+        userScrolled: true,
+      }),
+    ).toBe(552);
+  });
+  it("크기 다름 × 창 밖 → ResizeObserver가 본 552. 보정 scroll(2948)은 바닥으로 남는다", () => {
+    const height = bottomCheckHeight({
+      observedHeight: 552,
+      clientHeight: 308,
+      userScrolled: false,
+    });
+    expect(height).toBe(552);
+    expect(isAtBottom(3500, 2948, height)).toBe(true);
+    /* 고치기 전: 지금 높이로 재서 244px 떨어진 "바닥 아님" */
+    expect(isAtBottom(3500, 2948, 308)).toBe(false);
+  });
+  it("크기 다름 × 창 안 → 지금 높이 308(사장 휠 40px 위는 바닥 아님 — 끌려가지 않게)", () => {
+    const height = bottomCheckHeight({
+      observedHeight: 552,
+      clientHeight: 308,
+      userScrolled: true,
+    });
+    expect(height).toBe(308);
+    expect(isAtBottom(3500, 2948 - 40, height)).toBe(false);
+    /* 옛 높이로 재면 40px은 바닥 여유(48px) 안이라 "바닥" — ResizeObserver가 바닥으로 끌어내린다 */
+    expect(isAtBottom(3500, 2948 - 40, 552)).toBe(true);
+  });
+  it("ResizeObserver 없음(null) → 지금 높이", () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: null,
+        clientHeight: 308,
+        userScrolled: false,
+      }),
+    ).toBe(308);
   });
 });
 

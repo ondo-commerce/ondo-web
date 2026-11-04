@@ -236,9 +236,6 @@ test.describe("QA 사장 시나리오 390", () => {
       .toBeLessThanOrEqual(1);
     await expect(composer(page)).toBeFocused();
     await composer(page).fill("레드 L\n두 장\n내일 가요");
-    /* 세 줄을 다 쓴 뒤 키보드가 열린다(사람 속도). 입력창이 는 보정 직후 같은 틈에 창이 줄면 바닥에서 244px 떨어지는
-       경합이 있다(02-dev-fix 2차 "스코프 밖 발견"). 이 시험은 그 경합이 아니라 시나리오 1을 본다 */
-    await page.waitForTimeout(300);
     await page.setViewportSize({ width: 390, height: 600 });
     const gap = async () => {
       const last = await log(page).evaluate((el) => {

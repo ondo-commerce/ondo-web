@@ -14,6 +14,7 @@ import {
 } from "react";
 import { fetchOlder, useBeforeOlderMerge } from "./api/queries";
 import {
+  bottomCheckHeight,
   isAtBottom,
   isTouchScrollUp,
   isUserScrollActive,
@@ -59,7 +60,8 @@ function firstVisibleBubble(log: HTMLElement): OlderSnapshot["anchor"] {
  *
  * **도매와 다른 곳은 리사이즈 순서 하나**(§4-4 6, Codex 6): 도매는 크기가 바뀌면 바닥 판정만 다시 잰다. 소매는 입력창이
  * 3줄로 늘거나 오류 두 줄, 화면 키보드로 log가 줄어든다 — 재기만 하면 마지막 말풍선이 입력창 뒤로 간다. 그래서
- * ① 바꾸기 전 바닥이었으면 먼저 바닥에 붙이고 ② 그다음 다시 잰다.
+ * ① 바꾸기 전 바닥이었으면 먼저 바닥에 붙이고 ② 그다음 다시 잰다. ResizeObserver보다 먼저 온 scroll(사장 스크롤
+ * 아님)은 그 ResizeObserver가 마지막으로 본 높이로 잰다(loop-08e #363).
  *
  * 소매는 방마다 주소가 달라(`ChatBlock key={roomId}`) 방을 옮기면 이 훅이 새로 마운트된다 — 바닥에서 시작하고 N을
  * 새로 센다(S3-6 ③, S4-10).
@@ -109,11 +111,18 @@ export function useThreadScroll({
   /* 지금 터치의 직전 손가락 y. 터치가 없으면 null */
   const touchY = useRef<number | null>(null);
   const olderSnapshot = useRef<OlderSnapshot | null>(null);
+  /* ResizeObserver가 마지막으로 본 log 높이(#363). ResizeObserver가 없으면 null */
+  const observedHeight = useRef<number | null>(null);
 
-  const measureBottom = () => {
+  /* `height`는 잴 때 쓸 log 높이. 기본은 지금 높이, scroll 이벤트는 `bottomCheckHeight`가 고른다 */
+  const measureBottom = (height?: number) => {
     const log = logRef.current;
     if (log === null) return;
-    const at = isAtBottom(log.scrollHeight, log.scrollTop, log.clientHeight);
+    const at = isAtBottom(
+      log.scrollHeight,
+      log.scrollTop,
+      height ?? log.clientHeight,
+    );
     if (at === atBottomRef.current) return;
     atBottomRef.current = at;
     const jump = jumpRef.current;
@@ -183,11 +192,14 @@ export function useThreadScroll({
   /* log 크기가 바뀌면(입력창 3줄, 오류 두 줄, 창 높이, 화면 키보드) ① 바꾸기 전 바닥이었으면(직전 판정) 먼저 바닥에
      붙이고 ② 그다음 다시 잰다(§4-4 6, 디자인 결정 71). 순서가 바뀌면 줄어든 만큼 바닥에서 멀어져 "바닥 아님"으로
      굳고, 마지막 말풍선이 입력창 뒤로 간다(Codex 6). 위를 읽던 중이면 ①을 건너뛴다 — log 위끝은 그대로라 보던
-     말풍선이 안 움직인다. ② 덕분에 "바닥이 아닌데 따라가기"(도매 리뷰 R2)도 그대로 막힌다. 자동 불러오기는 부르지 않는다 */
+     말풍선이 안 움직인다. ② 덕분에 "바닥이 아닌데 따라가기"(도매 리뷰 R2)도 그대로 막힌다. 자동 불러오기는 부르지 않는다.
+     여기서 본 높이를 `observedHeight`에 남긴다 — 이 콜백보다 먼저 온 scroll은 그 높이로 잰다(#363) */
   useEffect(() => {
     const log = logRef.current;
     if (log === null || typeof ResizeObserver === "undefined") return;
+    observedHeight.current = log.clientHeight;
     const observer = new ResizeObserver(() => {
+      observedHeight.current = log.clientHeight;
       if (atBottomRef.current) log.scrollTop = log.scrollHeight;
       measureBottom();
     });
@@ -212,7 +224,20 @@ export function useThreadScroll({
   const logHandlers = {
     onScroll: () => {
       markUserScroll(pointerOnLog.current ? "input" : "scroll");
-      measureBottom();
+      /* 사장 스크롤이 아니면 ResizeObserver가 마지막으로 본 높이로 잰다 — 크기 변경을 처리하기 전에 먼저 온
+         scroll이 줄어든 높이로 "바닥 아님"을 쓰지 않게(#363, `bottomCheckHeight`) */
+      const log = logRef.current;
+      if (log !== null)
+        measureBottom(
+          bottomCheckHeight({
+            observedHeight: observedHeight.current,
+            clientHeight: log.clientHeight,
+            userScrolled: isUserScrollActive(
+              userScrollUntil.current,
+              performance.now(),
+            ),
+          }),
+        );
       maybeAutoLoad();
     },
     onWheel: (e: WheelEvent<HTMLDivElement>) => {

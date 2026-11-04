@@ -323,6 +323,30 @@ export function isAtBottom(
 }
 
 /**
+ * scroll 이벤트에서 바닥을 잴 때 쓸 log 높이(loop-08e S3, #363). 사장 스크롤이 아니면 ResizeObserver가 마지막으로
+ * 본 높이로 잰다 — 크기가 바뀐 뒤 "바꾸기 전 바닥이었나"는 ResizeObserver가 처리하기 전까지 옛 높이 기준이다.
+ *
+ * 왜: 입력창이 세 줄로 늘어 ResizeObserver가 바닥에 붙이면(scrollTop 변경) scroll 이벤트는 다음 프레임에 나간다.
+ * 그 사이에 창이 줄면(화면 키보드) 다음 프레임은 scroll → ResizeObserver 순서라, scroll이 줄어든 높이로 재서
+ * "바닥 아님"을 쓰고 뒤이은 ResizeObserver가 붙이기를 건너뛰었다(02-dev-363 값 기록 표).
+ * 판정을 아예 건너뛰면 안 된다 — 위로 옮긴 프로그램 스크롤이 같은 프레임의 크기 변경과 겹치면 옛 "바닥"이 남아
+ * ResizeObserver가 바닥으로 끌어내린다(개발 중 S3-3 ① 10회 중 7회).
+ *
+ * 사장이 직접 스크롤한 중(사용자 스크롤 창 안)이면 지금 높이로 잰다 — 옛 높이로 재면 휠로 조금 올린 것을 바닥으로
+ * 볼 수 있다. ResizeObserver가 없으면(`observedHeight` null) 지금 높이
+ */
+export function bottomCheckHeight(input: {
+  /** ResizeObserver가 마지막으로 본 log `clientHeight` */
+  observedHeight: number | null;
+  clientHeight: number;
+  userScrolled: boolean;
+}): number {
+  if (input.userScrolled || input.observedHeight === null)
+    return input.clientHeight;
+  return input.observedHeight;
+}
+
+/**
  * 사장 스크롤 창이 무엇으로 바뀌나(§4-3 2-1).
  * - `input`: 사장이 직접 옮겼다(wheel 위로, 위로 끄는 터치, log 안 ↑ PageUp Home, log를 누른 채 scroll)
  * - `scroll`: 그 밖의 scroll. 창 안이면 이어진 스크롤(관성)이라 창을 민다, 밖이면 그대로
