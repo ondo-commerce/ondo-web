@@ -521,6 +521,18 @@ function route(
   }
 
   if (path === "/api/retail/auth/me") {
+    /* loop-08e S2-2 ⑤: `retailerId`는 스펙상 required가 아니다. 셸 `/me`는 서버 fetch라 `page.route`가 못 닿아
+       쿠키로 고른다(`stub_settlements`와 같은 방식) */
+    if (cookieOf(cookie, "stub_me") === "no-retailer-id") {
+      return ok({
+        email: retailer.email,
+        shopName: retailer.shopName,
+        approvalStatus: retailer.approvalStatus,
+        appliedAt: "2026-10-01T01:05:00Z",
+        approvedAt: "2026-10-02T01:00:00Z",
+        rejection: null,
+      });
+    }
     return ok({
       ...retailer,
       appliedAt: "2026-10-01T01:05:00Z",

@@ -206,6 +206,14 @@ export const COMPOSER_TEXT = {
 } as const;
 
 /**
+ * 쓰던 글 sessionStorage 키 머리(loop-08e §4-2 1, 도매 08b와 같은 이름). 로그아웃은 이 머리 키를 전부 지운다.
+ * 소매와 도매는 출처(origin)가 달라 저장소를 같이 쓰지 않는다 — 이름이 같아도 안 섞인다
+ */
+export const DRAFT_KEY_PREFIX = "ondo.chat.draft.v1:";
+/** 글이 바뀐 뒤 이만큼 조용하면 저장한다. 방을 옮기거나 떠나는 순간은 기다리지 않는다(`useRoomDraft`) */
+export const DRAFT_SAVE_DELAY_MS = 300;
+
+/**
  * 글자 수 상한. 서버와 같은 셈(앞뒤 공백을 뺀 유니코드 코드 포인트, `[...text].length`) — JS `length`는
  * UTF-16이라 이모지 하나를 2로 센다.
  */

@@ -1,4 +1,6 @@
 import { expect, type Page } from "@playwright/test";
+import { chatNav } from "../loop-07-receivable-reply/helpers";
+import { RETAILERS, type RetailerKey } from "../side-02/retail/stub-api";
 
 export * from "../loop-07-receivable-reply/helpers";
 
@@ -62,6 +64,62 @@ export async function payAndAllocate(
   });
   expect(res.status, "손잡이 payment").toBe(201);
   return res.body.data;
+}
+
+/**
+ * 로그인 화면에서 그 계정으로 로그인 → 홈. 전체 이동(`location.assign`)으로 온 로그인 화면은 주소가 먼저 바뀌고
+ * hydration이 뒤에 온다 — 그 사이 채운 칸은 hydration이 비운다(08e-N1 N2, "이메일을 입력해 주세요"로 남는 걸 봤다).
+ * 그래서 채우고 누르고 홈을 확인하는 한 묶음을 통과할 때까지 다시 한다. 이미 홈이면 끝(앞 묶음의 이동이 늦게 끝난 경우)
+ */
+export async function loginAs(page: Page, key: RetailerKey): Promise<void> {
+  await expect(async () => {
+    if (new URL(page.url()).pathname === "/") return;
+    await page.getByLabel("이메일").fill(RETAILERS[key].email);
+    await page.getByLabel("비밀번호").fill("ondo1234!");
+    await page.getByRole("button", { name: "로그인", exact: true }).click();
+    await expect(page).toHaveURL(/\/$/, { timeout: 3_000 });
+  }).toPass();
+  await expect(chatNav(page)).toBeVisible();
+}
+
+/**
+ * 이 탭의 TanStack `QueryClient`를 `window.__ondoQueryClient`에 건다(시험 전용 — 앱 코드는 그대로다). 아무 DOM
+ * 노드의 React fiber에서 위로 올라가 `QueryClientProvider`의 `client` prop을 찾는다. 찾을 때까지 기다리므로
+ * hydration 확인도 겸한다. 캐시를 직접 단언할 때 쓴다(화면 DOM만 보면 안 그려진 방의 캐시 쓰기를 못 본다)
+ */
+export async function exposeQueryClient(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        interface Fiber {
+          memoizedProps?: { client?: unknown } | null;
+          return: Fiber | null;
+        }
+        const isClient = (c: unknown) =>
+          typeof c === "object" &&
+          c !== null &&
+          typeof (c as { getQueryCache?: unknown }).getQueryCache ===
+            "function";
+        for (const el of Array.from(document.querySelectorAll("body *"))) {
+          const fiberKey = Object.keys(el).find((k) =>
+            k.startsWith("__reactFiber$"),
+          );
+          if (fiberKey === undefined) continue;
+          let fiber = (el as unknown as Record<string, Fiber | null>)[fiberKey];
+          while (fiber) {
+            const client = fiber.memoizedProps?.client;
+            if (isClient(client)) {
+              (window as unknown as Record<string, unknown>).__ondoQueryClient =
+                client;
+              return true;
+            }
+            fiber = fiber.return;
+          }
+        }
+        return false;
+      }),
+    )
+    .toBe(true);
 }
 
 /** 배분 취소. 200을 단언하고 본문을 돌려준다 */
