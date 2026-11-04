@@ -186,6 +186,9 @@ test.describe("S2-8 [같은 계정, 방 만들기]", () => {
     await tab.close();
   });
 
+  /* 계정 변경 뒤 도착한 401의 갈래(무표시)는 unit이 맡는다(`session.test.ts` "R11", `staleEntryText`). 이 탭은 다른 계정
+     알림을 받자마자 `/login`으로 전체 이동하는데, 이동이 시작되면 MSW가 이 문서를 놓아(beforeunload) 늦은 응답이 이
+     문서에 안 온다 — 이동을 막아도(abort) 마찬가지였다(실측, lastSettled null). 그래서 여기선 이동과 무표시만 본다 */
   test("② 늦은 401 + 탭 2 miso → 이 탭 로그인 화면, 입구 문구 0", async ({
     page,
   }) => {

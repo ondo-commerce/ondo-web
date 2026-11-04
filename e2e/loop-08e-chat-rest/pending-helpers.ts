@@ -1,11 +1,11 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { RETAILERS, type RetailerKey } from "../side-02/retail/stub-api";
+import type { RetailerKey } from "../side-02/retail/stub-api";
 import {
   ANY_CHAT,
-  chatNav,
   composer,
   count,
   log,
+  loginAs,
   openRoomById,
   requests,
   SEND_POST,
@@ -123,21 +123,8 @@ export async function sendText(page: Page, text: string): Promise<void> {
   await composer(page).press("Enter");
 }
 
-/**
- * 로그인 화면에서 그 계정으로 로그인 → 홈. 전체 이동(`location.assign`)으로 온 로그인 화면은 주소가 먼저 바뀌고
- * hydration이 뒤에 온다 — 그 사이 채운 칸은 hydration이 비운다(이메일 빈칸 검증 오류로 남는 걸 봤다). 그래서 채우고
- * 누르고 홈을 확인하는 한 묶음을 통과할 때까지 다시 한다. 이미 홈이면 끝(앞 묶음의 이동이 늦게 끝난 경우)
- */
-export async function loginAs(page: Page, key: RetailerKey): Promise<void> {
-  await expect(async () => {
-    if (new URL(page.url()).pathname === "/") return;
-    await page.getByLabel("이메일").fill(RETAILERS[key].email);
-    await page.getByLabel("비밀번호").fill("ondo1234!");
-    await page.getByRole("button", { name: "로그인", exact: true }).click();
-    await expect(page).toHaveURL(/\/$/, { timeout: 3_000 });
-  }).toPass();
-  await expect(chatNav(page)).toBeVisible();
-}
+/* 로그인 도우미는 #361 spec과 같은 것 하나만 둔다(08e-N1 N2). 이 파일을 쓰는 spec이 그대로 가져가게 다시 내보낸다 */
+export { loginAs };
 
 /** 둘째 탭에서 그 계정으로 로그인하고 첫 탭으로 돌아온다. 둘째 탭을 돌려준다(끝나면 닫는다) */
 export async function otherTabLogin(
