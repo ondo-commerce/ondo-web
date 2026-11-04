@@ -159,6 +159,16 @@ export interface ChatRoomRowView {
   unreadCount: number;
 }
 
+/**
+ * `/chats` 갱신 전 화면에 보이던 행 하나(loop-08e S4, `pickListAnchor`). scroll 이벤트마다 적어 둔다.
+ * `index`는 그때 목록 전체에서의 자리, `top`은 그때 창 기준 위끝(px)
+ */
+export interface VisibleListRow {
+  roomId: number;
+  index: number;
+  top: number;
+}
+
 /** 읽음을 지금 보낼지 정하는 입력(`nextReadTarget`) */
 export interface ReadState {
   /** 화면에 그린 가장 큰 sequence */
