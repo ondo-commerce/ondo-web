@@ -244,4 +244,74 @@ test.describe("S3-3 회귀 390", () => {
       Math.abs((await logMetrics(page)).scrollTop - afterWheel),
     ).toBeLessThanOrEqual(4);
   });
+
+  /* 리뷰 R13. ①은 이미 읽은 sequence라 `atBottom`이 잘못 true여도 POST가 안 났다. 위에서 안 읽은 새 말을 받아 둔 채
+     경합을 내야 "바닥 아님"이 읽음을 보류했는지 보인다. 바닥에 가면 그 말 읽음이 한 번 나간다 */
+  test("④ 위에서 새 메시지(안 읽은 sequence)를 받은 채 S3-1 순서 → 읽음 POST 0, 자리 그대로 → 바닥 도달 뒤 POST 1회", async ({
+    page,
+  }) => {
+    await openHistoryRoom(page);
+    await expect.poll(() => count(page, ROOM1_READ)).toBeGreaterThan(0);
+    await settled(page, ROOM1_READ);
+    await alignTop(page, 100);
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeGreaterThanOrEqual(200);
+    await incoming(page, 1, "위에서 받은 답");
+    await expect(jumpButton(page)).toHaveText("새 메시지 1개", {
+      timeout: 8000,
+    });
+    const reads = await count(page, ROOM1_READ);
+    const top = await topOf(page, 100);
+    await race(page, "lines-then-shrink");
+    expect(Math.abs((await topOf(page, 100)) - top)).toBeLessThanOrEqual(4);
+    await nextPoll(page);
+    expect(await count(page, ROOM1_READ)).toBe(reads);
+    await expect(jumpButton(page)).toHaveText("새 메시지 1개");
+    await jumpButton(page).click();
+    await expect
+      .poll(() => count(page, ROOM1_READ), { timeout: 8000 })
+      .toBe(reads + 1);
+    await settled(page, ROOM1_READ);
+    await nextPoll(page);
+    expect(await count(page, ROOM1_READ)).toBe(reads + 1);
+  });
+
+  /* QA Q2. RO 콜백이 본 높이를 안 남기면(마운트 높이 고정) 지금까지의 시험은 다 통과했다 — 마운트 높이가 지금보다
+     크면 바닥 판정이 오히려 쉬워서다. 작은 창(log 332)으로 열고 키우면(576) 브라우저가 scrollTop을 줄여 맞추고 그
+     scroll 이벤트가 RO 뒤에 온다. 마운트 높이로 재는 쪽은 244px 떨어졌다고 "바닥 아님"을 써서 다음 새 말을 안 따라가고
+     버튼을 띄운다. RO가 마지막으로 본 높이로 재야 바닥이 남는다 */
+  test("⑤ 작은 창(390×400)으로 열고 844로 키움 → 위로 → 새 메시지 버튼 → 바닥: 읽음 POST 1, 버튼 0 → 다음 새 말은 따라감", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 400 });
+    await openHistoryRoom(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeLessThanOrEqual(1);
+    await expect.poll(() => count(page, ROOM1_READ)).toBeGreaterThan(0);
+    await settled(page, ROOM1_READ);
+    await alignTop(page, 100);
+    await incoming(page, 1, "키운 뒤 위에서 받은 답");
+    await expect(jumpButton(page)).toHaveText("새 메시지 1개", {
+      timeout: 8000,
+    });
+    const reads = await count(page, ROOM1_READ);
+    /* 버튼의 바닥 이동은 프로그램 스크롤이다 — 그 scroll을 RO가 마지막으로 본 높이(576)로 재야 바닥이다. 마운트 높이
+       (253)로 재면 323px 떨어졌다고 보고 읽음을 안 보내고 버튼을 다시 띄운다(QA Q2 변이) */
+    await jumpButton(page).click();
+    await expect
+      .poll(() => count(page, ROOM1_READ), { timeout: 8000 })
+      .toBe(reads + 1);
+    await expect(jumpButton(page)).toHaveCount(0);
+    await incoming(page, 1, "바닥에서 받은 다음 답");
+    await expect(log(page).getByText("바닥에서 받은 다음 답")).toBeVisible({
+      timeout: 8000,
+    });
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeLessThanOrEqual(1);
+    await expect(jumpButton(page)).toHaveCount(0);
+  });
 });
