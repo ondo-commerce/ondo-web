@@ -8,6 +8,7 @@ import {
   CHAT_TIME_ZONE,
   CHATS_HREF,
   CLARIFY_WINDOW_MS,
+  DRAFT_KEY_PREFIX,
   ENTRY_TEXT,
   HISTORY_AUTO_LOAD_PX,
   IDEMPOTENCY_KEY_REUSED,
@@ -48,6 +49,7 @@ import type {
   HistoryStatus,
   MoreInput,
   MoreState,
+  PendingByRoom,
   PendingMessage,
   ReadState,
   ReceivableCardView,
@@ -56,6 +58,7 @@ import type {
   StockCardView,
   TextPart,
   ThreadItem,
+  VisibleListRow,
 } from "./types";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 import { QTY_UNIT, SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
@@ -153,6 +156,32 @@ export function parseRoomId(raw: string): number | null {
   if (!/^\d+$/.test(raw)) return null;
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/* ------------------------------------------------------------------------
+ * 쓰던 글 키 (loop-08e §4-2 1, 도매 `draftKey` 복제)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 한 소매처의 쓰던 글 키 머리. 소매처를 모르면 null — 로그인 정리(`keepOnly`)가 "남길 것 없음"으로 읽는다.
+ * id는 `/me`, 로그인 응답의 `RetailerResponse.retailerId`다. 정수가 아니면 모르는 것으로 본다
+ */
+export function draftPrefixOf(retailerId: number | null): string | null {
+  if (retailerId === null || !Number.isSafeInteger(retailerId)) return null;
+  return `${DRAFT_KEY_PREFIX}${retailerId}:`;
+}
+
+/**
+ * 방별 쓰던 글 키 = 머리 + 소매처 id + 방 id. 도매는 이메일을 넣지만(loop-08b) 소매 셸은 이메일을 안 받는다 —
+ * 셸 `/me`가 이미 주는 `retailerId`를 쓴다. 다른 탭 알림이 같은 계정을 가르는 값과 같다(`otherTabActionOf`).
+ * null이면(스펙상 required 아님) 저장하지 않는다(S2-2 ⑤)
+ */
+export function draftKey(
+  retailerId: number | null,
+  roomId: number,
+): string | null {
+  const prefix = draftPrefixOf(retailerId);
+  return prefix === null ? null : `${prefix}${roomId}`;
 }
 
 /** 지금 경로가 돌아올 곳으로 받을 수 있는 값이면 그대로, 아니면 null */
@@ -827,6 +856,25 @@ export function toRoomRows(
   return rows;
 }
 
+/**
+ * 갱신으로 순서가 바뀔 때 제자리에 둘 행(loop-08e S4-1, 기획 §4-4 1~2). 헤더 아래 맨 위에 걸친 행부터 내려가며,
+ * 새 순서에서 자리가 앞당겨지지 않은 첫 행. 새 메시지를 받은 방은 맨 위로 가니 그 행을 기준으로 잡으면 화면이
+ * 통째로 맨 위로 끌려간다 — 그래서 건너뛴다. 보이던 행이 전부 올라갔거나 보이던 행이 없으면 null(스크롤 그대로).
+ *
+ * "올라감"은 목록 전체 자리(index)가 줄었는지로 본다. 방은 목록에서 빠지지 않아(채팅방 삭제 없음) 자리가 주는 건
+ * 그 행이 맨 위로 간 경우뿐이다. 새 목록에 없는 행도 기준이 될 수 없어 건너뛴다
+ */
+export function pickListAnchor(
+  prevVisible: readonly Pick<VisibleListRow, "roomId" | "index">[],
+  nextOrder: readonly number[],
+): number | null {
+  for (const row of prevVisible) {
+    const nextIndex = nextOrder.indexOf(row.roomId);
+    if (nextIndex >= row.index) return row.roomId;
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------------
  * 보내기
  * ------------------------------------------------------------------------ */
@@ -875,6 +923,15 @@ export function sendFailureOf(error: unknown): SendFailure {
   return "server";
 }
 
+/**
+ * 실패 말풍선에 `다시 보내기`를 둘까(loop-08e §4-1, 도매 08d F1 D48 복제). **잠겨 있는 동안만 뺀다** — 실패 종류는
+ * 묻지 않는다. 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리거나 다른 방 화면에서 실패했으면(잠금 0)
+ * 다시 보낼 수 있다. 처음 `clientMessageId` 그대로라 서버엔 하나만 생긴다
+ */
+export function canRetrySend(sessionLost: boolean): boolean {
+  return !sessionLost;
+}
+
 /** 실패 말풍선 아래 문구 */
 export function failureText(failure: SendFailure | null): string {
   return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
@@ -917,6 +974,30 @@ export function upsertPending(
   );
   if (index < 0) return [...pending, next];
   return pending.map((p, i) => (i === index ? next : p));
+}
+
+const NO_PENDING: readonly PendingMessage[] = [];
+
+/** 방 하나의 보류 말풍선(도매 복제). 없으면 같은 빈 배열 — 렌더마다 새 배열이면 memo가 매번 깨진다 */
+export function pendingOfRoom(
+  all: PendingByRoom,
+  roomId: number,
+): readonly PendingMessage[] {
+  return all[roomId] ?? NO_PENDING;
+}
+
+/** 방 하나의 보류 말풍선만 바꾼다. 비면 그 방 칸을 지운다 — 다른 방 칸은 그대로(도매 복제) */
+export function withRoomPending(
+  all: PendingByRoom,
+  roomId: number,
+  change: (list: readonly PendingMessage[]) => PendingMessage[],
+): PendingByRoom {
+  const next = change(pendingOfRoom(all, roomId));
+  if (next.length > 0) return { ...all, [roomId]: next };
+  if (!(roomId in all)) return all;
+  const rest = { ...all };
+  delete rest[roomId];
+  return rest;
 }
 
 /* ------------------------------------------------------------------------

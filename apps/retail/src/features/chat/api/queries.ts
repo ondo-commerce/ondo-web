@@ -2,6 +2,7 @@
 
 import {
   focusManager,
+  keepPreviousData,
   onlineManager,
   queryOptions,
   useInfiniteQuery,
@@ -18,10 +19,15 @@ import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import {
   chatScreenEpoch,
   chatSessionEpoch,
+  ChatStaleResponseError,
   guardSession,
+  isChatLeaving,
   isChatSessionLostError,
   isChatStaleResponseError,
   isSessionLost,
+  isUnconfirmedRoom,
+  confirmRoom,
+  useChatLeaving,
 } from "./session";
 import {
   MESSAGE_PAGE_SIZE,
@@ -76,9 +82,15 @@ function roomOptions(roomId: number, queryClient: QueryClient) {
     queryKey: chatKeys.room(roomId),
     queryFn: async () => {
       await chatMockReady();
-      const detail = await guardSession(queryClient, () =>
-        apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
+      /* 이 요청을 띄운 화면. 확인 토큰이기도 하다 — 떠난 뒤 온 성공이 그 뒤에 적힌 확인 표시를 못 지운다(메타 M1) */
+      const screen = chatScreenEpoch();
+      const detail = await guardSession(
+        queryClient,
+        () => apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
+        screen,
+        roomId,
       );
+      confirmRoom(roomId, screen);
       queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
         thread === undefined
           ? thread
@@ -129,13 +141,26 @@ function threadOptions(roomId: number, queryClient: QueryClient) {
 /**
  * 방 머리와 메시지를 **같이** 부른다(폭포 없이). Suspense를 쓰지 않는 이유: 소매엔 도매의
  * `QueryBoundary`가 없고, 블록이 로딩, 없는 방, 실패를 한 패널 안에서 직접 가른다.
+ *
+ * `leaving`(로그아웃 응답 대기, loop-08e §4-2 9): 캐시는 로그아웃이 이미 지웠다. 방 화면이 아직 떠 있어 그대로면 새
+ * 조회(A 쿠키라 계정 세대가 같아 버려지지도 않는다)가 나간다 — 끈다(`enabled: false`). 화면은 지우기 전 값을
+ * 그대로 보인다(`keepPreviousData`, 지운 쿼리의 마지막 값). 이동 전까지 방이 로딩 막대로 바뀌지 않게
  */
-export function useRoomQueries(roomId: number) {
+export function useRoomQueries(roomId: number, leaving = false) {
   const queryClient = useQueryClient();
+  const gate = leaving
+    ? { enabled: false, placeholderData: keepPreviousData }
+    : {};
+  /* 확인할 방을 다시 열었다(loop-08e R9, 메타 M2 — 잠긴 채 떠났거나 떠난 뒤 401을 받은 방) — 캐시가 신선해도 마운트
+     때 다시 묻는다. 401이면 `guardSession`이 다시 잠그고, 성공하면 방 머리가 표시를 지운다(`confirmRoom`). 마운트 조회와 같은 길이라 화면 세대도 같다 —
+     effect에서 따로 refetch하면 개발 모드 effect 두 번 실행에 화면 세대가 먼저 올라 401이 잠그지 못했다(실측) */
+  const recheck = isUnconfirmedRoom(roomId)
+    ? { staleTime: 0, refetchOnMount: "always" as const }
+    : {};
   const [room, thread] = useQueries({
     queries: [
-      roomOptions(roomId, queryClient),
-      threadOptions(roomId, queryClient),
+      { ...roomOptions(roomId, queryClient), ...recheck, ...gate },
+      { ...threadOptions(roomId, queryClient), ...recheck, ...gate },
     ],
   });
   return { room, thread };
@@ -180,10 +205,16 @@ export function isRoomListSessionLost(error: unknown): boolean {
  */
 export function useRoomListQuery() {
   const queryClient = useQueryClient();
+  /* 로그아웃 응답 대기(loop-08e R8). 로그아웃이 목록 캐시를 지운 뒤에도 화면은 떠 있어, 그대로면 재렌더(지운 쿼리를
+     관찰자가 다시 만듦), 탭 복귀, 15초 갱신이 A 쿠키로 목록을 다시 받아 지운 칸을 채운다. 방 화면(`useRoomQueries`)과
+     같이 끄고 지우기 전 값을 보인다. `다시 시도`, `더 보기`는 enabled를 안 보므로 queryFn이 한 번 더 막는다 */
+  const leaving = useChatLeaving();
   const query = useInfiniteQuery({
     queryKey: chatKeys.rooms(),
     queryFn: async ({ pageParam }) => {
+      if (isChatLeaving()) throw new ChatStaleResponseError("account");
       await chatMockReady();
+      if (isChatLeaving()) throw new ChatStaleResponseError("account");
       try {
         return await apiFetchBody<ChatRoomPage>(CHAT_PATH.rooms, {
           searchParams: {
@@ -202,6 +233,8 @@ export function useRoomListQuery() {
     getNextPageParam: (last) => last.meta.nextCursor,
     retry: false,
     staleTime: 0,
+    enabled: !leaving,
+    placeholderData: leaving ? keepPreviousData : undefined,
     refetchOnMount: (q) =>
       isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnWindowFocus: (q) =>
@@ -213,8 +246,9 @@ export function useRoomListQuery() {
   const sessionLost = isRoomListSessionLost(query.error);
   /* 타이머는 QueryClient(= 목록 캐시) 하나에 하나다. 이 훅이 두 곳에서 마운트돼도 15초 갱신은 한 번(메타 리뷰 M5) */
   useEffect(() => {
-    if (!visible || sessionLost) return;
+    if (!visible || sessionLost || leaving) return;
     return subscribeSharedInterval(queryClient, ROOM_LIST_POLL_MS, () => {
+      if (isChatLeaving()) return;
       const state = queryClient.getQueryState(chatKeys.rooms());
       /* 겹친 회차만 건너뛴다. 다음 회차는 이 타이머 그대로 15초 뒤다 */
       if (state?.fetchStatus === "fetching") return;
@@ -224,7 +258,7 @@ export function useRoomListQuery() {
         { cancelRefetch: false },
       );
     });
-  }, [visible, sessionLost, queryClient]);
+  }, [visible, sessionLost, leaving, queryClient]);
 
   return query;
 }
@@ -263,10 +297,14 @@ async function fetchThread(
   const start = read();
 
   if (start === undefined) {
-    const page = await guardSession(queryClient, () =>
-      apiFetchBody<ChatMessagePage>(path, {
-        searchParams: { size: MESSAGE_PAGE_SIZE },
-      }),
+    const page = await guardSession(
+      queryClient,
+      () =>
+        apiFetchBody<ChatMessagePage>(path, {
+          searchParams: { size: MESSAGE_PAGE_SIZE },
+        }),
+      chatScreenEpoch(),
+      roomId,
     );
     return {
       messages: mergeMessages([], page.data),
@@ -293,10 +331,14 @@ async function fetchThread(
   let counterpartRead: number | null = null;
   try {
     for (;;) {
-      const page = await guardSession(queryClient, () =>
-        apiFetchBody<ChatMessagePage>(path, {
-          searchParams: { afterSequence: cursor, size: MESSAGE_PAGE_SIZE },
-        }),
+      const page = await guardSession(
+        queryClient,
+        () =>
+          apiFetchBody<ChatMessagePage>(path, {
+            searchParams: { afterSequence: cursor, size: MESSAGE_PAGE_SIZE },
+          }),
+        chatScreenEpoch(),
+        roomId,
       );
       fetched = mergeMessages(fetched, page.data);
       cursor = advanceCursor(cursor, page.data);
@@ -431,6 +473,7 @@ export async function fetchOlder(queryClient: QueryClient, roomId: number) {
           searchParams: { beforeSequence: oldest, size: MESSAGE_PAGE_SIZE },
         }),
       screen,
+      roomId,
     );
   } catch (error) {
     if (replaced() || isChatStaleResponseError(error)) return;

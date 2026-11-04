@@ -298,27 +298,41 @@ function pushPayment(
  * 시험 손잡이용 입금(목 전용). 소매 앱 번들에는 정산 핸들러가 없어 소매 화면에서 갚을 돈 0(문장 C), 선수금(D)을
  * 만들 길이 없다 — 소매 채팅 목 `/__mock/chat/payment`가 이 함수로 같은 장부에 입금을 넣는다(loop-07 M5).
  * 규칙은 `POST /payments`와 같은 저장 경로(`pushPayment`)를 탄다. 배분이 미수를 넘거나 남의 주문이면 던진다.
- * 상한은 아직 옛 규칙(이번 입금액만)이라 늘 이번 입금에서만 나간다. 선수금까지 쓰는 새 상한은 08d(S4-8)
+ * 상한도 `POST /payments`와 같다: 이번 입금 + 그 소매처 남은 선수금(loop-08e S1-2). 모자라면 옛 입금의 남은 몫을
+ * 오래된 것부터 끌어 쓴다(`planAllocations`). 던지면 아무것도 저장하지 않는다. 돌려주는 값은 `POST /payments` 201의
+ * `data`와 같은 모양이다 — 소매 e2e가 배분 줄 `id`를 받아 `allocation-cancel`에 넘긴다
  */
 export function recordMockPayment(input: {
   retailerId: number;
   amount: number;
   allocations: readonly { orderId: number; amount: number }[];
   paidAt?: string;
-}): void {
-  const targets = input.allocations.map((a) => {
+  /** 있으면 `POST /payments`의 Idempotency-Key처럼 저장한다. 재전송 판정은 `replayMockPayment`가 먼저 한다 */
+  idempotencyKey?: string;
+  /** 같은 키 재전송의 본문 비교값 */
+  bodyJson?: string;
+}): WholesaleSchema<"PaymentCreatedResponse"> {
+  const targets: { order: MockOrder; amount: number }[] = [];
+  for (const a of input.allocations) {
+    /* 주문마다 지금 미수와만 비교하므로 같은 주문 두 줄은 각자 통과해 미수를 두 번 채운다(loop-08e R1) */
+    if (repeatsOrder(targets, a.orderId))
+      throw new MockPaymentRejected(
+        "DUPLICATE_ORDER",
+        `목: 주문 ${a.orderId}이 두 번 들어왔다`,
+      );
     const order = mockOrders().find((o) => o.id === a.orderId);
     if (order === undefined || order.retailerId !== input.retailerId)
       throw new Error(`목: 배분할 주문 ${a.orderId}이 없다`);
+    if (typeof a.amount !== "number" || a.amount <= 0)
+      throw new Error(`목: 주문 ${a.orderId} 배분액은 1 이상이어야 한다`);
     if (a.amount > mockOrderSettlement(order).outstandingAmount)
       throw new Error(`목: 주문 ${a.orderId} 미수를 넘는 배분`);
-    return { order, amount: a.amount };
-  });
-  if (targets.reduce((s, t) => s + t.amount, 0) > input.amount)
-    throw new Error("목: 배분 합계가 입금액을 넘었다");
+    targets.push({ order, amount: a.amount });
+  }
   const plan = planAllocations(input.retailerId, input.amount, targets);
-  if (plan === null) throw new Error("목: 배분 합계가 입금액을 넘었다");
-  pushPayment(
+  if (plan === null)
+    throw new Error("목: 배분 합계가 입금액과 남은 선수금을 넘었다");
+  return pushPayment(
     {
       retailerId: input.retailerId,
       amount: input.amount,
@@ -326,11 +340,101 @@ export function recordMockPayment(input: {
       paidBy: "RETAILER",
       method: "BANK_TRANSFER",
       memo: null,
-      idempotencyKey: `mock-${nextPaymentId}`,
-      bodyJson: "",
+      idempotencyKey: input.idempotencyKey ?? `mock-${nextPaymentId}`,
+      bodyJson: input.bodyJson ?? "",
     },
     plan,
   );
+}
+
+/** 손잡이 입금 거절 중 도매 `POST /payments`와 같은 코드를 내야 하는 것. 그 밖의 거절은 그냥 `Error`다 */
+export class MockPaymentRejected extends Error {
+  constructor(
+    readonly code: "DUPLICATE_ORDER",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** 이미 받은 배분 대상에 같은 주문이 있나. 도매 `POST /payments`와 소매 손잡이가 같은 검사를 탄다(loop-08e R1) */
+function repeatsOrder(
+  targets: readonly { order: MockOrder }[],
+  orderId: number,
+): boolean {
+  return targets.some((t) => t.order.id === orderId);
+}
+
+/** 같은 Idempotency-Key 재전송 판정. null = 처음 보는 키 */
+export type MockPaymentReplay =
+  | { status: 200; data: WholesaleSchema<"PaymentCreatedResponse"> }
+  | { status: 409 }
+  | null;
+
+/**
+ * 같은 키 재전송 — 본문이 같으면 처음 응답(멱등), 다르면 409(스펙). 도매 `POST /payments`와 소매 손잡이가 같이 쓴다
+ * (loop-08e R2). 손잡이가 키를 무시하면 재전송마다 입금이 쌓여 선수금이 두 배가 된다
+ */
+export function replayMockPayment(
+  key: string,
+  bodyJson: string,
+): MockPaymentReplay {
+  const seen = payments.find((p) => p.idempotencyKey === key);
+  if (seen === undefined) return null;
+  const first = firstResponses.get(seen.id);
+  if (seen.bodyJson !== bodyJson || first === undefined) return { status: 409 };
+  return { status: 200, data: first };
+}
+
+/** 배분 취소 결과. 응답 본문은 부르는 쪽이 자기 어휘로 만든다(도매 핸들러, 소매 손잡이) */
+export type MockAllocationCancel =
+  | { status: 200; data: WholesaleSchema<"AllocationCancelledResponse"> }
+  | { status: 404 }
+  | { status: 409 };
+
+/**
+ * 배분 취소 저장 경로 하나(스펙 `cancelAllocation`). 줄은 지우지 않고 `cancelledAt`만 찍는다. 원장은 안 바뀐다 —
+ * 그 돈은 줄의 입금 남은 몫(선수금)으로 돌아가고 주문 미수가 다시 는다. 검사 순서 404 → 409.
+ * `ownerRetailerId`가 있으면 그 소매처 배분만 찾는다 — 남의 배분은 없는 것과 같이 404이고 아무것도 안 바뀐다.
+ * 도매 핸들러는 소유 검사가 없어 null을 넘긴다(소매 손잡이만 "나"를 넘긴다, loop-08e §5-2 3)
+ */
+function cancelAllocationLine(
+  allocationId: number,
+  ownerRetailerId: number | null,
+): MockAllocationCancel {
+  const line = allocations.find(
+    (a) =>
+      a.id === allocationId &&
+      (ownerRetailerId === null || a.retailerId === ownerRetailerId),
+  );
+  if (line === undefined) return { status: 404 };
+  if (line.cancelledAt !== null) return { status: 409 };
+  const cancelledAt = new Date().toISOString();
+  line.cancelledAt = cancelledAt;
+  const order = mockOrders().find((o) => o.id === line.orderId);
+  if (order) releaseMockAllocation(order, line.amount);
+  return {
+    status: 200,
+    data: {
+      allocationId: line.id,
+      orderId: line.orderId,
+      paymentId: line.paymentId,
+      amount: line.amount,
+      cancelledAt,
+      prepaidRemaining: prepaidOf(line.retailerId),
+    },
+  };
+}
+
+/**
+ * 시험 손잡이용 배분 취소(목 전용). 소매 채팅 목 `/__mock/chat/allocation-cancel`이 "나"의 배분만 취소한다
+ * (loop-08e S1-3). 저장 경로는 도매 `POST /allocations/{id}/cancel`과 같다
+ */
+export function cancelMockAllocation(
+  retailerId: number,
+  allocationId: number,
+): MockAllocationCancel {
+  return cancelAllocationLine(allocationId, retailerId);
 }
 
 /* --- 조회 --------------------------------------------------------------- */
@@ -620,16 +724,14 @@ export const settlementHandlers = [
     ) as WholesaleSchema<"PaymentCreateRequest">;
 
     // 같은 키 재요청 — 본문이 같으면 200 + 동일 본문(멱등), 다르면 409(스펙)
-    const seen = payments.find((p) => p.idempotencyKey === key);
-    if (seen) {
-      if (seen.bodyJson === bodyJson)
-        return HttpResponse.json({ data: firstResponses.get(seen.id) });
+    const replay = replayMockPayment(key, bodyJson);
+    if (replay?.status === 200) return HttpResponse.json({ data: replay.data });
+    if (replay?.status === 409)
       return fail(
         409,
         "IDEMPOTENCY_KEY_REUSED",
         "같은 키로 다른 입금을 보냈습니다.",
       );
-    }
 
     // 스펙 설명의 에러 코드 순서대로 — 400(형식·정책) → 404 → 409(상태)
     if (typeof body.amount !== "number" || body.amount <= 0)
@@ -683,7 +785,7 @@ export const settlementHandlers = [
           "배분액은 1 이상이어야 합니다.",
           "allocations",
         );
-      if (targets.some((t) => t.order.id === a.orderId))
+      if (repeatsOrder(targets, a.orderId))
         return fail(
           400,
           "DUPLICATE_ORDER",
@@ -749,23 +851,12 @@ export const settlementHandlers = [
   http.post(
     "*/api/wholesale/allocations/:allocationId/cancel",
     ({ params }) => {
-      const id = Number(params.allocationId);
-      const line = allocations.find((a) => a.id === id);
-      if (!line) return fail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
-      if (line.cancelledAt !== null)
+      const result = cancelAllocationLine(Number(params.allocationId), null);
+      if (result.status === 404)
+        return fail(404, "RESOURCE_NOT_FOUND", "배분이 없습니다.");
+      if (result.status === 409)
         return fail(409, "STATE_CONFLICT", "이미 취소된 배분입니다.");
-      line.cancelledAt = new Date().toISOString();
-      const order = mockOrders().find((o) => o.id === line.orderId);
-      if (order) releaseMockAllocation(order, line.amount);
-      const data: WholesaleSchema<"AllocationCancelledResponse"> = {
-        allocationId: line.id,
-        orderId: line.orderId,
-        paymentId: line.paymentId,
-        amount: line.amount,
-        cancelledAt: line.cancelledAt,
-        prepaidRemaining: prepaidOf(line.retailerId),
-      };
-      return HttpResponse.json({ data });
+      return HttpResponse.json({ data: result.data });
     },
   ),
 

@@ -12,6 +12,7 @@ import {
   broadcastSessionChange,
   runSessionChange,
   runSessionRefresh,
+  runSignOut,
   watchOtherTabSessions,
 } from "../sessionChange";
 
@@ -49,6 +50,8 @@ export function AccountChip({
     void clearHeaderSession(queryClient);
     /* 채팅 목록, 대화, 끊김 표시도 같이(loop-08c S7-1) */
     runSessionChange();
+    /* 쓰던 글은 로그아웃에서만 전부 지운다(loop-08e D43 Q2). 로그인은 다른 갈래(`runSignIn`)다 */
+    runSignOut();
     /* 같은 쿠키를 보는 다른 탭에도(loop-08c 리뷰 R8) */
     broadcastSessionChange({ change: "logout" });
     /* 서버 세션을 먼저 끊고 나서 옮긴다. 실패해도 옮긴다 — 쿠키가 남아도 이
@@ -82,6 +85,8 @@ export function AccountChip({
         }
         void clearHeaderSession(queryClient);
         runSessionChange();
+        /* 이 탭의 쓰던 글도(S2-5). 이동이 언마운트 저장을 부르지만 세대가 올라 버려진다 */
+        runSignOut();
         window.location.assign(ACCOUNT_PATH.login);
       }),
     [queryClient, retailerId],

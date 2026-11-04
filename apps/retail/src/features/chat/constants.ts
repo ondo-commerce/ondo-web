@@ -95,6 +95,8 @@ export const ENTRY_TEXT = {
   open: "문의하기",
   opening: "여는 중",
   failed: "대화방을 열지 못했어요. 다시 눌러 주세요",
+  /** 같은 소매처 재로그인을 넘긴 방 만들기 401(loop-08e Q6). `failed`와 같은 꼴 */
+  relogin: "로그인이 바뀌어 방을 못 열었어요. 다시 눌러 주세요",
   notFound: "이 도매처와는 대화할 수 없어요",
 } as const;
 
@@ -204,6 +206,14 @@ export const COMPOSER_TEXT = {
   /** 오류가 아니라 안내라 빨강을 쓰지 않는다(도매 디자인 결정 12) */
   photo: "사진은 아직 보낼 수 없어요",
 } as const;
+
+/**
+ * 쓰던 글 sessionStorage 키 머리(loop-08e §4-2 1, 도매 08b와 같은 이름). 로그아웃은 이 머리 키를 전부 지운다.
+ * 소매와 도매는 출처(origin)가 달라 저장소를 같이 쓰지 않는다 — 이름이 같아도 안 섞인다
+ */
+export const DRAFT_KEY_PREFIX = "ondo.chat.draft.v1:";
+/** 글이 바뀐 뒤 이만큼 조용하면 저장한다. 방을 옮기거나 떠나는 순간은 기다리지 않는다(`useRoomDraft`) */
+export const DRAFT_SAVE_DELAY_MS = 300;
 
 /**
  * 글자 수 상한. 서버와 같은 셈(앞뒤 공백을 뺀 유니코드 코드 포인트, `[...text].length`) — JS `length`는

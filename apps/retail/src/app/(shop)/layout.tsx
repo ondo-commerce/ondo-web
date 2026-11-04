@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AccountChip, storeNameLabel } from "@/features/account";
 import { CART_PATH, CartButton, type CartCountWire } from "@/features/cart";
-import { ChatNavButton } from "@/features/chat";
+import { ChatNavButton, ChatShellProvider } from "@/features/chat";
 import { NotificationBell } from "@/features/notification";
 import { requireSession, serverApi } from "@/shared/api/server";
 import { AppShell } from "@/shared/components/AppShell";
@@ -82,7 +82,10 @@ export default async function ShopLayout({
         />
       }
     >
-      {children}
+      {/* 방 화면이 쓰던 글 키(소매처 id)를 읽는 자리(loop-08e S2-2). 서버 레이아웃이라 클라이언트 provider로 넘긴다 */}
+      <ChatShellProvider retailerId={me.retailerId ?? null}>
+        {children}
+      </ChatShellProvider>
     </AppShell>
   );
 }

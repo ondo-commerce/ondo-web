@@ -300,8 +300,10 @@ describe("S1-5 unread-count", () => {
   });
 
   it("모르는 delay op → 400, reset 은 fail 과 delay 를 지운다", async () => {
-    // send는 loop-08d(#350)에서 delay op가 됐다. 방 만들기(create) 지연은 08e라 아직 모르는 op다
-    expect((await knob("/delay", { op: "create", ms: 10 })).status).toBe(400);
+    // send는 loop-08d(#350), create는 loop-08e(#360)에서 delay op가 됐다. receivable은 fail 전용이라 모르는 op다
+    expect((await knob("/delay", { op: "receivable", ms: 10 })).status).toBe(
+      400,
+    );
     await knob("/fail", { op: "count", status: 500, times: 3 });
     await knob("/reset");
     expect((await count()).status).toBe(200);
