@@ -58,10 +58,18 @@ export function useListAnchor(
   sessionLost: boolean,
 ): void {
   const seen = useRef<VisibleListRow[]>([]);
+  /* `seen`을 적을 때의 scrollY(리뷰 R16). 사장 스크롤이 scroll 이벤트 전에 갱신 커밋과 겹치면 `seen`의 위끝은 그
+     스크롤 전 값이다 — 그 차이만큼은 사장이 옮긴 것이라 보정에서 뺀다 */
+  const seenScrollY = useRef(0);
+  /* 목록 아래 여유(px, 리뷰 R15). 문서 끝 근처(첫 장 30행의 20번째 아래)에선 보정에 필요한 scrollY가 문서 최대값을
+     넘어 잘렸다(390 34px, 1280 6px). 모자란 만큼 목록 아래를 늘려 보정을 다 한다. 줄이지 않는다 — 줄이면 브라우저가
+     scrollY를 다시 잘라 보던 행이 움직인다. 화면을 떠나면(언마운트) 없어진다 */
+  const slack = useRef(0);
 
   useEffect(() => {
     const record = () => {
       seen.current = visibleRows(listRef.current);
+      seenScrollY.current = window.scrollY;
     };
     record();
     window.addEventListener("scroll", record, { passive: true });
@@ -81,10 +89,22 @@ export function useListAnchor(
       const was = before.find((row) => row.roomId === anchorId);
       const now = elements.find((el) => rowIdOf(el) === anchorId);
       if (was !== undefined && now !== undefined) {
-        const delta = now.getBoundingClientRect().top - was.top;
-        if (Math.abs(delta) >= 0.5) window.scrollBy(0, delta);
+        /* 적은 뒤 사장이 옮긴 만큼(아직 scroll 이벤트 전) 그 행의 기대 위끝도 같이 옮겨 본다 */
+        const expectedTop = was.top - (window.scrollY - seenScrollY.current);
+        const delta = now.getBoundingClientRect().top - expectedTop;
+        if (Math.abs(delta) >= 0.5) {
+          const root = document.documentElement;
+          const max = root.scrollHeight - window.innerHeight;
+          const short = Math.ceil(window.scrollY + delta - max);
+          if (short > 0) {
+            slack.current += short;
+            list.style.paddingBottom = `${slack.current}px`;
+          }
+          window.scrollBy(0, delta);
+        }
       }
     }
     seen.current = visibleRows(list);
+    seenScrollY.current = window.scrollY;
   }, [listRef, pages, sessionLost]);
 }

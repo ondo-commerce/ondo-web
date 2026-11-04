@@ -206,8 +206,81 @@ for (const viewport of [
   });
 }
 
+/* 리뷰 R15(08e-N6). AC 글자 그대로 첫 장 30행만 받은 채. 20번째 행을 헤더 밑에 둔 자리가 문서 끝 근처라 한 칸
+   내리는 보정이 문서 최대 scrollY에 막혔다(390 34px, 1280 6px). 목록 아래 여유로 보정을 다 해야 한다 */
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1280, height: 800 },
+]) {
+  test.describe(`S4-2 첫 장 30행 ${viewport.width}`, () => {
+    test.use({ viewport });
+
+    test("R15 30행만 받은 채 20번째 행을 헤더 밑에 두고 30번째 방 incoming → 20 이동 ≤ 4px, 보정 한 칸", async ({
+      page,
+    }) => {
+      /* AC 그대로 방 35개, `더 보기` 없이 첫 장 30행 */
+      await openList(page, 35);
+      await pauseOnList(page);
+      expect(await listRows(page).count()).toBe(30);
+      const ids = await rowIds(page);
+      const row20 = ids[19]!;
+      const row30 = ids[29]!;
+      await scrollRowToHeader(page, 20);
+      const before = await geometry(page);
+
+      await incoming(page, row30, "30번째 방 새 말");
+      await refreshUntilFirst(page, row30);
+      const after = await geometry(page);
+
+      expectMoved(before, after, row20, "20(30행)");
+      expectScrollDelta(before, after, pitchOf(before), "R15");
+    });
+  });
+}
+
 test.describe("S4-3 1280", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
+
+  /* 리뷰 R16. 사장 휠이 scroll 이벤트로 적히기 전에 갱신이 커밋되면, 적어 둔 위끝은 휠 전 값이다. 그 차이를 사장
+     이동으로 빼지 않으면 보정이 휠까지 되돌린다. 휠 직후 지연 응답을 풀어 둘이 겹치게 한다 */
+  test("R16 delay {op: rooms} 풀기 직전 scroll 이벤트 전 100px 이동 → 응답 뒤 25는 그만큼 올라간 자리, scrollY = 100 + 한 칸", async ({
+    page,
+  }) => {
+    await openAll(page, 45);
+    const ids = await rowIds(page);
+    const row25 = ids[24]!;
+    const row30 = ids[29]!;
+    await scrollRowToHeader(page, 25);
+
+    await incoming(page, row30, "30번째 방 새 말");
+    await chatMock(page, "delay", { op: "rooms", ms: 3_000 });
+    await runToTick(page);
+    const before = await geometry(page);
+    expect((await rowIds(page))[0], "아직 응답 전").toBe(ids[0]);
+
+    /* 휠로는 겹침이 안 났다(scroll 이벤트가 응답 커밋보다 늘 먼저 왔다, 실측 — 변이 생존). 그래서 다음 scroll 이벤트
+       하나를 앱 리스너 전에 삼켜 "이벤트가 아직 안 왔다"를 만든 채 100px 옮기고 응답을 푼다 */
+    await page.evaluate(() => {
+      window.addEventListener("scroll", (e) => e.stopImmediatePropagation(), {
+        capture: true,
+        once: true,
+      });
+      window.scrollBy(0, 100);
+    });
+    await page.clock.runFor(3_000);
+    await flushUntil(page, async () => (await rowIds(page))[0] === row30);
+    await settled(page, NEXT_PAGE_GET);
+    const after = await geometry(page);
+    const wheel = after.scrollY - before.scrollY - pitchOf(before);
+    expect(
+      Math.abs(wheel - 100),
+      `scrollY 변화 ${after.scrollY - before.scrollY} = 사장 이동 100 + 한 칸 ${pitchOf(before)}`,
+    ).toBeLessThanOrEqual(4);
+    expect(
+      Math.abs(topOf(after, row25) - (topOf(before, row25) - 100)),
+      "25는 사장이 옮긴 만큼 올라간 자리",
+    ).toBeLessThanOrEqual(4);
+  });
 
   test("① scrollY 0 → incoming → 갱신 뒤 scrollY 0, 새 첫 행 보임 (⑤ 변화 0)", async ({
     page,
