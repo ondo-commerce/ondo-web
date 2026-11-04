@@ -82,10 +82,15 @@ function roomOptions(roomId: number, queryClient: QueryClient) {
     queryKey: chatKeys.room(roomId),
     queryFn: async () => {
       await chatMockReady();
-      const detail = await guardSession(queryClient, () =>
-        apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
+      /* 이 요청을 띄운 화면. 확인 토큰이기도 하다 — 떠난 뒤 온 성공이 그 뒤에 적힌 확인 표시를 못 지운다(메타 M1) */
+      const screen = chatScreenEpoch();
+      const detail = await guardSession(
+        queryClient,
+        () => apiFetch<ChatRoomDetail>(CHAT_PATH.room(roomId)),
+        screen,
+        roomId,
       );
-      confirmRoom(roomId);
+      confirmRoom(roomId, screen);
       queryClient.setQueryData<ChatThread>(chatKeys.thread(roomId), (thread) =>
         thread === undefined
           ? thread
@@ -146,8 +151,8 @@ export function useRoomQueries(roomId: number, leaving = false) {
   const gate = leaving
     ? { enabled: false, placeholderData: keepPreviousData }
     : {};
-  /* 잠긴 채 떠난 방을 다시 열었다(loop-08e R9) — 캐시가 신선해도 마운트 때 다시 묻는다. 401이면 `guardSession`이
-     다시 잠그고, 성공하면 방 머리가 표시를 지운다(`confirmRoom`). 마운트 조회와 같은 길이라 화면 세대도 같다 —
+  /* 확인할 방을 다시 열었다(loop-08e R9, 메타 M2 — 잠긴 채 떠났거나 떠난 뒤 401을 받은 방) — 캐시가 신선해도 마운트
+     때 다시 묻는다. 401이면 `guardSession`이 다시 잠그고, 성공하면 방 머리가 표시를 지운다(`confirmRoom`). 마운트 조회와 같은 길이라 화면 세대도 같다 —
      effect에서 따로 refetch하면 개발 모드 effect 두 번 실행에 화면 세대가 먼저 올라 401이 잠그지 못했다(실측) */
   const recheck = isUnconfirmedRoom(roomId)
     ? { staleTime: 0, refetchOnMount: "always" as const }
@@ -292,10 +297,14 @@ async function fetchThread(
   const start = read();
 
   if (start === undefined) {
-    const page = await guardSession(queryClient, () =>
-      apiFetchBody<ChatMessagePage>(path, {
-        searchParams: { size: MESSAGE_PAGE_SIZE },
-      }),
+    const page = await guardSession(
+      queryClient,
+      () =>
+        apiFetchBody<ChatMessagePage>(path, {
+          searchParams: { size: MESSAGE_PAGE_SIZE },
+        }),
+      chatScreenEpoch(),
+      roomId,
     );
     return {
       messages: mergeMessages([], page.data),
@@ -322,10 +331,14 @@ async function fetchThread(
   let counterpartRead: number | null = null;
   try {
     for (;;) {
-      const page = await guardSession(queryClient, () =>
-        apiFetchBody<ChatMessagePage>(path, {
-          searchParams: { afterSequence: cursor, size: MESSAGE_PAGE_SIZE },
-        }),
+      const page = await guardSession(
+        queryClient,
+        () =>
+          apiFetchBody<ChatMessagePage>(path, {
+            searchParams: { afterSequence: cursor, size: MESSAGE_PAGE_SIZE },
+          }),
+        chatScreenEpoch(),
+        roomId,
       );
       fetched = mergeMessages(fetched, page.data);
       cursor = advanceCursor(cursor, page.data);
@@ -460,6 +473,7 @@ export async function fetchOlder(queryClient: QueryClient, roomId: number) {
           searchParams: { beforeSequence: oldest, size: MESSAGE_PAGE_SIZE },
         }),
       screen,
+      roomId,
     );
   } catch (error) {
     if (replaced() || isChatStaleResponseError(error)) return;

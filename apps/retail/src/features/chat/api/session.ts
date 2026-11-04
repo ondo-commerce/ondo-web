@@ -81,6 +81,11 @@ export async function guardSession<T>(
    * 안이다(목록은 거치지 않는다). 이전 장은 표시를 바꾼 순간의 값을 넘긴다
    */
   screen: number = screenEpoch,
+  /**
+   * 요청이 속한 방(loop-08e M2). 떠난 화면에서 401이 오면 이 방을 다음 재진입 확인 대상으로 적는다(`unconfirmedRooms`).
+   * 방이 없는 요청(담기)은 안 적는다
+   */
+  roomId?: number,
 ): Promise<T> {
   /* 로그아웃 응답 대기 구간(loop-08e §4-2 9) — 새 요청을 만들지 않는다. 계정이 바뀌는 중이라 계정 변경과 같은 갈래 */
   if (leaving) throw new ChatStaleResponseError("account");
@@ -97,6 +102,7 @@ export async function guardSession<T>(
       throw new ChatStaleResponseError("session");
     if (isUnauthorized(error)) {
       if (screen === screenEpoch) markSessionLost(queryClient);
+      else if (roomId !== undefined) unconfirmedRooms.set(roomId, screenEpoch);
       throw new ChatSessionLostError();
     }
     throw error;
@@ -260,31 +266,44 @@ export function chatScreenEpoch(): number {
 }
 
 /**
- * 잠긴 채 떠난 방(loop-08e R9). 떠나면 잠금은 풀리지만 다시 열 때 확인 요청 1회가 나가야 한다(기획 §4-1 잠금 범위,
- * S2-7 ②). 방 머리는 `staleTime: Infinity`, 메시지도 기본 staleTime 안이라 바로 다시 열면 아무 요청도 안 나가 잠금이
- * 그냥 풀렸다. 그래서 잠긴 채 떠난 방을 적어 두고 다시 열 때 확인을 강제한다(`useRoomQueries`)
+ * 다시 열 때 세션을 확인할 방(loop-08e R9, 메타 M1 M2). 떠나면 잠금은 풀리지만 다시 열 때 확인 요청 1회가 나가야
+ * 한다(기획 §4-1 잠금 범위, S2-7 ②). 방 머리는 `staleTime: Infinity`, 메시지도 기본 staleTime 안이라 바로 다시 열면
+ * 아무 요청도 안 나가 잠금이 그냥 풀린다. 그래서 적어 두고 다시 열 때 캐시 신선도와 상관없이 확인한다(`useRoomQueries`).
+ *
+ * 적는 때는 둘이다.
+ * - 잠긴 채 떠났다(`leaveChatScreen`)
+ * - 떠난 화면의 요청이 401을 받았다(`guardSession`, M2). 잠금 범위가 화면 하나라 그 401은 지금 화면을 안 잠그지만,
+ *   그 방 세션은 끊겼다는 답이다. 보내자마자 떠난 방이 그 예다 — 잠긴 적이 없어 첫째 갈래로는 안 적힌다
+ *
+ * 값은 적은 순간의 화면 세대(확인 토큰, M1)다. 확인은 그 세대 이후에 띄운 요청만 할 수 있다(`confirmRoom`) — 떠나기
+ * 전 화면이 띄운 방 머리가 늦게 200으로 와도, 그 뒤에 다시 잠긴 채 떠나며 적은 표시는 못 지운다
  */
-const unconfirmedRooms = new Set<number>();
+const unconfirmedRooms = new Map<number, number>();
 
 /** 방 화면을 떠났다. 잠겨 있었으면 그 방을 확인 대상으로 적고, 끊김 칸을 내리고 화면 세대를 올린다 */
 export function leaveChatScreen(
   queryClient: QueryClient,
   roomId?: number,
 ): void {
-  if (roomId !== undefined && isSessionLost(queryClient))
-    unconfirmedRooms.add(roomId);
+  const locked = isSessionLost(queryClient);
   screenEpoch += 1;
+  /* 올린 뒤의 세대로 적는다 — 떠나기 전 화면이 띄운 요청은 이보다 작아 확인이 못 된다 */
+  if (roomId !== undefined && locked) unconfirmedRooms.set(roomId, screenEpoch);
   queryClient.setQueryData<boolean>(chatKeys.session(), false);
 }
 
-/** 그 방이 잠긴 채 떠나 아직 확인 안 된 방인가. 렌더 중에 읽는다(지우지 않는다) */
+/** 그 방이 다시 열 때 확인할 방인가. 렌더 중에 읽는다(지우지 않는다) */
 export function isUnconfirmedRoom(roomId: number): boolean {
   return unconfirmedRooms.has(roomId);
 }
 
-/** 확인 요청이 성공했다. 401이면 지우지 않는다 — 다시 잠기고, 다시 떠날 때도 적혀 있다 */
-export function confirmRoom(roomId: number): void {
-  unconfirmedRooms.delete(roomId);
+/**
+ * 확인 요청이 성공했다. `screen`은 그 요청을 띄운 화면 세대다. 표시를 적은 세대보다 앞이면(떠나기 전 화면의 늦은 성공)
+ * 지우지 않는다(M1). 401이면 부르지 않는다 — 다시 잠기고, 다시 떠날 때 새 세대로 다시 적힌다
+ */
+export function confirmRoom(roomId: number, screen: number): void {
+  const marked = unconfirmedRooms.get(roomId);
+  if (marked !== undefined && screen >= marked) unconfirmedRooms.delete(roomId);
 }
 
 /**

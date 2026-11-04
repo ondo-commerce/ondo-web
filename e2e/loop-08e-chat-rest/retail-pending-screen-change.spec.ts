@@ -10,11 +10,13 @@ import {
   choice,
   choiceGroups,
   composer,
+  count,
   log,
   openRoomById,
   orderChoice,
   orderGroups,
   requests,
+  roomRow,
   SEND_POST,
   start,
   useOwnCart,
@@ -22,6 +24,8 @@ import {
 import {
   advance,
   clientGo,
+  expectReadOnly,
+  expectRemoveOnly,
   expectRetryAndRemove,
   expectWritable,
   failedBubbleAndDraft,
@@ -170,48 +174,96 @@ test.describe("S2-3 [방 화면 전환, 보류 말풍선, 보내기]", () => {
   });
 });
 
-test.describe("S2-12 [방 화면 전환, 보내기 결과별]", () => {
+/** 방 1 머리 GET(다시 열 때의 확인 요청). 방 머리는 `staleTime: Infinity`라 확인이 아니면 다시 안 나간다 */
+const ROOM1_GET = {
+  path: /\/api\/retail\/chat\/rooms\/1$/,
+  method: "GET",
+} as const;
+
+/** 3초 응답(기획 그대로). 방 1 캐시가 아직 신선한 채 돌아온다 — 메타 M2 */
+const QUICK = 3_000;
+
+/** 방 1에서 보내고 바로 방 33. 3초 시계를 밀어 방 33을 보는 사이 결과가 도착한다. 방 33은 안 잠긴다 */
+async function sendThenLeave(page: Page, status: number | null) {
+  await start(page, "/");
+  await openRoomById(page, ROOM_1);
+  if (status !== null) await chatMock(page, "fail", { op: "send", status });
+  await chatMock(page, "delay", { op: "send", ms: QUICK });
+  await sendText(page, "방 옮긴 뒤 결과");
+  await openRoomById(page, ROOM_33);
+  await advance(page, QUICK);
+  expect(await lastSettled(page, SEND_POST)).toBe(status ?? 201);
+  await expect(lostAlert(page)).toHaveCount(0);
+  await expectWritable(page);
+  await expect(pendingBubbles(page)).toHaveCount(0);
+}
+
+test.describe("S2-12 [방 화면 전환, 보내기 결과별, 3초 응답 뒤 바로 복귀]", () => {
   for (const [label, status] of [
     ["① 201", null],
     ["② 500", 500],
-    ["③ 401", 401],
   ] as const) {
-    test(`${label} → 보내자마자 방 33 → 도착 뒤 방 33 잠금 0 → 방 1 결과`, async ({
+    test(`${label} → 보내자마자 방 33 → 3초 도착, 방 33 잠금 0 → 바로 방 1 결과, 확인 요청 0`, async ({
       page,
     }) => {
-      const sent = captureSendBodies(page);
-      await start(page, "/");
-      await openRoomById(page, ROOM_1);
-      if (status !== null) await chatMock(page, "fail", { op: "send", status });
-      await chatMock(page, "delay", { op: "send", ms: LATE });
-      await sendText(page, "방 옮긴 뒤 결과");
-      await openRoomById(page, ROOM_33);
-      await advance(page, LATE);
-      expect(await lastSettled(page, SEND_POST)).toBe(status ?? 201);
-      await advance(page, 2_000);
-      await expect(lostAlert(page)).toHaveCount(0);
-      await expectWritable(page);
-      await expect(pendingBubbles(page)).toHaveCount(0);
-
+      await sendThenLeave(page, status);
+      const roomGets = await count(page, ROOM1_GET);
       await openRoomById(page, ROOM_1);
       if (status === null) {
         await expect(serverBubbles(page, "방 옮긴 뒤 결과")).toHaveCount(1);
         await expect(pendingBubbles(page)).toHaveCount(0);
-        return;
+      } else {
+        await expect(lostAlert(page)).toHaveCount(0);
+        await expectRetryAndRemove(failedBubbles(page));
       }
-      await expect(lostAlert(page)).toHaveCount(0);
-      const bubble = failedBubbles(page);
-      await expectRetryAndRemove(bubble);
-      if (status === 401) {
-        await retryOf(bubble).click();
-        await waitSendsSettled(page, 2);
-        expect((await requests(page, SEND_POST)).at(-1)?.status).toBe(201);
-        expect(sent[1]?.key).toBe(sent[0]?.key);
-        await expect(pendingBubbles(page)).toHaveCount(0);
-        await expect(serverBubbles(page, "방 옮긴 뒤 결과")).toHaveCount(1);
-      }
+      /* 401이 아니면 확인 대상이 아니다 — 방 머리는 다시 안 묻는다 */
+      expect(await count(page, ROOM1_GET)).toBe(roomGets);
     });
   }
+
+  test("③ 401 → 보내자마자 방 33 → 3초 도착 → 바로 방 1 → 확인 요청 200 → 풀림, R+D → 다시 보내기 201, 같은 키", async ({
+    page,
+  }) => {
+    const sent = captureSendBodies(page);
+    await sendThenLeave(page, 401);
+    const roomGets = await count(page, ROOM1_GET);
+    await openRoomById(page, ROOM_1);
+    /* 떠난 방의 401 = 그 방을 확인 대상으로 적었다(메타 M2). 캐시가 신선해도 방 머리 확인 1회 */
+    await expect
+      .poll(async () =>
+        (await requests(page, ROOM1_GET)).slice(roomGets).map((r) => r.status),
+      )
+      .toEqual([200]);
+    await expect(lostAlert(page)).toHaveCount(0);
+    await expectWritable(page);
+    const bubble = failedBubbles(page);
+    await expectRetryAndRemove(bubble);
+    await retryOf(bubble).click();
+    await waitSendsSettled(page, 2);
+    expect((await requests(page, SEND_POST)).at(-1)?.status).toBe(201);
+    expect(sent[1]?.key).toBe(sent[0]?.key);
+    await expect(pendingBubbles(page)).toHaveCount(0);
+    await expect(serverBubbles(page, "방 옮긴 뒤 결과")).toHaveCount(1);
+  });
+
+  test("③ 401 → 보내자마자 방 33 → 3초 도착 → 바로 방 1 → 확인 요청 401 → 잠김, D, 읽기 전용", async ({
+    page,
+  }) => {
+    await sendThenLeave(page, 401);
+    /* 계획은 방을 안 가린다 — 방 33 polling이 먼저 먹지 않게 방이 없는 목록 화면에서 걸고 바로 방 1을 연다 */
+    await chatNav(page).click();
+    await expect(page).toHaveURL("/chats");
+    await chatMock(page, "fail", { op: "room", status: 401, times: 1 });
+    await chatMock(page, "fail", { op: "messages", status: 401, times: 1 });
+    const roomGets = await count(page, ROOM1_GET);
+    await roomRow(page, ROOM_1).click();
+    await expect(lostAlert(page)).toBeVisible();
+    await expectReadOnly(page);
+    await expectRemoveOnly(failedBubbles(page));
+    expect(
+      (await requests(page, ROOM1_GET)).slice(roomGets).map((r) => r.status),
+    ).toEqual([401]);
+  });
 });
 
 test.describe("S2-14 ① [담기 뒤 셸 refresh]", () => {

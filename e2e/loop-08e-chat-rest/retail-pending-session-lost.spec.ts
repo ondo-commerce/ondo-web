@@ -132,6 +132,57 @@ test.describe("S2-7 [지금 세션 401, 보내기, 쓰던 글]", () => {
   });
 });
 
+test.describe("S2-7 메타 M1 [확인 중 다시 잠겨 떠난 방, 늦은 방 머리 200]", () => {
+  test("잠긴 채 떠남 → 다시 열어 확인: 방 머리 3초, 메시지 401로 다시 잠김 → 떠남 → 방 머리 200 도착 → 다시 열면 확인 요청 1회", async ({
+    page,
+  }) => {
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    await chatMock(page, "fail", { op: "send", status: 401 });
+    await sendText(page, "첫 글");
+    await expect(lostAlert(page)).toBeVisible();
+
+    /* 계획은 방을 안 가린다 — 방이 없는 목록 화면에서 걸고 방 1을 연다 */
+    await chatNav(page).click();
+    await expect(page).toHaveURL("/chats");
+    await chatMock(page, "delay", { op: "room", ms: 3_000 });
+    await chatMock(page, "fail", { op: "messages", status: 401, times: 1 });
+    const firstCheck = await count(page, ROOM1_GET);
+    await roomRow(page, ROOM_1).click();
+    await expect(lostAlert(page)).toBeVisible();
+    await expectReadOnly(page);
+    /* 방 머리 확인은 아직 날아가는 중이다 */
+    await expect
+      .poll(async () =>
+        (await requests(page, ROOM1_GET))
+          .slice(firstCheck)
+          .map((r) => r.status),
+      )
+      .toEqual([null]);
+
+    await chatNav(page).click();
+    await expect(page).toHaveURL("/chats");
+    await advance(page, 3_000);
+    expect(await lastSettled(page, ROOM1_GET)).toBe(200);
+
+    const secondCheck = await count(page, ROOM1_GET);
+    await roomRow(page, ROOM_1).click();
+    /* 떠나기 전 화면의 200은 확인이 아니다 — 다시 열면 확인 요청이 나가고, 그 200이 풀어 준다 */
+    await expect
+      .poll(async () =>
+        (await requests(page, ROOM1_GET))
+          .slice(secondCheck)
+          .map((r) => r.status),
+      )
+      .toEqual([200]);
+    await expect(lostAlert(page)).toHaveCount(0);
+    await expectWritable(page);
+    await expectRetryAndRemove(
+      failedBubbles(page).filter({ hasText: "첫 글" }),
+    );
+  });
+});
+
 test.describe("S2-11 [잠긴 뒤 늦은 결과]", () => {
   /** 늦은 보내기를 띄우고 이전 장 401로 잠근다 */
   async function sendThenLock(page: Page, status: number | null) {
