@@ -19,8 +19,9 @@ import { draftPrefixOf } from "./derive";
  * **저장소에도 세대를 둔다**(`DRAFT_META_KEY`). 정리 때 키를 못 세거나(`key()` 실패) 못 지우면(`removeItem` 실패)
  * 앞 글이 저장소에 남는다. 메모리 표시는 새로고침하면 없어서 다음 문서가 그 글을 읽는다. 그래서 정리마다
  * `{새 세대, live: 남길 키}`를 **먼저** 적고 그다음 지운다. 한 번이라도 정리한 탭에서는 live 키만 읽는다 — 지우기는
- * 그다음 청소일 뿐 안 돼도 된다(§4-2 6). 세대 칸 쓰기마저 실패하면 이 문서 동안은 저장소를 아예 안 읽는다 —
- * 새로고침까지 넘기는 보장은 그때 없다(저장소가 통째로 막힌 경우).
+ * 그다음 청소일 뿐 안 돼도 된다(§4-2 6). 세대 칸 쓰기마저 실패하면 그 정리를 밀어 두고 적을 때까지 저장소를 안
+ * 읽는다. 저장소를 만질 때마다와 문서를 떠날 때 다시 적어 본다(loop-08e R5) — 저장소가 문서를 떠난 뒤에야
+ * 돌아오면 새로고침까지 넘기는 보장은 없다(저장소가 통째로 막힌 경우).
  * 정리한 적 없는 탭(세대 칸 없음)은 저장소 값을 그대로 믿는다.
  */
 
@@ -76,6 +77,8 @@ export interface DraftStore {
    * 남기는 키는 지금 읽히는 것만이다. 앞 정리에서 못 지워 live 밖에 있던 같은 소매처 키는 되살리지 않는다
    */
   keepOnly: (retailerId: number | null) => void;
+  /** 세대 칸을 못 적은 정리가 밀려 있으면 다시 적어 본다. 문서를 떠날 때(pagehide) 부른다 */
+  flush: () => void;
 }
 
 /**
@@ -88,8 +91,10 @@ export function createDraftStore(
   /** 키 → 글. null은 "지웠다"(저장소 지우기가 실패했을 때) */
   const memory = new Map<string, string | null>();
   let generation = 0;
-  /** 세대 칸을 못 적은 정리가 있었다 — 이 문서 동안 저장소 값을 믿지 않는다 */
+  /** 세대 칸을 못 적은 정리가 있었다 — 적을 때까지 저장소 값을 믿지 않는다 */
   let storageUntrusted = false;
+  /** 세대 칸을 못 적은 정리의 남길 키 머리(null = 전부 지움). undefined = 밀린 정리 없음 */
+  let pendingKeep: string | null | undefined = undefined;
 
   const safeStorage = (): DraftStorage | null => {
     try {
@@ -110,6 +115,7 @@ export function createDraftStore(
 
   const read = (key: string): string | null => {
     if (memory.has(key)) return memory.get(key) ?? null;
+    settle();
     if (storageUntrusted) return null;
     const target = safeStorage();
     if (target === null) return null;
@@ -134,6 +140,7 @@ export function createDraftStore(
 
   const write = (key: string, text: string, gen: number): void => {
     if (gen !== generation) return;
+    settle();
     const target = safeStorage();
     try {
       if (target === null || storageUntrusted) throw new Error("저장소 못 씀");
@@ -157,8 +164,28 @@ export function createDraftStore(
     generation += 1;
     const kept = (key: string) => keep !== null && key.startsWith(keep);
     for (const key of [...memory.keys()]) if (!kept(key)) memory.delete(key);
+    /* 앞 정리가 세대 칸을 못 적은 채 밀려 있으면 둘 다 남기는 키만 남긴다. 머리가 다르면 남길 것이 없다 */
+    pendingKeep =
+      pendingKeep === undefined || pendingKeep === keep ? keep : null;
+    settle();
+  };
+
+  /**
+   * 밀린 정리(`pendingKeep`)를 저장소에 적는다. 세대 칸 쓰기가 실패하면 밀린 채로 두고 이 문서 동안 저장소를 안
+   * 믿는다(`storageUntrusted`). 그 표시는 메모리라 문서가 바뀌면 없어진다 — 저장소가 돌아온 뒤 문서가 바뀌면 다음
+   * 문서가 앞 계정 글을 읽고, 같은 계정 재로그인의 `keepOnly`가 그 글을 남겼다(loop-08e R5). 그래서 저장소를 만질
+   * 때마다(`read`, `write`, 다음 정리, 문서를 떠날 때 `flush`) 다시 적어 본다. 적히면 저장소가 다시 믿을 만하다.
+   * 저장소가 문서를 떠난 뒤에야 돌아오면 이 문서는 적을 기회가 없다(그 한계는 남는다)
+   */
+  const settle = (): void => {
+    if (pendingKeep === undefined) return;
+    const keep = pendingKeep;
+    const kept = (key: string) => keep !== null && key.startsWith(keep);
     const target = safeStorage();
-    if (target === null) return;
+    if (target === null) {
+      storageUntrusted = true;
+      return;
+    }
 
     let keys: string[] | null = [];
     try {
@@ -183,6 +210,8 @@ export function createDraftStore(
       const before = meta?.epoch ?? 0;
       const epoch = before >= Number.MAX_SAFE_INTEGER - 1 ? 1 : before + 1;
       target.setItem(DRAFT_META_KEY, JSON.stringify({ epoch, live }));
+      pendingKeep = undefined;
+      storageUntrusted = false;
     } catch {
       storageUntrusted = true;
     }
@@ -203,6 +232,7 @@ export function createDraftStore(
     write,
     clear: () => prune(null),
     keepOnly: (retailerId) => prune(draftPrefixOf(retailerId)),
+    flush: settle,
   };
 }
 
@@ -210,6 +240,10 @@ export function createDraftStore(
 export const chatDrafts: DraftStore = createDraftStore(() =>
   typeof window === "undefined" ? null : window.sessionStorage,
 );
+
+/* 문서를 떠날 때 밀린 정리를 한 번 더 적어 본다(R5). 로그아웃 뒤 방 화면이 없어도(입력창이 안 부름) 돈다 */
+if (typeof window !== "undefined")
+  window.addEventListener("pagehide", () => chatDrafts.flush());
 
 /**
  * 로그아웃 때 쓰던 글을 전부 지운다(D43 Q2). 공용 단말에서 다음 사람이 보는 쪽이 더 나쁘다.

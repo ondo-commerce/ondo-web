@@ -213,7 +213,53 @@ describe("S2-1 정리가 실패해도 다음 문서가 옛 글을 안 읽는다(
     expect(createDraftStore(() => storage).read(KEY_2)).toBeNull();
   });
 
-  it("세대 칸 쓰기마저 던지면 이 문서 동안 저장소를 안 읽고, 쓰기는 메모리로 받는다", () => {
+  it("세대 칸 쓰기마저 던지면 막힌 동안 저장소를 안 읽고, 쓰기는 메모리로 받는다", () => {
+    const { storage, fail, map } = fakeStorage({ [KEY_1]: "옛 글" });
+    const store = createDraftStore(() => storage);
+    fail.add("setItem");
+    fail.add("removeItem");
+    store.clear();
+    expect(store.read(KEY_1)).toBeNull();
+    store.write(KEY_2, "메모리 글", store.generation());
+    expect(map.has(KEY_2)).toBe(false);
+    expect(store.read(KEY_2)).toBe("메모리 글");
+  });
+
+  it("R5 세대 칸과 removeItem이 함께 던진 로그아웃 → 저장소 복구 → 이 문서가 떠나며 flush → 새 문서, 같은 계정 재로그인 keepOnly(1) → 옛 글 null", () => {
+    const { storage, fail, map } = fakeStorage({ [MINE_33]: "로그아웃 전 글" });
+    const store = createDraftStore(() => storage);
+    fail.add("setItem");
+    fail.add("removeItem");
+    store.clear();
+    fail.delete("setItem");
+    fail.delete("removeItem");
+    store.flush();
+    expect(map.has(MINE_33)).toBe(false);
+    const next = createDraftStore(() => storage);
+    expect(next.read(MINE_33)).toBeNull();
+    next.keepOnly(1);
+    expect(next.read(MINE_33)).toBeNull();
+    expect(createDraftStore(() => storage).read(MINE_33)).toBeNull();
+  });
+
+  it("R5 같은 상황에서 지우기만 계속 막혀도 세대 칸이 적혀 새 문서와 재로그인 keepOnly(1)가 옛 글을 안 읽는다", () => {
+    const { storage, fail, map } = fakeStorage({ [MINE_33]: "로그아웃 전 글" });
+    const store = createDraftStore(() => storage);
+    fail.add("setItem");
+    fail.add("removeItem");
+    store.clear();
+    fail.delete("setItem");
+    /* 복구 뒤 처음 만지는 것(다음 방의 read)이 밀린 정리를 적는다 */
+    expect(store.read(KEY_1)).toBeNull();
+    fail.delete("removeItem");
+    expect(map.get(MINE_33)).toBe("로그아웃 전 글");
+    const next = createDraftStore(() => storage);
+    next.keepOnly(1);
+    expect(next.read(MINE_33)).toBeNull();
+    expect(createDraftStore(() => storage).read(MINE_33)).toBeNull();
+  });
+
+  it("R5 밀린 정리가 적힌 뒤 새로 쓴 글은 저장소로 가고 새 문서에서 읽힌다", () => {
     const { storage, fail, map } = fakeStorage({ [KEY_1]: "옛 글" });
     const store = createDraftStore(() => storage);
     fail.add("setItem");
@@ -221,10 +267,11 @@ describe("S2-1 정리가 실패해도 다음 문서가 옛 글을 안 읽는다(
     store.clear();
     fail.delete("setItem");
     fail.delete("removeItem");
-    expect(store.read(KEY_1)).toBeNull();
-    store.write(KEY_2, "메모리 글", store.generation());
-    expect(map.has(KEY_2)).toBe(false);
-    expect(store.read(KEY_2)).toBe("메모리 글");
+    store.write(KEY_2, "새 계정 글", store.generation());
+    expect(map.get(KEY_2)).toBe("새 계정 글");
+    const next = createDraftStore(() => storage);
+    expect(next.read(KEY_1)).toBeNull();
+    expect(next.read(KEY_2)).toBe("새 계정 글");
   });
 
   it("정리한 적 없는 탭(세대 칸 없음)은 저장소 값을 그대로 믿는다", () => {
@@ -297,16 +344,19 @@ describe("S2-1 로그인 정리 keepOnly(Q1 ①)", () => {
     expect(reloaded.read(MINE_33)).toBeNull();
   });
 
-  it("③ 메타 쓰기가 던짐 → 이 인스턴스 read 전부 null(저장소 안 믿음)", () => {
+  it("③ 메타 쓰기가 던짐 → 이 인스턴스 read 전부 null(저장소 안 믿음). 복구 뒤 처음 만질 때 밀린 정리를 적어 2:5만 계속 null", () => {
     const { storage, fail } = fakeStorage(seed());
     fail.add("setItem");
     fail.add("removeItem");
     const store = createDraftStore(() => storage);
     store.keepOnly(1);
+    expect(store.read(OTHER_5)).toBeNull();
+    expect(store.read(MINE_33)).toBeNull();
     fail.delete("setItem");
     fail.delete("removeItem");
     expect(store.read(OTHER_5)).toBeNull();
-    expect(store.read(MINE_33)).toBeNull();
+    expect(store.read(MINE_33)).toBe("레드 L 몇 장 돼요");
+    expect(createDraftStore(() => storage).read(OTHER_5)).toBeNull();
   });
 
   it("정리 뒤 지난 세대 쓰기(언마운트 저장) → 2:5 안 살아남", () => {
