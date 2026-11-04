@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
 import { CHAT_PATH } from "./queries";
-import { dropStaleSession, guardSession } from "./session";
+import { chatScreenEpoch, dropStaleSession, guardSession } from "./session";
 import type {
   ChatInquiry,
   ChatReadResult,
@@ -19,7 +19,8 @@ import type {
  * (`providers.tsx`)가 `/login`으로 보낸다. 이 단계엔 쓴 글이 없다(01-plan §4-1 2).
  *
  * 세대 검사는 한다(리뷰 R7, `dropStaleSession`). 누른 뒤 로그아웃, 다른 계정 로그인이 끼면 그 응답은 401이든 성공이든
- * 버린다 — 다음 계정을 `/login`으로 튕기거나 앞 계정 방으로 옮기지 않게. 부르는 쪽(`InquiryEntry`)은 버린 응답에 아무것도 안 한다
+ * 버린다 — 다음 계정을 `/login`으로 튕기거나 앞 계정 방으로 옮기지 않게. 부르는 쪽(`InquiryEntry`)은 버린 응답에 아무것도
+ * 안 한다. 같은 소매처 재로그인을 넘긴 401만 입구 문구를 띄운다(loop-08e Q6)
  */
 export function useCreateRoomMutation() {
   return useMutation({
@@ -46,11 +47,15 @@ export function useMarkReadMutation(roomId: number) {
   return useMutation({
     mutationFn: async (lastReadSequence: number) => {
       await chatMockReady();
-      return guardSession(queryClient, () =>
-        apiFetch<ChatReadResult>(CHAT_PATH.read(roomId), {
-          method: "POST",
-          body: { lastReadSequence },
-        }),
+      return guardSession(
+        queryClient,
+        () =>
+          apiFetch<ChatReadResult>(CHAT_PATH.read(roomId), {
+            method: "POST",
+            body: { lastReadSequence },
+          }),
+        chatScreenEpoch(),
+        roomId,
       );
     },
   });
@@ -70,26 +75,36 @@ export function useMarkReadMutation(roomId: number) {
  *
  * 결과 처리는 호출마다 `mutateAsync`의 promise로 받는다. 말풍선 여러 개가 동시에 날아갈 수 있는데,
  * `mutate(vars, { onSuccess })`의 콜백은 마지막 호출 것만 불린다.
+ *
+ * 방 번호는 변수로 받는다(loop-08e §4-2 7) — 부르는 곳이 방 화면이 아니라 셸 outbox(`ChatShellProvider`)라 방을
+ * 옮겨 다녀도 같은 뮤테이션이 보낸 방으로 보낸다(도매 `useSendMessageMutation`과 같다).
  */
-export function useSendMessageMutation(roomId: number) {
+export function useSendMessageMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
+      roomId,
       clientMessageId,
       body,
       inquiry,
     }: {
+      roomId: number;
       clientMessageId: string;
       body: string;
       inquiry: ChatInquiry | null;
     }) => {
       await chatMockReady();
-      return guardSession(queryClient, () =>
-        apiFetch<ChatSendResult>(CHAT_PATH.messages(roomId), {
-          method: "POST",
-          body: { body, inquiry },
-          idempotencyKey: clientMessageId,
-        }),
+      /* 방 번호를 넘긴다 — 보내자마자 떠나 늦은 401을 받으면 그 방을 다음 재진입 확인 대상으로 적는다(메타 M2) */
+      return guardSession(
+        queryClient,
+        () =>
+          apiFetch<ChatSendResult>(CHAT_PATH.messages(roomId), {
+            method: "POST",
+            body: { body, inquiry },
+            idempotencyKey: clientMessageId,
+          }),
+        chatScreenEpoch(),
+        roomId,
       );
     },
     networkMode: "always",

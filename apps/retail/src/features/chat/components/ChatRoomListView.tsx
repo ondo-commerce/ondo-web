@@ -5,11 +5,12 @@ import { isApiError } from "@ondo/api";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { isRoomListSessionLost, useRoomListQuery } from "../api/queries";
 import { APPROVAL_PATH, LIST_TEXT, LOGIN_PATH } from "../constants";
 import { moreStateOf, toRoomRows } from "../derive";
 import type { ChatRoomRowView, MoreState } from "../types";
+import { useListAnchor } from "../useListAnchor";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 
 /**
@@ -28,7 +29,10 @@ export function ChatRoomListView() {
         role="region"
         aria-labelledby={headingId}
         data-ac="S2-4"
-        className="gap-0"
+        /* 브라우저 scroll anchoring을 끈다(loop-08e S4, §4-4 4). 갱신 보정은 `useListAnchor`가 한다 — 브라우저는
+           DOM 순서로 첫 보이는 노드를 붙잡아 맨 위로 올라간 행을 기준으로 삼을 수 있고, 켜 두면 같은 변경을 두 번
+           옮긴다. 이 패널 밖(셸)은 브라우저 기본 그대로다 */
+        className="gap-0 [overflow-anchor:none]"
       >
         <div className="mb-4 flex items-center">
           <h1 id={headingId} className="text-xl font-medium">
@@ -48,6 +52,9 @@ function ListBody() {
     isApiError(query.error) &&
     query.error.code === RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED;
   const sessionLost = isRoomListSessionLost(query.error);
+  /* 15초 갱신과 끊김 안내 줄이 보던 행을 밀지 않게(loop-08e S4). 아래 이른 return 전에 부른다 */
+  const listRef = useRef<HTMLUListElement>(null);
+  useListAnchor(listRef, query.data, sessionLost);
 
   /* 승인 전 계정(403) — 방 화면과 같은 갈래로 승인 대기 화면에 보낸다 */
   useEffect(() => {
@@ -92,7 +99,7 @@ function ListBody() {
           </p>
         </div>
       ) : (
-        <ul aria-label={LIST_TEXT.label} className="grid gap-1">
+        <ul ref={listRef} aria-label={LIST_TEXT.label} className="grid gap-1">
           {rows.map((row) => (
             <li key={row.roomId}>
               <RoomRow row={row} />

@@ -9,8 +9,10 @@ import {
   onSignOut,
 } from "@/features/account";
 import {
+  beginChatSignOut,
   clearChatCache,
   clearChatDrafts,
+  endChatSignOut,
   keepChatDraftsOf,
   refreshChatSession,
 } from "@/features/chat";
@@ -35,6 +37,9 @@ export function SessionChangeCleanup() {
   );
   useEffect(() => onSignOut(clearChatDrafts), []);
   useEffect(() => onSignIn(keepChatDraftsOf), []);
+  /* 로그아웃 응답 대기 구간(loop-08e S2-15). 누른 순간 채팅은 "나가는 중"(보류 말풍선 비움, 새 요청 0), 다음 로그인에서 끝 */
+  useEffect(() => onSignOut(beginChatSignOut), []);
+  useEffect(() => onSignIn(endChatSignOut), []);
   useEffect(
     () => onSessionRefresh(() => refreshChatSession(queryClient)),
     [queryClient],

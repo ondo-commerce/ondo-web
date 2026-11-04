@@ -4,6 +4,7 @@ import { PENDING_TEXT, ROOM_TEXT } from "../constants";
 import {
   autoReplySeen,
   bubbleKindOf,
+  canRetrySend,
   failureText,
   formatClock,
   pendingAc,
@@ -154,7 +155,8 @@ export function PendingItem({
           className="text-destructive-strong flex items-center gap-1.5 text-xs leading-4"
         >
           {failureText(item.failure)}
-          {sessionLost || item.failure === "session" ? null : (
+          {/* 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다 */}
+          {!canRetrySend(sessionLost) ? null : (
             <Button
               type="button"
               variant="link"

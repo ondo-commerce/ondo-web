@@ -4,6 +4,7 @@ import {
   dedupeRooms,
   mergeCounterpartRead,
   moreStateOf,
+  pickListAnchor,
   readMarkerSequence,
   advanceCursor,
   askChipBusy,
@@ -44,6 +45,9 @@ import {
   toThreadItems,
   upsertPending,
   visiblePending,
+  canRetrySend,
+  pendingOfRoom,
+  withRoomPending,
 } from "./derive";
 import type {
   ChatMessage,
@@ -1237,5 +1241,82 @@ describe("S4-1 목록 중복, 더 보기 (loop-08)", () => {
     [{ isFetchNextPageError: true, sessionLost: true }, "locked"],
   ])("moreStateOf %o → %s", (patch, expected) => {
     expect(moreStateOf({ ...base, ...patch })).toBe(expected);
+  });
+});
+
+describe("S2-13 canRetrySend(loop-08e, 도매 08d F1 복제)", () => {
+  it("잠긴 동안만 뺀다 — 실패 종류는 묻지 않는다", () => {
+    expect(canRetrySend(true)).toBe(false);
+    expect(canRetrySend(false)).toBe(true);
+  });
+});
+
+describe("loop-08e 방별 보류 말풍선(도매 S3-10 복제)", () => {
+  const failed: PendingMessage = {
+    clientMessageId: "a",
+    body: "레드 L 두 장 돼요?",
+    inquiry: null,
+    status: "failed",
+    failure: "server",
+  };
+
+  it("한 방만 바꾸고 다른 방은 그대로. 없는 방은 같은 빈 배열", () => {
+    const one = withRoomPending({}, 1, (list) => [...list, failed]);
+    expect(pendingOfRoom(one, 1)).toEqual([failed]);
+    expect(pendingOfRoom(one, 2)).toEqual([]);
+    expect(pendingOfRoom(one, 2)).toBe(pendingOfRoom({}, 3));
+    const both = withRoomPending(one, 2, (list) => [
+      ...list,
+      { ...failed, clientMessageId: "b" },
+    ]);
+    expect(pendingOfRoom(both, 1)).toBe(pendingOfRoom(one, 1));
+  });
+
+  it("비면 그 방 칸을 지운다. 이미 없으면 같은 객체", () => {
+    const one = withRoomPending({}, 1, () => [failed]);
+    expect(withRoomPending(one, 1, () => [])).toEqual({});
+    expect(withRoomPending(one, 2, () => [])).toBe(one);
+  });
+});
+
+describe("S4-1 pickListAnchor — 갱신 중 제자리에 둘 행 (loop-08e)", () => {
+  /* 방 번호 = 1부터의 자리라 읽기 쉽게 한다. 1..35 순서에서 20, 21, 22가 보이던 중 */
+  const order = Array.from({ length: 35 }, (_, i) => i + 1);
+  const visible = [20, 21, 22].map((roomId) => ({
+    roomId,
+    index: roomId - 1,
+  }));
+  const toTop = (roomIds: number[]) => [
+    ...roomIds,
+    ...order.filter((id) => !roomIds.includes(id)),
+  ];
+
+  it("아래(30)가 맨 위로 → 20 (20은 한 칸 밀렸을 뿐 올라가지 않았다)", () => {
+    expect(pickListAnchor(visible, toTop([30]))).toBe(20);
+  });
+
+  it("20 자신이 맨 위로 → 21 (21 자리는 그대로)", () => {
+    expect(pickListAnchor(visible, toTop([20]))).toBe(21);
+  });
+
+  it("보이던 행 전부 위로 → null", () => {
+    expect(pickListAnchor(visible, toTop([22, 21, 20]))).toBeNull();
+  });
+
+  it("보이던 행 없음 → null", () => {
+    expect(pickListAnchor([], toTop([30]))).toBeNull();
+  });
+
+  it("순서 그대로(401 안내 줄 삽입, 같은 순서 갱신) → 맨 위 행 20", () => {
+    expect(pickListAnchor(visible, order)).toBe(20);
+  });
+
+  it("새 목록에 없는 행은 건너뛴다", () => {
+    expect(
+      pickListAnchor(
+        visible,
+        toTop([30]).filter((id) => id !== 20),
+      ),
+    ).toBe(21);
   });
 });
