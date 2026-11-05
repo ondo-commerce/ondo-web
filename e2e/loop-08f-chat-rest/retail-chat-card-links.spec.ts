@@ -91,7 +91,17 @@ test.describe("S4-3 미송 되묻기 세 상태 — 보기 enabled 여부와 링
     await start(page, "/");
     await openRoomById(page, 1);
     const clarify = await askBackorder(page);
-    await expect(orderChoice(clarify, 9003)).toBeEnabled();
+    /* 08f R4: 9003만 보면 나머지 보기를 disabled로 만드는 결함이 산다. 보기 전부(seed 무드온 4 + 다른 주문이에요 1)를 본다 */
+    const group = clarify.getByRole("group", {
+      name: "주문 고르기",
+      exact: true,
+    });
+    await expect(group.getByRole("button")).toHaveCount(5);
+    for (const id of [9001, 9002, 9006, 9003])
+      await expect(orderChoice(clarify, id)).toBeEnabled();
+    await expect(
+      group.getByRole("button", { name: "다른 주문이에요", exact: true }),
+    ).toBeEnabled();
     const link = backorderLink(clarify);
     await expect(link).toBeEnabled();
     await expect(link).toHaveAttribute("href", MOODON_HREF);
