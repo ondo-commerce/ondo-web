@@ -151,7 +151,9 @@ test.describe("S4-4 도착 화면 — stub 미송 표 상태별", () => {
     await expect(page.getByText(DROPPED_TEXT)).toHaveCount(0);
   });
 
-  test("② stub empty → 방 1 카드 링크 → 떨어짐 안내 + 빈 상태, 오류 0", async ({
+  /* G3 D53으로 AC를 고쳤다: 받은 장이 0행이면 기존 BackorderView가 툴바(칩)째 빈 상태로 바꾸므로
+     `전체` 칩 대신 "칩 줄 없음"을 본다(원래 조건 test.fail은 지웠다) */
+  test("② stub empty → 방 1 카드 링크 → 떨어짐 안내 + 빈 상태 화면(칩 줄 없음), 오류 0", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -162,24 +164,11 @@ test.describe("S4-4 도착 화면 — stub 미송 표 상태별", () => {
     await expect(page).toHaveURL(MOODON_HREF);
     await expect(page.getByText(DROPPED_TEXT)).toBeVisible();
     await expect(page.getByText("지금 기다리는 미송이 없어요")).toBeVisible();
+    await expect(activeChip(page)).toHaveCount(0);
     await expect(backorderRows(page)).toHaveCount(0);
     await expect(page.getByText("지금 화면을 불러올 수 없어요")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
-
-  /* 기획 S4-4 ②의 원래 조건 "떨어짐 안내 + `전체` 칩". 받은 장이 0행이면 기존 BackorderView가 툴바(칩)째 빈 상태로
-     바꿔서(`BackorderView.tsx` empty 갈래, 기획 §4-1 5 "바꾸지 않음") `전체` 칩이 없다. 원래 조건은 실패로 남긴다(브리프 규칙 7) */
-  test.fail(
-    "② 원래 조건: stub empty → 떨어짐 안내 + 전체 칩 켜짐",
-    async ({ page }) => {
-      const { reply } = await cardInRoom(page, 1, 9003);
-      await stubBackorders(page, "empty");
-      await backorderLink(reply).click();
-      await expect(page).toHaveURL(MOODON_HREF);
-      await expect(page.getByText(DROPPED_TEXT)).toBeVisible();
-      await expect(activeChip(page)).toHaveText("전체", { timeout: 3_000 });
-    },
-  );
 
   test("③ stub page2-only-102 → 방 33 카드 링크 → 첫 장 무드온 100행, 전체 칩, 떨어짐 안내", async ({
     page,
