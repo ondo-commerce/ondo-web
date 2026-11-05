@@ -224,6 +224,57 @@ describe("loop-08f S1-4 stats range 손잡이(today = from, to 없음 / multi = 
     expect((await stats(WEEK)).status).toBe(200);
   });
 
+  // 08f R3: range 계획과 공통 계획이 같이 있을 때 range 계획을 먼저 쓴다(`statsPlanKeys` 순서). 등록 순서와 무관해야
+  // 해서 두 순서로 등록해 본다. 순서가 뒤집히면 7일 요청이 공통 500을 먹고 오늘 요청은 계획 없이 200이 된다
+  it.each([
+    ["공통 먼저 등록", ["common", "multi"]],
+    ["range 먼저 등록", ["multi", "common"]],
+  ] as const)(
+    "fail 공통 500 + multi 401 (%s) → 7일 401, 오늘 500, 그다음 둘 다 200",
+    async (_label, order) => {
+      for (const which of order)
+        await knob(
+          "/fail",
+          which === "common"
+            ? { op: "stats", status: 500 }
+            : { op: "stats", range: "multi", status: 401 },
+        );
+      expect((await stats(WEEK)).status).toBe(401);
+      expect((await stats()).status).toBe(500);
+      expect((await stats(WEEK)).status).toBe(200);
+      expect((await stats()).status).toBe(200);
+    },
+  );
+
+  it.each([
+    ["공통 먼저 등록", ["common", "today"]],
+    ["range 먼저 등록", ["today", "common"]],
+  ] as const)(
+    "delay 공통 300ms + today 1200ms (%s) → 오늘이 1200ms를 쓰고 7일이 남은 300ms, 그다음은 바로",
+    async (_label, order) => {
+      for (const which of order)
+        await knob(
+          "/delay",
+          which === "common"
+            ? { op: "stats", ms: 300 }
+            : { op: "stats", range: "today", ms: 1200 },
+        );
+      const timed = async (query?: string) => {
+        const t0 = performance.now();
+        const res = await stats(query);
+        expect(res.status).toBe(200);
+        return performance.now() - t0;
+      };
+      expect(await timed()).toBeGreaterThanOrEqual(1190);
+      const week = await timed(WEEK);
+      expect(week).toBeGreaterThanOrEqual(290);
+      expect(week).toBeLessThan(1000);
+      expect(await timed()).toBeLessThan(290);
+      expect(await timed(WEEK)).toBeLessThan(290);
+    },
+    10_000,
+  );
+
   it("모르는 range, stats 밖 op 의 range → 400 VALIDATION_FAILED field range", async () => {
     for (const [path, json] of [
       ["/fail", { op: "stats", range: "week" }],
