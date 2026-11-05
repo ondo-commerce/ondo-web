@@ -30,10 +30,23 @@ interface Row {
   wholesaler: { id: number; name: string };
 }
 
+/**
+ * 이 시험만의 미송 범위 키(08f M2). 공유 표를 쓰면 이 파일의 reset과 eta가 다른 worker의 06b 리허설(공유 표에 eta)을
+ * 덮고, 거꾸로도 덮인다. 반복과 재시도가 다른 worker에서 같이 돌아도 겹치지 않게 둘 다 붙인다
+ */
+function scope(): string {
+  const info = test.info();
+  return `${info.testId}-${info.repeatEachIndex}-${info.retry}`;
+}
+
 async function rowsAs(request: APIRequestContext, retailer: string) {
   const res = await request.get(
     `${STUB_ORIGIN}/api/retail/backorders?page=0&size=100`,
-    { headers: { cookie: `stub_retailer=${retailer}` } },
+    {
+      headers: {
+        cookie: `stub_retailer=${retailer}; stub_backorders=${scope()}`,
+      },
+    },
   );
   expect(res.status()).toBe(200);
   return (await res.json()) as {
@@ -47,28 +60,38 @@ const eta = (
   variantId: number,
   date: string | null,
 ) =>
-  request.post(`${STUB_ORIGIN}/__stub/backorders/eta`, {
-    data: { variantId, expectedInboundDate: date },
-  });
+  request.post(
+    `${STUB_ORIGIN}/__stub/backorders/eta?backorders=${encodeURIComponent(scope())}`,
+    { data: { variantId, expectedInboundDate: date } },
+  );
+
+const resetScope = (request: APIRequestContext) =>
+  request.post(
+    `${STUB_ORIGIN}/__stub/reset?backorders=${encodeURIComponent(scope())}`,
+  );
 
 test.beforeEach(async ({ request }) => {
-  const reset = await request.post(`${STUB_ORIGIN}/__stub/reset`);
-  expect(reset.status()).toBe(200);
+  expect((await resetScope(request)).status()).toBe(200);
 });
 
 test.afterAll(() => {
   expect(seoulPlus(0), "서울 자정을 넘겼다 — 다시 돌린다").toBe(R0);
 });
 
-test("S1-8 bombom 4행(9001 9002 9006 9003, 무드온 101), 9003 R+7, 원래 수량. miso 0행", async ({
+/* loop-08f §4-1 9가 시드에 라온(102) 801 한 줄을 더했다. 무드온 넷은 그대로이고 801은 주문이 제일 늦어 맨 뒤다 */
+test("S1-8 bombom 무드온 4행(9001 9002 9006 9003) + 라온 801, 9003 R+7, 원래 수량. miso 0행", async ({
   request,
 }) => {
   const page = await rowsAs(request, "bombom");
-  expect(page.data.map((r) => r.backorderId)).toEqual([9001, 9002, 9006, 9003]);
-  expect(page.data.every((r) => r.wholesaler.id === 101)).toBe(true);
-  expect(page.data.every((r) => r.wholesaler.name === "무드온")).toBe(true);
-  expect(page.data.map((r) => r.qty)).toEqual([4, 1, 4, 2]);
-  expect(page.data.map((r) => r.expectedInboundDate)).toEqual([
+  expect(page.data.map((r) => r.backorderId)).toEqual([
+    9001, 9002, 9006, 9003, 801,
+  ]);
+  const moodon = page.data.slice(0, 4);
+  expect(moodon.every((r) => r.wholesaler.id === 101)).toBe(true);
+  expect(moodon.every((r) => r.wholesaler.name === "무드온")).toBe(true);
+  expect(page.data[4]?.wholesaler).toEqual({ id: 102, name: "라온" });
+  expect(moodon.map((r) => r.qty)).toEqual([4, 1, 4, 2]);
+  expect(moodon.map((r) => r.expectedInboundDate)).toEqual([
     seoulPlus(-3),
     null,
     seoulPlus(-3),
@@ -76,7 +99,7 @@ test("S1-8 bombom 4행(9001 9002 9006 9003, 무드온 101), 9003 R+7, 원래 수
   ]);
   expect(page.meta).toMatchObject({
     page: 0,
-    totalElements: 4,
+    totalElements: 5,
     hasNext: false,
   });
   // 응답에 SKU id 를 싣지 않는다(스펙 BackorderResponse 에 칸이 없다)
@@ -108,8 +131,9 @@ test("S1-8 eta 손잡이 뒤 그 SKU 줄만 날짜가 바뀌고, reset 뒤 R+7 �
   expect((await eta(request, 9999, seoulPlus(1))).status()).toBe(400);
   expect((await eta(request, 3019, "11/8")).status()).toBe(400);
 
-  // 장바구니 키를 단 reset(다른 spec 이 쓰는 모양)도 미송 표를 되돌린다
-  await request.post(`${STUB_ORIGIN}/__stub/reset?cart=s1-8`);
+  /* 범위 reset이 그 범위 표를 시드로 되돌린다. (08f M2 전에는 공유 표의 `reset?cart=`를 여기서 확인했다 — 공유 표를
+     건드리면 다른 worker의 06b eta를 덮어서 뺐다. 공유 reset의 되돌림은 06b 리허설이 직접 기댄다) */
+  expect((await resetScope(request)).status()).toBe(200);
   const back = await rowsAs(request, "bombom");
   expect(
     back.data.find((r) => r.backorderId === 9003)?.expectedInboundDate,
@@ -126,6 +150,7 @@ test("S1-8 소매 /backorders 화면이 stub 로 그려진다: 4줄, 무드온 �
 }) => {
   await context.addCookies([
     { name: "stub_retailer", value: "bombom", url: "http://localhost:3101" },
+    { name: "stub_backorders", value: scope(), url: "http://localhost:3101" },
   ]);
   await page.goto("/backorders?wholesaler=101");
   const table = page.locator("table").first();
@@ -139,4 +164,39 @@ test("S1-8 소매 /backorders 화면이 stub 로 그려진다: 4줄, 무드온 �
   await page.reload();
   await expect(linen).toContainText(seoulPlus(10).replaceAll("-", "."));
   await expect(linen).not.toContainText(seoulPlus(7).replaceAll("-", "."));
+});
+
+test("08f M2 범위 격리: 다른 범위의 empty reset과 eta가 이 범위 표를 안 바꾼다. 만든 적 없는 범위는 400", async ({
+  request,
+}) => {
+  const other = `${scope()}-other`;
+  const knob = (path: string) =>
+    `${STUB_ORIGIN}/__stub/${path}?backorders=${encodeURIComponent(other)}`;
+  expect(
+    (
+      await request.post(knob("reset"), { data: { backorders: "seed" } })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await request.post(knob("backorders/eta"), {
+        data: { variantId: 3019, expectedInboundDate: seoulPlus(10) },
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await request.post(knob("reset"), { data: { backorders: "empty" } })
+    ).status(),
+  ).toBe(200);
+  const mine = await rowsAs(request, "bombom");
+  expect(mine.meta.totalElements).toBe(5);
+  expect(
+    mine.data.find((r) => r.backorderId === 9003)?.expectedInboundDate,
+  ).toBe(seoulPlus(7));
+
+  const missing = await request.get(`${STUB_ORIGIN}/api/retail/backorders`, {
+    headers: { cookie: `stub_retailer=bombom; stub_backorders=${other}-x` },
+  });
+  expect(missing.status()).toBe(400);
 });

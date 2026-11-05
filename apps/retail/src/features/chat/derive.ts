@@ -1,6 +1,7 @@
 import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import {
   BACKORDER_TEXT,
+  BACKORDERS_HREF,
   BADGE_MAX,
   BODY_COUNTER_FROM,
   BODY_MAX,
@@ -53,6 +54,8 @@ import type {
   PendingMessage,
   ReadState,
   ReceivableCardView,
+  ReplyExtra,
+  ReplyLinkView,
   ReturnLink,
   SendFailure,
   StockCardView,
@@ -1442,6 +1445,70 @@ export function toReceivableReplyView(
     lines,
     settlementHref: `${SETTLEMENTS_HREF}?wholesaler=${wholesalerId}`,
   };
+}
+
+/* ------------------------------------------------------------------------
+ * 말풍선 아래 화면 링크(loop-08f S4, §4-1)
+ * ------------------------------------------------------------------------ */
+
+/** `/backorders?wholesaler=101`. 도매처는 방 상대(`counterpart.id`) — 미수 정산 링크와 같은 규칙 */
+export function backordersHref(wholesalerId: number): string {
+  return `${BACKORDERS_HREF}?wholesaler=${wholesalerId}`;
+}
+
+/**
+ * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 미수 답이면 미수 카드,
+ * 그 밖(넘김 줄, 사람 말풍선, 근거 없는 답)이면 null. 순서는 방이 지금까지 그리던 순서 그대로다.
+ */
+export function toReplyExtra(
+  message: ChatMessage,
+  messages: readonly ChatMessage[],
+  pending: readonly PendingMessage[],
+  now: number,
+  wholesalerId: number,
+): ReplyExtra | null {
+  const view = toClarifyView(message, messages, pending, now);
+  if (view !== null) return { type: "clarify", view };
+  const backorder = toBackorderReplyView(message, messages);
+  if (backorder !== null) return { type: "backorder", card: backorder };
+  const receivable = toReceivableReplyView(message, wholesalerId);
+  if (receivable !== null) return { type: "receivable", card: receivable };
+  const stock = toStockCardView(message, messages);
+  if (stock !== null) return { type: "stock", card: stock };
+  return null;
+}
+
+/**
+ * 그 칸 아래 링크. 미송 카드와 미송 되묻기(지금 고르는 것, 지난 것, 잠긴 것 전부)는 `미송 대기 현황 보기`, 미수 카드는
+ * `정산 화면에서 보기`, 재고 카드와 재고 되묻기는 없음(§4-1 1).
+ *
+ * 미송 되묻기의 링크는 보기 줄의 잠금(`active && !locked`)과 따로다 — 이미 고른 되묻기에서도 그 도매처 미송을
+ * 보러 갈 수 있어야 한다(Q4 ①). 끊긴 방은 전체 이동(`documentNav`)이고, 링크는 그래도 눌린다.
+ */
+export function replyLinkOf(
+  extra: ReplyExtra | null,
+  wholesalerId: number,
+  sessionLost: boolean,
+): ReplyLinkView | null {
+  if (extra === null) return null;
+  if (
+    extra.type === "backorder" ||
+    (extra.type === "clarify" && extra.view.mode === "backorder")
+  )
+    return {
+      kind: "backorders",
+      href: backordersHref(wholesalerId),
+      label: BACKORDER_TEXT.statusLink,
+      documentNav: sessionLost,
+    };
+  if (extra.type === "receivable")
+    return {
+      kind: "settlement",
+      href: extra.card.settlementHref,
+      label: RECEIVABLE_TEXT.settlementLink,
+      documentNav: sessionLost,
+    };
+  return null;
 }
 
 /** 카드 줄을 화면 글자로(e2e와 unit이 같은 글을 본다) */

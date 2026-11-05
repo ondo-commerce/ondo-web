@@ -286,6 +286,8 @@ export const BACKORDER_TEXT = {
   undecided: "입고일 미정",
   /** "지연"이라 단정하지 않는다(Q2) */
   passed: "등록 예정일 지남",
+  /** 미송 카드와 미송 되묻기 아래 링크(loop-08f §4-1 1). 미수 카드 `정산 화면에서 보기`와 같은 모양 */
+  statusLink: "미송 대기 현황 보기",
 } as const;
 
 /**
@@ -304,6 +306,12 @@ export const RECEIVABLE_TEXT = {
 
 /** 소매 정산 화면. `?wholesaler=`가 그 도매처 원장을 연다(`app/(shop)/settlements/page.tsx`) */
 export const SETTLEMENTS_HREF = "/settlements";
+
+/**
+ * 소매 미송 대기 현황. `?wholesaler=`가 그 도매처 칩을 켠다(`app/(shop)/backorders/page.tsx`). backorder feature의
+ * 경로를 import하지 않고 여기 따로 둔다 — feature끼리 import 금지, 상수는 feature마다 중복(loop-08f §4-1 7)
+ */
+export const BACKORDERS_HREF = "/backorders";
 
 /** 담기 결과의 `장바구니 보기` */
 export const CART_HREF = "/cart";

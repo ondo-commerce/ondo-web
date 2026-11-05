@@ -2,7 +2,8 @@ import { ToggleChip, cn } from "@ondo/ui";
 import { Check } from "lucide-react";
 import { BACKORDER_TEXT, STOCK_TEXT } from "../constants";
 import { choiceKey, choiceKindOf } from "../derive";
-import type { ChatChoice, ClarifyView } from "../types";
+import type { ChatChoice, ClarifyView, ReplyLinkView } from "../types";
+import { ReplyScreenLink } from "./ReplyScreenLink";
 
 /**
  * 되묻기 말풍선 안 보기 줄. 보기 글자가 곧 보낼 본문이다.
@@ -15,16 +16,25 @@ import type { ChatChoice, ClarifyView } from "../types";
 export function ClarifyChoices({
   view,
   locked,
+  link,
   onChoose,
 }: {
   view: ClarifyView;
   /** 세션 끊김 — `active`여도 잠근다(결정 29) */
   locked: boolean;
+  /**
+   * 보기 줄 아래 링크(`replyLinkOf`). 미송 되묻기만 있다(loop-08f §4-1 1). 보기 잠금(`enabled`)과 따로라
+   * 지난 되묻기, 잠긴 되묻기에서도 눌린다(Q4 ①)
+   */
+  link: ReplyLinkView | null;
   onChoose: (choice: ChatChoice) => void;
 }) {
   const enabled = view.active && !locked;
   return view.mode === "backorder" ? (
-    <BackorderChoices view={view} enabled={enabled} onChoose={onChoose} />
+    <>
+      <BackorderChoices view={view} enabled={enabled} onChoose={onChoose} />
+      {link === null ? null : <ReplyScreenLink link={link} />}
+    </>
   ) : (
     <div
       role="group"

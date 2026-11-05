@@ -149,6 +149,71 @@ interface StubBackorder {
   qty: number;
   expectedInboundDate: string | null;
   expectedInboundReason: string | null;
+  /** 줄마다 도매처(loop-08f §4-1 9). 시드 첫 넷은 무드온, 801은 라온 */
+  wholesaler: { id: number; name: string };
+}
+
+/**
+ * 미송 표 상태 셋(loop-08f §4-1 9, `POST /__stub/reset {backorders}`). 본문이 없으면 `seed`.
+ * - `seed`: 아래 시드(무드온 4 + 라온 1)
+ * - `empty`: 0행 — 미송이 다 해소된 소매처
+ * - `page2-only-102`: 무드온 100행(첫 장 `size=100`을 채움) 뒤 101번째에 라온 1행. 링크는 맞는데 받은 장에
+ *   그 도매처가 없어 화면이 `전체`로 떨어지는 경우(§3 out 2)
+ */
+export type StubBackorderState = "seed" | "empty" | "page2-only-102";
+const BACKORDER_STATES: readonly StubBackorderState[] = [
+  "seed",
+  "empty",
+  "page2-only-102",
+];
+
+/** 라온(102) × 봄봄 미송 801. 브라우저 미송 목(`backorder.ts` 801, 코튼 셔츠 블랙/L 20장, 10/24 주문)과 같은 값 */
+function raonBackorder(): StubBackorder {
+  return {
+    backorderId: 801,
+    variantId: 3801,
+    orderId: 7801,
+    orderNo: "R-20261024-7801",
+    orderedAt: "2026-10-24T11:00:00+09:00",
+    listingId: 1801,
+    title: "코튼 셔츠",
+    colorName: "블랙",
+    size: "L",
+    qty: 20,
+    expectedInboundDate: seoulDatePlus(5),
+    expectedInboundReason: null,
+    wholesaler: CHAT_WHOLESALERS.raon,
+  };
+}
+
+/** `page2-only-102`의 무드온 100행. 주문 시각이 전부 801(10/24)보다 앞이라 오래된 순 첫 장을 채운다 */
+function fullPageMoodon(): StubBackorder[] {
+  return Array.from({ length: 100 }, (_, i) => {
+    const orderedAt = new Date(
+      Date.parse("2026-09-01T09:00:00+09:00") + i * 3_600_000,
+    ).toISOString();
+    return {
+      backorderId: 9100 + i,
+      variantId: 4100 + i,
+      orderId: 7100 + i,
+      orderNo: `R-FULL-${String(i + 1).padStart(3, "0")}`,
+      orderedAt,
+      listingId: 2001,
+      title: "빈티지 플라워 셔츠",
+      colorName: "레드",
+      size: "S",
+      qty: 1,
+      expectedInboundDate: null,
+      expectedInboundReason: null,
+      wholesaler: WHOLESALER,
+    };
+  });
+}
+
+function backordersOf(state: StubBackorderState): StubBackorder[] {
+  if (state === "empty") return [];
+  if (state === "page2-only-102") return [...fullPageMoodon(), raonBackorder()];
+  return seedBackorders();
 }
 
 /**
@@ -168,6 +233,7 @@ function seedBackorders(): StubBackorder[] {
     orderId,
     orderNo: `R-${orderedAt.slice(0, 10).replaceAll("-", "")}-${String(orderId).slice(-4)}`,
     orderedAt,
+    wholesaler: WHOLESALER,
   });
   return [
     {
@@ -210,16 +276,45 @@ function seedBackorders(): StubBackorder[] {
       expectedInboundDate: seoulDatePlus(7),
       expectedInboundReason: "원단 수급 지연",
     },
+    /* loop-08f: 라온 1행. 주문이 제일 늦어(10/24) 오래된 순 맨 뒤 — 무드온 넷의 순서가 그대로다 */
+    raonBackorder(),
   ];
 }
 
 let backorders = seedBackorders();
 
+/**
+ * 범위별 미송 표(08f M2). 키는 시험이 정한다(`test.info().testId` + 반복 번호). 공유 표 reset은 여기를 안 건드린다 —
+ * 지우면 다른 worker가 쓰던 범위가 사라져 격리가 깨진다. 시험 수만큼만 쌓이고 stub 프로세스와 같이 사라진다
+ */
+const backorderScopes = new Map<string, StubBackorder[]>();
+
+/** 범위 키가 없으면 공유 표, 있으면 그 범위 표. 만든 적 없는 범위면 null */
+function backorderTable(scope: string | null): StubBackorder[] | null {
+  if (scope === null) return backorders;
+  return backorderScopes.get(scope) ?? null;
+}
+
+function unknownScope(scope: string | null) {
+  return {
+    status: 400,
+    body: {
+      code: "STUB",
+      message: `없는 미송 범위 ${String(scope)} — 먼저 POST /__stub/reset?backorders=<키>`,
+    },
+  };
+}
+
 /** `GET /api/retail/backorders` — `PageResponseBackorderResponse`. 봄봄만 행이 있다. 오래된 순 */
-function backorderPage(retailerId: number, page: number, size: number) {
+function backorderPage(
+  retailerId: number,
+  page: number,
+  size: number,
+  table: StubBackorder[],
+) {
   const mine =
     retailerId === RETAILERS.bombom.retailerId
-      ? [...backorders].sort((a, b) => a.orderedAt.localeCompare(b.orderedAt))
+      ? [...table].sort((a, b) => a.orderedAt.localeCompare(b.orderedAt))
       : [];
   const data = mine.slice(page * size, page * size + size).map((b) => ({
     backorderId: b.backorderId,
@@ -233,7 +328,7 @@ function backorderPage(retailerId: number, page: number, size: number) {
     qty: b.qty,
     expectedInboundDate: b.expectedInboundDate,
     expectedInboundReason: b.expectedInboundReason,
-    wholesaler: WHOLESALER,
+    wholesaler: b.wholesaler,
   }));
   const totalPages = Math.max(Math.ceil(mine.length / size), 1);
   return {
@@ -252,7 +347,10 @@ function backorderPage(retailerId: number, page: number, size: number) {
 }
 
 /** eta 손잡이: 그 SKU 줄 전부의 날짜를 바꾼다(입고일은 SKU 단위). 날짜를 지우면 사유도 비운다 */
-function setBackorderEta(raw: string): { status: number; body: unknown } {
+function setBackorderEta(
+  raw: string,
+  backorders: StubBackorder[],
+): { status: number; body: unknown } {
   let input: { variantId?: unknown; expectedInboundDate?: unknown } = {};
   try {
     input = JSON.parse(raw || "{}") as typeof input;
@@ -281,9 +379,9 @@ function setBackorderEta(raw: string): { status: number; body: unknown } {
   return { status: 200, body: { data: { updated: rows.length } } };
 }
 
-function resetStub(key: string | null) {
-  // 미송 표는 쿠키별이 아니라 하나다. reset 이면 키와 상관없이 시드로 돌린다
-  backorders = seedBackorders();
+function resetStub(key: string | null, state: StubBackorderState = "seed") {
+  // 공유 미송 표는 하나다. reset 이면 키와 상관없이 그 상태(기본 시드)로 돌린다. 범위 표(`backorderScopes`)는 안 건드린다
+  backorders = backordersOf(state);
   if (key === null) {
     carts.clear();
     cartFails.clear();
@@ -541,12 +639,19 @@ function route(
     });
   }
 
-  if (path === "/api/retail/backorders")
+  if (path === "/api/retail/backorders") {
+    /* 쿠키 `stub_backorders=<범위 키>`가 있으면 공유 표 대신 그 범위 표를 읽는다(08f M2). 공유 표는 프로세스에 하나라
+       다른 worker의 reset이 상태 설정과 조회 사이에 끼면 행이 바뀐다. 범위 키는 시험마다 달라 남이 못 건드린다 */
+    const scope = cookieOf(cookie, "stub_backorders");
+    const table = backorderTable(scope);
+    if (table === null) return unknownScope(scope);
     return backorderPage(
       retailer.retailerId,
       Number(query.get("page") ?? 0),
       Number(query.get("size") ?? 20),
+      table,
     );
+  }
 
   if (path === "/api/retail/cart-items/count")
     return ok({ count: cartOf(cartKey).size });
@@ -691,18 +796,50 @@ function send(res: ServerResponse, status: number, body: unknown) {
  * - `POST /__stub/cart-slow {ms}` 다음 담기 1번의 응답을 늦춘다
  * - `POST /__stub/backorders/eta {variantId, expectedInboundDate}` 그 SKU 미송 줄의 예상 입고일(loop-06b S1-8).
  *   reset 은 키와 상관없이 미송 표도 시드로 되돌린다
+ * - `POST /__stub/reset {backorders: "seed" | "empty" | "page2-only-102"}` 미송 표를 그 상태로(loop-08f §4-1 9).
+ *   본문이 없으면 seed. 모르는 값은 400
+ * - 범위(08f M2): 위 둘에 `?backorders=<키>`를 달면 공유 표가 아니라 그 키의 표만 만들고(reset) 고친다(eta).
+ *   조회는 쿠키 `stub_backorders=<키>`로 그 표를 읽는다. 공유 표는 `--workers=2`에서 다른 worker의 reset이
+ *   설정과 조회 사이에 끼어 덮으므로, 미송 상태를 바꾸는 시험은 범위를 쓴다. 범위 reset은 장바구니를 안 건드린다
  */
 async function knob(
   req: IncomingMessage,
   url: URL,
 ): Promise<{ status: number; body: unknown }> {
   const key = url.searchParams.get("cart");
+  const scope = url.searchParams.get("backorders");
   if (url.pathname === "/__stub/reset") {
-    resetStub(key);
-    return { status: 200, body: { data: { reset: key ?? "all" } } };
+    let input: { backorders?: unknown } = {};
+    try {
+      input = JSON.parse((await readBody(req)) || "{}") as typeof input;
+    } catch {
+      // 본문이 JSON이 아니면 아래 검사가 400을 낸다
+      input = { backorders: "?" };
+    }
+    const state = input.backorders ?? "seed";
+    if (!BACKORDER_STATES.includes(state as StubBackorderState))
+      return {
+        status: 400,
+        body: {
+          code: "STUB",
+          message: `backorders는 ${BACKORDER_STATES.join(" | ")}`,
+        },
+      };
+    if (scope !== null) {
+      backorderScopes.set(scope, backordersOf(state as StubBackorderState));
+      return { status: 200, body: { data: { scope, backorders: state } } };
+    }
+    resetStub(key, state as StubBackorderState);
+    return {
+      status: 200,
+      body: { data: { reset: key ?? "all", backorders: state } },
+    };
   }
-  if (req.method === "POST" && url.pathname === "/__stub/backorders/eta")
-    return setBackorderEta(await readBody(req));
+  if (req.method === "POST" && url.pathname === "/__stub/backorders/eta") {
+    const table = backorderTable(scope);
+    const raw = await readBody(req);
+    return table === null ? unknownScope(scope) : setBackorderEta(raw, table);
+  }
   if (url.pathname === "/__stub/cart-fail") {
     const input = JSON.parse((await readBody(req)) || "{}") as {
       status?: number;
