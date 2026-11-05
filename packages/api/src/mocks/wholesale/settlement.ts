@@ -393,6 +393,19 @@ function repeatsOrder(
   return targets.some((t) => t.order.id === orderId);
 }
 
+/** 원문이 JSON 객체(배열 아님)면 그 값, 파싱 실패나 다른 값이면 null */
+function parseJsonObject(text: string): object | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
 /** 스펙 배분액 = 양의 int32. 문자열 "100", 0.5, 2^31은 전부 아니다 */
 const INT32_MAX = 2_147_483_647;
 function isPositiveInt32(value: unknown): value is number {
@@ -920,7 +933,7 @@ export const settlementHandlers = [
    *
    * 검사 순서는 `POST /payments`와 같은 꼴이다(스펙은 오류 코드만 적었고 순서, 빈 배열, field는 목이 정한 계약
    * 결정이다, §5-4 2. G2 승인 뒤 BE에 전달):
-   *   키 없음 400 → 같은 키(200 / 409) → 본문 형식 400(retailerId, allocations 배열·빈 배열, 줄이 객체 아님, 줄 금액이 양의 int32 아님)
+   *   키 없음 400 → 같은 키(원문 비교, 200 / 409) → 본문 형식 400(JSON 객체 아님 field 없음, retailerId, allocations 배열·빈 배열, 줄이 객체 아님, 줄 금액이 양의 int32 아님)
    *   → 소매처 404 → 줄 순서대로(같은 주문 400, 없는 주문 404, 남의 주문 400) → 확정 아님 409
    *   → 선수금 넘음 409 → 미수 넘음 409.
    * 선수금 넘음이 미수 넘음보다 먼저다 — 돈의 출처를 먼저 본다(`POST /payments`가 계획을 미수보다 먼저 보는 것과 같다)
@@ -934,11 +947,8 @@ export const settlementHandlers = [
         "Idempotency-Key 헤더가 필요합니다.",
         "Idempotency-Key",
       );
+    // replay는 원문으로 먼저 본다. 파싱을 앞에 두면 쓴 키 + 깨진 본문이 409 대신 파싱 예외로 끝나 검사 순서가 틀어진다(08f M1)
     const bodyJson = await request.text();
-    const body = JSON.parse(bodyJson) as Partial<
-      Record<keyof WholesaleSchema<"AllocationCreateRequest">, unknown>
-    >;
-
     const seen = allocationReplays.get(key);
     if (seen !== undefined)
       return seen.bodyJson === bodyJson
@@ -948,6 +958,14 @@ export const settlementHandlers = [
             "IDEMPOTENCY_KEY_REUSED",
             "같은 키로 다른 정산을 보냈습니다.",
           );
+
+    // JSON이 아니거나(`{`) 객체가 아니면(null, 숫자, 배열) 필드를 읽다 예외로 500이 난다 — 본문 전체 문제라 field는 비운다
+    const parsed = parseJsonObject(bodyJson);
+    if (parsed === null)
+      return fail(400, "VALIDATION_FAILED", "본문 형식이 올바르지 않습니다.");
+    const body = parsed as Partial<
+      Record<keyof WholesaleSchema<"AllocationCreateRequest">, unknown>
+    >;
 
     if (
       typeof body.retailerId !== "number" ||

@@ -453,6 +453,55 @@ describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
     expect(snap()).toEqual(after);
   });
 
+  /** 원문 그대로 보낸다(`{`처럼 JSON이 아닌 본문은 `post`의 stringify로 못 만든다) */
+  async function allocateRaw(text: string, key = "a-1") {
+    const res = await fetch(`${API}/allocations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: text,
+    });
+    return { status: res.status, body: (await res.json()) as ErrorFull };
+  }
+
+  it.each([
+    ["null", "null"],
+    ["{ (JSON 아님)", "{"],
+    ["숫자 1", "1"],
+    ["배열 []", "[]"],
+  ])(
+    "⑤-0 새 키 + 본문 %s → 400 VALIDATION_FAILED field 없음, 저장 그대로(08f M1)",
+    async (_label, text) => {
+      const before = snap();
+      const res = await allocateRaw(text);
+      expect([res.status, res.body.code, res.body.errors]).toEqual([
+        400,
+        "VALIDATION_FAILED",
+        [],
+      ]);
+      expect(snap()).toEqual(before);
+    },
+  );
+  it("⑤-0b 쓴 키 + 본문 { → 409 IDEMPOTENCY_KEY_REUSED(replay가 본문 형식보다 먼저, D52), 같은 키 같은 원문은 여전히 200 동일 본문", async () => {
+    await deposit(37_500, D28, "p-1");
+    const first = await allocate(body7004(37_500));
+    expect(first.status).toBe(201);
+    const after = snap();
+    const broken = await allocateRaw("{");
+    expect([broken.status, broken.body.code]).toEqual([
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+    ]);
+    const nul = await allocateRaw("null");
+    expect([nul.status, nul.body.code]).toEqual([
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+    ]);
+    const again = await allocate(body7004(37_500));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(snap()).toEqual(after);
+  });
+
   /** 오류 하나: 상태, code, field(없으면 errors 빈 배열), 저장 전후 같음 */
   async function rejects(
     json: unknown,
