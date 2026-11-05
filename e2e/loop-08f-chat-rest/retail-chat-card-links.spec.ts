@@ -29,7 +29,8 @@ import {
 /**
  * #374 S4-2~S4-6 — 소매 미송 카드와 미송 되묻기 아래 `미송 대기 현황 보기`, 미수 카드 정산 링크의 이동(기획 §4-1).
  * 채팅은 브라우저 MSW(T0 = 2026-10-29 14:20), 도착 화면 `/backorders`는 Server Component가 HTTP stub(3199)을 읽는다.
- * stub 미송 표는 하나라 매 시험 시작에 seed로 되돌리고, 끝나면 다시 seed로 둔다(다른 spec이 seed를 기대한다).
+ * stub 미송 표는 시험 context의 쿠키로 고른다(`stubBackorders`, 08f M2). 공유 표를 안 건드려 다른 worker와 서로 끼어들지
+ * 않고, context가 시험마다 새로 생겨 끝난 뒤 되돌릴 것도 없다.
  *
  * 방 1 = 무드온(101), 방 33 = 라온(102). stub seed = 무드온 4행(9001 9002 9006 9003) + 라온 1행(801).
  */
@@ -40,10 +41,6 @@ const MOODON_HREF = "/backorders?wholesaler=101";
 const RAON_HREF = "/backorders?wholesaler=102";
 
 test.beforeEach(async ({ page }) => {
-  await stubBackorders(page, "seed");
-});
-
-test.afterEach(async ({ page }) => {
   await stubBackorders(page, "seed");
 });
 

@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   STUB_ORIGIN,
   type StubBackorderState,
@@ -25,7 +25,7 @@ export * from "../loop-07-receivable-reply/helpers";
  * 상태, document 요청 셈을 더한다.
  *
  * 저장소가 둘이다(기획 §4-1 5 9): 채팅 답(미송 되묻기, 카드)은 브라우저 MSW, 도착한 `/backorders` 표는 Server
- * Component가 읽는 HTTP stub(3199). 그래서 미송 표는 `POST /__stub/reset {backorders}`로 넣는다.
+ * Component가 읽는 HTTP stub(3199). 그래서 미송 표는 쿠키 `stub_backorders`로 고른다(`stubBackorders`).
  * 이름은 `helpers.ts`가 아니다 — 같은 폴더의 도매 계약 helpers(#371)와 섞이지 않게.
  */
 
@@ -33,15 +33,31 @@ export const BACKORDER_LINK = "미송 대기 현황 보기";
 export const SETTLEMENT_LINK = "정산 화면에서 보기";
 export const LOST_TEXT = "로그인이 끊겼어요";
 
-/** stub 미송 표를 그 상태로. 장바구니 키 없이 부르면 장바구니도 비운다(이 spec은 장바구니를 안 쓴다) */
+/** 이 시험만의 stub 미송 범위 키. 반복(`--repeat-each`)과 재시도가 다른 worker에서 같이 돌아도 겹치지 않게 둘 다 붙인다 */
+function backorderScope(): string {
+  const info = test.info();
+  return `${info.testId}-${info.repeatEachIndex}-${info.retry}`;
+}
+
+/**
+ * 이 시험의 stub 미송 표를 그 상태로. 공유 표 reset(`POST /__stub/reset {backorders}`)을 쓰지 않는다 — `--workers=2`에서
+ * 다른 worker의 reset(side-02, 05b `useOwnCart`)이 설정과 도착 조회 사이에 끼면 행이 바뀌었다(08f M2).
+ * 범위 표를 만들고 쿠키 `stub_backorders`로 고른다. Next 서버는 들어온 쿠키 전체를 stub으로 넘긴다(`serverApi()`)
+ */
 export async function stubBackorders(
   page: Page,
   state: StubBackorderState,
 ): Promise<void> {
-  const res = await page.request.post(`${STUB_ORIGIN}/__stub/reset`, {
-    data: { backorders: state },
-  });
-  expect(res.status(), `stub reset ${state}`).toBe(200);
+  const scope = backorderScope();
+  const url = test.info().project.use.baseURL ?? "http://localhost:3101";
+  const res = await page.request.post(
+    `${STUB_ORIGIN}/__stub/reset?backorders=${encodeURIComponent(scope)}`,
+    { data: { backorders: state } },
+  );
+  expect(res.status(), `stub 미송 범위 ${state}`).toBe(200);
+  await page
+    .context()
+    .addCookies([{ name: "stub_backorders", value: scope, url }]);
 }
 
 /** 말풍선 안 미송 대기 현황 링크 */
