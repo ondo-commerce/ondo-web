@@ -38,7 +38,18 @@ async function offAndAsk(page: Page): Promise<void> {
 test("S1-5 stats-v1 11:59:30, 자동 답 전부 끔 + 방 1 재고 질문 → 4줄 재고 4 → 5, 미분류 2 그대로", async ({
   page,
 }) => {
-  await startAt(page, T_1159, { seed: STATS_V1, before: offAndAsk });
+  // 08f C1: `startAt`의 시계는 흐른다. 로그인과 설정이 30초를 넘으면 주입 시각과 첫 stats 요청이 12:00을 넘어
+  // 10/29 영업일을 센다. 그래서 주입 전에 11:59:30으로 고정하고(그 전 흐른 시간도 되돌린다), 첫 stats 응답 뒤 다시 흐르게 한다
+  await startAt(page, T_1159, {
+    seed: STATS_V1,
+    before: async (p) => {
+      await p.clock.setFixedTime(T_1159);
+      await offAndAsk(p);
+    },
+  });
+  await expect.poll(() => count(page, STATS_GET)).toBeGreaterThan(0);
+  await settled(page, STATS_GET);
+  await page.clock.setSystemTime(T_1159);
   await expect(cardLines(page)).toHaveText([
     "오늘 소매 메시지 13건",
     "자동 답 5, 답+확인 1, 넘김 3, 되묻기 3, 결과 없음 1",
