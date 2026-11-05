@@ -206,7 +206,7 @@ describe("M5 발송 지표는 남긴 줄에서, 판정 정확도는 투영에서
         kindsOf(r.actual).includes("HANDOFF") !== r.sent.includes("HANDOFF"),
     );
     expect(mismatch.map((r) => r.scenario)).toEqual([]);
-    expect(results).toHaveLength(142);
+    expect(results).toHaveLength(149);
   });
 });
 
@@ -218,19 +218,20 @@ describe("S2-3, S2-4 골든셋 점수", () => {
 
   /* 08c S3-7 v5 = 기획(loop-08c §5-4) 손 계산. v4 116 소매 단계(자동 30 + 답+확인 5 + 넘김 51 + 되묻기 29 + 줄 없음 1)
      + 새 26(넘김 25 = N 12 + U01~U08 8 + U09 2 + X 3, 되묻기 1 = G01). 사장 1 */
-  it("v5 = 기획 §5-4 손 계산(142 소매 단계 = 자동 35 + 넘김 76 + 되묻기 30 + 줄 없음 1, 사장 1)", () => {
+  /* 08f S1-2 v6 = 기획(loop-08f §5-3) 손 계산. v5 142 소매 단계 + 새 7(O01~O07, 전부 OFF 넘김 줄 1개). 사장 1 */
+  it("v6 = 기획 §5-3 손 계산(149 소매 단계 = 자동 35 + 넘김 83 + 되묻기 30 + 줄 없음 1, 사장 1)", () => {
     expect(score).toEqual({
-      version: 5,
-      scenarios: 109,
-      steps: 143,
-      retailSteps: 142,
-      exact: 143,
+      version: 6,
+      scenarios: 116,
+      steps: 150,
+      retailSteps: 149,
+      exact: 150,
       autoSent: 35,
       autoWrong: 0,
       autoExpected: 35,
       autoRight: 35,
-      handoffExpected: 76,
-      handoffSafe: 76,
+      handoffExpected: 83,
+      handoffSafe: 83,
       clarifyExpected: 30,
       clarifyRight: 30,
       noneExpected: 1,
