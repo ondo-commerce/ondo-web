@@ -5,6 +5,7 @@ import {
   useQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { apiFetch, apiFetchPage } from "@ondo/api";
 import { dashboardKeys } from "./keys";
 import {
@@ -20,6 +21,7 @@ import {
   toNewOrderRows,
   toSummaryPeek,
   toSummaryView,
+  weekRangeOf,
 } from "../derive";
 import type {
   AttentionView,
@@ -124,6 +126,44 @@ export function useInquiryStatsQuery() {
     ...POLLING,
     select: toInquiryView,
   });
+}
+
+/**
+ * 문의 카드 7일 줄(loop-08f S3) — 오늘 쿼리의 기준 영업일에서 6일 앞까지. 오늘 숫자가 있어야 부른다(이 훅은
+ * 오늘 경계 안에서만 그려진다 — 오늘 최초 실패면 요청 0).
+ *
+ * **혼자 polling 하지 않는다.** 오늘 쿼리가 한 번 끝날 때마다(성공이든 실패든, `todaySettledAt`가 바뀔 때)
+ * 한 번 다시 부른다. 자기 30초 타이머를 따로 두면 낮 12시를 넘는 주기에 오늘 응답보다 먼저 옛 기간을
+ * 한 번 더 부른다(기획 S3-5 "옛 키 GET 0"). 오늘 응답 뒤에 부르니 주기는 오늘과 같은 30초다.
+ * 기준 영업일이 바뀐 주기에는 다시 부르지 않는다 — 키가 바뀌어 `useQuery`가 새 기간을 직접 부른다.
+ *
+ * retry 0(기획 Q9 ①, Codex 15). 앱 기본 5xx 두 번 재시도가 polling과 겹치면 한 주기에 요청이 셋이 된다.
+ * 실패하면 다음 주기가 재시도다(`chat/api/queries.ts`와 같은 이유).
+ */
+export function useInquiryWeekQuery(
+  businessDay: string,
+  todaySettledAt: number,
+) {
+  const range = weekRangeOf(businessDay);
+  const query = useQuery({
+    queryKey: dashboardKeys.inquiryWeek(range.from, range.to),
+    queryFn: () =>
+      apiFetch<InquiryStats>(DASHBOARD_PATH.inquiryStats, {
+        searchParams: { from: range.from, to: range.to },
+      }),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const { refetch } = query;
+  const last = useRef({ businessDay, todaySettledAt });
+  useEffect(() => {
+    const prev = last.current;
+    last.current = { businessDay, todaySettledAt };
+    if (prev.businessDay !== businessDay) return;
+    if (prev.todaySettledAt === todaySettledAt) return;
+    void refetch();
+  }, [businessDay, todaySettledAt, refetch]);
+  return query;
 }
 
 /** 주의 목록의 재료 — 미송 SKU 오래된 순 한 페이지. 상위 3·상위 2는 `toAttentionView`가 페이지 안에서 고른다 */

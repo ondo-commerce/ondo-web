@@ -2,8 +2,10 @@
 
 import { Panel } from "@ondo/ui";
 import Link from "next/link";
-import { useInquiryStatsQuery } from "../api/queries";
+import { useInquiryStatsQuery, useInquiryWeekQuery } from "../api/queries";
 import { INQUIRY_TEXT, TAB_HREF } from "../constants";
+import { toWeekLineState } from "../derive";
+import type { InquiryWeekLineState } from "../types";
 import {
   QueryBoundary,
   QueryBoundaryGroup,
@@ -67,7 +69,17 @@ export function InquiryPanel() {
 }
 
 function InquiryBody() {
-  const { data } = useInquiryStatsQuery();
+  const { data, dataUpdatedAt, errorUpdatedAt } = useInquiryStatsQuery();
+  /* 오늘 쿼리가 마지막으로 끝난 시각(성공이든 실패든). 7일 쿼리가 이 값이 바뀔 때마다 한 번 다시 부른다(`useInquiryWeekQuery`) */
+  const week = useInquiryWeekQuery(
+    data.businessDay,
+    Math.max(dataUpdatedAt, errorUpdatedAt),
+  );
+  const weekLine = toWeekLineState({
+    businessDay: data.businessDay,
+    week: week.data,
+    failed: week.isError,
+  });
   return (
     /* S2-4: polling으로 숫자가 바뀌는 줄(와이어프레임 21 `#state-inquiry-poll`, QA F3) */
     <div className="grid gap-2 text-sm tabular-nums" data-ac="S2-1 S2-4">
@@ -91,6 +103,7 @@ function InquiryBody() {
         </span>
         {data.intentLine}
       </p>
+      <InquiryWeekLine state={weekLine} />
       <p
         className="text-muted-foreground mt-1 text-xs leading-4"
         data-ac="S2-6"
@@ -99,6 +112,34 @@ function InquiryBody() {
       </p>
     </div>
   );
+}
+
+/**
+ * 7일 줄(loop-08f S3, 기획 §4-4). 4줄과 같은 `<p>` 모양 — 새 모양 0. 막대는 줄 높이(text-sm 20px)와 같게 둬서
+ * 숫자가 도착할 때 아래 기준 줄이 안 움직인다. 실패 줄은 alert가 아니다 — 버튼도 없고 다음 polling이 다시 부른다
+ */
+function InquiryWeekLine({ state }: { state: InquiryWeekLineState }) {
+  switch (state.kind) {
+    case "none":
+      return null;
+    case "loading":
+      return (
+        <div
+          role="status"
+          aria-label={INQUIRY_TEXT.weekLoading}
+          className="bg-muted h-5 w-3/4 animate-pulse rounded-control"
+          data-ac="08f:S3-3"
+        />
+      );
+    case "failed":
+      return (
+        <p className="text-muted-foreground" data-ac="08f:S3-3">
+          {INQUIRY_TEXT.weekFailed}
+        </p>
+      );
+    case "line":
+      return <p data-ac="08f:S3-2">{state.text}</p>;
+  }
 }
 
 /** 숫자 자리만 막대 4줄(와이어프레임 `#state-loading`). 첫 줄이 큰 숫자라 높다 — 도착할 때 아래 주의가 덜 튄다 */
