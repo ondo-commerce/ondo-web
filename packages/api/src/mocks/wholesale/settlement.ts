@@ -393,6 +393,17 @@ function repeatsOrder(
   return targets.some((t) => t.order.id === orderId);
 }
 
+/** 스펙 배분액 = 양의 int32. 문자열 "100", 0.5, 2^31은 전부 아니다 */
+const INT32_MAX = 2_147_483_647;
+function isPositiveInt32(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= INT32_MAX
+  );
+}
+
 /** 같은 Idempotency-Key 재전송 판정. null = 처음 보는 키 */
 export type MockPaymentReplay =
   | { status: 200; data: WholesaleSchema<"PaymentCreatedResponse"> }
@@ -909,7 +920,7 @@ export const settlementHandlers = [
    *
    * 검사 순서는 `POST /payments`와 같은 꼴이다(스펙은 오류 코드만 적었고 순서, 빈 배열, field는 목이 정한 계약
    * 결정이다, §5-4 2. G2 승인 뒤 BE에 전달):
-   *   키 없음 400 → 같은 키(200 / 409) → 본문 형식 400(retailerId, allocations 배열·빈 배열, 줄 금액 ≤ 0)
+   *   키 없음 400 → 같은 키(200 / 409) → 본문 형식 400(retailerId, allocations 배열·빈 배열, 줄 금액이 양의 int32 아님)
    *   → 소매처 404 → 줄 순서대로(같은 주문 400, 없는 주문 404, 남의 주문 400) → 확정 아님 409
    *   → 선수금 넘음 409 → 미수 넘음 409.
    * 선수금 넘음이 미수 넘음보다 먼저다 — 돈의 출처를 먼저 본다(`POST /payments`가 계획을 미수보다 먼저 보는 것과 같다)
@@ -960,11 +971,12 @@ export const settlementHandlers = [
       orderId?: unknown;
       amount?: unknown;
     }[];
-    if (requested.some((a) => typeof a.amount !== "number" || a.amount <= 0))
+    // 스펙 amount는 int32다. 원 단위 밑(0.5)이나 int32 밖이 저장되면 미수와 선수금이 소수로 남는다(08f R1)
+    if (requested.some((a) => !isPositiveInt32(a.amount)))
       return fail(
         400,
         "VALIDATION_FAILED",
-        "배분액은 1 이상이어야 합니다.",
+        "배분액은 1 이상의 정수여야 합니다.",
         "allocations",
       );
     const retailerId = body.retailerId;

@@ -497,6 +497,29 @@ describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
   it("⑤-4 금액 0 → 400 field allocations", async () => {
     await rejects(one(7004, 0), [400, "VALIDATION_FAILED", "allocations"]);
   });
+  // 08f R1: 선수금을 먼저 넣어 둔다 — 형식 검사가 없으면 0.5, 1.5가 201로 저장되는 상태에서 거절을 본다
+  it.each([
+    ["0.5", 0.5],
+    ["1.5", 1.5],
+    ['문자열 "100"', "100"],
+    ["2^31", 2 ** 31],
+  ])(
+    "⑤-4b 금액 %s(양의 int32 아님) → 400 field allocations, 입금·배분·원장·다음 id 그대로",
+    async (_label, amount) => {
+      await deposit(10_000, D28, "p-1");
+      await rejects(
+        { retailerId: RETAILER, allocations: [{ orderId: 7004, amount }] },
+        [400, "VALIDATION_FAILED", "allocations"],
+      );
+      expect([outstanding(7004), prepaid()]).toEqual([37_500, 10_000]);
+    },
+  );
+  it("⑤-4d 금액 0.5 + 소매처 999 → 400(형식이 소매처 404보다 먼저)", async () => {
+    await rejects(
+      { retailerId: 999, allocations: [{ orderId: 7004, amount: 0.5 }] },
+      [400, "VALIDATION_FAILED", "allocations"],
+    );
+  });
   it("⑤-5 7004 두 번 → 400 DUPLICATE_ORDER field allocations", async () => {
     await deposit(50_000, D28, "p-1");
     await rejects(
