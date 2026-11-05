@@ -145,6 +145,9 @@ export function useInquiryStatsQuery() {
  * 1. 오늘 쿼리가 끝날 때마다(`todaySettledAt` 변화) 지금 키로 한 번. 기준 영업일이 바뀐 주기면 키가 이미 새 기간이다
  * 2. 마운트 때는 이 키를 한 번도 부른 적이 없을 때만(첫 진입 — 오늘 숫자를 막 받은 뒤라 기간이 확정돼 있다).
  *    재진입이면 진입 무효화가 오늘을 다시 부르니 그 응답을 기다린다
+ *
+ * `cancelRefetch: false`(08f R7) — 기본값은 진행 중인 재조회를 취소하고 새로 보낸다. 7일 응답이 30초보다 느리면
+ * 오늘 응답마다 취소가 반복돼 숫자가 영영 안 바뀐다. 진행 중이면 그 요청을 그대로 기다린다.
  */
 export function useInquiryWeekQuery(
   businessDay: string,
@@ -172,7 +175,7 @@ export function useInquiryWeekQuery(
     last.current = todaySettledAt;
     if (prev === null ? !neverFetchedAtMount.current : prev === todaySettledAt)
       return;
-    void refetch();
+    void refetch({ cancelRefetch: false });
   }, [todaySettledAt, refetch]);
   return query;
 }

@@ -236,6 +236,52 @@ test.describe("1280", () => {
     await expect(weekBar(page)).toHaveCount(0);
   });
 
+  test("S3-3 ⑥ 7일 응답이 30초보다 느려도(08f R7, delay 35초 계속) 진행 중 요청을 끊지 않고 도착하면 숫자가 바뀐다", async ({
+    page,
+  }) => {
+    await startAt(page, T_1100, { seed: STATS_V1 });
+    await expect(weekLine(page)).toHaveText(WEEK_1028_ANY);
+    await settled(page, WEEK_GET);
+    const weekTotal = async () =>
+      Number(
+        /소매 메시지 (\d+)건/.exec(
+          (await weekLine(page).textContent()) ?? "",
+        )?.[1] ?? NaN,
+      );
+    const before = await weekTotal();
+    expect(before).toBeGreaterThan(0);
+
+    /* 새 소매 메시지 1건(10/29 11:00 = 영업일 10/28 안). 목은 요청 시점 값을 돌려주니 다음 7일 응답이 +1이다 */
+    await knob(page, "rooms/1/incoming", { body: "7일 줄 갱신 확인" });
+    /* 7일 응답마다 35초 — 오늘 polling(30초)보다 느리다. 기본 refetch면 30초마다 취소, 재시작이 반복된다 */
+    await knob(page, "delay", {
+      op: "stats",
+      range: "multi",
+      ms: 35_000,
+      times: 100,
+    });
+    const week0 = await count(page, WEEK_GET);
+    await page.clock.fastForward(30_000);
+    await waitCount(page, WEEK_GET, week0 + 1);
+    const today1 = await count(page, STATS_GET);
+    await page.clock.fastForward(30_000);
+    await waitCount(page, STATS_GET, today1 + 1);
+    await settled(page, STATS_GET);
+    /* 두 번째 오늘 응답 뒤에도 7일 요청은 처음 것 하나 그대로(끊고 다시 보내지 않았다) */
+    expect(await count(page, WEEK_GET)).toBe(week0 + 1);
+    await expect(weekLine(page)).toHaveText(
+      new RegExp(`소매 메시지 ${before}건`),
+    );
+
+    await page.clock.fastForward(5_000);
+    await expect(weekLine(page)).toHaveText(
+      new RegExp(`소매 메시지 ${before + 1}건`),
+    );
+    expect(
+      (await requests(page, WEEK_GET)).slice(week0).map((r) => r.status),
+    ).toEqual([200]);
+  });
+
   test("S3-5 12시 경계: 11:59:30 → 60초 polling → 오늘 응답 from 10/29, 7일 from=2026-10-23&to=2026-10-29, 기간 글자 (10/23~10/29), 옛 키 GET 0", async ({
     page,
   }) => {
