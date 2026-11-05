@@ -147,6 +147,8 @@ export interface GoldenCase {
 
 export interface GoldenDoc {
   version: number;
+  /** 판 설명. 판이 오를 때마다 하나씩 붙는다(v6 = loop-08f 전부 꺼짐 때 의도 분류) */
+  aboutV6: string;
   rules: {
     contextMinutes: number;
     bands: number[];

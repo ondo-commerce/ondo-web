@@ -1,6 +1,16 @@
 import { setupServer } from "msw/node";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { WholesaleSchema } from "../../wholesale";
+import { chatHandlers } from "./chat";
 import {
   mockOrders,
   mockOrderSettlement,
@@ -9,6 +19,7 @@ import {
 } from "./order";
 import {
   mockReceivable,
+  mockSettlementSnapshot,
   recordMockSale,
   resetSettlementMock,
   settlementHandlers,
@@ -28,7 +39,8 @@ type Payment = WholesaleSchema<"PaymentCreatedResponse">;
 type Cancelled = WholesaleSchema<"AllocationCancelledResponse">;
 type ErrorBody = { code: string };
 
-const server = setupServer(...settlementHandlers);
+// 채팅 핸들러는 `/__mock/chat/reset`(정산 목까지 되돌림)을 쓰려고 같이 올린다(loop-08f S1-3)
+const server = setupServer(...chatHandlers, ...settlementHandlers);
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 beforeEach(() => {
@@ -324,5 +336,398 @@ describe("S4-6 같은 키 재요청은 처음 201 본문 그대로", () => {
       409,
       "IDEMPOTENCY_KEY_REUSED",
     ]);
+  });
+});
+
+/* --- loop-08f S1-3 선수금으로 정산(createAllocation) -------------------------- */
+
+type Allocated = WholesaleSchema<"AllocationCreatedResponse">;
+type ErrorFull = { code: string; errors: { field: string }[] };
+
+describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
+  const T = Date.parse("2026-10-29T14:20:00+09:00");
+  const D27 = "2026-10-27T10:00:00+09:00";
+  const D28 = "2026-10-28T10:00:00+09:00";
+
+  /** 사진: 저장소 + 주문 7004 미수 + 소매처 1 선수금 */
+  const snap = () => ({
+    ...mockSettlementSnapshot(),
+    out7004: outstanding(7004),
+    prepaid: prepaid(),
+  });
+  let start: ReturnType<typeof snap>;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T);
+    // 매 경우 시작에 HTTP reset(정산 목 포함) — 시험끼리 저장소가 이어지지 않는다
+    const res = await fetch("http://mock.test/__mock/chat/reset", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    start = snap();
+    expect([start.out7004, start.prepaid, start.paymentCount]).toEqual([
+      37_500, 0, 0,
+    ]);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 배분 없는 입금. 키는 기획 값(`p-1`, `p-2`) */
+  async function deposit(amount: number, paidAt: string, key: string) {
+    const res = await pay(amount, [], paidAt, key);
+    expect(res.status).toBe(201);
+    return res.body.data;
+  }
+
+  function allocate(json: unknown, key: string | null = "a-1") {
+    return post<{ data: Allocated } & ErrorFull>(
+      `${API}/allocations`,
+      json,
+      key === null ? {} : { "Idempotency-Key": key },
+    );
+  }
+
+  const body7004 = (amount: number) => ({
+    retailerId: RETAILER,
+    allocations: [{ orderId: 7004, amount }],
+  });
+
+  const lines = (a: Allocated) =>
+    a.allocations.map((l) => [l.orderId, l.paymentId, l.amount]);
+
+  it("① P1 37,500 → 7004에 37,500 → 201, 줄 1개(P1), prepaidRemaining 0, 7004 미수 0", async () => {
+    const p1 = await deposit(37_500, D28, "p-1");
+    const res = await allocate(body7004(37_500));
+    expect(res.status).toBe(201);
+    expect(lines(res.body.data)).toEqual([[7004, p1.id, 37_500]]);
+    expect(res.body.data).toMatchObject({
+      retailerId: RETAILER,
+      retailerName: "봄봄상회",
+      prepaidRemaining: 0,
+    });
+    expect(outstanding(7004)).toBe(0);
+    expect(prepaid()).toBe(0);
+  });
+
+  it("② P1 10,000(10-27), P2 30,000(10-28) → 7004에 25,000 → 줄 2개 [P1 10,000, P2 15,000], 선수금 15,000", async () => {
+    const p1 = await deposit(10_000, D27, "p-1");
+    const p2 = await deposit(30_000, D28, "p-2");
+    const res = await allocate(body7004(25_000));
+    expect(res.status).toBe(201);
+    expect(lines(res.body.data)).toEqual([
+      [7004, p1.id, 10_000],
+      [7004, p2.id, 15_000],
+    ]);
+    expect(res.body.data.prepaidRemaining).toBe(15_000);
+    expect(outstanding(7004)).toBe(37_500 - 25_000);
+  });
+
+  it("③ P1, P2 같은 paidAt → id 작은 쪽 먼저", async () => {
+    const p1 = await deposit(10_000, D28, "p-1");
+    const p2 = await deposit(30_000, D28, "p-2");
+    expect(p1.id).toBeLessThan(p2.id);
+    const res = await allocate(body7004(25_000));
+    expect(lines(res.body.data)).toEqual([
+      [7004, p1.id, 10_000],
+      [7004, p2.id, 15_000],
+    ]);
+  });
+
+  it("④ 같은 키 같은 본문 → 200 동일 본문, 저장 변화 0. 같은 키 다른 금액 → 409 IDEMPOTENCY_KEY_REUSED", async () => {
+    await deposit(37_500, D28, "p-1");
+    const first = await allocate(body7004(37_500));
+    expect(first.status).toBe(201);
+    const after = snap();
+    const again = await allocate(body7004(37_500));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(snap()).toEqual(after);
+    const other = await allocate(body7004(30_000));
+    expect([other.status, other.body.code]).toEqual([
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+    ]);
+    expect(snap()).toEqual(after);
+  });
+
+  /** 원문 그대로 보낸다(`{`처럼 JSON이 아닌 본문은 `post`의 stringify로 못 만든다) */
+  async function allocateRaw(text: string, key = "a-1") {
+    const res = await fetch(`${API}/allocations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: text,
+    });
+    return { status: res.status, body: (await res.json()) as ErrorFull };
+  }
+
+  it.each([
+    ["null", "null"],
+    ["{ (JSON 아님)", "{"],
+    ["숫자 1", "1"],
+    ["배열 []", "[]"],
+  ])(
+    "⑤-0 새 키 + 본문 %s → 400 VALIDATION_FAILED field 없음, 저장 그대로(08f M1)",
+    async (_label, text) => {
+      const before = snap();
+      const res = await allocateRaw(text);
+      expect([res.status, res.body.code, res.body.errors]).toEqual([
+        400,
+        "VALIDATION_FAILED",
+        [],
+      ]);
+      expect(snap()).toEqual(before);
+    },
+  );
+  it("⑤-0b 쓴 키 + 본문 { → 409 IDEMPOTENCY_KEY_REUSED(replay가 본문 형식보다 먼저, D52), 같은 키 같은 원문은 여전히 200 동일 본문", async () => {
+    await deposit(37_500, D28, "p-1");
+    const first = await allocate(body7004(37_500));
+    expect(first.status).toBe(201);
+    const after = snap();
+    const broken = await allocateRaw("{");
+    expect([broken.status, broken.body.code]).toEqual([
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+    ]);
+    const nul = await allocateRaw("null");
+    expect([nul.status, nul.body.code]).toEqual([
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+    ]);
+    const again = await allocate(body7004(37_500));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(snap()).toEqual(after);
+  });
+
+  /** 오류 하나: 상태, code, field(없으면 errors 빈 배열), 저장 전후 같음 */
+  async function rejects(
+    json: unknown,
+    want: [number, string, string | null],
+    key: string | null = "a-1",
+  ) {
+    const before = snap();
+    const res = await allocate(json, key);
+    expect([
+      res.status,
+      res.body.code,
+      res.body.errors[0]?.field ?? null,
+    ]).toEqual(want);
+    expect(snap()).toEqual(before);
+  }
+
+  const one = (orderId: number, amount: number) => ({
+    retailerId: RETAILER,
+    allocations: [{ orderId, amount }],
+  });
+
+  it("⑤-1 키 없음 → 400 VALIDATION_FAILED field Idempotency-Key", async () => {
+    await rejects(
+      body7004(1),
+      [400, "VALIDATION_FAILED", "Idempotency-Key"],
+      null,
+    );
+  });
+  it("⑤-2 retailerId 문자열 → 400 field retailerId", async () => {
+    await rejects(
+      { retailerId: "1", allocations: [{ orderId: 7004, amount: 1 }] },
+      [400, "VALIDATION_FAILED", "retailerId"],
+    );
+  });
+  it("⑤-3 빈 배열 → 400 field allocations(계약 결정 1)", async () => {
+    await rejects({ retailerId: RETAILER, allocations: [] }, [
+      400,
+      "VALIDATION_FAILED",
+      "allocations",
+    ]);
+  });
+  it("⑤-4 금액 0 → 400 field allocations", async () => {
+    await rejects(one(7004, 0), [400, "VALIDATION_FAILED", "allocations"]);
+  });
+  // 08f R1: 선수금을 먼저 넣어 둔다 — 형식 검사가 없으면 0.5, 1.5가 201로 저장되는 상태에서 거절을 본다
+  it.each([
+    ["0.5", 0.5],
+    ["1.5", 1.5],
+    ['문자열 "100"', "100"],
+    ["2^31", 2 ** 31],
+  ])(
+    "⑤-4b 금액 %s(양의 int32 아님) → 400 field allocations, 입금·배분·원장·다음 id 그대로",
+    async (_label, amount) => {
+      await deposit(10_000, D28, "p-1");
+      await rejects(
+        { retailerId: RETAILER, allocations: [{ orderId: 7004, amount }] },
+        [400, "VALIDATION_FAILED", "allocations"],
+      );
+      expect([outstanding(7004), prepaid()]).toEqual([37_500, 10_000]);
+    },
+  );
+  // 08f R2: 줄이 객체가 아니면 TypeError로 500이 났다. 소매처 404보다 먼저(형식 단계, D52 순서)
+  it.each([
+    ["null", null],
+    ["숫자", 7004],
+    ["배열", [7004, 1]],
+  ])(
+    "⑤-4c 줄이 %s → 400 field allocations(소매처 999여도 404보다 먼저)",
+    async (_label, line) => {
+      await rejects({ retailerId: RETAILER, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      await rejects({ retailerId: 999, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+    },
+  );
+  it("⑤-4d 금액 0.5 + 소매처 999 → 400(형식이 소매처 404보다 먼저)", async () => {
+    await rejects(
+      { retailerId: 999, allocations: [{ orderId: 7004, amount: 0.5 }] },
+      [400, "VALIDATION_FAILED", "allocations"],
+    );
+  });
+  // 08f C3: orderId 형식을 안 보면 누락, 문자열, 소수가 "없는 주문" 404로 샜다. 선수금을 넣어 둔 상태에서 저장 불변을 본다
+  it.each([
+    ["누락", { amount: 1 }],
+    ['문자열 "7004"', { orderId: "7004", amount: 1 }],
+    ["소수 7004.5", { orderId: 7004.5, amount: 1 }],
+  ])(
+    "⑤-4e orderId %s → 400 field allocations(소매처 999여도 404보다 먼저), 입금·배분·원장 그대로",
+    async (_label, line) => {
+      await deposit(10_000, D28, "p-1");
+      await rejects({ retailerId: RETAILER, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      await rejects({ retailerId: 999, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      expect([outstanding(7004), prepaid()]).toEqual([37_500, 10_000]);
+    },
+  );
+  it("⑤-5 7004 두 번 → 400 DUPLICATE_ORDER field allocations", async () => {
+    await deposit(50_000, D28, "p-1");
+    await rejects(
+      {
+        retailerId: RETAILER,
+        allocations: [
+          { orderId: 7004, amount: 1 },
+          { orderId: 7004, amount: 1 },
+        ],
+      },
+      [400, "DUPLICATE_ORDER", "allocations"],
+    );
+  });
+  it("⑤-6 소매처 2 주문(7005) → 400 ORDER_RETAILER_MISMATCH field allocations", async () => {
+    expect(order(7005).retailerId).toBe(2);
+    await rejects(one(7005, 1), [
+      400,
+      "ORDER_RETAILER_MISMATCH",
+      "allocations",
+    ]);
+  });
+  it("⑤-7 소매처 999 → 404 RESOURCE_NOT_FOUND", async () => {
+    await rejects(
+      { retailerId: 999, allocations: [{ orderId: 7004, amount: 1 }] },
+      [404, "RESOURCE_NOT_FOUND", null],
+    );
+  });
+  it("⑤-8 주문 999 → 404 RESOURCE_NOT_FOUND", async () => {
+    await rejects(one(999, 1), [404, "RESOURCE_NOT_FOUND", null]);
+  });
+  it("⑤-9 확정 아닌 주문(시드에서 찾은 소매처 1의 첫 비확정 주문) → 409 ORDER_NOT_CONFIRMED", async () => {
+    const pending = mockOrders().find(
+      (o) => o.retailerId === RETAILER && o.status !== "CONFIRMED",
+    );
+    if (pending === undefined) throw new Error("시드에 비확정 주문 없음");
+    await rejects(one(pending.id, 1), [409, "ORDER_NOT_CONFIRMED", null]);
+  });
+  it("⑤-10 선수금 0에서 1원 → 409 ALLOCATION_EXCEEDS_PREPAID", async () => {
+    await rejects(body7004(1), [409, "ALLOCATION_EXCEEDS_PREPAID", null]);
+  });
+  it("⑤-11 선수금 50,000에서 7004에 40,000 → 409 ALLOCATION_EXCEEDS_OUTSTANDING", async () => {
+    await deposit(50_000, D28, "p-1");
+    await rejects(body7004(40_000), [
+      409,
+      "ALLOCATION_EXCEEDS_OUTSTANDING",
+      null,
+    ]);
+  });
+
+  it("⑥ 성공 뒤 입금 수, 원장 줄 내용, 다음 입금 id 그대로 — 배분 id와 배분 수만 는다", async () => {
+    await deposit(10_000, D27, "p-1");
+    await deposit(30_000, D28, "p-2");
+    const before = snap();
+    const res = await allocate(body7004(25_000));
+    expect(res.status).toBe(201);
+    const after = snap();
+    expect(after.paymentCount).toBe(before.paymentCount);
+    expect(after.ledger).toEqual(before.ledger);
+    expect(after.nextPaymentId).toBe(before.nextPaymentId);
+    expect(after.nextLedgerId).toBe(before.nextLedgerId);
+    expect(after.allocationCount).toBe(before.allocationCount + 2);
+    expect(after.nextAllocationId).toBe(before.nextAllocationId + 2);
+    expect(await paymentLineCount()).toBe(2);
+  });
+
+  it("⑦-1 복합: 없는 소매처 + 같은 주문 두 번 → 404(소매처가 줄 검사보다 먼저)", async () => {
+    await rejects(
+      {
+        retailerId: 999,
+        allocations: [
+          { orderId: 7004, amount: 1 },
+          { orderId: 7004, amount: 1 },
+        ],
+      },
+      [404, "RESOURCE_NOT_FOUND", null],
+    );
+  });
+  it("⑦-2 복합: 선수금 넘음 + 미수 넘음(선수금 0, 7004에 40,000) → 409 ALLOCATION_EXCEEDS_PREPAID", async () => {
+    await rejects(body7004(40_000), [409, "ALLOCATION_EXCEEDS_PREPAID", null]);
+  });
+
+  it("⑧ 입금, 정산 뒤 reset → 사진이 처음과 같고 같은 키도 새 키처럼 201", async () => {
+    await deposit(37_500, D28, "p-1");
+    expect((await allocate(body7004(37_500))).status).toBe(201);
+    await fetch("http://mock.test/__mock/chat/reset", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(snap()).toEqual(start);
+    await deposit(37_500, D28, "p-1");
+    expect((await allocate(body7004(37_500))).status).toBe(201);
+  });
+
+  it("S1-6 받침: 선수금 3카드 GET .../prepaid = 입금 37,500, 정산 25,000 뒤 {37,500, 25,000, 12,500}, 없는 소매처 404", async () => {
+    const prepaidCards = async (id: number) => {
+      const res = await fetch(`${API}/receivables/retailers/${id}/prepaid`);
+      return {
+        status: res.status,
+        body: (await res.json()) as {
+          data: WholesaleSchema<"PrepaidSummaryResponse">;
+        },
+      };
+    };
+    expect((await prepaidCards(RETAILER)).body.data).toEqual({
+      retailerId: RETAILER,
+      totalPaid: 0,
+      totalAllocated: 0,
+      prepaid: 0,
+    });
+    await deposit(37_500, D28, "p-1");
+    await allocate(body7004(25_000));
+    expect((await prepaidCards(RETAILER)).body.data).toEqual({
+      retailerId: RETAILER,
+      totalPaid: 37_500,
+      totalAllocated: 25_000,
+      prepaid: 12_500,
+    });
+    expect((await prepaidCards(999)).status).toBe(404);
   });
 });

@@ -9,6 +9,7 @@ import {
   goldenBackorders,
   goldenCatalog,
   goldenReceivableRows,
+  fullInquiry,
   goldenScore,
   isAuto,
   isHandoff,
@@ -68,24 +69,41 @@ const SCORE = goldenScore(RESULTS, GOLDEN);
 const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
 
 describe("골든셋 모양", () => {
-  it("v5 시나리오 109개 = 필수 5 + 재고 답 17 + 넘김 46 + 미송 24 + 미수 17, id 중복 없음, v4 몫 25, v5 몫 25", () => {
+  it("v6 시나리오 116개 = 필수 5 + 재고 답 17 + 넘김 53 + 미송 24 + 미수 17, id 중복 없음, v4 몫 25, v5 몫 25, v6 몫 7", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.version).toBe(5);
-    expect(GOLDEN.scenarios).toHaveLength(109);
-    // v4 84개(넘김 22, 미송 23) + v5 넘김 24(N 12 + U 9 + X 3), 미송 1(G01)
+    expect(GOLDEN.version).toBe(6);
+    expect(GOLDEN.scenarios).toHaveLength(116);
+    // v4 84개(넘김 22, 미송 23) + v5 넘김 24(N 12 + U 9 + X 3), 미송 1(G01) + v6 넘김 7(O01~O07)
     expect([
       count("required"),
       count("stock"),
       count("handoff"),
       count("backorder"),
       count("receivable"),
-    ]).toEqual([5, 17, 46, 24, 17]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(109);
+    ]).toEqual([5, 17, 53, 24, 17]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(116);
     // S3-6 v5는 뒤에 붙이기만 했다: 앞 84개는 since 5가 아니고, 판정 투영을 고른 건 G01뿐
     expect(GOLDEN.scenarios.slice(0, 84).every((s) => (s.since ?? 0) < 5)).toBe(
       true,
     );
+    // 08f S1-2 v6도 뒤에 붙이기만 했다: 앞 109개는 since 6이 아니고, 뒤 7개가 O01~O07
+    expect(
+      GOLDEN.scenarios.slice(0, 109).every((s) => (s.since ?? 0) < 6),
+    ).toBe(true);
+    expect(
+      GOLDEN.scenarios.filter((s) => s.since === 6).map((s) => s.id),
+    ).toEqual(["O01", "O02", "O03", "O04", "O05", "O06", "O07"]);
+    expect(GOLDEN.aboutV6).toMatch(/^v6\(since 6, loop-08f §5-3\)/);
+    expect(GOLDEN.scenarios.slice(109).map((s) => s.id)).toEqual([
+      "O01",
+      "O02",
+      "O03",
+      "O04",
+      "O05",
+      "O06",
+      "O07",
+    ]);
     expect(
       GOLDEN.scenarios
         .filter((s) => s.projection !== undefined)
@@ -205,7 +223,7 @@ describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
   });
 });
 
-describe("S7-3, S1-2, 08c S3-6 골든셋 109개 지표(v4 84개 포함 전 단계)", () => {
+describe("S7-3, S1-2, 08c S3-6, 08f S1-2 골든셋 116개 지표(v4 84개 포함 전 단계)", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),
@@ -980,5 +998,190 @@ describe("08c 리뷰 R3 R4 R5 — 사람 요청은 요청형만, 보조 낱말 �
   it("R5 D41 금액 문장은 협상으로 안 빠진다", () => {
     for (const body of RECEIVABLE_AMOUNT_QUESTIONS)
       expect(reasonOf(body), body).not.toBe("NEGOTIATION");
+  });
+});
+
+/* --- loop-08f S1-1, S1-7 전부 꺼짐 때 의도 분류 ----------------------------- */
+
+const OFF_SETTINGS = { ...DEFAULT_AUTO_REPLY_SETTINGS, enabled: false };
+
+/** 방 1(도매처 101, 소매처 1) 한 번 판정. 설정과 원본 콜백을 골라 넣는다 */
+function decideRoom1(
+  body: string,
+  opts: {
+    settings?: typeof DEFAULT_AUTO_REPLY_SETTINGS;
+    context?: boolean;
+    inquiry?: GoldenInquiry | null;
+    catalog?: typeof CATALOG;
+    receivables?: InquiryReceivableSource;
+    backorders?: typeof BACKORDERS;
+  } = {},
+) {
+  return decideInquiry({
+    body,
+    inquiry: fullInquiry(opts.inquiry ?? null),
+    now: BASE,
+    wholesalerId: 101,
+    settings: opts.settings ?? OFF_SETTINGS,
+    context:
+      opts.context === true ? { listingId: 2001, at: BASE - 2 * MINUTE } : null,
+    history: [],
+    catalog: opts.catalog ?? CATALOG,
+    ...ROOM1,
+    ...(opts.receivables === undefined
+      ? {}
+      : { receivables: opts.receivables }),
+    ...(opts.backorders === undefined ? {} : { backorders: opts.backorders }),
+  });
+}
+
+describe("loop-08f S1-1 전부 꺼짐: 이유 OFF, intent는 켜졌다면 나갔을 판정의 intent", () => {
+  /** 시나리오 단계들의 넘김 줄 (이유, 의도) */
+  const offLines = (id: string) =>
+    RESULTS.filter((r) => r.scenario === id).map((r) =>
+      (
+        (r.actual.lines ?? []) as { reason?: string; intent?: string | null }[]
+      ).map((l) => [l.reason, l.intent]),
+    );
+
+  it("O01~O07 → 줄 하나, OFF, intent STOCK BACKORDER RECEIVABLE null STOCK RECEIVABLE null", () => {
+    const want: [string, string | null][] = [
+      ["O01", "STOCK"],
+      ["O02", "BACKORDER"],
+      ["O03", "RECEIVABLE"],
+      ["O04", null],
+      ["O05", "STOCK"],
+      ["O06", "RECEIVABLE"],
+      ["O07", null],
+    ];
+    for (const [id, intent] of want) {
+      expect(offLines(id), id).toEqual([[["OFF", intent]]]);
+      for (const r of RESULTS.filter((x) => x.scenario === id))
+        expect(r.actual, id).toEqual(r.expect);
+    }
+  });
+
+  it("O01~O07 본문을 켜짐으로 판정한 intent = 꺼짐 줄의 intent(재판정 규칙 그대로)", () => {
+    for (const s of GOLDEN.scenarios.filter((x) => x.since === 6)) {
+      const step = s.steps[0];
+      if (step === undefined) throw new Error(s.id);
+      const opts = {
+        context: s.room.context !== null,
+        inquiry: step.inquiry ?? null,
+      };
+      const on = decideRoom1(step.text, {
+        ...opts,
+        settings: DEFAULT_AUTO_REPLY_SETTINGS,
+      });
+      expect(decideRoom1(step.text, opts), s.id).toEqual({
+        kind: "HANDOFF",
+        reason: "OFF",
+        intent: on.intent,
+      });
+    }
+  });
+
+  it("의도별 꺼짐 + 전체 꺼짐(BACKORDER만 꺼짐, '미송 언제 와요?') → OFF intent BACKORDER", () => {
+    expect(
+      decideRoom1("미송 언제 와요?", {
+        settings: {
+          enabled: false,
+          intents: { STOCK: true, BACKORDER: false, RECEIVABLE: true },
+        },
+      }),
+    ).toEqual({ kind: "HANDOFF", reason: "OFF", intent: "BACKORDER" });
+  });
+
+  it("의도별 꺼짐만(R15) 그대로, U08 intent null, H15 기대값(v1 투영) 그대로", () => {
+    const only = (id: string) => RESULTS.filter((r) => r.scenario === id);
+    for (const id of ["R15", "U08", "H15"])
+      for (const r of only(id)) expect(r.actual, id).toEqual(r.expect);
+    expect(offLines("R15")).toEqual([[["OFF", "RECEIVABLE"]]]);
+    expect(offLines("U08")).toEqual([[["OFF", null]]]);
+    expect(only("H15").map((r) => r.actual)).toEqual([
+      { kind: "HANDOFF", reason: "OFF" },
+    ]);
+  });
+});
+
+describe("loop-08f S1-7 꺼짐 재판정의 원본 조회", () => {
+  const boom = () => {
+    throw new Error("원본 조회 실패");
+  };
+
+  it("① catalog가 던짐 + 전체 꺼짐 + 문맥 있는 재고 질문 → OFF intent null, 예외 밖으로 0", () => {
+    expect(() =>
+      decideRoom1("레드 M 몇 장 있어요?", { context: true, catalog: boom }),
+    ).not.toThrow();
+    expect(
+      decideRoom1("레드 M 몇 장 있어요?", { context: true, catalog: boom }),
+    ).toEqual({ kind: "HANDOFF", reason: "OFF", intent: null });
+  });
+
+  it("② receivables가 던짐 + 미수 질문 → OFF intent RECEIVABLE(미수 가지가 LOOKUP_FAILED로 잡는다)", () => {
+    expect(decideRoom1("지금 미수 얼마예요?", { receivables: boom })).toEqual({
+      kind: "HANDOFF",
+      reason: "OFF",
+      intent: "RECEIVABLE",
+    });
+  });
+
+  it("③ 켜짐 판정은 그대로: catalog 예외는 지금처럼 던지고, 미수 예외는 LOOKUP_FAILED", () => {
+    const on = { settings: DEFAULT_AUTO_REPLY_SETTINGS };
+    expect(() =>
+      decideRoom1("레드 M 몇 장 있어요?", {
+        ...on,
+        context: true,
+        catalog: boom,
+      }),
+    ).toThrow("원본 조회 실패");
+    expect(
+      decideRoom1("지금 미수 얼마예요?", { ...on, receivables: boom }),
+    ).toEqual({
+      kind: "HANDOFF",
+      reason: "LOOKUP_FAILED",
+      intent: "RECEIVABLE",
+    });
+  });
+
+  it("④ 콜백 호출 수: 꺼짐 판정 1회 = 켜짐 판정 1회(catalog, 미송, 미수 각각)", () => {
+    const counted = () => {
+      const n = { catalog: 0, backorders: 0, receivables: 0 };
+      return {
+        n,
+        catalog: (id: number) => {
+          n.catalog += 1;
+          return CATALOG(id);
+        },
+        backorders: () => {
+          n.backorders += 1;
+          return BACKORDERS();
+        },
+        receivables: () => {
+          n.receivables += 1;
+          return RECEIVABLE_ROWS;
+        },
+      };
+    };
+    for (const [body, context] of [
+      ["레드 M 몇 장 있어요?", true],
+      ["미송 언제 와요?", false],
+      ["지금 미수 얼마예요?", false],
+      ["레드 L 재고랑 미송 같이 알려 주세요", true],
+    ] as const) {
+      const off = counted();
+      const on = counted();
+      decideRoom1(body, { context, ...off });
+      decideRoom1(body, {
+        context,
+        ...on,
+        settings: DEFAULT_AUTO_REPLY_SETTINGS,
+      });
+      expect(off.n, body).toEqual(on.n);
+      expect(
+        off.n.catalog + off.n.backorders + off.n.receivables,
+        body,
+      ).toBeGreaterThan(0);
+    }
   });
 });

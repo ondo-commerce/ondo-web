@@ -304,7 +304,11 @@ test("QA-design 문의 카드 토큰 = 오늘 패널(테두리, 반경, 안쪽 �
       s.remove();
       return c;
     };
-    const ps = card ? [...card.querySelectorAll("p[data-ac]")] : [];
+    /* 08f 7일 줄은 오늘 응답 뒤에 따로 도착한다. 측정 시점에 따라 5개, 6개로
+       갈리지 않게 helpers.cardLines와 같은 선택자로 뺀다(08f F1) */
+    const ps = card
+      ? [...card.querySelectorAll('p[data-ac]:not([data-ac^="08f:"])')]
+      : [];
     const title = card?.querySelector("h2") ?? null;
     return {
       card: pick(card),

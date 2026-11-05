@@ -187,10 +187,126 @@ describe("S1-6 도매 counterpart-read (방 5: 소매 읽음 2, 메시지 4 → 
     expect((await room()).body.data.counterpartLastReadSequence).toBe(5);
   });
 
-  // loop-08b 가 rooms, send 를 더했다(`chatRoomsFilter.test.ts` S1-6). 모르는 op 거절은 그대로
+  // loop-08b 가 rooms, send 를 더했다(`chatRoomsFilter.test.ts` S1-6). 모르는 op 거절은 그대로.
+  // loop-08f 가 stats 를 더했다(S1-4, 7일 줄 최초 로딩). 그래서 "stats → 400" 대신 fail 전용 op(settings)로 거절을 본다
   it("delay op 는 정한 것만, ms 는 0 이상", async () => {
     expect((await knob("/delay", { op: "messages", ms: 0 })).status).toBe(200);
-    expect((await knob("/delay", { op: "stats", ms: 10 })).status).toBe(400);
+    expect((await knob("/delay", { op: "stats", ms: 0 })).status).toBe(200);
+    expect((await knob("/delay", { op: "settings", ms: 10 })).status).toBe(400);
     expect((await knob("/delay", { op: "room", ms: -1 })).status).toBe(400);
   });
+});
+
+describe("loop-08f S1-4 stats range 손잡이(today = from, to 없음 / multi = from 있음)", () => {
+  const WEEK = "?from=2026-10-22&to=2026-10-28";
+
+  it("fail range today → 7일 200, 오늘 500, 다음 오늘 200", async () => {
+    expect(
+      (await knob("/fail", { op: "stats", range: "today", status: 500 }))
+        .status,
+    ).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+    expect((await stats()).status).toBe(500);
+    expect((await stats()).status).toBe(200);
+  });
+
+  it("fail range multi → 오늘 200, 7일 500, 다음 7일 200", async () => {
+    await knob("/fail", { op: "stats", range: "multi", status: 500 });
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(500);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  it("range 없으면 지금처럼 다음 stats 요청 하나(7일이 먼저 오면 7일이 쓴다)", async () => {
+    await knob("/fail", { op: "stats", status: 500 });
+    expect((await stats(WEEK)).status).toBe(500);
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  // 08f R3: range 계획과 공통 계획이 같이 있을 때 range 계획을 먼저 쓴다(`statsPlanKeys` 순서). 등록 순서와 무관해야
+  // 해서 두 순서로 등록해 본다. 순서가 뒤집히면 7일 요청이 공통 500을 먹고 오늘 요청은 계획 없이 200이 된다
+  it.each([
+    ["공통 먼저 등록", ["common", "multi"]],
+    ["range 먼저 등록", ["multi", "common"]],
+  ] as const)(
+    "fail 공통 500 + multi 401 (%s) → 7일 401, 오늘 500, 그다음 둘 다 200",
+    async (_label, order) => {
+      for (const which of order)
+        await knob(
+          "/fail",
+          which === "common"
+            ? { op: "stats", status: 500 }
+            : { op: "stats", range: "multi", status: 401 },
+        );
+      expect((await stats(WEEK)).status).toBe(401);
+      expect((await stats()).status).toBe(500);
+      expect((await stats(WEEK)).status).toBe(200);
+      expect((await stats()).status).toBe(200);
+    },
+  );
+
+  it.each([
+    ["공통 먼저 등록", ["common", "today"]],
+    ["range 먼저 등록", ["today", "common"]],
+  ] as const)(
+    "delay 공통 300ms + today 1200ms (%s) → 오늘이 1200ms를 쓰고 7일이 남은 300ms, 그다음은 바로",
+    async (_label, order) => {
+      for (const which of order)
+        await knob(
+          "/delay",
+          which === "common"
+            ? { op: "stats", ms: 300 }
+            : { op: "stats", range: "today", ms: 1200 },
+        );
+      const timed = async (query?: string) => {
+        const t0 = performance.now();
+        const res = await stats(query);
+        expect(res.status).toBe(200);
+        return performance.now() - t0;
+      };
+      expect(await timed()).toBeGreaterThanOrEqual(1190);
+      const week = await timed(WEEK);
+      expect(week).toBeGreaterThanOrEqual(290);
+      expect(week).toBeLessThan(1000);
+      expect(await timed()).toBeLessThan(290);
+      expect(await timed(WEEK)).toBeLessThan(290);
+    },
+    10_000,
+  );
+
+  it("모르는 range, stats 밖 op 의 range → 400 VALIDATION_FAILED field range", async () => {
+    for (const [path, json] of [
+      ["/fail", { op: "stats", range: "week" }],
+      ["/delay", { op: "stats", range: "week", ms: 10 }],
+      ["/fail", { op: "room", range: "today" }],
+    ] as const) {
+      const res = await knob(path, json);
+      expect([res.status, res.body.code], path).toEqual([
+        400,
+        "VALIDATION_FAILED",
+      ]);
+      expect(res.body.errors.map((e) => e.field)).toEqual(["range"]);
+    }
+    // 거절된 계획은 저장되지 않는다
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  it("delay {op: stats, range: multi, ms: 3000} → 7일 응답만 3초 늦고 오늘은 바로", async () => {
+    await knob("/delay", { op: "stats", range: "multi", ms: 3000 });
+    const t0 = performance.now();
+    const week = stats(WEEK).then((r) => ({ r, ms: performance.now() - t0 }));
+    const today = await stats();
+    const todayMs = performance.now() - t0;
+    expect(today.status).toBe(200);
+    expect(todayMs).toBeLessThan(1000);
+    const w = await week;
+    expect(w.r.status).toBe(200);
+    expect(w.ms).toBeGreaterThanOrEqual(2990);
+    // 한 번 쓰면 끝(times 1)
+    const t1 = performance.now();
+    await stats(WEEK);
+    expect(performance.now() - t1).toBeLessThan(1000);
+  }, 10_000);
 });

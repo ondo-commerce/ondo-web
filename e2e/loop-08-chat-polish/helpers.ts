@@ -64,8 +64,12 @@ export async function startAt(
 
 /* --- 문의 카드 ------------------------------------------------------- */
 
+/**
+ * 오늘 stats GET(인자 없음)만. loop-08f S3부터 카드가 `?from&to` 7일 요청도 보내서, 오늘 요청 수를 세는
+ * 08 시험이 7일 요청까지 세지 않게 쿼리 문자열 없는 것만 잡는다. 7일은 08f `WEEK_GET`
+ */
 export const STATS_GET = {
-  path: /\/api\/wholesale\/chat\/inquiry-stats(\?|$)/,
+  path: /\/api\/wholesale\/chat\/inquiry-stats$/,
   method: "GET",
 } as const;
 export const SUMMARY_GET = {
@@ -81,9 +85,12 @@ export function inquiryCard(page: Page): Locator {
   return page.getByRole("region", { name: "문의", exact: true });
 }
 
-/** 카드 글 줄(1줄 숫자, 결과, 비율, 의도, 기준). 오류, 로딩 중엔 0개 */
+/**
+ * 카드 글 줄(1줄 숫자, 결과, 비율, 의도, 기준). 오류, 로딩 중엔 0개.
+ * loop-08f S3의 7일 줄(`data-ac`가 `08f:`로 시작)은 뺀다 — 그 줄은 08f 시험이 따로 잰다
+ */
 export function cardLines(page: Page): Locator {
-  return inquiryCard(page).locator("p[data-ac]");
+  return inquiryCard(page).locator('p[data-ac]:not([data-ac^="08f:"])');
 }
 
 export interface CardNumbers {

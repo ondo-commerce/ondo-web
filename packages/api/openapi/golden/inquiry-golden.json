@@ -1,5 +1,6 @@
 {
-  "version": 5,
+  "version": 6,
+  "aboutV6": "v6(since 6, loop-08f §5-3)는 전부 꺼짐 때 의도 분류 7개다(O01~O07). 이유는 OFF 그대로, intent는 settings.enabled만 켜고(의도별 설정, 본문, 칩, 문맥, 이력은 그대로) 다시 판정한 intent다(조회 실패면 null). 줄은 OFF 넘김 하나뿐이다. U08 기대값은 그대로(켜짐에서도 HUMAN_REQUEST intent null), H15는 v1 투영(kind, reason)이라 intent 변화가 기대값에 안 보인다. 기대값은 v4 줄 투영(`{lines}`).",
   "aboutV5": "v5(since 5, loop-08c §5-4)는 넘김 낱말 25개다: 협상 N01~N12, 사람 요청 HUMAN_REQUEST U01~U09, 낱말 경계 G01 X01~X03. 기대값은 v4 와 같은 줄 투영(`{lines}`)이다. 시나리오에 projection \"decision\" 이 있으면(G01) 그 시나리오만 v3 판정 투영이다 — B01 과 같은 판정임을 같은 모양으로 비교하려고. 판정 순서는 꺼짐 → 사람 요청 → 협상 → 입금 알림 이하 그대로.",
   "about": "재고, 미송, 미수 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6, loop-07 §5-4 5).목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 5(P1~P5)는 모든 단계가 정확히 일치해야 한다. v4(since 4 인 시나리오)의 expect 는 판정이 아니라 **방에 들어간 줄** 투영이다: {lines: [...]} 이고 열린 넘김과 이유가 같은 넘김 줄은 빠진다(줄 0 = lines []). 미수 AUTO_REPLY 줄은 kind intent outstanding prepaid overdue{count amount maxDaysOverdue} body checkedAt(asOf = 그 행의 asOf, now = 그 단계 시각). HANDOFF 줄은 kind reason intent sourceSequence(self = 그 단계 소매 메시지). 재고 CLARIFY 줄은 kind intent choices. step.sender WHOLESALER 는 사장이 직접 쓴 글이고 expect 는 {openHandoff}. room.receivableFailTimes 는 미수 원본 조회가 그 횟수만큼 던진다(LOOKUP_FAILED). receivables 표는 도매처 × 소매처 정산 요약 원본 한 줄이고(balance 플러스 = 갚을 돈) 판정에는 거르지 않은 채 전부 넘긴다. source 가 settlement.ts seed, extraReceivables.ts 인 행은 목 시드와 같아야 한다(asOf 제외). receivableAnomalies 는 toReceivableFacts 이상값 표다(\"NaN\" 글자는 NaN). 아래 aboutV3 은 v3 설명 그대로다.",
   "aboutV3": "필수 4(P1~P4)는 모든 단계가 정확히 일치해야 한다. expect 는 판정 투영이다. 재고: AUTO_REPLY 는 kind intent target band orderable orderLimit qtyNote, CLARIFY 는 kind intent choices(variantId 순서까지). 재고 0 은 kinds [AUTO_REPLY, HANDOFF]. 미송: AUTO_REPLY 는 kind intent target(backorderId) remainingQty(facts.backorder.qty) eta{date: D±n | null, state: FUTURE TODAY NONE PAST(본문 문장으로 읽는다)} reason checkedAt(now = 그 단계 시각), 입고일 미정, 지남은 kinds [AUTO_REPLY, HANDOFF]. CLARIFY 는 kind intent choices[{kind, backorderId}](순서까지, 끝은 NOT_LISTED) labels(칩 글자). HANDOFF 는 kind reason. reason 은 골든셋 안 표시이고 API 칸이 아니다. 시각: 첫 단계는 rules.t0 + room.afterDays 일. room.context.ageMinutes 는 첫 단계 시각 기준 문맥 나이, step.afterMinutes 는 앞 단계 뒤 흐른 시간, step.enter 는 그 단계 직전 createChatRoom(listingId) 재진입. today 는 그 단계 시각의 서울 날짜. 날짜 D±n 은 rules.t0 의 서울 날짜(D+0) 기준이다. room.retailerId 가 없으면 1. room.intents 는 의도별 자동 답 설정(없으면 전부 켜짐). inquiry 의 빠진 칸(backorderId, label)은 null, notListed 는 없으면 칸을 안 싣는다. backorders 표는 도매 미송 목 시드(backorder.ts)와 같아야 하고 판정에는 거르지 않은 채 전부 넘긴다(이 방 도매처, 이 소매처 것만 고르는 건 판정이 한다).",
@@ -1672,6 +1673,83 @@
       "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": true},
       "steps": [
         {"text": "입고 미뤄 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NEGOTIATION", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O01",
+      "title": "자동 답 꺼짐 + 재고 질문 → OFF, 의도는 재고(켜졌다면 나갔을 줄의 intent)",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": {"listingId": 2001, "ageMinutes": 2}, "autoReply": false},
+      "steps": [
+        {"text": "레드 M 몇 장 있어요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "STOCK", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O02",
+      "title": "자동 답 꺼짐 + 미송 질문 → OFF, 의도는 미송",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O03",
+      "title": "자동 답 꺼짐 + 미수 질문 → OFF, 의도는 미수",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "지금 미수 얼마예요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O04",
+      "title": "자동 답 꺼짐 + 재고와 미송 같이 → OFF, 의도 둘이라 intent null",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": {"listingId": 2001, "ageMinutes": 2}, "autoReply": false},
+      "steps": [
+        {"text": "레드 L 재고랑 미송 같이 알려 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O05",
+      "title": "자동 답 꺼짐 + 재고 칩 → OFF, 의도는 재고",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "레드 L", "inquiry": {"intent": "STOCK", "listingId": 2001, "variantId": 3003}, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "STOCK", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O06",
+      "title": "자동 답 꺼짐 + 입금 알림 → OFF, 의도는 미수(켜짐이면 PAYMENT_REPORT RECEIVABLE)",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "방금 입금했어요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "RECEIVABLE", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "O07",
+      "title": "자동 답 꺼짐 + 협상 → OFF, 협상은 켜짐에서도 intent null",
+      "required": false,
+      "group": "handoff",
+      "since": 6,
+      "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
+      "steps": [
+        {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": null, "sourceSequence": "self"}]}}
       ]
     }
   ]

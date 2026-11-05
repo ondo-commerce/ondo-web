@@ -25,6 +25,8 @@ import {
  *   - 입금(`PAYMENT`) 원장 줄 = `POST /payments`. `allocations`가 있으면 주문 목의 배정액을 올려
  *     정산 상태·미수 잔액(`GET /orders?retailerId`)이 함께 움직인다. 비면 선수금(스펙). 배분 합계 상한은
  *     이번 입금 + 남은 선수금이고, 모자라면 옛 입금의 남은 몫을 끌어 쓴다(loop-08c S4)
+ *   - 선수금 정산(`POST /allocations`) = 새 입금 없이 남은 선수금을 주문에 붙인다. 배분 줄만 생기고 입금, 원장은
+ *     그대로(loop-08f §4-6)
  *   - 배분 취소(`POST /allocations/{id}/cancel`) = 줄에 취소 표시, 주문 배정액에서 빼고 그 입금 남은 몫으로 돌린다
  *   - 주문별 미수 = **출고된 금액 − 배정액**(`mockOrderSettlement`). 판매 줄과 같은 식이라 주문별 미수의 합 =
  *     원장 잔액(선수금이 없을 때). 출고 안 된 확정 주문은 미수 0이고 배분하면 `ALLOCATION_EXCEEDS_OUTSTANDING`
@@ -170,6 +172,14 @@ let firstResponses = new Map<
   number,
   WholesaleSchema<"PaymentCreatedResponse">
 >();
+/**
+ * 선수금 정산(`POST /allocations`) 키 → 처음 본문과 201 응답. 입금 키와 저장소를 나눈다 — 정산은 입금을 안 만들어
+ * `payments`에 키를 둘 곳이 없다. 같은 키 같은 본문은 이 응답 그대로(다시 셈하지 않는다), 다른 본문은 409
+ */
+let allocationReplays = new Map<
+  string,
+  { bodyJson: string; response: WholesaleSchema<"AllocationCreatedResponse"> }
+>();
 let bankAccounts = seedBankAccounts();
 let nextLedgerId = 10202;
 let nextPaymentId = 4401;
@@ -252,6 +262,38 @@ function planAllocations(
 }
 
 /**
+ * 배분 계획을 저장소에 넣는다: 배분 줄과 주문 목 배정액만. 입금과 원장은 건드리지 않는다.
+ * `POST /payments`(`pushPayment`)와 `POST /allocations`가 같이 쓴다(loop-08f §4-6). 선수금 정산은 새 입금이
+ * 없어서 `pushPayment`를 그대로 쓰면 입금과 원장 PAYMENT 줄이 하나씩 더 생긴다.
+ * `thisPaymentId` = 계획의 "이번 입금" 몫(paymentId null)이 붙을 입금. 선수금 정산은 이번 입금이 0이라 null이고,
+ * 그때 이번 입금 몫이 계획에 있으면 계획이 틀린 것이라 던진다(저장 전에)
+ */
+function pushAllocationLines(
+  retailerId: number,
+  plan: readonly PlannedAllocation[],
+  thisPaymentId: number | null,
+  createdAt: string,
+): MockAllocation[] {
+  if (thisPaymentId === null && plan.some((p) => p.paymentId === null))
+    throw new Error("목: 이번 입금이 없는 배분 계획에 이번 입금 몫이 있다");
+  return plan.map(({ order, paymentId, amount }) => {
+    allocateMockPayment(order, amount);
+    const line: MockAllocation = {
+      id: nextAllocationId++,
+      retailerId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentId: (paymentId ?? thisPaymentId) as number,
+      amount,
+      createdAt,
+      cancelledAt: null,
+    };
+    allocations.push(line);
+    return line;
+  });
+}
+
+/**
  * 입금 한 건을 저장소에 넣는다: 배분 줄(주문 목 배정액), 입금, 원장 입금 줄, 처음 응답. 검증과 계획은 부르는 쪽이
  * 끝냈다. 원장 입금 줄은 이번 입금액 그대로다 — 옛 입금의 남은 몫을 끌어 써도 원장은 안 바뀐다(받은 돈은 그대로)
  */
@@ -262,21 +304,7 @@ function pushPayment(
   const createdAt = new Date().toISOString();
   const id = nextPaymentId++;
   const payment: MockPayment = { ...p, id, createdAt };
-  const lines = plan.map(({ order, paymentId, amount }) => {
-    allocateMockPayment(order, amount);
-    const line: MockAllocation = {
-      id: nextAllocationId++,
-      retailerId: p.retailerId,
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      paymentId: paymentId ?? id,
-      amount,
-      createdAt,
-      cancelledAt: null,
-    };
-    allocations.push(line);
-    return line;
-  });
+  const lines = pushAllocationLines(p.retailerId, plan, id, createdAt);
   ledger.push({
     id: nextLedgerId++,
     retailerId: p.retailerId,
@@ -363,6 +391,30 @@ function repeatsOrder(
   orderId: number,
 ): boolean {
   return targets.some((t) => t.order.id === orderId);
+}
+
+/** 원문이 JSON 객체(배열 아님)면 그 값, 파싱 실패나 다른 값이면 null */
+function parseJsonObject(text: string): object | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+/** 스펙 배분액 = 양의 int32. 문자열 "100", 0.5, 2^31은 전부 아니다 */
+const INT32_MAX = 2_147_483_647;
+function isPositiveInt32(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= INT32_MAX
+  );
 }
 
 /** 같은 Idempotency-Key 재전송 판정. null = 처음 보는 키 */
@@ -670,6 +722,37 @@ export const settlementHandlers = [
     });
   }),
 
+  /**
+   * 선수금 3카드(스펙 `prepaidSummary`). 이 핸들러가 없으면 스펙 뼈대가 0을 돌려줘 목 모드 정산 탭의
+   * `선수금으로 정산`이 늘 잠긴다(loop-08f S1-6에서 발견). 목은 입금 취소가 없어 totalPaid = 입금 합,
+   * totalAllocated = 취소 안 된 배분 줄 합, prepaid = `prepaidOf`(같은 식)
+   */
+  http.get(
+    "*/api/wholesale/receivables/retailers/:retailerId/prepaid",
+    ({ params }) => {
+      const retailerId = Number(params.retailerId);
+      if (!mockRetailer(retailerId))
+        return fail(
+          404,
+          "RESOURCE_NOT_FOUND",
+          "거래 관계가 없는 소매처입니다.",
+        );
+      const totalPaid = payments
+        .filter((p) => p.retailerId === retailerId)
+        .reduce((acc, p) => acc + p.amount, 0);
+      const totalAllocated = allocations
+        .filter((a) => a.retailerId === retailerId && a.cancelledAt === null)
+        .reduce((acc, a) => acc + a.amount, 0);
+      const data: WholesaleSchema<"PrepaidSummaryResponse"> = {
+        retailerId,
+        totalPaid,
+        totalAllocated,
+        prepaid: prepaidOf(retailerId),
+      };
+      return HttpResponse.json({ data });
+    },
+  ),
+
   http.get("*/api/wholesale/receivables", ({ request }) => {
     const url = new URL(request.url);
     const retailerId = url.searchParams.get("retailerId");
@@ -842,6 +925,170 @@ export const settlementHandlers = [
       plan,
     );
     return HttpResponse.json({ data: created }, { status: 201 });
+  }),
+
+  /**
+   * 선수금으로 정산(스펙 `createAllocation`, loop-08f §4-6). 새 입금 없이 그 소매처의 남은 선수금을 주문에 붙인다.
+   * 오래된 입금부터(paidAt, 같으면 id) 꺼내고, 주문별 상한은 미수, 원장과 입금은 안 바뀐다.
+   *
+   * 검사 순서는 `POST /payments`와 같은 꼴이다(스펙은 오류 코드만 적었고 순서, 빈 배열, field는 목이 정한 계약
+   * 결정이다, §5-4 2. G2 승인 뒤 BE에 전달):
+   *   키 없음 400 → 같은 키(원문 비교, 200 / 409) → 본문 형식 400(JSON 객체 아님 field 없음, retailerId, allocations 배열·빈 배열, 줄이 객체 아님, 줄 금액이 양의 int32 아님, 줄 orderId가 양의 int32 아님)
+   *   → 소매처 404 → 줄 순서대로(같은 주문 400, 없는 주문 404, 남의 주문 400) → 확정 아님 409
+   *   → 선수금 넘음 409 → 미수 넘음 409.
+   * 선수금 넘음이 미수 넘음보다 먼저다 — 돈의 출처를 먼저 본다(`POST /payments`가 계획을 미수보다 먼저 보는 것과 같다)
+   */
+  http.post("*/api/wholesale/allocations", async ({ request }) => {
+    const key = request.headers.get("Idempotency-Key");
+    if (!key)
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "Idempotency-Key 헤더가 필요합니다.",
+        "Idempotency-Key",
+      );
+    // replay는 원문으로 먼저 본다. 파싱을 앞에 두면 쓴 키 + 깨진 본문이 409 대신 파싱 예외로 끝나 검사 순서가 틀어진다(08f M1)
+    const bodyJson = await request.text();
+    const seen = allocationReplays.get(key);
+    if (seen !== undefined)
+      return seen.bodyJson === bodyJson
+        ? HttpResponse.json({ data: seen.response })
+        : fail(
+            409,
+            "IDEMPOTENCY_KEY_REUSED",
+            "같은 키로 다른 정산을 보냈습니다.",
+          );
+
+    // JSON이 아니거나(`{`) 객체가 아니면(null, 숫자, 배열) 필드를 읽다 예외로 500이 난다 — 본문 전체 문제라 field는 비운다
+    const parsed = parseJsonObject(bodyJson);
+    if (parsed === null)
+      return fail(400, "VALIDATION_FAILED", "본문 형식이 올바르지 않습니다.");
+    const body = parsed as Partial<
+      Record<keyof WholesaleSchema<"AllocationCreateRequest">, unknown>
+    >;
+
+    if (
+      typeof body.retailerId !== "number" ||
+      !Number.isInteger(body.retailerId)
+    )
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "소매처 id가 올바르지 않습니다.",
+        "retailerId",
+      );
+    // 빈 배열은 할 일이 없어 받지 않는다(스키마에 minItems가 없다 — 계약 결정 1)
+    if (!Array.isArray(body.allocations) || body.allocations.length === 0)
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "정산할 주문이 없습니다.",
+        "allocations",
+      );
+    // 줄이 객체가 아니면(null, 숫자, 배열) `a.amount`를 읽다 TypeError로 500이 난다 — 형식 단계에서 400으로 거절한다
+    const rawLines: unknown[] = body.allocations;
+    if (
+      rawLines.some(
+        (a) => typeof a !== "object" || a === null || Array.isArray(a),
+      )
+    )
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "배분 줄 형식이 올바르지 않습니다.",
+        "allocations",
+      );
+    const requested = rawLines as {
+      orderId?: unknown;
+      amount?: unknown;
+    }[];
+    // 스펙 amount는 int32다. 원 단위 밑(0.5)이나 int32 밖이 저장되면 미수와 선수금이 소수로 남는다(08f R1)
+    if (requested.some((a) => !isPositiveInt32(a.amount)))
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "배분액은 1 이상의 정수여야 합니다.",
+        "allocations",
+      );
+    // orderId도 스펙 int32다. 형식을 안 보면 누락, "7004", 1.5가 "없는 주문" 404로 새서 형식 오류와 구분되지 않는다(08f C3)
+    if (requested.some((a) => !isPositiveInt32(a.orderId)))
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "주문 id가 올바르지 않습니다.",
+        "allocations",
+      );
+    const retailerId = body.retailerId;
+    const retailer = mockRetailer(retailerId);
+    if (!retailer)
+      return fail(404, "RESOURCE_NOT_FOUND", "거래 이력이 없는 소매처입니다.");
+
+    const targets: { order: MockOrder; amount: number }[] = [];
+    for (const a of requested) {
+      const orderId = a.orderId as number;
+      if (repeatsOrder(targets, orderId))
+        return fail(
+          400,
+          "DUPLICATE_ORDER",
+          "같은 주문이 두 번 들어왔습니다.",
+          "allocations",
+        );
+      const order = mockOrders().find((o) => o.id === orderId);
+      if (!order)
+        return fail(404, "RESOURCE_NOT_FOUND", "정산할 주문이 없습니다.");
+      if (order.retailerId !== retailerId)
+        return fail(
+          400,
+          "ORDER_RETAILER_MISMATCH",
+          "다른 소매처의 주문입니다.",
+          "allocations",
+        );
+      targets.push({ order, amount: a.amount as number });
+    }
+    for (const { order } of targets)
+      if (order.status !== "CONFIRMED")
+        return fail(
+          409,
+          "ORDER_NOT_CONFIRMED",
+          "확정되지 않은 주문에는 정산할 수 없습니다.",
+        );
+    // 이번 입금 0 = 남은 선수금만으로 계획한다. 모자라면 아무것도 저장하지 않는다
+    const plan = planAllocations(retailerId, 0, targets);
+    if (plan === null)
+      return fail(
+        409,
+        "ALLOCATION_EXCEEDS_PREPAID",
+        "정산액이 남은 선수금을 넘었습니다.",
+      );
+    for (const { order, amount } of targets)
+      if (amount > mockOrderSettlement(order).outstandingAmount)
+        return fail(
+          409,
+          "ALLOCATION_EXCEEDS_OUTSTANDING",
+          `주문 ${order.orderNumber}의 미수(${mockOrderSettlement(order).outstandingAmount})를 넘었습니다.`,
+        );
+
+    const lines = pushAllocationLines(
+      retailerId,
+      plan,
+      null,
+      new Date().toISOString(),
+    );
+    const response: WholesaleSchema<"AllocationCreatedResponse"> = {
+      retailerId,
+      retailerName: retailer.name,
+      allocations: lines.map((a) => ({
+        id: a.id,
+        orderId: a.orderId,
+        orderNumber: a.orderNumber,
+        amount: a.amount,
+        createdAt: a.createdAt,
+        paymentId: a.paymentId,
+      })),
+      prepaidRemaining: prepaidOf(retailerId),
+    };
+    allocationReplays.set(key, { bodyJson, response });
+    return HttpResponse.json({ data: response }, { status: 201 });
   }),
 
   /**
@@ -1127,12 +1374,28 @@ export function mockReceivable(
   );
 }
 
+/**
+ * 시험용 저장소 사진(loop-08f S1-3). 입금 수, 원장 줄 내용, 다음 입금 id처럼 HTTP로 다 볼 수 없는 값을 꺼낸다.
+ * 선수금 정산이 입금과 원장을 안 건드리는지를 이 값의 전후 비교로 잰다. 앱은 부르지 않는다
+ */
+export function mockSettlementSnapshot() {
+  return {
+    paymentCount: payments.length,
+    ledger: ledger.map((e) => ({ ...e })),
+    allocationCount: allocations.length,
+    nextPaymentId,
+    nextAllocationId,
+    nextLedgerId,
+  };
+}
+
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다. 주문·출고 목도 같이 되돌려야 맞물린다 */
 export function resetSettlementMock() {
   ledger = seedLedger();
   payments = [];
   allocations = [];
   firstResponses = new Map();
+  allocationReplays = new Map();
   bankAccounts = seedBankAccounts();
   nextLedgerId = 10202;
   nextPaymentId = 4401;

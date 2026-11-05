@@ -830,12 +830,30 @@ function decideReceivable(input: InquiryInput): InquiryDecision {
  * 입금 알림(1-2, loop-07)은 협상어 바로 뒤, 의도 둘보다 먼저다.
  */
 export function decideInquiry(input: InquiryInput): InquiryDecision {
+  // 0. 꺼짐(전체). 이유는 OFF 그대로, intent는 켜졌다면 나갔을 판정의 intent(loop-08f §4-5).
+  // 대시보드가 꺼짐 시간의 문의를 전부 `미분류`로 세지 않게 하려는 것이다. 줄은 이 OFF 넘김 하나뿐이다.
+  // `enabled`만 켜고 의도별 설정은 그대로라 의도별로 꺼진 의도는 재판정도 OFF + 그 intent다.
+  // 재판정은 catalog, 미송, 미수 원본을 부른다. catalog 예외는 켜짐 판정에선 밖으로 나가지만(그대로 둔다),
+  // 꺼짐 줄이 조회 실패로 죽으면 안 되니 여기선 잡아 intent null로 둔다(골든 v6가 계약)
+  if (!input.settings.enabled) {
+    try {
+      const would = decideEnabled({
+        ...input,
+        settings: { ...input.settings, enabled: true },
+      });
+      return handoff("OFF", would.intent);
+    } catch {
+      return handoff("OFF");
+    }
+  }
+  return decideEnabled(input);
+}
+
+/** 판정 1~9. 전체 켜짐일 때만 온다(꺼짐 재판정도 `enabled: true`로 바꿔 부른다) */
+function decideEnabled(input: InquiryInput): InquiryDecision {
   const { settings, inquiry, now } = input;
   const text = normalizeInquiryText(input.body);
   const flat = compact(text);
-
-  // 0. 꺼짐(전체). 의도별 꺼짐은 의도를 안 뒤에 본다
-  if (!settings.enabled) return handoff("OFF");
 
   // 1. 사람 요청. 1-1. 협상어(의도 둘 이상은 아래)
   if (isHumanRequest(text, flat)) return handoff("HUMAN_REQUEST");

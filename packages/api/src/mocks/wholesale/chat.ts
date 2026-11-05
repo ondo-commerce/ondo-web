@@ -108,8 +108,24 @@ type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
  * `rooms`는 검색어를 바꾼 사이 늦게 온 이전 목록(loop-08b S4-7), `send`는 응답 전에 방을 옮기는 경우(S3-12).
  * `send`는 **저장은 요청 시점, 응답만 늦다** — 그사이 messages 조회가 그 메시지를 먼저 가져오는 경로도 생긴다
  */
-export const CHAT_DELAY_OPS = ["room", "messages", "rooms", "send"] as const;
+export const CHAT_DELAY_OPS = [
+  "room",
+  "messages",
+  "rooms",
+  "send",
+  /** 문의 지표. 대시보드 7일 줄의 최초 로딩과 재조회 중 모양(loop-08f §5-2 1). `range`로 한 종류만 늦춘다 */
+  "stats",
+] as const;
 type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
+
+/**
+ * stats 요청 종류(loop-08f §5-2 1). `fail`, `delay`의 `range`로 하나만 고른다 — 대시보드의 오늘 쿼리와 7일 쿼리를
+ * 따로 실패시키고 따로 늦추려고. `today` = `from`, `to` 둘 다 없는 요청, `multi` = `from`이 있는 요청(`statsRangeOf`).
+ * 소매 `fail {op: messages, page}`(08d)와 같은 꼴이다. 도매 목 모드는 브라우저 MSW가 받아 `page.route` 지연을
+ * 믿기 어려워 목에 둔다
+ */
+export const CHAT_STATS_RANGES = ["today", "multi"] as const;
+export type ChatStatsRange = (typeof CHAT_STATS_RANGES)[number];
 
 /**
  * messages 요청 종류(loop-08c §5-3 1). `fail`, `delay`의 `page`로 하나만 고른다 — 이전 메시지(before)와
@@ -118,9 +134,11 @@ type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
 export const CHAT_MESSAGES_PAGES = ["latest", "before", "after"] as const;
 export type ChatMessagesPage = (typeof CHAT_MESSAGES_PAGES)[number];
 
-/** 계획 저장 키. `page` 없는 계획은 op 이름, 있는 계획은 `messages:before`처럼 */
-type FailKey = ChatFailOp | `messages:${ChatMessagesPage}`;
-type DelayKey = ChatDelayOp | `messages:${ChatMessagesPage}`;
+/** 계획 저장 키. `page`, `range` 없는 계획은 op 이름, 있는 계획은 `messages:before`, `stats:multi`처럼 */
+type FailKey =
+  ChatFailOp | `messages:${ChatMessagesPage}` | `stats:${ChatStatsRange}`;
+type DelayKey =
+  ChatDelayOp | `messages:${ChatMessagesPage}` | `stats:${ChatStatsRange}`;
 
 /** 방 목록 필터와 검색(초안 쿼리 `filter`, `q`, loop-08b §5-2) */
 type ChatRoomsQuery = NonNullable<
@@ -1169,6 +1187,40 @@ function planKeys<Op extends string>(
     : [op];
 }
 
+/** stats 계획 키. `range`가 맞는 계획이 `range` 없는 계획보다 먼저다(`planKeys`의 page와 같은 규칙) */
+function statsPlanKeys(
+  range: ChatStatsRange | null,
+): ("stats" | `stats:${ChatStatsRange}`)[] {
+  return range === null ? ["stats"] : [`stats:${range}`, "stats"];
+}
+
+/** stats 요청 종류. `from`이 있으면 multi, `from`, `to` 둘 다 없으면 today, `to`만 있으면 어느 쪽도 아니다(null) */
+function statsRangeOf(url: URL): ChatStatsRange | null {
+  if (url.searchParams.get("from") !== null) return "multi";
+  return url.searchParams.get("to") === null ? "today" : null;
+}
+
+/**
+ * 손잡이 본문의 `range`. 없으면 undefined(stats 전부), 맞는 값이면 그 값, 모르는 값이거나 stats 밖의 op에
+ * 붙였으면 null(→ 400). `knobPage`와 같은 규칙
+ */
+function knobRange(
+  op: string,
+  raw: unknown,
+): ChatStatsRange | undefined | null {
+  if (raw === undefined) return undefined;
+  if (op !== "stats") return null;
+  return CHAT_STATS_RANGES.find((r) => r === raw) ?? null;
+}
+
+function knobRangeInvalid() {
+  return invalid(
+    "range",
+    "INVALID",
+    `range는 op stats에만, ${CHAT_STATS_RANGES.join(" | ")}`,
+  );
+}
+
 function isDelayOp(op: string): op is ChatDelayOp {
   return CHAT_DELAY_OPS.some((o) => o === op);
 }
@@ -1213,11 +1265,19 @@ function knobPageInvalid() {
  * 같은 op에 지연도 걸려 있으면 **실패도 그만큼 늦게** 보낸다(loop-08c §5-3 2) — 로그아웃을 넘어 도착하는 늦은
  * 401을 만들려고. 지연이 없으면 예전처럼 바로 돌아온다
  */
-async function plannedFailure(op: ChatFailOp, page?: ChatMessagesPage) {
-  const plan = takePlan(failPlan, planKeys(op, page));
+async function plannedFailure(
+  op: ChatFailOp,
+  page?: ChatMessagesPage,
+  /** op stats 요청 종류(`statsRangeOf`). 그 밖의 op는 안 준다 */
+  range: ChatStatsRange | null = null,
+) {
+  const plan = takePlan<FailKey, { status: number; times: number }>(
+    failPlan,
+    op === "stats" ? statsPlanKeys(range) : planKeys(op, page),
+  );
   if (plan === null) return null;
   const epoch = resetEpoch;
-  const delayMs = isDelayOp(op) ? await plannedDelay(op, page) : 0;
+  const delayMs = isDelayOp(op) ? await plannedDelay(op, page, range) : 0;
   recordPlannedFailure({ op, page, status: plan.status, delayMs, epoch });
   return fail(plan.status);
 }
@@ -1281,8 +1341,12 @@ function consumeFailure(op: ChatFailOp): boolean {
 async function plannedDelay(
   op: ChatDelayOp,
   page?: ChatMessagesPage,
+  range: ChatStatsRange | null = null,
 ): Promise<number> {
-  const plan = takePlan(delayPlan, planKeys(op, page));
+  const plan = takePlan<DelayKey, { ms: number; times: number }>(
+    delayPlan,
+    op === "stats" ? statsPlanKeys(range) : planKeys(op, page),
+  );
   if (plan === null) return 0;
   await delay(plan.ms);
   return plan.ms;
@@ -1502,19 +1566,22 @@ export const chatHandlers = [
    * 저장소 전달만 한다. 기준 시각은 요청 시점의 `Date.now()`(e2e 는 `page.clock`, 테스트는 가짜 Date)
    */
   http.get("*/api/wholesale/chat/inquiry-stats", async ({ request }) => {
-    const planned = await plannedFailure("stats");
+    const url = new URL(request.url);
+    const kind = statsRangeOf(url);
+    const planned = await plannedFailure("stats", undefined, kind);
     if (planned) return planned;
     const now = Date.now();
-    const range = statsRange(new URL(request.url), now);
+    const range = statsRange(url, now);
     if ("error" in range) return range.error;
-    return HttpResponse.json({
-      data: inquiryStats(rooms, {
-        wholesalerId: CHAT_ME_WHOLESALER_ID,
-        from: range.from,
-        to: range.to,
-        asOf: now,
-      }),
+    const data = inquiryStats(rooms, {
+      wholesalerId: CHAT_ME_WHOLESALER_ID,
+      from: range.from,
+      to: range.to,
+      asOf: now,
     });
+    // 값은 요청 시점에 정하고 응답만 늦춘다(다른 delay op와 같은 규칙)
+    await plannedDelay("stats", undefined, kind);
+    return HttpResponse.json({ data });
   }),
 
   http.get("*/api/wholesale/chat/rooms/:roomId", async ({ params }) => {
@@ -1798,12 +1865,14 @@ export const chatHandlers = [
   /**
    * 다음 n회 실패. `{op, page?, status = 500, times = 1}`. 메시지 조회 500(S3-9), backoff(S3-6)용.
    * `page`(latest | before | after)는 op messages에만 — 그 종류의 요청만 실패한다(loop-08c S1-1).
-   * 같은 op에 `delay`도 걸려 있으면 실패 응답도 그만큼 늦다(S1-3)
+   * 같은 op에 `delay`도 걸려 있으면 실패 응답도 그만큼 늦다(S1-3).
+   * `range`(today | multi)는 op stats에만 — 오늘 요청과 기간 요청 중 하나만 실패한다(loop-08f §5-2 1)
    */
   http.post("*/__mock/chat/fail", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
       page?: unknown;
+      range?: unknown;
       status?: number;
       times?: number;
     };
@@ -1812,12 +1881,21 @@ export const chatHandlers = [
       return invalid("op", "INVALID", `op는 ${CHAT_FAIL_OPS.join(" | ")}`);
     const page = knobPage(op, input.page);
     if (page === null) return knobPageInvalid();
-    const key: FailKey = page === undefined ? op : `messages:${page}`;
+    const range = knobRange(op, input.range);
+    if (range === null) return knobRangeInvalid();
+    const key: FailKey =
+      range !== undefined
+        ? `stats:${range}`
+        : page === undefined
+          ? op
+          : `messages:${page}`;
     failPlan.set(key, {
       status: input.status ?? 500,
       times: input.times ?? 1,
     });
-    return HttpResponse.json({ data: { op, page, ...failPlan.get(key) } });
+    return HttpResponse.json({
+      data: { op, page, range, ...failPlan.get(key) },
+    });
   }),
 
   /**
@@ -1851,13 +1929,15 @@ export const chatHandlers = [
   ),
 
   /**
-   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send, page?, ms, times = 1}`. 값은 요청 시점에 정한다.
-   * `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08c S1-2)
+   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send|stats, page?, range?, ms, times = 1}`. 값은 요청 시점에
+   * 정한다. `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08c S1-2).
+   * `range`는 `fail`과 같다(op stats에만, loop-08f §5-2 1)
    */
   http.post("*/__mock/chat/delay", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
       op?: string;
       page?: unknown;
+      range?: unknown;
       ms?: number;
       times?: number;
     };
@@ -1866,11 +1946,20 @@ export const chatHandlers = [
       return invalid("op", "INVALID", `op는 ${CHAT_DELAY_OPS.join(" | ")}`);
     const page = knobPage(op, input.page);
     if (page === null) return knobPageInvalid();
+    const range = knobRange(op, input.range);
+    if (range === null) return knobRangeInvalid();
     if (typeof input.ms !== "number" || input.ms < 0)
       return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
-    const key: DelayKey = page === undefined ? op : `messages:${page}`;
+    const key: DelayKey =
+      range !== undefined
+        ? `stats:${range}`
+        : page === undefined
+          ? op
+          : `messages:${page}`;
     delayPlan.set(key, { ms: input.ms, times: input.times ?? 1 });
-    return HttpResponse.json({ data: { op, page, ...delayPlan.get(key) } });
+    return HttpResponse.json({
+      data: { op, page, range, ...delayPlan.get(key) },
+    });
   }),
 
   /**

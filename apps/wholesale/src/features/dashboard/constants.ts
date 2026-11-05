@@ -144,7 +144,16 @@ export const INQUIRY_TEXT = {
   basisSuffix: "기준",
   errorTitle: "문의 숫자를 불러오지 못했어요",
   errorDetail: "잠시 뒤 다시 시도해 주세요.",
+  /** 7일 줄(loop-08f S3). 앞말 뒤 괄호에 기간이 붙는다 — 보고서에 옮길 때 기간이 같이 가야 한다(기획 Q1) */
+  weekPrefix: "최근 7일",
+  weekTotal: "소매 메시지",
+  /** 버튼 없음(기획 §4-4 4). 다음 polling이 다시 부른다 */
+  weekFailed: "최근 7일 숫자를 불러오지 못했어요",
+  weekLoading: "최근 7일 불러오는 중",
 } as const;
+
+/** 7일 줄의 날 수. 기준 영업일 포함이라 앞으로 6일을 더 본다(기획 §4-4 1) */
+export const INQUIRY_WEEK_DAYS = 7;
 
 /** 4줄 순서. 기획 §4-2 2 그대로 — 재고, 미송, 미수가 자동 답이 있는 의도라 앞이다 */
 export const INQUIRY_INTENT_ORDER = [
