@@ -60,15 +60,20 @@ test.afterAll(() => {
   expect(seoulPlus(0), "서울 자정을 넘겼다 — 다시 돌린다").toBe(R0);
 });
 
-test("S1-8 bombom 4행(9001 9002 9006 9003, 무드온 101), 9003 R+7, 원래 수량. miso 0행", async ({
+/* loop-08f §4-1 9가 시드에 라온(102) 801 한 줄을 더했다. 무드온 넷은 그대로이고 801은 주문이 제일 늦어 맨 뒤다 */
+test("S1-8 bombom 무드온 4행(9001 9002 9006 9003) + 라온 801, 9003 R+7, 원래 수량. miso 0행", async ({
   request,
 }) => {
   const page = await rowsAs(request, "bombom");
-  expect(page.data.map((r) => r.backorderId)).toEqual([9001, 9002, 9006, 9003]);
-  expect(page.data.every((r) => r.wholesaler.id === 101)).toBe(true);
-  expect(page.data.every((r) => r.wholesaler.name === "무드온")).toBe(true);
-  expect(page.data.map((r) => r.qty)).toEqual([4, 1, 4, 2]);
-  expect(page.data.map((r) => r.expectedInboundDate)).toEqual([
+  expect(page.data.map((r) => r.backorderId)).toEqual([
+    9001, 9002, 9006, 9003, 801,
+  ]);
+  const moodon = page.data.slice(0, 4);
+  expect(moodon.every((r) => r.wholesaler.id === 101)).toBe(true);
+  expect(moodon.every((r) => r.wholesaler.name === "무드온")).toBe(true);
+  expect(page.data[4]?.wholesaler).toEqual({ id: 102, name: "라온" });
+  expect(moodon.map((r) => r.qty)).toEqual([4, 1, 4, 2]);
+  expect(moodon.map((r) => r.expectedInboundDate)).toEqual([
     seoulPlus(-3),
     null,
     seoulPlus(-3),
@@ -76,7 +81,7 @@ test("S1-8 bombom 4행(9001 9002 9006 9003, 무드온 101), 9003 R+7, 원래 수
   ]);
   expect(page.meta).toMatchObject({
     page: 0,
-    totalElements: 4,
+    totalElements: 5,
     hasNext: false,
   });
   // 응답에 SKU id 를 싣지 않는다(스펙 BackorderResponse 에 칸이 없다)

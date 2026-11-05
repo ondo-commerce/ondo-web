@@ -149,6 +149,71 @@ interface StubBackorder {
   qty: number;
   expectedInboundDate: string | null;
   expectedInboundReason: string | null;
+  /** 줄마다 도매처(loop-08f §4-1 9). 시드 첫 넷은 무드온, 801은 라온 */
+  wholesaler: { id: number; name: string };
+}
+
+/**
+ * 미송 표 상태 셋(loop-08f §4-1 9, `POST /__stub/reset {backorders}`). 본문이 없으면 `seed`.
+ * - `seed`: 아래 시드(무드온 4 + 라온 1)
+ * - `empty`: 0행 — 미송이 다 해소된 소매처
+ * - `page2-only-102`: 무드온 100행(첫 장 `size=100`을 채움) 뒤 101번째에 라온 1행. 링크는 맞는데 받은 장에
+ *   그 도매처가 없어 화면이 `전체`로 떨어지는 경우(§3 out 2)
+ */
+export type StubBackorderState = "seed" | "empty" | "page2-only-102";
+const BACKORDER_STATES: readonly StubBackorderState[] = [
+  "seed",
+  "empty",
+  "page2-only-102",
+];
+
+/** 라온(102) × 봄봄 미송 801. 브라우저 미송 목(`backorder.ts` 801, 코튼 셔츠 블랙/L 20장, 10/24 주문)과 같은 값 */
+function raonBackorder(): StubBackorder {
+  return {
+    backorderId: 801,
+    variantId: 3801,
+    orderId: 7801,
+    orderNo: "R-20261024-7801",
+    orderedAt: "2026-10-24T11:00:00+09:00",
+    listingId: 1801,
+    title: "코튼 셔츠",
+    colorName: "블랙",
+    size: "L",
+    qty: 20,
+    expectedInboundDate: seoulDatePlus(5),
+    expectedInboundReason: null,
+    wholesaler: CHAT_WHOLESALERS.raon,
+  };
+}
+
+/** `page2-only-102`의 무드온 100행. 주문 시각이 전부 801(10/24)보다 앞이라 오래된 순 첫 장을 채운다 */
+function fullPageMoodon(): StubBackorder[] {
+  return Array.from({ length: 100 }, (_, i) => {
+    const orderedAt = new Date(
+      Date.parse("2026-09-01T09:00:00+09:00") + i * 3_600_000,
+    ).toISOString();
+    return {
+      backorderId: 9100 + i,
+      variantId: 4100 + i,
+      orderId: 7100 + i,
+      orderNo: `R-FULL-${String(i + 1).padStart(3, "0")}`,
+      orderedAt,
+      listingId: 2001,
+      title: "빈티지 플라워 셔츠",
+      colorName: "레드",
+      size: "S",
+      qty: 1,
+      expectedInboundDate: null,
+      expectedInboundReason: null,
+      wholesaler: WHOLESALER,
+    };
+  });
+}
+
+function backordersOf(state: StubBackorderState): StubBackorder[] {
+  if (state === "empty") return [];
+  if (state === "page2-only-102") return [...fullPageMoodon(), raonBackorder()];
+  return seedBackorders();
 }
 
 /**
@@ -168,6 +233,7 @@ function seedBackorders(): StubBackorder[] {
     orderId,
     orderNo: `R-${orderedAt.slice(0, 10).replaceAll("-", "")}-${String(orderId).slice(-4)}`,
     orderedAt,
+    wholesaler: WHOLESALER,
   });
   return [
     {
@@ -210,6 +276,8 @@ function seedBackorders(): StubBackorder[] {
       expectedInboundDate: seoulDatePlus(7),
       expectedInboundReason: "원단 수급 지연",
     },
+    /* loop-08f: 라온 1행. 주문이 제일 늦어(10/24) 오래된 순 맨 뒤 — 무드온 넷의 순서가 그대로다 */
+    raonBackorder(),
   ];
 }
 
@@ -233,7 +301,7 @@ function backorderPage(retailerId: number, page: number, size: number) {
     qty: b.qty,
     expectedInboundDate: b.expectedInboundDate,
     expectedInboundReason: b.expectedInboundReason,
-    wholesaler: WHOLESALER,
+    wholesaler: b.wholesaler,
   }));
   const totalPages = Math.max(Math.ceil(mine.length / size), 1);
   return {
@@ -281,9 +349,9 @@ function setBackorderEta(raw: string): { status: number; body: unknown } {
   return { status: 200, body: { data: { updated: rows.length } } };
 }
 
-function resetStub(key: string | null) {
-  // 미송 표는 쿠키별이 아니라 하나다. reset 이면 키와 상관없이 시드로 돌린다
-  backorders = seedBackorders();
+function resetStub(key: string | null, state: StubBackorderState = "seed") {
+  // 미송 표는 쿠키별이 아니라 하나다. reset 이면 키와 상관없이 그 상태(기본 시드)로 돌린다
+  backorders = backordersOf(state);
   if (key === null) {
     carts.clear();
     cartFails.clear();
@@ -691,6 +759,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
  * - `POST /__stub/cart-slow {ms}` 다음 담기 1번의 응답을 늦춘다
  * - `POST /__stub/backorders/eta {variantId, expectedInboundDate}` 그 SKU 미송 줄의 예상 입고일(loop-06b S1-8).
  *   reset 은 키와 상관없이 미송 표도 시드로 되돌린다
+ * - `POST /__stub/reset {backorders: "seed" | "empty" | "page2-only-102"}` 미송 표를 그 상태로(loop-08f §4-1 9).
+ *   본문이 없으면 seed. 모르는 값은 400
  */
 async function knob(
   req: IncomingMessage,
@@ -698,8 +768,27 @@ async function knob(
 ): Promise<{ status: number; body: unknown }> {
   const key = url.searchParams.get("cart");
   if (url.pathname === "/__stub/reset") {
-    resetStub(key);
-    return { status: 200, body: { data: { reset: key ?? "all" } } };
+    let input: { backorders?: unknown } = {};
+    try {
+      input = JSON.parse((await readBody(req)) || "{}") as typeof input;
+    } catch {
+      // 본문이 JSON이 아니면 아래 검사가 400을 낸다
+      input = { backorders: "?" };
+    }
+    const state = input.backorders ?? "seed";
+    if (!BACKORDER_STATES.includes(state as StubBackorderState))
+      return {
+        status: 400,
+        body: {
+          code: "STUB",
+          message: `backorders는 ${BACKORDER_STATES.join(" | ")}`,
+        },
+      };
+    resetStub(key, state as StubBackorderState);
+    return {
+      status: 200,
+      body: { data: { reset: key ?? "all", backorders: state } },
+    };
   }
   if (req.method === "POST" && url.pathname === "/__stub/backorders/eta")
     return setBackorderEta(await readBody(req));

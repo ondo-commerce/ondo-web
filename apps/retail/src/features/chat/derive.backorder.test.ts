@@ -5,10 +5,13 @@ import {
   choiceKey,
   choicesActive,
   isBackorderClarify,
+  backordersHref,
   messageAc,
+  replyLinkOf,
   selectedChoice,
   toBackorderReplyView,
   toClarifyView,
+  toReplyExtra,
   toStockCardView,
 } from "./derive";
 import type { ChatChoice, ChatMessage, PendingMessage } from "./types";
@@ -418,5 +421,199 @@ describe("S3-3 toBackorderReplyView, backorderStateLine — 미송 답 카드", 
     expect(toStockCardView(stock, [clarify(4), stock])?.optionName).toBe(
       "레드 / L",
     );
+  });
+});
+
+/*
+ * loop-08f S4-1 — 말풍선 아래 링크. 방 1(도매처 101) 기준. 칸 판정(`toReplyExtra`)과 링크(`replyLinkOf`)를 같이 본다 —
+ * 방이 이 둘로 무엇을 그릴지 정하므로 화면의 "링크 있음/없음"이 여기서 갈린다.
+ */
+describe("08f S4-1 미송 대기 현황 링크와 정산 링크", () => {
+  const W = 101;
+  const linkOf = (
+    target: ChatMessage,
+    messages: ChatMessage[],
+    pending: PendingMessage[] = [],
+    sessionLost = false,
+  ) =>
+    replyLinkOf(
+      toReplyExtra(target, messages, pending, NOW, W),
+      W,
+      sessionLost,
+    );
+
+  const stockClarify = message(4, {
+    sender: "WHOLESALER",
+    kind: "CLARIFY",
+    body: "어떤 색상, 사이즈요?",
+    autoReply: {
+      intent: "STOCK",
+      replyToSequence: 3,
+      generatedBy: "RULE",
+      checkedAt: T0,
+      subject: {
+        listingId: 2001,
+        variantId: null,
+        backorderId: null,
+        label: null,
+      },
+      facts: { stock: null, backorder: null, receivable: null },
+      choices: [
+        {
+          variantId: 3001,
+          label: "레드 / S",
+          orderable: true,
+          kind: "VARIANT",
+          backorderId: null,
+        },
+        {
+          variantId: 3002,
+          label: "레드 / M",
+          orderable: true,
+          kind: "VARIANT",
+          backorderId: null,
+        },
+      ],
+    },
+  });
+  const stockCard = message(6, {
+    sender: "WHOLESALER",
+    kind: "AUTO_REPLY",
+    body: "레드 M은 10~49장 있어요",
+    autoReply: {
+      intent: "STOCK",
+      replyToSequence: 5,
+      generatedBy: "RULE",
+      checkedAt: T0,
+      subject: {
+        listingId: 2001,
+        variantId: 3002,
+        backorderId: null,
+        label: "빈티지 플라워 셔츠 레드 / M",
+      },
+      facts: {
+        stock: { band: "UNDER_50", orderLimit: 500, orderable: true },
+        backorder: null,
+        receivable: null,
+      },
+      choices: null,
+    },
+  });
+  const receivable = message(8, {
+    sender: "WHOLESALER",
+    kind: "AUTO_REPLY",
+    body: "갚을 돈은 37,500원이에요",
+    autoReply: {
+      intent: "RECEIVABLE",
+      replyToSequence: 7,
+      generatedBy: "RULE",
+      checkedAt: T0,
+      subject: {
+        listingId: null,
+        variantId: null,
+        backorderId: null,
+        label: null,
+      },
+      facts: {
+        stock: null,
+        backorder: null,
+        receivable: {
+          outstandingAmount: 37500,
+          prepaidAmount: 0,
+          overdue: { count: 1, amount: 37500, maxDaysOverdue: 54 },
+        },
+      },
+    },
+  });
+  const handoff = message(9, {
+    sender: "SYSTEM",
+    kind: "HANDOFF",
+    body: "사장님께 전달했어요",
+  });
+
+  it("backordersHref(101) → /backorders?wholesaler=101, 102 → ?wholesaler=102", () => {
+    expect(backordersHref(101)).toBe("/backorders?wholesaler=101");
+    expect(backordersHref(102)).toBe("/backorders?wholesaler=102");
+  });
+
+  it("미송 카드 → 미송 링크(101), 끊기기 전엔 클라이언트 이동", () => {
+    const card = backorderReply(5, {
+      backorderId: 9003,
+      label: "린넨 셋업 자켓 베이지 / L",
+      qty: 2,
+      date: "2026-11-05",
+      reason: "원단 수급 지연",
+    });
+    expect(linkOf(card, [ask, clarify(4), card])).toEqual({
+      kind: "backorders",
+      href: "/backorders?wholesaler=101",
+      label: "미송 대기 현황 보기",
+      documentNav: false,
+    });
+  });
+
+  it("미송 되묻기 셋 다 링크 있음 — 지금 고르는 것(active), 이미 고른 지난 것, 잠긴 것(끊김)", () => {
+    const open = clarify(4);
+    const activeView = toReplyExtra(open, [ask, open], [], NOW, W);
+    expect(activeView?.type === "clarify" && activeView.view.active).toBe(true);
+    expect(linkOf(open, [ask, open])?.kind).toBe("backorders");
+
+    // 지난 것: 보기를 골라 보낸 뒤(서버에 간 선택) — 보기 줄은 잠기지만 링크는 그대로
+    const picked = message(5, {
+      body: CHOICES[3]!.label,
+      inquiry: backorderChoiceInquiry(CHOICES[3]!),
+    });
+    const past = toReplyExtra(open, [ask, open, picked], [], NOW, W);
+    expect(past?.type === "clarify" && past.view.active).toBe(false);
+    expect(linkOf(open, [ask, open, picked])).toMatchObject({
+      kind: "backorders",
+      href: "/backorders?wholesaler=101",
+      documentNav: false,
+    });
+
+    // 잠긴 것: 세션 끊김 — 링크는 있고 전체 이동
+    expect(linkOf(open, [ask, open], [], true)).toMatchObject({
+      kind: "backorders",
+      documentNav: true,
+    });
+  });
+
+  it("재고 카드, 재고 되묻기, 넘김 줄 → 링크 없음. 미수 카드 → 정산 링크만(미송 링크 아님)", () => {
+    expect(toReplyExtra(stockClarify, [stockClarify], [], NOW, W)?.type).toBe(
+      "clarify",
+    );
+    expect(linkOf(stockClarify, [stockClarify])).toBeNull();
+    expect(toReplyExtra(stockCard, [stockCard], [], NOW, W)?.type).toBe(
+      "stock",
+    );
+    expect(linkOf(stockCard, [stockCard])).toBeNull();
+    expect(toReplyExtra(handoff, [handoff], [], NOW, W)).toBeNull();
+    expect(linkOf(handoff, [handoff])).toBeNull();
+    expect(linkOf(ask, [ask])).toBeNull();
+    expect(linkOf(receivable, [receivable])).toEqual({
+      kind: "settlement",
+      href: "/settlements?wholesaler=101",
+      label: "정산 화면에서 보기",
+      documentNav: false,
+    });
+  });
+
+  it("documentNav — 끊긴 방이면 정산 링크와 미송 링크 둘 다 전체 이동, 아니면 둘 다 클라이언트 이동", () => {
+    const card = backorderReply(5, {
+      backorderId: 9002,
+      label: "와이드 데님 팬츠 소라 / M",
+      qty: 1,
+      date: null,
+      reason: null,
+    });
+    for (const lost of [false, true]) {
+      expect(linkOf(card, [card], [], lost)?.documentNav).toBe(lost);
+      expect(linkOf(receivable, [receivable], [], lost)?.documentNav).toBe(
+        lost,
+      );
+      expect(linkOf(clarify(4), [clarify(4)], [], lost)?.documentNav).toBe(
+        lost,
+      );
+    }
   });
 });

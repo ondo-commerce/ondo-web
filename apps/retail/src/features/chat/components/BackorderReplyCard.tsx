@@ -1,6 +1,7 @@
 import { BACKORDER_TEXT } from "../constants";
 import { backorderStateLine } from "../derive";
-import type { BackorderCardView } from "../types";
+import type { BackorderCardView, ReplyLinkView } from "../types";
+import { ReplyScreenLink } from "./ReplyScreenLink";
 
 /**
  * 미송 자동 답 말풍선 안 카드 칸(loop-06 S3-3, 디자인 결정 39 40). 재고 카드(`StockReplyCard`)와 같은 자리 —
@@ -8,8 +9,16 @@ import type { BackorderCardView } from "../types";
  *
  * 줄: 대상(굵게) + 주문 / 남은 미송 N장 / 입고 상태 / 사유(예정, 오늘만). 날짜와 수량, 상태 낱말만 굵게, 색 없음.
  * 담기 버튼은 없다 — 입고 전 미송은 담을 물건이 아니다. 미정, 지남이면 바로 아래 넘김 줄은 서버 HANDOFF가 그린다.
+ * 맨 아래 `미송 대기 현황 보기`(loop-08f §4-1 1) — 그 도매처 미송 전체를 한 번에 본다.
  */
-export function BackorderReplyCard({ card }: { card: BackorderCardView }) {
+export function BackorderReplyCard({
+  card,
+  link,
+}: {
+  card: BackorderCardView;
+  /** `replyLinkOf`가 정한 미송 대기 현황 링크 */
+  link: ReplyLinkView | null;
+}) {
   return (
     <div
       data-ac="S3-3"
@@ -40,6 +49,7 @@ export function BackorderReplyCard({ card }: { card: BackorderCardView }) {
         </span>
         {card.reason === null ? null : <span>{card.reason}</span>}
       </div>
+      {link === null ? null : <ReplyScreenLink link={link} />}
     </div>
   );
 }

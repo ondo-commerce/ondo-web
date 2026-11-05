@@ -50,12 +50,10 @@ import {
   newMessageText,
   nextReadTarget,
   readMarkerSequence,
+  replyLinkOf,
   returnLinkOf,
   stockAskInquiry,
-  toBackorderReplyView,
-  toClarifyView,
-  toReceivableReplyView,
-  toStockCardView,
+  toReplyExtra,
   toThreadItems,
   visiblePending,
 } from "../derive";
@@ -389,6 +387,7 @@ function ChatRoom({
                       pending={shownPending}
                       now={now}
                       sessionLost={locked}
+                      documentNav={sessionLost}
                       addToCart={addToCart}
                       onChoose={sendChip}
                     />
@@ -532,7 +531,8 @@ const NOW_TICK_MS = 15_000;
 
 /**
  * 자동 답 말풍선 안 칸 하나. 되묻기면 보기 줄, 재고 답이면 재고 카드, 미송 답이면 미송 카드, 미수 답이면 미수 카드,
- * 그 밖이면 없음. 판정은 derive가 한다(`toClarifyView` `toStockCardView` `toBackorderReplyView` `toReceivableReplyView`).
+ * 그 밖이면 없음. 판정은 derive가 한다(`toReplyExtra`). 미송 카드, 미송 되묻기, 미수 카드 아래 링크도 derive가
+ * 정한다(`replyLinkOf`, loop-08f §4-1).
  */
 function AutoReplyExtra({
   message,
@@ -541,48 +541,57 @@ function AutoReplyExtra({
   pending,
   now,
   sessionLost,
+  documentNav,
   addToCart,
   onChoose,
 }: {
   message: ChatMessage;
   messages: readonly ChatMessage[];
-  /** 방 상대 도매처. 미수 카드의 정산 링크가 쓴다 */
+  /** 방 상대 도매처. 정산 링크와 미송 링크가 쓴다 */
   wholesalerId: number;
   pending: readonly PendingMessage[];
   now: number;
+  /** 새 요청 잠금(끊김 또는 로그아웃 중). 보기와 담기를 잠근다 */
   sessionLost: boolean;
+  /** 세션 끊김만. 링크를 전체 이동으로 바꾼다 — 방 머리 돌아가기와 같은 값이다 */
+  documentNav: boolean;
   addToCart: AddToCart | null;
   onChoose: (body: string, inquiry: ChatInquiry) => void;
 }) {
-  const clarify = toClarifyView(message, messages, pending, now);
-  if (clarify !== null)
-    return (
-      <ClarifyChoices
-        view={clarify}
-        locked={sessionLost}
-        onChoose={(choice) => {
-          /* 미송 보기는 kind별 문맥(backorderId, notListed)으로, 재고 보기는 그 게시글로 */
-          if (clarify.mode === "backorder")
-            onChoose(choice.label, backorderChoiceInquiry(choice));
-          else if (clarify.listingId !== null)
-            onChoose(choice.label, choiceInquiry(clarify.listingId, choice));
-        }}
-      />
-    );
-  const backorder = toBackorderReplyView(message, messages);
-  if (backorder !== null) return <BackorderReplyCard card={backorder} />;
-  const receivable = toReceivableReplyView(message, wholesalerId);
-  if (receivable !== null) return <ReceivableReplyCard card={receivable} />;
-  const card = toStockCardView(message, messages);
-  if (card !== null)
-    return (
-      <StockReplyCard
-        card={card}
-        sessionLost={sessionLost}
-        addToCart={addToCart}
-      />
-    );
-  return null;
+  const extra = toReplyExtra(message, messages, pending, now, wholesalerId);
+  const link = replyLinkOf(extra, wholesalerId, documentNav);
+  if (extra === null) return null;
+  switch (extra.type) {
+    case "clarify": {
+      const clarify = extra.view;
+      return (
+        <ClarifyChoices
+          view={clarify}
+          locked={sessionLost}
+          link={link}
+          onChoose={(choice) => {
+            /* 미송 보기는 kind별 문맥(backorderId, notListed)으로, 재고 보기는 그 게시글로 */
+            if (clarify.mode === "backorder")
+              onChoose(choice.label, backorderChoiceInquiry(choice));
+            else if (clarify.listingId !== null)
+              onChoose(choice.label, choiceInquiry(clarify.listingId, choice));
+          }}
+        />
+      );
+    }
+    case "backorder":
+      return <BackorderReplyCard card={extra.card} link={link} />;
+    case "receivable":
+      return <ReceivableReplyCard card={extra.card} link={link} />;
+    case "stock":
+      return (
+        <StockReplyCard
+          card={extra.card}
+          sessionLost={sessionLost}
+          addToCart={addToCart}
+        />
+      );
+  }
 }
 
 /**

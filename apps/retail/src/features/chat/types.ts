@@ -276,6 +276,32 @@ export interface ReceivableCardView {
   settlementHref: string;
 }
 
+/**
+ * 자동 답 말풍선 안 칸 하나(`toReplyExtra`). 되묻기 보기 줄이거나 카드 셋 중 하나다. 방이 이 판정 하나로 무엇을
+ * 그릴지와 아래 링크(`replyLinkOf`)를 같이 정한다
+ */
+export type ReplyExtra =
+  | { type: "clarify"; view: ClarifyView }
+  | { type: "backorder"; card: BackorderCardView }
+  | { type: "receivable"; card: ReceivableCardView }
+  | { type: "stock"; card: StockCardView };
+
+/**
+ * 말풍선 아래 다른 화면으로 가는 링크 하나(loop-08f §4-1). 미송 카드와 미송 되묻기는 미송 대기 현황, 미수 카드는
+ * 정산 화면. 재고 카드, 재고 되묻기, 넘김 줄엔 없다
+ */
+export interface ReplyLinkView {
+  kind: "backorders" | "settlement";
+  /** `/backorders?wholesaler=101`, `/settlements?wholesaler=101` */
+  href: string;
+  label: string;
+  /**
+   * 세션이 끊긴 방이면 true — `<a href>` 전체 이동(디자인 결정 15, 방 머리 돌아가기와 같다). 클라이언트 이동이면
+   * RSC 요청이 401을 받아 오류 화면으로 갈 수 있다. 새 문서 요청이면 서버의 `requireSession`이 판단한다
+   */
+  documentNav: boolean;
+}
+
 /** 재고 자동 답(AUTO_REPLY, STOCK)의 카드 칸. 소매엔 정확 수량이 없다(D31②) */
 export interface StockCardView {
   variantId: number;
