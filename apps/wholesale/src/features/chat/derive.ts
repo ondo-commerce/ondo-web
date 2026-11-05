@@ -632,9 +632,28 @@ export function toClarifyChoicesView(
   };
 }
 
+const WIRE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * 근거 칸 입고 예정일(08f §4-2, Q3 ①). 올해면 `11/5(목)`, 해가 다르면 `2027/1/5(화)`. 오늘, 지난 날도 같은 꼴 —
+ * 지남은 같은 말풍선의 답 본문과 넘김 줄이 이미 말한다(D37 ②).
+ * 요일은 날짜 글자 그대로 센다. 시각이 없는 날짜라 시간대를 바꾸면 하루가 밀린다. "올해"만 `nowMs`의 서울 해로 본다.
+ * `YYYY-MM-DD`가 아니면(계약 밖 값) 받은 글자 그대로 둔다 — 틀린 요일을 지어내지 않는다.
+ */
+export function inboundDateLabel(date: string, nowMs: number): string {
+  const match = WIRE_DATE.exec(date);
+  if (match === null) return date;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const md = `${month}/${day}(${WEEKDAY_LABEL[weekday]})`;
+  return year === seoulParts(nowMs).year ? md : `${year}/${md}`;
+}
+
 /**
  * 자동 답변 근거 칸. 도매 화면에만 정확 수량이 있다 — 사장이 소매처가 본 구간과 실제 값을 같이 본다.
- * 재고 외(미송, 미수)는 이번 회차 시드에만 있고 문안이 정해지지 않아 값만 한 줄로 적는다.
+ * 미수는 값만 두 줄. 미송은 `미송 2장, 입고 예정 11/5(목), 사유 …` 한 줄이다(08f §4-2, `inboundDateLabel`).
  *
  * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
  * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
@@ -674,13 +693,20 @@ export function toFactsView(
     seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
   }
   if (backorder !== null) {
-    const qty = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
-    lines.push(
-      backorder.expectedInboundDate === null
-        ? [...qty, label(", 입고일 미정")]
-        : [...qty, label(", 입고 예정 "), value(backorder.expectedInboundDate)],
-    );
-    lineAc.push(null);
+    // 08f §4-2: 굵게는 수량과 날짜만. 사유는 소매에게 나간 답과 맞춰 보는 글이라 보통 글자다
+    const line = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
+    if (backorder.expectedInboundDate === null) {
+      line.push(label(", 입고일 미정"));
+    } else {
+      line.push(
+        label(", 입고 예정 "),
+        value(inboundDateLabel(backorder.expectedInboundDate, nowMs)),
+      );
+    }
+    const reason = backorder.expectedInboundReason?.trim() ?? "";
+    if (reason !== "") line.push(label(`, 사유 ${reason}`));
+    lines.push(line);
+    lineAc.push("08f:S2-2");
   }
   if (receivable !== null) {
     lines.push([

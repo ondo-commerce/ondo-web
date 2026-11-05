@@ -635,6 +635,153 @@ describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () =
   });
 });
 
+describe("08f S2-1 근거 칸 미송 줄 4형식", () => {
+  /** 서울 2026-10-29(목) 14:20 — 골든 t0 */
+  const T0 = Date.parse("2026-10-29T14:20:00+09:00");
+
+  function backorderLine(
+    backorder: {
+      qty: number;
+      expectedInboundDate: string | null;
+      expectedInboundReason: string | null;
+    },
+    nowMs = T0,
+  ) {
+    const view = toFactsView(
+      {
+        intent: "BACKORDER",
+        replyToSequence: 3,
+        generatedBy: "RULE",
+        checkedAt: "2026-10-29T14:20:00+09:00",
+        subject: {
+          listingId: null,
+          variantId: 3019,
+          backorderId: 9003,
+          label: null,
+        },
+        facts: { stock: null, backorder, receivable: null },
+      },
+      nowMs,
+    );
+    expect(view?.lines).toHaveLength(1);
+    /* e2e가 이 줄을 data-ac로 잡는다 */
+    expect(view?.lineAc).toEqual(["08f:S2-2"]);
+    const line = view?.lines[0] ?? [];
+    return {
+      text: factLineText(line),
+      strong: line.filter((p) => p.strong).map((p) => p.text),
+    };
+  }
+
+  it("① 예정 + 사유 → '미송 2장, 입고 예정 11/5(목), 사유 원단 수급 지연', 굵게는 2장과 11/5(목)만", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: "원단 수급 지연",
+      }),
+    ).toEqual({
+      text: "미송 2장, 입고 예정 11/5(목), 사유 원단 수급 지연",
+      strong: ["2장", "11/5(목)"],
+    });
+  });
+
+  it("② 미정, 사유 없음 → '미송 1장, 입고일 미정', 굵게는 1장만", () => {
+    expect(
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: null,
+        expectedInboundReason: null,
+      }),
+    ).toEqual({ text: "미송 1장, 입고일 미정", strong: ["1장"] });
+  });
+
+  it("③ 미정 + 사유 → '미송 1장, 입고일 미정, 사유 공장 확인 중'", () => {
+    expect(
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: null,
+        expectedInboundReason: "공장 확인 중",
+      }),
+    ).toEqual({
+      text: "미송 1장, 입고일 미정, 사유 공장 확인 중",
+      strong: ["1장"],
+    });
+  });
+
+  it.each([
+    ["빈 글자", ""],
+    ["공백만", "   "],
+    ["null", null],
+  ])("④ 사유 %s → 사유 조각 0", (_name, reason) => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: reason,
+      }).text,
+    ).toBe("미송 2장, 입고 예정 11/5(목)");
+  });
+
+  it("⑤ 사유 ' 원단 ' → 앞뒤 공백을 잘라 '사유 원단'", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: " 원단 ",
+      }).text,
+    ).toBe("미송 2장, 입고 예정 11/5(목), 사유 원단");
+  });
+
+  it("⑥ 해가 다름 2027-01-05 → '입고 예정 2027/1/5(화)', 굵게는 날짜 전체", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2027-01-05",
+        expectedInboundReason: null,
+      }),
+    ).toEqual({
+      text: "미송 2장, 입고 예정 2027/1/5(화)",
+      strong: ["2장", "2027/1/5(화)"],
+    });
+  });
+
+  it("⑦ 오늘(10/29), 지난 날(10/26)도 같은 꼴 → '10/29(목)', '10/26(월)'", () => {
+    const line = (date: string) =>
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: date,
+        expectedInboundReason: null,
+      }).text;
+    expect(line("2026-10-29")).toBe("미송 1장, 입고 예정 10/29(목)");
+    expect(line("2026-10-26")).toBe("미송 1장, 입고 예정 10/26(월)");
+  });
+
+  it("⑧ 지금이 2026-12-31 23:59 서울, 날짜 2027-01-01 → '2027/1/1(금)'(서울 해로 판정)", () => {
+    expect(
+      backorderLine(
+        {
+          qty: 1,
+          expectedInboundDate: "2027-01-01",
+          expectedInboundReason: null,
+        },
+        Date.parse("2026-12-31T23:59:00+09:00"),
+      ).text,
+    ).toBe("미송 1장, 입고 예정 2027/1/1(금)");
+    /* 같은 날짜라도 서울이 이미 2027년이면(UTC로는 아직 12/31) 올해 꼴이다 */
+    expect(
+      backorderLine(
+        {
+          qty: 1,
+          expectedInboundDate: "2027-01-01",
+          expectedInboundReason: null,
+        },
+        Date.parse("2027-01-01T00:30:00+09:00"),
+      ).text,
+    ).toBe("미송 1장, 입고 예정 1/1(금)");
+  });
+});
+
 describe("S9 자동 답변 스위치", () => {
   const on: AutoReplySettings = {
     enabled: true,
