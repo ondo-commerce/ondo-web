@@ -119,7 +119,28 @@ export interface InquiryView {
   intentLine: string;
   /** 끝 줄 `소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준`. 시각은 서버 `asOf` */
   basisLine: string;
+  /**
+   * 기준 영업일 `YYYY-MM-DD` = 응답 `from`(loop-08f S3). 7일 쿼리가 이 값으로 기간을 정한다 —
+   * FE 시계로 오늘을 정하지 않는다(사장 PC 시계가 틀리면 어제를 오늘로 부른다)
+   */
+  businessDay: string;
 }
+
+/** 7일 쿼리 기간. 둘 다 `YYYY-MM-DD`, 양끝 포함 */
+export interface InquiryWeekRange {
+  from: string;
+  to: string;
+}
+
+/**
+ * 7일 줄 자리에 그릴 것(기획 §4-4 4 표). `none` = 오늘 숫자가 없어 줄 자리도 없다(카드 기존 오류 모양).
+ * `loading` = 그 기간 숫자가 아직 없음(막대), `failed` = 그 기간 숫자 없이 실패(muted 한 줄, 버튼 없음)
+ */
+export type InquiryWeekLineState =
+  | { kind: "none" }
+  | { kind: "loading" }
+  | { kind: "failed" }
+  | { kind: "line"; text: string };
 
 /** 주의 목록의 SKU 한 줄 */
 export interface AttentionSkuView {

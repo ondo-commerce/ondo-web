@@ -5,6 +5,7 @@ import {
   INQUIRY_INTENT_ORDER,
   INQUIRY_OUTCOME_ORDER,
   INQUIRY_TEXT,
+  INQUIRY_WEEK_DAYS,
   NO_DATE_TOP,
   RATE_UNKNOWN,
   OVERDUE_TOP,
@@ -26,6 +27,8 @@ import type {
   InquiryCounts,
   InquiryStats,
   InquiryView,
+  InquiryWeekLineState,
+  InquiryWeekRange,
   NewOrderRowView,
   NewOrderSummary,
   RatioSegment,
@@ -449,5 +452,74 @@ export function toInquiryView(stats: InquiryStats): InquiryView {
         `${INQUIRY_TEXT.intent[key]} ${formatNumber(counts.byIntent[key].judged)}`,
     ).join(", "),
     basisLine: `${INQUIRY_TEXT.basis}, ${formatClock(stats.asOf)} ${INQUIRY_TEXT.basisSuffix}`,
+    businessDay: stats.from,
   };
+}
+
+/* ------------------------------------------------------------------------
+ * 문의 — 최근 7일 줄(loop-08f S3, 기획 §4-4)
+ * ------------------------------------------------------------------------ */
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** `YYYY-MM-DD`에서 n일 뒤(음수면 앞). 달력 계산만이라 UTC로 센다 — 시간대가 끼면 자정 근처에서 하루 밀린다 */
+function shiftIsoDay(day: string, days: number): string {
+  const m = ISO_DAY.exec(day);
+  if (m === null) return day;
+  const time = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+  return new Date(time).toISOString().slice(0, 10);
+}
+
+/** 기준 영업일 포함 7일. `2026-10-28` → `{from: 2026-10-22, to: 2026-10-28}` */
+export function weekRangeOf(businessDay: string): InquiryWeekRange {
+  return {
+    from: shiftIsoDay(businessDay, -(INQUIRY_WEEK_DAYS - 1)),
+    to: businessDay,
+  };
+}
+
+/** `2026-10-22` → `10/22`. 해는 안 쓴다 — 7일이라 해가 바뀌어도 앞뒤로 읽힌다 */
+function monthDay(day: string): string {
+  const m = ISO_DAY.exec(day);
+  return m === null ? day : `${m[2]}/${m[3]}`;
+}
+
+/**
+ * `최근 7일(10/22~10/28) 소매 메시지 13건, 자동으로 끝남 67% (6/판정 9)`. 기간은 응답의 `from`, `to` 그대로다 —
+ * 요청한 기간이 아니라 서버가 센 기간을 쓴다. 비율과 판정은 오늘 줄과 같은 함수
+ */
+export function toWeekLine(stats: InquiryStats): string {
+  const counts = stats.total;
+  const judged = judgedCount(counts);
+  return (
+    `${INQUIRY_TEXT.weekPrefix}(${monthDay(stats.from)}~${monthDay(stats.to)}) ` +
+    `${INQUIRY_TEXT.weekTotal} ${formatNumber(counts.retailMessages)}${INQUIRY_TEXT.totalUnit}, ` +
+    `${INQUIRY_TEXT.ratePrefix} ${autoResolvedRate(counts.autoReplied, judged)} ` +
+    `(${formatNumber(counts.autoReplied)}/${INQUIRY_TEXT.judged} ${formatNumber(judged)})`
+  );
+}
+
+/**
+ * 7일 줄 자리(기획 §4-4 4 표 8행). 입력은 쿼리 상태를 그대로 옮긴 것이다:
+ * `businessDay` = 오늘 숫자의 기준 영업일(없으면 오늘 최초 실패), `week` = 지금 키(기간)의 마지막 성공 값,
+ * `failed` = 지금 키의 마지막 시도가 실패.
+ *
+ * 숫자가 있으면 실패여도 숫자다 — 같은 기간 옛 숫자는 30초 전 값이라 틀리지 않다(Q9 ①).
+ * 기간이 다른 숫자는 없는 것으로 본다 — 옛 기간 숫자가 새 날짜 옆에 서면 틀린다(키에 기간이 있어 보통은 안 오지만 막아 둔다)
+ */
+export function toWeekLineState(input: {
+  businessDay: string | null;
+  week: InquiryStats | undefined;
+  failed: boolean;
+}): InquiryWeekLineState {
+  if (input.businessDay === null) return { kind: "none" };
+  const range = weekRangeOf(input.businessDay);
+  const week =
+    input.week !== undefined &&
+    input.week.from === range.from &&
+    input.week.to === range.to
+      ? input.week
+      : undefined;
+  if (week !== undefined) return { kind: "line", text: toWeekLine(week) };
+  return input.failed ? { kind: "failed" } : { kind: "loading" };
 }

@@ -13,4 +13,10 @@ export const dashboardKeys = {
   attention: () => [...dashboardKeys.all, "attention"] as const,
   /** 문의 카드(loop-08 S2). 채팅 feature 키가 아니라 여기 — 진입 때 대시보드 셋과 같이 비운다 */
   inquiryStats: () => [...dashboardKeys.all, "inquiry-stats"] as const,
+  /**
+   * 문의 카드 7일 줄(loop-08f S3). 키에 기간을 넣는다 — 낮 12시를 넘겨 기준 영업일이 바뀌면 새 키라
+   * 옛 기간 숫자가 새 기간 자리에 남지 않는다(기획 Q1)
+   */
+  inquiryWeek: (from: string, to: string) =>
+    [...dashboardKeys.all, "inquiry-week", from, to] as const,
 };
