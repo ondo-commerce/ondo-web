@@ -133,8 +133,15 @@ test.describe("S2-4 빈 상태와 목록 실패", () => {
     page,
   }) => {
     await page.goto("/orders");
+    /* 목(MSW)은 MockGate가 worker를 띄운 뒤에야 화면을 그린다. load만 기다리고 손잡이를 부르면 worker 전이라
+       `/__mock/chat/fail`이 Next로 가서 404다(08f #372 S2-4: 30회 중 1, `waitUntil: commit`이면 5회 중 5).
+       헤더 채팅 링크가 보이면 worker가 떠 있다 */
+    const chatLink = page.getByRole("link", {
+      name: /^채팅(, 답 필요 \d+건)?$/,
+    });
+    await expect(chatLink).toBeVisible();
     await mock(page, "fail", { op: "rooms", times: 1 });
-    await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
+    await chatLink.click();
     const panel = page.getByRole("region", { name: "대화 목록" });
     await expect(panel.getByRole("alert")).toContainText(
       "서버에서 문제가 생겼어요",

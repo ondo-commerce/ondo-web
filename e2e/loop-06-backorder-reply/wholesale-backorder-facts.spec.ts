@@ -189,7 +189,7 @@ test("S4-1 S4-2 M4 미송 되묻기 보기 줄(한 보기 한 줄, 주문 불가
   await expect(bubble).toContainText(
     "린넨 셋업 자켓 베이지 L 남은 미송 2장은 11월 5일 도매 입고 예정이에요(원단 수급 지연)",
   );
-  await expect(bubble).toContainText("미송 2장, 입고 예정 2026-11-05");
+  await expect(bubble).toContainText("미송 2장, 입고 예정 11/5(목)");
   await expect(bubble.locator("b").filter({ hasText: "2장" })).toHaveCount(1);
   await expect(seenLine(bubble)).toHaveText(/14:20 조회$/);
 });
@@ -203,7 +203,7 @@ test("S4-3 미송 탭에서 3019 입고일을 T0+10일로 저장 → 같은 주�
     backorderId: 9003,
     variantId: 3019,
   });
-  await expect(bubbleOf(page, before)).toContainText("입고 예정 2026-11-05");
+  await expect(bubbleOf(page, before)).toContainText("입고 예정 11/5(목)");
 
   await openLinenSku(page);
   const eta = page.getByRole("textbox", { name: "예상 입고일" });
@@ -226,11 +226,11 @@ test("S4-3 미송 탭에서 3019 입고일을 T0+10일로 저장 → 같은 주�
   await expect(bubble).toContainText(
     "린넨 셋업 자켓 베이지 L 남은 미송 2장은 11월 8일 도매 입고 예정이에요(원단 수급 지연)",
   );
-  await expect(bubble).toContainText("미송 2장, 입고 예정 2026-11-08");
+  await expect(bubble).toContainText("미송 2장, 입고 예정 11/8(일)");
   await expect(bubble).not.toContainText("11월 5일");
-  await expect(bubble).not.toContainText("2026-11-05");
+  await expect(bubble).not.toContainText("11/5(목)");
   /* 지난 답은 고치지 않는다 */
-  await expect(bubbleOf(page, before)).toContainText("입고 예정 2026-11-05");
+  await expect(bubbleOf(page, before)).toContainText("입고 예정 11/5(목)");
 });
 
 test("S4-4 9003 1장 배분 → 칩 9003 근거 줄 미송 1장. 되묻기 뒤 나머지 1장 배분(해소) → 칩 9003 넘김, 입고 예정 문장 0", async ({
@@ -256,7 +256,7 @@ test("S4-4 9003 1장 배분 → 칩 9003 근거 줄 미송 1장. 되묻기 뒤 �
   expect(part?.kind).toBe("AUTO_REPLY");
   const bubble = bubbleOf(page, part);
   await expect(bubble).toContainText("남은 미송 1장은 11월 5일");
-  await expect(bubble).toContainText("미송 1장, 입고 예정 2026-11-05");
+  await expect(bubble).toContainText("미송 1장, 입고 예정 11/5(목)");
 
   /* 보기를 띄운 뒤 해소 */
   const reopened = await askWhen(page);
