@@ -589,6 +589,28 @@ describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
       [400, "VALIDATION_FAILED", "allocations"],
     );
   });
+  // 08f C3: orderId 형식을 안 보면 누락, 문자열, 소수가 "없는 주문" 404로 샜다. 선수금을 넣어 둔 상태에서 저장 불변을 본다
+  it.each([
+    ["누락", { amount: 1 }],
+    ['문자열 "7004"', { orderId: "7004", amount: 1 }],
+    ["소수 7004.5", { orderId: 7004.5, amount: 1 }],
+  ])(
+    "⑤-4e orderId %s → 400 field allocations(소매처 999여도 404보다 먼저), 입금·배분·원장 그대로",
+    async (_label, line) => {
+      await deposit(10_000, D28, "p-1");
+      await rejects({ retailerId: RETAILER, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      await rejects({ retailerId: 999, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      expect([outstanding(7004), prepaid()]).toEqual([37_500, 10_000]);
+    },
+  );
   it("⑤-5 7004 두 번 → 400 DUPLICATE_ORDER field allocations", async () => {
     await deposit(50_000, D28, "p-1");
     await rejects(
