@@ -15,8 +15,6 @@ import {
   logMetrics,
   openHistoryRoom,
   READ_POST,
-  readBodies,
-  requests,
   retryButton,
   scrollToBottom,
   setScrollTop,
@@ -55,10 +53,40 @@ async function markReads(page: Page): Promise<ReadMark> {
   await expect.poll(() => count(page, ROOM1_READ)).toBeGreaterThan(0);
   await settled(page, ROOM1_READ);
   await page.waitForTimeout(1000);
+  const { reads, bodies } = await readSnapshot(page);
   return {
-    requests: await count(page, ROOM1_READ),
-    bodies: (await readBodies(page)).length,
+    requests: reads.filter((r) => ROOM1_READ.path.test(r.url)).length,
+    bodies: bodies.length,
   };
+}
+
+interface ReadSnapshot {
+  /** 읽음 POST 전부(방 가리지 않음), 나간 순서 */
+  reads: { url: string; status: number | null }[];
+  bodies: { lastReadSequence: number }[];
+}
+
+/**
+ * 요청 기록(`__watch`)과 읽음 본문(`__readBodies`)을 evaluate 한 번으로 같이 받는다. 둘 다 같은 fetch 호출 안에서
+ * 동기로 쌓여서 한 번에 받으면 서로 어긋나지 않는다. 따로 받으면 그 사이 POST가 끼어 5 대 4가 된다(08e Q3, 08f S5-6)
+ */
+function readSnapshot(page: Page): Promise<ReadSnapshot> {
+  return page.evaluate(() => {
+    const w = window as unknown as {
+      __watch: {
+        requests: { url: string; method: string; status: number | null }[];
+      };
+      __readBodies: { lastReadSequence: number }[];
+    };
+    return {
+      reads: w.__watch.requests
+        .filter(
+          (r) => r.method === "POST" && /\/chat\/rooms\/\d+\/read$/.test(r.url),
+        )
+        .map((r) => ({ url: r.url, status: r.status })),
+      bodies: [...w.__readBodies],
+    };
+  });
 }
 
 /** 기준점 뒤 방 1 읽음 POST — 응답 상태와 `lastReadSequence`. 다른 방 POST가 있으면 실패 */
@@ -66,12 +94,15 @@ async function readsSince(
   page: Page,
   mark: ReadMark,
 ): Promise<{ status: number | null; seq: number | undefined }[]> {
-  expect(await count(page, READ_POST)).toBe(await count(page, ROOM1_READ));
-  const list = (await requests(page, ROOM1_READ)).slice(mark.requests);
-  const bodies = (await readBodies(page)).slice(mark.bodies);
-  return list.map((r, i) => ({
+  const { reads, bodies } = await readSnapshot(page);
+  const room1 = reads.filter((r) => ROOM1_READ.path.test(r.url));
+  expect(reads.filter((r) => READ_POST.path.test(r.url)).length).toBe(
+    room1.length,
+  );
+  const since = bodies.slice(mark.bodies);
+  return room1.slice(mark.requests).map((r, i) => ({
     status: r.status,
-    seq: bodies[i]?.lastReadSequence,
+    seq: since[i]?.lastReadSequence,
   }));
 }
 
@@ -499,6 +530,31 @@ test("S4-8 낭독 기록: 옛 메시지 자동, 버튼으로 붙이는 동안 0.
   await waitBubbles(page, 121);
   await page.waitForTimeout(300);
   expect(await liveRecord(page)).toEqual({ added: 1, chars: 0 });
+});
+
+/**
+ * 08f S5-6 변이: `readsSince`가 지키는 건 "기준점 뒤 다른 방 읽음 POST가 섞이지 않음"이다. 방 33 읽음 POST를
+ * 일부러 끼워 넣으면 그 단언이 잡아야 한다 — 그래서 이 시험은 실패가 정상이다(`test.fail`). 통과하면 단언이 죽은 것
+ */
+test("08f S5-6 변이: 기준점 뒤 방 33 읽음 POST를 끼우면 readsSince가 실패", async ({
+  page,
+}) => {
+  test.fail();
+  await openHistoryRoom(page);
+  const mark = await markReads(page);
+  /* 끼우기 전엔 통과한다 — 실패가 끼운 POST 때문임을 가른다 */
+  expect(await readsSince(page, mark)).toEqual([]);
+  const status = await page.evaluate(async () => {
+    const response = await fetch("/api/retail/chat/rooms/33/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastReadSequence: 1 }),
+    });
+    return response.status;
+  });
+  test.info().annotations.push({ type: "room33", description: `${status}` });
+  await settled(page, READ_POST);
+  await readsSince(page, mark);
 });
 
 test.describe("S4-10 긴 왕복", () => {

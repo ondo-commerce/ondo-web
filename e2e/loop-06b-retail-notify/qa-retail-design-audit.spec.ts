@@ -81,10 +81,23 @@ test("1470 결정 47 50 52 57 59: 종 32, 배지 = 장바구니 카운터, 패�
   await expect(bell(page)).toHaveAttribute("aria-expanded", "true");
   /* 마우스가 종 위에 있으면 hover 면이 덮는다. 열린 면만 보려고 치운다 */
   await page.mouse.move(5, 300);
-  /* transition-colors 가 끝날 때까지(투명 → secondary 사이 값을 읽지 않게) */
+  /* transition-colors 가 끝날 때까지. 전환 끝 직전 프레임은 알파가 1이라 `oklab(L a b)`로 찍히는데 끝난 값은
+     `lab(...)`이다. "투명 아님"만 기다리면 그 프레임이 통과해 아래 secondary 비교가 받는다(08b F4, 08f S5-5).
+     그래서 목표를 루트 `--color-secondary` 계산값과 같음으로 둔다 */
+  const secondaryTarget = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = "var(--color-secondary)";
+    document.body.append(probe);
+    const value = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return value;
+  });
   await expect
-    .poll(() => bell(page).evaluate((el) => getComputedStyle(el).backgroundColor), { timeout: 3_000 })
-    .not.toMatch(/\/ 0\.\d+\)$|rgba\(0, 0, 0, 0\)/);
+    .poll(
+      () => bell(page).evaluate((el) => getComputedStyle(el).backgroundColor),
+      { timeout: 3_000 },
+    )
+    .toBe(secondaryTarget);
   const m2 = await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement);
     const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
