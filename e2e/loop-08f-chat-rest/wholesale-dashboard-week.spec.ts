@@ -158,6 +158,59 @@ test.describe("1280", () => {
     await expect(weekBar(page)).toHaveCount(0);
   });
 
+  test("S3-3 ②-b(표 2행, 08f R8) 오늘, 7일 성공 뒤 오늘만 재조회 실패 → 이전 기간으로 7일 GET 1, 숫자 갱신", async ({
+    page,
+  }) => {
+    await startAt(page, T_1100, { seed: STATS_V1 });
+    await expect(weekLine(page)).toHaveText(WEEK_1028_ANY);
+    await settled(page, WEEK_GET);
+    await settled(page, STATS_GET);
+    const weekTotal = async () =>
+      Number(
+        /소매 메시지 (\d+)건/.exec(
+          (await weekLine(page).textContent()) ?? "",
+        )?.[1] ?? NaN,
+      );
+    const before = await weekTotal();
+    const todayText = await cardLines(page).nth(0).textContent();
+
+    /* 새 소매 메시지 1건 → 다음 7일 응답이 +1. 오늘은 앱 기본 5xx 재시도까지 셋 다 실패 */
+    await knob(page, "rooms/1/incoming", { body: "오늘 실패 중 7일 갱신" });
+    await knob(page, "fail", {
+      op: "stats",
+      range: "today",
+      status: 500,
+      times: 3,
+    });
+    const today0 = await count(page, STATS_GET);
+    const week0 = await count(page, WEEK_GET);
+    await page.clock.fastForward(30_000);
+    await waitCount(page, STATS_GET, today0 + 1);
+    await page.clock.fastForward(1_000);
+    await waitCount(page, STATS_GET, today0 + 2);
+    await page.clock.fastForward(2_000);
+    await waitCount(page, STATS_GET, today0 + 3);
+    await settled(page, STATS_GET);
+    expect(
+      (await requests(page, STATS_GET)).slice(today0).map((r) => r.status),
+    ).toEqual([500, 500, 500]);
+
+    /* 오늘이 실패로 끝나도 7일은 이전 기준 영업일 기간으로 한 번 */
+    await waitCount(page, WEEK_GET, week0 + 1);
+    await settled(page, WEEK_GET);
+    expect(
+      (await requests(page, WEEK_GET))
+        .slice(week0)
+        .map((r) => [searchOf(r.url), r.status]),
+    ).toEqual([["?from=2026-10-22&to=2026-10-28", 200]]);
+    await expect(weekLine(page)).toHaveText(
+      new RegExp(`소매 메시지 ${before + 1}건`),
+    );
+    /* 오늘 숫자는 이전 값 그대로(카드 오류 아님), 7일 실패 줄 0 */
+    await expect(cardLines(page).nth(0)).toHaveText(todayText ?? "missing");
+    await expect(weekFailed(page)).toHaveCount(0);
+  });
+
   test("S3-3 ③ 오늘 최초 실패 → 카드 기존 오류, 7일 GET 0", async ({
     page,
   }) => {
