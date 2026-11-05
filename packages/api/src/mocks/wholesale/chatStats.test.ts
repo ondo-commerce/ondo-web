@@ -187,10 +187,75 @@ describe("S1-6 도매 counterpart-read (방 5: 소매 읽음 2, 메시지 4 → 
     expect((await room()).body.data.counterpartLastReadSequence).toBe(5);
   });
 
-  // loop-08b 가 rooms, send 를 더했다(`chatRoomsFilter.test.ts` S1-6). 모르는 op 거절은 그대로
+  // loop-08b 가 rooms, send 를 더했다(`chatRoomsFilter.test.ts` S1-6). 모르는 op 거절은 그대로.
+  // loop-08f 가 stats 를 더했다(S1-4, 7일 줄 최초 로딩). 그래서 "stats → 400" 대신 fail 전용 op(settings)로 거절을 본다
   it("delay op 는 정한 것만, ms 는 0 이상", async () => {
     expect((await knob("/delay", { op: "messages", ms: 0 })).status).toBe(200);
-    expect((await knob("/delay", { op: "stats", ms: 10 })).status).toBe(400);
+    expect((await knob("/delay", { op: "stats", ms: 0 })).status).toBe(200);
+    expect((await knob("/delay", { op: "settings", ms: 10 })).status).toBe(400);
     expect((await knob("/delay", { op: "room", ms: -1 })).status).toBe(400);
   });
+});
+
+describe("loop-08f S1-4 stats range 손잡이(today = from, to 없음 / multi = from 있음)", () => {
+  const WEEK = "?from=2026-10-22&to=2026-10-28";
+
+  it("fail range today → 7일 200, 오늘 500, 다음 오늘 200", async () => {
+    expect(
+      (await knob("/fail", { op: "stats", range: "today", status: 500 }))
+        .status,
+    ).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+    expect((await stats()).status).toBe(500);
+    expect((await stats()).status).toBe(200);
+  });
+
+  it("fail range multi → 오늘 200, 7일 500, 다음 7일 200", async () => {
+    await knob("/fail", { op: "stats", range: "multi", status: 500 });
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(500);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  it("range 없으면 지금처럼 다음 stats 요청 하나(7일이 먼저 오면 7일이 쓴다)", async () => {
+    await knob("/fail", { op: "stats", status: 500 });
+    expect((await stats(WEEK)).status).toBe(500);
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  it("모르는 range, stats 밖 op 의 range → 400 VALIDATION_FAILED field range", async () => {
+    for (const [path, json] of [
+      ["/fail", { op: "stats", range: "week" }],
+      ["/delay", { op: "stats", range: "week", ms: 10 }],
+      ["/fail", { op: "room", range: "today" }],
+    ] as const) {
+      const res = await knob(path, json);
+      expect([res.status, res.body.code], path).toEqual([
+        400,
+        "VALIDATION_FAILED",
+      ]);
+      expect(res.body.errors.map((e) => e.field)).toEqual(["range"]);
+    }
+    // 거절된 계획은 저장되지 않는다
+    expect((await stats()).status).toBe(200);
+    expect((await stats(WEEK)).status).toBe(200);
+  });
+
+  it("delay {op: stats, range: multi, ms: 3000} → 7일 응답만 3초 늦고 오늘은 바로", async () => {
+    await knob("/delay", { op: "stats", range: "multi", ms: 3000 });
+    const t0 = performance.now();
+    const week = stats(WEEK).then((r) => ({ r, ms: performance.now() - t0 }));
+    const today = await stats();
+    const todayMs = performance.now() - t0;
+    expect(today.status).toBe(200);
+    expect(todayMs).toBeLessThan(1000);
+    const w = await week;
+    expect(w.r.status).toBe(200);
+    expect(w.ms).toBeGreaterThanOrEqual(2990);
+    // 한 번 쓰면 끝(times 1)
+    const t1 = performance.now();
+    await stats(WEEK);
+    expect(performance.now() - t1).toBeLessThan(1000);
+  }, 10_000);
 });

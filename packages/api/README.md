@@ -169,6 +169,7 @@ dev 서버(`api-dev.ddmondo.co.kr`)의 `/v3/api-docs`는 ALB가 `/api/*` 밖 경
 |---|---|---|
 | 도매 | `POST /__mock/chat/reset {seed: "stats-v1"}` | 기본 시드 **대신** fixture F1~F12, F14~F16(방 1 = 101 x 봄봄상회, 방 2 = 102). 다른 seed 이름은 400 |
 | 도매 | `POST /__mock/chat/fail {op: stats, status}` | 지표 op 다음 n회 실패(500, 404 …) |
+| 도매 | `POST /__mock/chat/fail {op: stats, range: today\|multi, status}`, `delay {op: stats, range?, ms}` | loop-08f. `today` = `from`, `to` 둘 다 없는 요청만, `multi` = `from` 있는 요청만 소모. `range` 없으면 다음 stats 요청 하나. 모르는 range, stats 밖 op의 range 400(field range). 지연은 값을 정한 뒤 응답만 늦춘다 |
 | 도매, 소매 | `POST /__mock/chat/rooms/{roomId}/counterpart-read {sequence}` | 상대가 여기까지 읽었다. 내려가지 않는다(작은 값은 무시), 방에 없는 sequence 400 |
 | 도매 | `POST /__mock/chat/delay {op: room\|messages, ms, times = 1}` | 다음 n회 응답을 늦춘다. 값은 요청 시점에 정한다(늦은 방 머리 시험) |
 | 소매 | `POST /__mock/chat/delay {op: count\|read\|room\|messages\|rooms, ...}` | 06a 의 count, read 에 셋을 더했다 |

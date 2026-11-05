@@ -283,10 +283,11 @@ describe("S1-6 delay rooms, send", () => {
     expect(Date.now() - t).toBeLessThan(1000);
   }, 10_000);
 
-  it("delay op 는 room messages rooms send, 모르는 op 는 400", async () => {
-    for (const op of ["room", "messages", "rooms", "send"])
+  // loop-08f S1-4 가 stats 를 더했다. 모르는 op 거절은 fail 전용 op(settings)로 본다
+  it("delay op 는 room messages rooms send stats, 모르는 op 는 400", async () => {
+    for (const op of ["room", "messages", "rooms", "send", "stats"])
       expect((await post("/delay", { op, ms: 0 })).status).toBe(200);
-    expect((await post("/delay", { op: "stats", ms: 10 })).status).toBe(400);
+    expect((await post("/delay", { op: "settings", ms: 10 })).status).toBe(400);
   });
 
   it("reset seed 는 stats-v1 | rooms-70, 모르는 시드는 400", async () => {
