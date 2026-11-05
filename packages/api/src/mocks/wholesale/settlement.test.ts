@@ -589,4 +589,31 @@ describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
     await deposit(37_500, D28, "p-1");
     expect((await allocate(body7004(37_500))).status).toBe(201);
   });
+
+  it("S1-6 받침: 선수금 3카드 GET .../prepaid = 입금 37,500, 정산 25,000 뒤 {37,500, 25,000, 12,500}, 없는 소매처 404", async () => {
+    const prepaidCards = async (id: number) => {
+      const res = await fetch(`${API}/receivables/retailers/${id}/prepaid`);
+      return {
+        status: res.status,
+        body: (await res.json()) as {
+          data: WholesaleSchema<"PrepaidSummaryResponse">;
+        },
+      };
+    };
+    expect((await prepaidCards(RETAILER)).body.data).toEqual({
+      retailerId: RETAILER,
+      totalPaid: 0,
+      totalAllocated: 0,
+      prepaid: 0,
+    });
+    await deposit(37_500, D28, "p-1");
+    await allocate(body7004(25_000));
+    expect((await prepaidCards(RETAILER)).body.data).toEqual({
+      retailerId: RETAILER,
+      totalPaid: 37_500,
+      totalAllocated: 25_000,
+      prepaid: 12_500,
+    });
+    expect((await prepaidCards(999)).status).toBe(404);
+  });
 });

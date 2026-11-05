@@ -698,6 +698,37 @@ export const settlementHandlers = [
     });
   }),
 
+  /**
+   * 선수금 3카드(스펙 `prepaidSummary`). 이 핸들러가 없으면 스펙 뼈대가 0을 돌려줘 목 모드 정산 탭의
+   * `선수금으로 정산`이 늘 잠긴다(loop-08f S1-6에서 발견). 목은 입금 취소가 없어 totalPaid = 입금 합,
+   * totalAllocated = 취소 안 된 배분 줄 합, prepaid = `prepaidOf`(같은 식)
+   */
+  http.get(
+    "*/api/wholesale/receivables/retailers/:retailerId/prepaid",
+    ({ params }) => {
+      const retailerId = Number(params.retailerId);
+      if (!mockRetailer(retailerId))
+        return fail(
+          404,
+          "RESOURCE_NOT_FOUND",
+          "거래 관계가 없는 소매처입니다.",
+        );
+      const totalPaid = payments
+        .filter((p) => p.retailerId === retailerId)
+        .reduce((acc, p) => acc + p.amount, 0);
+      const totalAllocated = allocations
+        .filter((a) => a.retailerId === retailerId && a.cancelledAt === null)
+        .reduce((acc, a) => acc + a.amount, 0);
+      const data: WholesaleSchema<"PrepaidSummaryResponse"> = {
+        retailerId,
+        totalPaid,
+        totalAllocated,
+        prepaid: prepaidOf(retailerId),
+      };
+      return HttpResponse.json({ data });
+    },
+  ),
+
   http.get("*/api/wholesale/receivables", ({ request }) => {
     const url = new URL(request.url);
     const retailerId = url.searchParams.get("retailerId");
