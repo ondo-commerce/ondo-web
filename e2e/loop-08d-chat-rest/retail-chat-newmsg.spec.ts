@@ -534,12 +534,15 @@ test("S4-8 낭독 기록: 옛 메시지 자동, 버튼으로 붙이는 동안 0.
 
 /**
  * 08f S5-6 변이: `readsSince`가 지키는 건 "기준점 뒤 다른 방 읽음 POST가 섞이지 않음"이다. 방 33 읽음 POST를
- * 일부러 끼워 넣으면 그 단언이 잡아야 한다 — 그래서 이 시험은 실패가 정상이다(`test.fail`). 통과하면 단언이 죽은 것
+ * 일부러 끼워 넣으면 그 단언이 잡아야 한다.
+ *
+ * 08f R9: 예전엔 `test.fail()`이 맨 앞이라 준비, 사전 검증, 방 33 POST까지 어디서 실패해도 "예상대로 실패"로 통과했다
+ * (`readsSince`가 늘 던져도 통과). 이제 준비와 사전 검증은 일반 단언이고, 끼운 뒤 `readsSince`가 요청 수 불일치로
+ * 던지는 것만 `rejects`로 기대한다
  */
 test("08f S5-6 변이: 기준점 뒤 방 33 읽음 POST를 끼우면 readsSince가 실패", async ({
   page,
 }) => {
-  test.fail();
   await openHistoryRoom(page);
   const mark = await markReads(page);
   /* 끼우기 전엔 통과한다 — 실패가 끼운 POST 때문임을 가른다 */
@@ -552,9 +555,10 @@ test("08f S5-6 변이: 기준점 뒤 방 33 읽음 POST를 끼우면 readsSince�
     });
     return response.status;
   });
-  test.info().annotations.push({ type: "room33", description: `${status}` });
+  expect(status, "방 33 읽음 POST가 실제로 나갔다").toBe(200);
   await settled(page, READ_POST);
-  await readsSince(page, mark);
+  /* 읽음 POST 전체 수(방 1 + 방 33)와 방 1 수가 어긋나 readsSince 안의 개수 단언이 던진다 */
+  await expect(readsSince(page, mark)).rejects.toThrow(/toBe/);
 });
 
 test.describe("S4-10 긴 왕복", () => {
