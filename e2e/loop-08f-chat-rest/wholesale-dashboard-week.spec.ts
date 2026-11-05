@@ -406,52 +406,89 @@ test.describe("1280", () => {
   });
 });
 
+/**
+ * S3-4 측정 하나. 7일 줄과 바로 위 4줄의 계산값, 상자, 가로 넘침, 그리고 세로:
+ * 카드 안 넘침(`scrollHeight − clientHeight`), 카드 아래가 화면 안인지, 7일 줄에서 가장 가까운 overflow-y auto/scroll 조상
+ */
+function measureWeek(page: Page) {
+  return inquiryCard(page).evaluate((card) => {
+    const week = card.querySelector('p[data-ac~="08f:S3-2"]');
+    const ps = [...card.querySelectorAll("p")];
+    const intent = ps[ps.indexOf(week as HTMLParagraphElement) - 1];
+    const style = (el: Element | undefined) => {
+      if (!el) return null;
+      const s = getComputedStyle(el);
+      return {
+        fontSize: s.fontSize,
+        lineHeight: s.lineHeight,
+        color: s.color,
+      };
+    };
+    const box = (el: Element | null | undefined) => {
+      const b = el?.getBoundingClientRect();
+      return b && { left: b.left, right: b.right, height: b.height };
+    };
+    /* 세로 스크롤을 받는 요소: 7일 줄에서 위로 올라가며 overflow-y가 auto/scroll인 첫 조상 */
+    let scroller: Element | null = week?.parentElement ?? null;
+    while (scroller && scroller !== document.documentElement) {
+      const oy = getComputedStyle(scroller).overflowY;
+      if (oy === "auto" || oy === "scroll") break;
+      scroller = scroller.parentElement;
+    }
+    const found = scroller !== null && scroller !== document.documentElement;
+    return {
+      week: style(week ?? undefined),
+      intent: style(intent),
+      intentText: intent?.textContent,
+      weekBox: box(week),
+      cardBox: box(card),
+      weekOverflow: week ? week.scrollWidth - week.clientWidth : -1,
+      docOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      docOverflowY: document.documentElement.scrollHeight - window.innerHeight,
+      cardInnerOverflowY: card.scrollHeight - card.clientHeight,
+      cardBottomPastViewport:
+        card.getBoundingClientRect().bottom - window.innerHeight,
+      scroller: found
+        ? {
+            overflowY: getComputedStyle(scroller as Element).overflowY,
+            scrollHeight: (scroller as Element).scrollHeight,
+            clientHeight: (scroller as Element).clientHeight,
+          }
+        : null,
+    };
+  });
+}
+
+/** 7일 줄이 막대(delay 1.5초) 뒤 도착할 때까지. 막대 높이를 돌려준다 */
+async function openWeekWithBar(
+  page: Page,
+  viewport: { width: number; height: number },
+): Promise<number> {
+  await page.setViewportSize(viewport);
+  await startAt(page, T_1159, {
+    seed: STATS_V1,
+    before: (p) => knob(p, "delay", { op: "stats", range: "multi", ms: 1_500 }),
+  });
+  await expect(weekBar(page)).toHaveCount(1);
+  const barHeight = (await weekBar(page).boundingBox())?.height ?? -1;
+  await expect(weekLine(page)).toHaveText(WEEK_1028, { timeout: 6_000 });
+  return barHeight;
+}
+
+/*
+ * 08f Q1: 예전엔 "넘치면 세로 스크롤"이 `if (넘침)` 안에 있어 두 폭 다 넘침이 없어 한 번도 안 돌았다.
+ * 이제 AC 두 폭에서는 세로 단언을 조건 없이 둔다 — 카드 안 넘침 0, 카드 아래가 화면 안, 문서 세로 넘침 0.
+ * 넘침이 실제로 나는 높이(1280×400) 시험은 아래에 따로 있다
+ */
 for (const viewport of [
   { width: 1280, height: 800 },
   { width: 1470, height: 900 },
 ]) {
-  test(`S3-4 ${viewport.width}: 7일 줄 글자 = 4줄(크기, 줄 높이, 색), 패널 안, 가로 넘침 0, 넘치면 패널 세로 스크롤, 막대 높이 = 줄 높이 ± 2`, async ({
+  test(`S3-4 ${viewport.width}: 7일 줄 글자 = 4줄(크기, 줄 높이, 색), 패널 안, 가로 넘침 0, 카드 세로 넘침 0이고 화면 안, 막대 높이 = 줄 높이 ± 2`, async ({
     page,
   }) => {
-    await page.setViewportSize(viewport);
-    await startAt(page, T_1159, {
-      seed: STATS_V1,
-      before: (p) =>
-        knob(p, "delay", { op: "stats", range: "multi", ms: 1_500 }),
-    });
-    await expect(weekBar(page)).toHaveCount(1);
-    const barHeight = (await weekBar(page).boundingBox())?.height ?? -1;
-    await expect(weekLine(page)).toHaveText(WEEK_1028, { timeout: 6_000 });
-
-    const m = await inquiryCard(page).evaluate((card) => {
-      const week = card.querySelector('p[data-ac~="08f:S3-2"]');
-      const ps = [...card.querySelectorAll("p")];
-      const intent = ps[ps.indexOf(week as HTMLParagraphElement) - 1];
-      const style = (el: Element | undefined) => {
-        if (!el) return null;
-        const s = getComputedStyle(el);
-        return {
-          fontSize: s.fontSize,
-          lineHeight: s.lineHeight,
-          color: s.color,
-        };
-      };
-      const box = (el: Element | null | undefined) => {
-        const b = el?.getBoundingClientRect();
-        return b && { left: b.left, right: b.right, height: b.height };
-      };
-      return {
-        week: style(week ?? undefined),
-        intent: style(intent),
-        intentText: intent?.textContent,
-        weekBox: box(week),
-        cardBox: box(card),
-        weekOverflow: week ? week.scrollWidth - week.clientWidth : -1,
-        docOverflow: document.documentElement.scrollWidth - window.innerWidth,
-        cardScroll: card.scrollHeight > card.clientHeight,
-        cardOverflowY: getComputedStyle(card).overflowY,
-      };
-    });
+    const barHeight = await openWeekWithBar(page, viewport);
+    const m = await measureWeek(page);
     expect(m.intentText).toMatch(/^판정한 것 중/);
     expect(m.week).not.toBeNull();
     expect(m.week).toEqual(m.intent);
@@ -461,8 +498,35 @@ for (const viewport of [
     );
     expect(m.weekOverflow).toBeLessThanOrEqual(0);
     expect(m.docOverflow).toBeLessThanOrEqual(0);
-    if (m.cardScroll) expect(["auto", "scroll"]).toContain(m.cardOverflowY);
+    expect(m.docOverflowY).toBeLessThanOrEqual(0);
+    expect(m.cardInnerOverflowY).toBeLessThanOrEqual(0);
+    expect(m.cardBottomPastViewport).toBeLessThanOrEqual(0);
     const lineHeight = m.weekBox?.height ?? -100;
     expect(Math.abs(barHeight - lineHeight)).toBeLessThanOrEqual(2);
   });
 }
+
+/*
+ * 08f Q1 원래 조건: 넘치면 `Panel.Body`가 세로로 받는다. 1280×400에서 문의 카드는 `shrink-0`(디자인 결정 49 —
+ * 높이가 모자라면 주의 패널만 준다)이라 오른쪽 열 아래로 밀려나고 body `overflow: hidden`에 잘린다. 카드와 조상 중
+ * overflow-y auto는 없다(QA 08f 측정과 같다). 시험만으로 고칠 수 없는 레이아웃이라 원래 조건을 test.fail로 남긴다
+ * (brief-dev 규칙 7). 넘침이 실제로 났는지는 test.fail 앞에서 일반 단언으로 본다 — 넘침이 안 나면 일반 실패다
+ */
+test("S3-4 1280×400 원래 조건: 카드가 화면 아래로 넘치면 7일 줄 위 세로 스크롤 요소가 받는다", async ({
+  page,
+}) => {
+  await openWeekWithBar(page, { width: 1280, height: 400 });
+  const m = await measureWeek(page);
+  expect(m.cardBottomPastViewport, "넘침이 실제로 난다").toBeGreaterThan(0);
+  expect(m.docOverflow).toBeLessThanOrEqual(0);
+
+  test.fail(
+    true,
+    "08f Q1: 문의 카드가 shrink-0이라 낮은 화면에서 잘리고, 받는 스크롤 요소가 없다(레이아웃 결정 49, 시험 밖)",
+  );
+  expect(m.scroller, "7일 줄 위 세로 스크롤 요소").not.toBeNull();
+  expect(["auto", "scroll"]).toContain(m.scroller?.overflowY);
+  expect(m.scroller?.scrollHeight ?? 0).toBeGreaterThan(
+    m.scroller?.clientHeight ?? Infinity,
+  );
+});
