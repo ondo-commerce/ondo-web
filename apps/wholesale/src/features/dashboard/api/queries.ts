@@ -135,10 +135,16 @@ export function useInquiryStatsQuery() {
  * **혼자 polling 하지 않는다.** 오늘 쿼리가 한 번 끝날 때마다(성공이든 실패든, `todaySettledAt`가 바뀔 때)
  * 한 번 다시 부른다. 자기 30초 타이머를 따로 두면 낮 12시를 넘는 주기에 오늘 응답보다 먼저 옛 기간을
  * 한 번 더 부른다(기획 S3-5 "옛 키 GET 0"). 오늘 응답 뒤에 부르니 주기는 오늘과 같은 30초다.
- * 기준 영업일이 바뀐 주기에는 다시 부르지 않는다 — 키가 바뀌어 `useQuery`가 새 기간을 직접 부른다.
  *
  * retry 0(기획 Q9 ①, Codex 15). 앱 기본 5xx 두 번 재시도가 polling과 겹치면 한 주기에 요청이 셋이 된다.
  * 실패하면 다음 주기가 재시도다(`chat/api/queries.ts`와 같은 이유).
+ *
+ * **스스로는 한 번도 부르지 않는다(`enabled: false`)** — 부르는 자리는 아래 effect 하나다(08f R6). 자동 조회를 켜 두면
+ * 캐시가 남은 탭 재진입에서 마운트 재조회와 진입 무효화(`useInvalidateOnMount`)가 캐시 속 **어제 기준 영업일**의
+ * 기간을 오늘 응답보다 먼저 부른다(12시를 넘겨 돌아오면 옛 기간 GET 1). 그래서:
+ * 1. 오늘 쿼리가 끝날 때마다(`todaySettledAt` 변화) 지금 키로 한 번. 기준 영업일이 바뀐 주기면 키가 이미 새 기간이다
+ * 2. 마운트 때는 이 키를 한 번도 부른 적이 없을 때만(첫 진입 — 오늘 숫자를 막 받은 뒤라 기간이 확정돼 있다).
+ *    재진입이면 진입 무효화가 오늘을 다시 부르니 그 응답을 기다린다
  */
 export function useInquiryWeekQuery(
   businessDay: string,
@@ -151,18 +157,23 @@ export function useInquiryWeekQuery(
       apiFetch<InquiryStats>(DASHBOARD_PATH.inquiryStats, {
         searchParams: { from: range.from, to: range.to },
       }),
+    enabled: false,
     retry: false,
     refetchOnWindowFocus: false,
   });
-  const { refetch } = query;
-  const last = useRef({ businessDay, todaySettledAt });
+  const { refetch, dataUpdatedAt, errorUpdatedAt, isFetching } = query;
+  /* 마운트 때 이 키를 부른 적이 있었나. 렌더마다 바뀌면 안 되니 첫 렌더 값만 쥔다 */
+  const neverFetchedAtMount = useRef(
+    dataUpdatedAt === 0 && errorUpdatedAt === 0 && !isFetching,
+  );
+  const last = useRef<number | null>(null);
   useEffect(() => {
     const prev = last.current;
-    last.current = { businessDay, todaySettledAt };
-    if (prev.businessDay !== businessDay) return;
-    if (prev.todaySettledAt === todaySettledAt) return;
+    last.current = todaySettledAt;
+    if (prev === null ? !neverFetchedAtMount.current : prev === todaySettledAt)
+      return;
     void refetch();
-  }, [businessDay, todaySettledAt, refetch]);
+  }, [todaySettledAt, refetch]);
   return query;
 }
 

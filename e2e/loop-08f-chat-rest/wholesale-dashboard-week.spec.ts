@@ -266,6 +266,45 @@ test.describe("1280", () => {
     ).toEqual([]);
     await expect(weekLine(page)).toContainText("최근 7일(10/23~10/29)");
   });
+
+  test("S3-5 탭 재진입(08f R6): 11:59:30 성공 → 주문 탭 → 60초 → 대시보드 → 7일 GET은 오늘 응답 뒤 새 범위 1회만, 옛 범위 0", async ({
+    page,
+  }) => {
+    await watchStats(page);
+    await startAt(page, T_1159, { seed: STATS_V1 });
+    await expect(weekLine(page)).toHaveText(WEEK_1028);
+    await settled(page, WEEK_GET);
+    await settled(page, STATS_GET);
+    const logBefore = (await statsLog(page)).length;
+
+    await page.getByRole("link", { name: "주문", exact: true }).first().click();
+    await page.waitForURL(/\/orders/);
+    await page.clock.fastForward(60_000);
+    await page
+      .getByRole("link", { name: "대시보드", exact: true })
+      .first()
+      .click();
+    await page.waitForURL(/\/dashboard/);
+    await expect(weekLine(page)).toContainText("최근 7일(10/23~10/29)");
+    await settled(page, STATS_GET);
+    await settled(page, WEEK_GET);
+
+    const after = (await statsLog(page)).slice(logBefore);
+    const weekStarts = after.filter(
+      (e) => e.phase === "start" && e.search !== "",
+    );
+    expect(weekStarts.map((e) => e.search)).toEqual([
+      "?from=2026-10-23&to=2026-10-29",
+    ]);
+    /* 그 한 번은 오늘 응답(from 10/29)이 끝난 뒤 */
+    const todayEnd = after.findIndex(
+      (e) => e.phase === "end" && e.search === "" && e.from === "2026-10-29",
+    );
+    expect(todayEnd).toBeGreaterThanOrEqual(0);
+    expect(
+      after.indexOf(weekStarts[0] as (typeof after)[number]),
+    ).toBeGreaterThan(todayEnd);
+  });
 });
 
 for (const viewport of [
