@@ -920,7 +920,7 @@ export const settlementHandlers = [
    *
    * 검사 순서는 `POST /payments`와 같은 꼴이다(스펙은 오류 코드만 적었고 순서, 빈 배열, field는 목이 정한 계약
    * 결정이다, §5-4 2. G2 승인 뒤 BE에 전달):
-   *   키 없음 400 → 같은 키(200 / 409) → 본문 형식 400(retailerId, allocations 배열·빈 배열, 줄 금액이 양의 int32 아님)
+   *   키 없음 400 → 같은 키(200 / 409) → 본문 형식 400(retailerId, allocations 배열·빈 배열, 줄이 객체 아님, 줄 금액이 양의 int32 아님)
    *   → 소매처 404 → 줄 순서대로(같은 주문 400, 없는 주문 404, 남의 주문 400) → 확정 아님 409
    *   → 선수금 넘음 409 → 미수 넘음 409.
    * 선수금 넘음이 미수 넘음보다 먼저다 — 돈의 출처를 먼저 본다(`POST /payments`가 계획을 미수보다 먼저 보는 것과 같다)
@@ -967,7 +967,20 @@ export const settlementHandlers = [
         "정산할 주문이 없습니다.",
         "allocations",
       );
-    const requested = body.allocations as {
+    // 줄이 객체가 아니면(null, 숫자, 배열) `a.amount`를 읽다 TypeError로 500이 난다 — 형식 단계에서 400으로 거절한다
+    const rawLines: unknown[] = body.allocations;
+    if (
+      rawLines.some(
+        (a) => typeof a !== "object" || a === null || Array.isArray(a),
+      )
+    )
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "배분 줄 형식이 올바르지 않습니다.",
+        "allocations",
+      );
+    const requested = rawLines as {
       orderId?: unknown;
       amount?: unknown;
     }[];

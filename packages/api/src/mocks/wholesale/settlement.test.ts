@@ -514,6 +514,26 @@ describe("loop-08f S1-3 POST /allocations 선수금으로 정산", () => {
       expect([outstanding(7004), prepaid()]).toEqual([37_500, 10_000]);
     },
   );
+  // 08f R2: 줄이 객체가 아니면 TypeError로 500이 났다. 소매처 404보다 먼저(형식 단계, D52 순서)
+  it.each([
+    ["null", null],
+    ["숫자", 7004],
+    ["배열", [7004, 1]],
+  ])(
+    "⑤-4c 줄이 %s → 400 field allocations(소매처 999여도 404보다 먼저)",
+    async (_label, line) => {
+      await rejects({ retailerId: RETAILER, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+      await rejects({ retailerId: 999, allocations: [line] }, [
+        400,
+        "VALIDATION_FAILED",
+        "allocations",
+      ]);
+    },
+  );
   it("⑤-4d 금액 0.5 + 소매처 999 → 400(형식이 소매처 404보다 먼저)", async () => {
     await rejects(
       { retailerId: 999, allocations: [{ orderId: 7004, amount: 0.5 }] },
