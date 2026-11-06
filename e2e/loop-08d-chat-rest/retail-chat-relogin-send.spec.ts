@@ -64,11 +64,19 @@ test("S2-6 소매 보내기 지연 401 → 다른 탭 bombom 로그인 → 끊�
     timeout: 8_000,
   });
   expect(await lastSendStatus(page)).toBe(401);
-  await page.waitForTimeout(500);
-  await expect(page.getByRole("alert").filter({ hasText: LOST })).toHaveCount(
-    0,
+  /* 끊김 안내가 늦게 서지 않는지는 다음 polling 응답이 끝난 뒤 본다(08g S5-7, 08e N4). 요청 수가 늘었다는 건 응답이
+     끝났다는 뜻이 아니라서 응답 완료(`waitForResponse`)를 기다리고, 그 응답의 React 반영은 값 poll로 본다 */
+  await page.waitForResponse(
+    (r) =>
+      /\/api\/retail\/chat\/rooms\/1\/messages(\?|$)/.test(r.url()) &&
+      r.request().method() === "GET",
   );
-  await expect(composer(page)).not.toHaveAttribute("readonly", "");
+  await expect
+    .poll(async () => ({
+      lost: await page.getByRole("alert").filter({ hasText: LOST }).count(),
+      readonly: await composer(page).getAttribute("readonly"),
+    }))
+    .toEqual({ lost: 0, readonly: null });
 
   await pendingBubbles(page)
     .getByRole("button", { name: "다시 보내기" })
