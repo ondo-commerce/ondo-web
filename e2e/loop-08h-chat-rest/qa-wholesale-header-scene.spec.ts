@@ -61,8 +61,11 @@ test("06 장면: 방 1 되묻기 → 미송 탭 → 헤더 채팅 링크 → 봄
   await page.getByRole("link", { name: "미송", exact: true }).click();
   await expect(page).toHaveURL(/\/backorders/);
 
+  /* 기록형이던 것을 단언형으로(메타 리뷰 08h-M4). 미송 탭에서 count가 온 뒤 링크는 답 필요 목록으로 간다(D55).
+     답 필요 3건은 이 시드(06 시각 + 방 1 되묻기)의 실측이다. href가 늘 `/chats`면 여기서 실패해야 한다 */
   const link = page.getByRole("banner").getByRole("link", { name: /^채팅/ });
-  await expect(link).toBeVisible();
+  await expect(link).toHaveAccessibleName("채팅, 답 필요 3건");
+  await expect(link).toHaveAttribute("href", "/chats?filter=NEEDS_REPLY");
   const ev = await link.evaluate((el) => ({
     tag: el.tagName,
     ariaLabel: el.getAttribute("aria-label"),
@@ -73,28 +76,22 @@ test("06 장면: 방 1 되묻기 → 미송 탭 → 헤더 채팅 링크 → 봄
     description: JSON.stringify(ev),
   });
   await link.click();
-  await expect(page).toHaveURL(/\/chats(\?|$)/);
+  await expect(page).toHaveURL(/\/chats\?filter=NEEDS_REPLY$/);
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
-  const landed = new URL(page.url()).search;
-  const inList = await row(page, "봄봄상회").count();
-  test.info().annotations.push({
-    type: "landed",
-    description: JSON.stringify({ search: landed, 봄봄상회: inList }),
-  });
+  await expect(
+    row(page, "봄봄상회"),
+    "답 필요 목록에 봄봄상회 없음",
+  ).toHaveCount(0);
 
-  let extraClicks = 0;
-  if (inList === 0) {
-    await page
-      .getByRole("radiogroup", { name: "대화 필터" })
-      .getByRole("radio", { name: "전체", exact: true })
-      .click();
-    extraClicks += 1;
-  }
+  await page
+    .getByRole("radiogroup", { name: "대화 필터" })
+    .getByRole("radio", { name: "전체", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/chats$/);
+  await expect(row(page, "봄봄상회"), "전체 목록에 봄봄상회 1행").toHaveCount(
+    1,
+  );
   await row(page, "봄봄상회").click();
   await expect(page).toHaveURL(/room=1$/);
   await expect(log(page).locator(`[data-sequence="${clarify}"]`)).toBeVisible();
-  test.info().annotations.push({
-    type: "extra clicks",
-    description: String(extraClicks),
-  });
 });

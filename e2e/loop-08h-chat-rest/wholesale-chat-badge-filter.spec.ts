@@ -330,6 +330,9 @@ test.describe("S2 헤더 답 필요 배지 → 답 필요 목록", () => {
     await watchSkeletons(page);
     await watchSearchMounts(page);
     const base = await roomListCount(page);
+    /* §4-2 표의 "배지 = push +1, 검색칸 재마운트 1회"는 주소가 바뀔 때다. 같은 주소는 흐름 6(아무것도 안 함)이라
+       기록 수 그대로, 재마운트 0(메타 리뷰 08h-M2) */
+    const lenBefore = await page.evaluate(() => history.length);
 
     await chatLink(page).click();
     await expect(page).toHaveURL(NEEDS_URL);
@@ -338,6 +341,10 @@ test.describe("S2 헤더 답 필요 배지 → 답 필요 목록", () => {
     await settled(page, ROOMS_GET);
     const extra = (await roomListCount(page)) - base;
     note("S2-8 추가 rooms GET", extra);
+    expect(
+      await page.evaluate(() => history.length),
+      "같은 주소 = 기록 수 그대로",
+    ).toBe(lenBefore);
     await expectChip(page, "답 필요");
     expect(
       await chatRows(page).evaluateAll((nodes) =>

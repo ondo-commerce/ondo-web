@@ -64,6 +64,24 @@ async function linkEvidence(page: Page, step: string) {
   return ev;
 }
 
+/**
+ * 누르기 전에 count가 왔다: 이름 `채팅, 답 필요 n건`과 href가 필터 주소. 링크가 보이는 것만으로는 count 응답 전일 수
+ * 있고, 그때 누르면 `/chats`로 간다(메타 리뷰 08h-M6)
+ */
+async function expectNeedsLink(page: Page, n: number): Promise<void> {
+  await expect(chatLink(page)).toHaveAccessibleName(`채팅, 답 필요 ${n}건`);
+  await expect(chatLink(page)).toHaveAttribute(
+    "href",
+    "/chats?filter=NEEDS_REPLY",
+  );
+}
+
+function rowIds(page: Page): Promise<(string | undefined)[]> {
+  return chatRows(page).evaluateAll((nodes) =>
+    nodes.map((n) => (n as HTMLElement).dataset.roomId),
+  );
+}
+
 /** 로그인 화면 → reset → 로그인(`/dashboard`) → 셸 라우터로 `path`(클라이언트 이동이라 목 상태가 산다) */
 async function enterAt(
   page: Page,
@@ -242,17 +260,81 @@ test.describe("QA S2 같은 라우트 안", () => {
       name: "소매처 이름 검색",
       exact: true,
     });
+    await expect(chatLink(page)).toHaveAttribute(
+      "href",
+      "/chats?filter=NEEDS_REPLY",
+    );
+    /* 마지막 입력과 배지 클릭 시각을 앱 타이머와 같은 페이지 시계(`performance.now()`)로 잰다(메타 리뷰 08h-M5).
+       클릭은 capture 단계에서 찍어 앱 처리보다 먼저 남긴다 */
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __qaSearchClock: { lastInput: number | null; clickAt: number | null };
+      };
+      const clock = { lastInput: null, clickAt: null } as {
+        lastInput: number | null;
+        clickAt: number | null;
+      };
+      w.__qaSearchClock = clock;
+      document.addEventListener(
+        "input",
+        (e) => {
+          if (
+            (e.target as Element | null)?.getAttribute("aria-label") ===
+            "소매처 이름 검색"
+          )
+            clock.lastInput = performance.now();
+        },
+        { capture: true },
+      );
+      document.addEventListener(
+        "click",
+        (e) => {
+          const a = (e.target as Element | null)?.closest("a");
+          if (a?.closest('[role="banner"], header'))
+            clock.clickAt ??= performance.now();
+        },
+        { capture: true },
+      );
+    });
     await search.click();
     await search.pressSequentially("소매처 1");
     await chatLink(page).click();
+    const timing = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __qaSearchClock: {
+              lastInput: number | null;
+              clickAt: number | null;
+            };
+          }
+        ).__qaSearchClock,
+    );
+    note("input-click clock", timing);
+    if (timing.lastInput === null || timing.clickAt === null)
+      throw new Error(
+        `전제조건: 입력 또는 클릭 기록 없음 ${JSON.stringify(timing)}`,
+      );
+    expect(
+      timing.clickAt - timing.lastInput,
+      "전제조건: 마지막 입력 → 배지 클릭 < 300ms(검색 타이머가 도는 중)",
+    ).toBeLessThan(300);
     await expect(page).toHaveURL(NEEDS_URL);
     await expect(chip(page, "답 필요")).toHaveAttribute("aria-checked", "true");
     await expect(search).toHaveValue("");
     await expect(chatRows(page)).toHaveCount(17);
-    /* 타이머가 늦게 돌아 주소를 다시 쓰지 않았는지 — 목록 GET이 다 끝난 뒤 한 번 더 본다 */
+    /* debounce 기한(마지막 입력 + 300ms)을 페이지 시계로 확실히 넘긴 뒤, 타이머가 늦게 돌아 주소에 q를 다시 쓰거나
+       검색칸을 되살리지 않았는지 한 번 더 본다 */
+    await page.clock.fastForward(400);
+    const now = await page.evaluate(() => performance.now());
+    note("after debounce deadline", { now, deadline: timing.lastInput + 300 });
+    expect(now, "debounce 기한 지남").toBeGreaterThan(timing.lastInput + 300);
     await settled(page, ROOMS_GET);
     note("final url", page.url());
     await expect(page).toHaveURL(NEEDS_URL);
+    expect(new URL(page.url()).searchParams.has("q"), "주소에 q 없음").toBe(
+      false,
+    );
     await expect(search).toHaveValue("");
   });
 
@@ -295,23 +377,57 @@ test.describe("QA S2 같은 라우트 안", () => {
     expect(await page.evaluate(() => history.length)).toBe(after.len);
   });
 
-  test("S2-8 답 필요 칩으로 이미 필터 → 배지 → 주소, 행, 칩 그대로, 목록 GET 늘어남 ≤ 1", async ({
+  /* §4-2 표의 "배지 = push +1, 검색칸 재마운트 1회"는 주소가 바뀔 때다. 이미 같은 주소(`/chats?filter=NEEDS_REPLY`,
+     방, 검색 없음)면 흐름 6(아무것도 안 함)이라 기록 수 그대로, 재마운트 0, 칩, 행, 스크롤 그대로다(메타 리뷰 08h-M2) */
+  test("S2-8 답 필요 칩으로 이미 필터 → 배지 → 기록 수, 검색칸 요소, 칩, 행, 스크롤 그대로, 목록 GET 늘어남 ≤ 1", async ({
     page,
   }) => {
     await enterAt(page, "/chats", { seed: "rooms-70" });
     await chip(page, "답 필요").click();
     await expect(page).toHaveURL(NEEDS_URL);
     await expect(chatRows(page)).toHaveCount(17);
+    await expectNeedsLink(page, 17);
     await settled(page, ROOMS_GET);
+    const scroller = listRegion(page).locator("div.scroll-slim");
+    await scroller.evaluate((el) => {
+      el.scrollTop = 200;
+    });
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0);
+    const scrollBefore = await scroller.evaluate((el) => el.scrollTop);
+    const idsBefore = await rowIds(page);
     const base = (await requests(page, ROOMS_GET)).length;
-    const len = await page.evaluate(() => history.length);
+    const len = await page.evaluate(() => {
+      (window as unknown as { __qaSearch: Element | null }).__qaSearch =
+        document.querySelector('input[aria-label="소매처 이름 검색"]');
+      return history.length;
+    });
     await chatLink(page).press("Enter");
     await expect(page).toHaveURL(NEEDS_URL);
     await expect(chatRows(page)).toHaveCount(17);
     await settled(page, ROOMS_GET);
     const extra = (await requests(page, ROOMS_GET)).length - base;
-    const lenAfter = await page.evaluate(() => history.length);
-    note("S2-8", { extra, len, lenAfter });
+    const after = await page.evaluate(() => {
+      const old = (window as unknown as { __qaSearch: Element | null })
+        .__qaSearch;
+      const now = document.querySelector(
+        'input[aria-label="소매처 이름 검색"]',
+      );
+      return {
+        len: history.length,
+        oldConnected: old?.isConnected ?? null,
+        same: old !== null && old === now,
+      };
+    });
+    note("S2-8", { extra, len, after, scrollBefore });
+    expect(after.len, "같은 주소 = 기록 수 그대로").toBe(len);
+    expect(after.oldConnected, "검색칸 재마운트 0").toBe(true);
+    expect(after.same, "검색칸 같은 요소").toBe(true);
+    expect(await rowIds(page), "행 그대로").toEqual(idsBefore);
+    expect(await scroller.evaluate((el) => el.scrollTop), "스크롤 그대로").toBe(
+      scrollBefore,
+    );
     expect(extra).toBeLessThanOrEqual(1);
     await expect(chip(page, "답 필요")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByText(PICK, { exact: true })).toBeVisible();
@@ -321,6 +437,7 @@ test.describe("QA S2 같은 라우트 안", () => {
     page,
   }) => {
     await enterAt(page, "/orders", { seed: "rooms-70" });
+    await expectNeedsLink(page, 17);
     await chatLink(page).click();
     await expect(page).toHaveURL(NEEDS_URL);
     await page.reload();
@@ -380,6 +497,7 @@ test.describe("QA S2 같은 라우트 안", () => {
     await composer(page).press("Enter");
     await expect.poll(held).toBe(1);
     await expect(pendingBubbles(page)).toHaveCount(1);
+    await expectNeedsLink(page, 17);
     await chatLink(page).click();
     await expect(page).toHaveURL(NEEDS_URL);
     await expect(page.getByText(PICK, { exact: true })).toBeVisible();
@@ -399,6 +517,7 @@ test.describe("QA S2 같은 라우트 안", () => {
     await enterAt(page, "/chats", { seed: "rooms-70" });
     await openRoomReady(page, 101);
     await expect(page).toHaveURL(/\/chats\?room=101$/);
+    await expectNeedsLink(page, 17);
     await chatLink(page).click();
     await expect(page).toHaveURL(NEEDS_URL);
     await expect(page.getByText(PICK, { exact: true })).toBeVisible();
