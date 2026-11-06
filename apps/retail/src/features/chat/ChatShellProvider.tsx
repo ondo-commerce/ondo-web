@@ -107,7 +107,12 @@ function isSameDocumentKey(to: URL): boolean {
 
 /**
  * 이 클릭이 같은 탭의 내부 링크 이동이면 그 주소. 새 탭(수정키, 가운데 버튼, `target`), 다운로드, 다른 출처는 null —
- * 이 화면을 안 떠난다. 클릭 뒤 누가 `preventDefault`로 이동을 막아도 세대는 이미 올랐다(그 응답은 버리고 버튼만 켠다)
+ * 이 화면을 안 떠난다.
+ *
+ * `aria-disabled="true"` 링크(또는 그 안)도 null이다(codex-meta M2). capture라 링크 자신의 핸들러보다 먼저 돌아서,
+ * 그 핸들러가 `preventDefault`로 이동을 막을지 여기선 모른다. 막는 링크는 그 표시를 단다 — 알림 행은 잠김, 모두 읽음
+ * 처리 중이면 `aria-disabled`이고 클릭을 취소한다. 세면 주소 그대로인데 늦은 성공을 버려 방이 안 열린다(S5-2).
+ * 표시 없이 막는 링크가 생기면 그 클릭은 여전히 떠남으로 센다(응답은 버리고 버튼만 켠다 — 다시 누르면 열린다)
  */
 function internalLinkHref(event: MouseEvent): URL | null {
   if (event.button !== 0) return null;
@@ -117,6 +122,7 @@ function internalLinkHref(event: MouseEvent): URL | null {
   const anchor = event.target.closest("a[href]");
   if (!(anchor instanceof HTMLAnchorElement)) return null;
   if (anchor.target !== "" || anchor.hasAttribute("download")) return null;
+  if (event.target.closest('[aria-disabled="true"]') !== null) return null;
   const to = new URL(anchor.href, window.location.href);
   return to.origin === window.location.origin ? to : null;
 }

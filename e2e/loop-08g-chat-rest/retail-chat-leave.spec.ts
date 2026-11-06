@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  markAllButton,
+  notifyMock,
+  openPanel,
+  rows,
+} from "../loop-06b-retail-notify/helpers";
+import {
   APPROVAL,
   appAlert,
   assertStubServers,
@@ -104,6 +110,29 @@ test.describe("S5-2 안 떠나면 지금처럼", () => {
   test("늦은 200 → 방으로 이동", async ({ page }) => {
     await startAt(page, PRODUCT_11);
     await pressLate(page);
+    expect(await deliverLate(page)).toBe(200);
+    await expect(page).toHaveURL(`/chats/1?from=${PRODUCT_11}`);
+    expect(await entryPushes(page)).toEqual([
+      `push /chats/1?from=${PRODUCT_11}`,
+    ]);
+  });
+
+  /* codex-meta M2. 알림 행은 모두 읽음 처리 중이면 aria-disabled이고 클릭이 이동을 취소한다(preventDefault).
+     셸 capture 리스너가 그 클릭을 떠남으로 세면 주소 그대로인데 늦은 성공이 버려진다 */
+  test("늦은 200 중 모두 읽음 처리 중인 알림 행 클릭(이동 취소) → 떠남 아님, 방 1로 이동", async ({
+    page,
+  }) => {
+    await startAt(page, PRODUCT_11);
+    await pressLate(page);
+    await openPanel(page);
+    /* 모두 읽음 응답은 시험 끝까지 안 온다(늦은 방 응답 3초 + 2초보다 길게) */
+    await notifyMock(page, "delay", { op: "read", ms: 60_000 });
+    await markAllButton(page).click();
+    await expect(markAllButton(page)).toHaveAccessibleName("처리 중");
+    const row = rows(page).locator("xpath=self::a").first();
+    await expect(row).toHaveAttribute("aria-disabled", "true");
+    /* force: Playwright는 aria-disabled 요소를 누를 수 없는 것으로 보고 기다린다. 사장의 실제 클릭과 같은 마우스 클릭 */
+    await row.click({ force: true });
     expect(await deliverLate(page)).toBe(200);
     await expect(page).toHaveURL(`/chats/1?from=${PRODUCT_11}`);
     expect(await entryPushes(page)).toEqual([

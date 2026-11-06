@@ -174,7 +174,8 @@ export async function pressInquiry(page: Page): Promise<void> {
 
 /**
  * 시계를 `LATE`만큼 밀어 늦은 응답을 보내고, 그 응답을 입구가 처리할 때까지(마지막 방 만들기 뮤테이션이 pending이 아님).
- * 그 뒤 AC의 "응답 도착 2초 뒤"만큼 더 민다. 마지막 POST의 상태를 돌려준다
+ * 그 뒤 AC의 "응답 도착 2초 뒤"만큼 더 민다. 마지막 POST의 상태를 돌려준다.
+ * 방 만들기 뮤테이션은 변수(`listingId`)로 고른다 — 그 뒤에 다른 뮤테이션(알림 모두 읽음)이 쌓일 수 있다
  */
 export async function deliverLate(page: Page): Promise<number> {
   await page.clock.runFor(LATE);
@@ -185,12 +186,23 @@ export async function deliverLate(page: Page): Promise<number> {
           window as unknown as {
             __ondoQueryClient: {
               getMutationCache: () => {
-                getAll: () => { state: { status: string } }[];
+                getAll: () => {
+                  state: { status: string; variables: unknown };
+                }[];
               };
             };
           }
         ).__ondoQueryClient;
-        return client.getMutationCache().getAll().at(-1)?.state.status;
+        return client
+          .getMutationCache()
+          .getAll()
+          .filter(
+            (m) =>
+              typeof m.state.variables === "object" &&
+              m.state.variables !== null &&
+              "listingId" in m.state.variables,
+          )
+          .at(-1)?.state.status;
       }),
     )
     .toMatch(/^(success|error)$/);
