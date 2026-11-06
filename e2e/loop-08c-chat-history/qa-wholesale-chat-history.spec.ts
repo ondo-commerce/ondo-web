@@ -1,9 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  AFTER_GET,
   beforeSequences,
   captureReads,
   composer,
+  count,
   historyButton,
   historyEnd,
   historyFail,
@@ -16,6 +18,7 @@ import {
   ROOM_LONG,
   roomTitle,
   setScrollTop,
+  settled,
   topOf,
   waitBubbles,
   wheel,
@@ -83,7 +86,12 @@ test.describe("리뷰 재현", () => {
     ).toEqual([]);
   });
 
-  test("R2 바닥에서 창 높이를 줄임(스크롤 없음, 바닥 거리 > 48) → incoming → 따라가지 않고 읽음 0 이어야 한다", async ({
+  /* R2를 둘로 나눴다(loop-08h S1-6, #386). 원래 시험은 "바닥에서 창을 줄이면 바닥 거리 > 48"을 단언했는데, 그건 결함
+     (log가 준 만큼 바닥에서 멀어져 새 글을 안 따라가고 읽음을 보류)을 고정한 값이었다. 08h가 ① 바꾸기 전 바닥이면 먼저
+     붙이고 ② 다시 재게 고쳐서 바닥 출발은 바닥에 남는다. R2가 막던 것("바닥이 아닌데 따라가기와 읽음")은 위 출발에서
+     그대로 본다. 원래 단언은 `test.fail`로 남기지 않는다 — 결함을 고정한 단언이라 남기면 고친 동작을 실패로 센다
+     (기획 08h §4-1, 08g 배운 것 5의 유일한 예외). 고정 지연 2개는 값 대기(clientHeight 변화 + 두 프레임, polling 1회)로 */
+  test("R2 바닥에서 창 높이를 줄임 → 바닥 유지(|d| ≤ 1) → incoming → 따라감, 읽음 +1", async ({
     page,
   }) => {
     const reads = captureReads(page);
@@ -91,18 +99,60 @@ test.describe("리뷰 재현", () => {
     await expect
       .poll(() => reads.filter((r) => r.roomId === ROOM_LONG).length)
       .toBe(1);
-    await page.setViewportSize({ width: 1470, height: 700 });
-    await page.waitForTimeout(300);
+    await shrinkTo700(page);
     const shrunk = await logMetrics(page);
     test.info().annotations.push({
       type: "evidence",
       description: JSON.stringify({ afterResize: shrunk }),
     });
-    expect(shrunk.fromBottom).toBeGreaterThan(48);
+    expect(Math.abs(shrunk.fromBottom)).toBeLessThanOrEqual(1);
 
     await incoming(page, ROOM_LONG, "창 줄인 뒤");
     await waitBubbles(page, 51);
-    await page.waitForTimeout(1000);
+    await nextPoll(page);
+    const after = await logMetrics(page);
+    test.info().annotations.push({
+      type: "evidence",
+      description: JSON.stringify({
+        afterIncoming: after,
+        reads: reads.filter((r) => r.roomId === ROOM_LONG),
+      }),
+    });
+    expect(Math.abs(after.fromBottom), "새 글 따라감").toBeLessThanOrEqual(1);
+    expect(reads.filter((r) => r.roomId === ROOM_LONG)).toEqual([
+      { roomId: ROOM_LONG, seq: 120 },
+      { roomId: ROOM_LONG, seq: 121 },
+    ]);
+    await expect(jumpButton(page)).toHaveCount(0);
+  });
+
+  test("R2 위에서 창 높이를 줄임 → incoming 직전 바닥 거리 > 48 → 따라가지 않고 읽음 0, 버튼", async ({
+    page,
+  }) => {
+    const reads = captureReads(page);
+    await openLongRoom(page);
+    await expect
+      .poll(() => reads.filter((r) => r.roomId === ROOM_LONG).length)
+      .toBe(1);
+    /* 휠로 300px 올린다(바닥 판정 밖, 자동 불러오기 200px 밖) */
+    const box = await log(page).boundingBox();
+    if (box === null) throw new Error("log 없음");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -300);
+    await expect
+      .poll(async () => (await logMetrics(page)).fromBottom)
+      .toBeGreaterThanOrEqual(200);
+    await shrinkTo700(page);
+    const shrunk = await logMetrics(page);
+    test.info().annotations.push({
+      type: "evidence",
+      description: JSON.stringify({ afterResize: shrunk }),
+    });
+    expect(shrunk.fromBottom, "incoming 직전 바닥 아님").toBeGreaterThan(48);
+
+    await incoming(page, ROOM_LONG, "창 줄인 뒤");
+    await waitBubbles(page, 51);
+    await nextPoll(page);
     const after = await logMetrics(page);
     test.info().annotations.push({
       type: "evidence",
@@ -112,12 +162,40 @@ test.describe("리뷰 재현", () => {
       }),
     });
     expect(
+      Math.abs(after.scrollTop - shrunk.scrollTop),
+      "따라가기 0",
+    ).toBeLessThanOrEqual(4);
+    expect(
       reads.filter((r) => r.roomId === ROOM_LONG),
       "바닥이 아닌데 읽음",
     ).toHaveLength(1);
     await expect(jumpButton(page)).toBeVisible();
   });
 });
+
+/** 창 1470×700. log 높이가 바뀐 걸 보고 두 프레임(ResizeObserver 콜백과 뒤따르는 scroll이 다 돈 다음) */
+async function shrinkTo700(page: Page): Promise<void> {
+  const before = (await logMetrics(page)).clientHeight;
+  await page.setViewportSize({ width: 1470, height: 700 });
+  await expect
+    .poll(async () => (await logMetrics(page)).clientHeight)
+    .toBeLessThan(before);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
+/** polling 한 번이 더 나가고 응답까지. 읽음 POST가 날 틈을 고정 지연 대신 이걸로 준다 */
+async function nextPoll(page: Page): Promise<void> {
+  const before = await count(page, AFTER_GET);
+  await expect
+    .poll(() => count(page, AFTER_GET), { timeout: 10_000 })
+    .toBeGreaterThan(before);
+  await settled(page, AFTER_GET);
+}
 
 test.describe("S2-19 사용자 스크롤 — 터치, 스크롤바 드래그", () => {
   test("스크롤바 드래그로 위끝 200px 안 → 자동 1회", async ({ playwright }) => {
