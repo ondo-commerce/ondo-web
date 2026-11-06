@@ -239,6 +239,95 @@ test.describe("1280×800", () => {
     await expectNoFollow(page, anchor, shrunk.scrollTop);
   });
 
+  /* 리뷰 08h-R1. ②는 300px 올려서 옛 높이로 재도 새 높이로 재도 "바닥 아님"이라 사장 스크롤 예외(`bottomCheckHeight`가
+     사장 스크롤 중이면 지금 높이)를 못 가른다(변이 M5 통과). ②는 기획 원문 조건이라 그대로 두고 갈리는 거리를 ③으로 더한다.
+     휠 40px(옛 높이 기준 d ≈ 40 ≤ 48 = 바닥)과 같은 task에 log 바깥 상자 200px 줄임 + scroll(새 높이 기준 d ≈ 240).
+     맞는 동작: 사장 스크롤 창 안이라 지금 높이로 재서 "바닥 아님" → 뒤이은 ResizeObserver가 안 붙임 → 따라가기 0.
+     M5면 옛 높이로 재서 "바닥"이 남고 ResizeObserver가 바닥에 붙인다. 소매 08e S3-3 ③ 꼴 */
+  test("S1-5 ③ 바닥에서 휠 40px과 같은 task에 상자 200px 줄임 + scroll → 지금 높이로 재서 바닥 아님 → incoming → 따라가기 0, 읽음 0, 버튼", async ({
+    page,
+  }) => {
+    const { reads, baseReads } = await openAtBottom(page);
+    await armInputClock(page);
+    const race = await log(page).evaluate(
+      async (el, { wheel, shrink }) => {
+        const frame = () =>
+          new Promise<void>((r) => requestAnimationFrame(() => r()));
+        const box = el.parentElement;
+        if (box === null) throw new Error("log 바깥 상자 없음");
+        const order: string[] = [];
+        let scrollHeightSeen: number | null = null;
+        el.addEventListener(
+          "scroll",
+          () => {
+            order.push("scroll");
+            scrollHeightSeen = el.clientHeight;
+          },
+          { once: true },
+        );
+        const before = el.clientHeight;
+        /* 사장 휠(앱 onWheel이 사장 스크롤 창을 연다)과 그 휠이 옮긴 스크롤 */
+        el.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -wheel, bubbles: true }),
+        );
+        el.scrollTop -= wheel;
+        const scrollTop = el.scrollTop;
+        /* 높이를 먼저 잰다 — flex를 먼저 풀면 상자가 내용 높이로 늘어난다(S1-7) */
+        const boxHeight = box.getBoundingClientRect().height;
+        box.style.flex = "none";
+        box.style.height = `${boxHeight - shrink}px`;
+        const shrunkHeight = el.clientHeight;
+        const probe = new ResizeObserver(() => {
+          probe.disconnect();
+          order.push("resize");
+        });
+        probe.observe(el);
+        el.dispatchEvent(new Event("scroll"));
+        await frame();
+        await frame();
+        return {
+          order,
+          scrollHeightSeen,
+          before,
+          shrunkHeight,
+          scrollTop,
+          dOld: el.scrollHeight - before - scrollTop,
+          dNew: el.scrollHeight - shrunkHeight - scrollTop,
+        };
+      },
+      { wheel: 40, shrink: 200 },
+    );
+    note("race", race);
+    expectInsideUserScrollWindow(await readInputClock(page));
+    expect(race.order[0], "전제조건: scroll이 ResizeObserver보다 먼저").toBe(
+      "scroll",
+    );
+    expect(race.scrollHeightSeen, "전제조건: scroll이 줄어든 높이를 봄").toBe(
+      race.shrunkHeight,
+    );
+    expect(race.dOld, "전제조건: 옛 높이로 재면 바닥").toBeLessThanOrEqual(48);
+    expect(race.dNew, "전제조건: 지금 높이로 재면 바닥 아님").toBeGreaterThan(
+      48,
+    );
+
+    const shrunk = await record(page, "after-race");
+    expect(
+      Math.abs(shrunk.scrollTop - race.scrollTop),
+      "바닥으로 안 끌려감",
+    ).toBeLessThanOrEqual(4);
+    expect(shrunk.d, "바닥 아님").toBeGreaterThan(48);
+    const anchor = await anchorOf(page);
+    note("anchor", anchor);
+
+    await incoming(page, ROOM_LONG, "휠 40px 직후 받은 글");
+    await waitSequence(page, NEW_SEQ);
+    await nextPoll(page);
+    await record(page, "after-incoming");
+    expect(reads.length - baseReads, "읽음 증가 0").toBe(0);
+    await expectNoFollow(page, anchor, shrunk.scrollTop);
+    await expect(jumpButton(page)).toHaveText("새 메시지 1개");
+  });
+
   test("S1-7 순서 경합: 상자 줄임 + 같은 task에 scroll 먼저 → scroll → ResizeObserver 순서 → 두 프레임 뒤 |d| ≤ 1", async ({
     page,
   }) => {
