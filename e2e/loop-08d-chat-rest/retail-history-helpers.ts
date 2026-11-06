@@ -135,13 +135,37 @@ export function firstVisible(page: Page): Promise<number> {
   });
 }
 
-/** log 위에 마우스를 두고 휠 한 번(사용자 스크롤). 음수 = 위로 */
+/* 기본 간격(100, 250, 500ms…)이면 휠 40번 루프(newmsg '휠로 바닥까지')가 길어진다. 50ms마다 읽는다 */
+const WHEEL_POLL = { intervals: [50], timeout: 5_000 };
+
+/**
+ * log 위에 마우스를 두고 휠 한 번(사용자 스크롤). 음수 = 위로.
+ * `mouse.wheel`은 스크롤이 끝나길 안 기다린다. 그래서 값으로 기다린다 — `scrollTop`이 움직였거나 그 방향 끝(위 0,
+ * 아래 `fromBottom ≤ 1`)이라 더 못 움직이는 걸 보고, 그다음 두 번 연달아 읽은 값이 같을 때(부드러운 스크롤이 멈춤)까지.
+ * 끝에서 부른 휠은 변화 0이 정답이라 끝 판정을 같이 본다.
+ */
 export async function wheel(page: Page, deltaY: number): Promise<void> {
   const box = await log(page).boundingBox();
   if (box === null) throw new Error("log 없음");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const before = (await logMetrics(page)).scrollTop;
   await page.mouse.wheel(0, deltaY);
-  await page.waitForTimeout(60);
+  await expect
+    .poll(async () => {
+      const m = await logMetrics(page);
+      if (m.scrollTop !== before) return true;
+      return deltaY < 0 ? m.scrollTop <= 0 : m.fromBottom <= 1;
+    }, WHEEL_POLL)
+    .toBe(true);
+  let last = Number.NaN;
+  await expect
+    .poll(async () => {
+      const { scrollTop } = await logMetrics(page);
+      const settled = scrollTop === last;
+      last = scrollTop;
+      return settled;
+    }, WHEEL_POLL)
+    .toBe(true);
 }
 
 /**
