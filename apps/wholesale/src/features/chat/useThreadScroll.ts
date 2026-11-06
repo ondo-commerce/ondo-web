@@ -14,6 +14,7 @@ import {
 import { fetchOlder, useBeforeOlderMerge } from "./api/queries";
 import { useChatCache } from "./api/scope";
 import {
+  bottomCheckHeight,
   isAtBottom,
   isTouchScrollUp,
   isUserScrollActive,
@@ -47,7 +48,8 @@ function firstVisibleBubble(log: HTMLElement): OlderSnapshot["anchor"] {
 /**
  * 열린 방 log의 스크롤(loop-08c S2). 셋을 맡는다.
  *
- * 1. 바닥 따라가기와 위치 보존(§4-2). "바닥"(48px 안)은 스크롤할 때마다 다시 잰다. 바닥에서 새 메시지가 오면
+ * 1. 바닥 따라가기와 위치 보존(§4-2). "바닥"(48px 안)은 스크롤할 때와 log 크기가 바뀔 때 다시 잰다(크기가 바뀌면
+ *    바닥이던 log는 먼저 바닥에 붙인다, 08h S1). 바닥에서 새 메시지가 오면
  *    따라 내려가고, 바닥이 아니면 스크롤을 안 건드린다. 내가 보내면(보류 말풍선이 늘면) 어디서든 바닥으로.
  * 2. 이전 장 자동 불러오기(D45, §4-1 2-1). 사장이 **직접** 위로 스크롤했을 때만 — wheel(위로), touchmove,
  *    log 안 ↑ PageUp Home, 스크롤바 드래그(log 자체를 누른 채 생긴 scroll). 방을 열 때 바닥으로, 합친 뒤 위치 복원,
@@ -103,11 +105,18 @@ export function useThreadScroll({
   /* 지금 터치의 직전 손가락 y(M4). 터치가 없으면 null */
   const touchY = useRef<number | null>(null);
   const olderSnapshot = useRef<OlderSnapshot | null>(null);
+  /* ResizeObserver가 마지막으로 본 log 높이(08h S1, 소매 #363). ResizeObserver가 없으면 null */
+  const observedHeight = useRef<number | null>(null);
 
-  const measureBottom = () => {
+  /* `height`는 잴 때 쓸 log 높이. 기본은 지금 높이, scroll 이벤트는 `bottomCheckHeight`가 고른다 */
+  const measureBottom = (height?: number) => {
     const log = logRef.current;
     if (log === null) return;
-    const at = isAtBottom(log.scrollHeight, log.scrollTop, log.clientHeight);
+    const at = isAtBottom(
+      log.scrollHeight,
+      log.scrollTop,
+      height ?? log.clientHeight,
+    );
     if (at === atBottomRef.current) return;
     atBottomRef.current = at;
     const jump = jumpRef.current;
@@ -185,12 +194,22 @@ export function useThreadScroll({
     };
   }, []);
 
-  /* 바닥 판정을 scroll에서만 하면 창 높이가 바뀐 뒤(스크롤 위치 그대로) 옛 값이 남는다(리뷰 R2) — 바닥에서 창을 줄이면
-     바닥이 아닌데 새 메시지를 따라가고 읽음을 보냈다. log 크기가 바뀌어도 다시 잰다. 자동 불러오기는 부르지 않는다 */
+  /* log 크기가 바뀌면(입력창이 4줄 6줄로 늘거나 1,001자 오류, 세션 끊김 안내, 창 높이) ① 바꾸기 전 바닥이었으면(직전
+     판정) 먼저 바닥에 붙이고 ② 그다음 다시 잰다(08h S1, 소매 디자인 결정 71과 같은 순서). 입력창은 log의 형제이고
+     `shrink-0`이라 늘어난 만큼 log가 준다 — 재기만 하면 마지막 말풍선이 입력창 뒤로 가고, 6줄(+75px)이면 "바닥 아님"으로
+     굳어 새 글을 안 따라가고 읽음을 보류했다(08h S1-1 재현).
+     위를 읽던 중이면 ①을 건너뛴다 — log 위끝은 그대로라 보던 말풍선이 안 움직인다. ②가 있어 "바닥이 아닌데 따라가기"
+     (리뷰 R2)는 그대로 막힌다. 자동 불러오기는 부르지 않는다. 여기서 본 높이를 `observedHeight`에 남긴다 — 이
+     콜백보다 먼저 온 scroll은 그 높이로 잰다(`bottomCheckHeight`) */
   useEffect(() => {
     const log = logRef.current;
     if (log === null || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => measureBottom());
+    observedHeight.current = log.clientHeight;
+    const observer = new ResizeObserver(() => {
+      observedHeight.current = log.clientHeight;
+      if (atBottomRef.current) log.scrollTop = log.scrollHeight;
+      measureBottom();
+    });
     observer.observe(log);
     return () => observer.disconnect();
     /* measureBottom은 ref와 setState만 쓴다 — 방마다 한 번 건다(부르는 쪽이 key={roomId}로 다시 마운트) */
@@ -199,7 +218,20 @@ export function useThreadScroll({
   const logHandlers = {
     onScroll: () => {
       markUserScroll(pointerOnLog.current ? "input" : "scroll");
-      measureBottom();
+      /* 사장 스크롤이 아니면 ResizeObserver가 마지막으로 본 높이로 잰다 — 크기 변경을 처리하기 전에 먼저 온
+         scroll이 줄어든 높이로 "바닥 아님"을 쓰지 않게(`bottomCheckHeight`) */
+      const log = logRef.current;
+      if (log !== null)
+        measureBottom(
+          bottomCheckHeight({
+            observedHeight: observedHeight.current,
+            clientHeight: log.clientHeight,
+            userScrolled: isUserScrollActive(
+              userScrollUntil.current,
+              performance.now(),
+            ),
+          }),
+        );
       maybeAutoLoad();
     },
     onWheel: (e: WheelEvent<HTMLDivElement>) => {
