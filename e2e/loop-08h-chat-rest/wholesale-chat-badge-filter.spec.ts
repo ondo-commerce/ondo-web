@@ -6,16 +6,20 @@ import {
   enterChats,
   frames,
   installClock,
+  keyOf,
   knob,
   ME,
   note,
   openRoomReady,
+  pendingBubbles,
   requests,
   ROOMS_GET,
   roomTitle,
+  SEND_POST,
   sendFromOtherDevice,
   settled,
   signIn,
+  storedDraft,
   watchRequests,
 } from "./helpers";
 
@@ -40,6 +44,10 @@ const COUNT_GET = {
   path: /\/api\/wholesale\/notifications\/unread-count(\?|$)/,
   method: "GET",
 } as const;
+
+function search(page: Page): Locator {
+  return page.getByRole("searchbox", { name: SEARCH });
+}
 
 function chip(page: Page, name: string): Locator {
   return page
@@ -205,6 +213,13 @@ function skeletons(page: Page): Promise<number> {
 /** 칩이 눌렸다(Radix ToggleGroup single이라 radio aria-checked) */
 async function expectChip(page: Page, name: string): Promise<void> {
   await expect(chip(page, name)).toHaveAttribute("aria-checked", "true");
+}
+
+/** 검색어를 한 글자씩 치고 300ms 뒤 주소에 `q`가 적힐 때까지 */
+async function typeSearch(page: Page, text: string): Promise<void> {
+  await search(page).click();
+  await search(page).pressSequentially(text);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(text);
 }
 
 test.describe("S2 헤더 답 필요 배지 → 답 필요 목록", () => {
@@ -414,4 +429,191 @@ test.describe("S2 헤더 답 필요 배지 → 답 필요 목록", () => {
       });
     },
   );
+});
+
+/* `/chats` 안에서 배지를 누름(같은 라우트 push). 고치기 전(5009d04)엔 주소만 바뀌고 칩과 목록이 그대로였다 */
+test.describe("S2 같은 라우트 안에서 배지", () => {
+  test("S2-3 push와 replace: ① 검색 한 글자씩 + 칩 안 읽음 → 기록, 핸들 그대로 ② 배지 → 기록 +1, 재마운트 1, 포커스 밖 ③ 뒤로 → 이전 조건, 재마운트 1회", async ({
+    page,
+  }) => {
+    await enterChats(page, { seed: "rooms-70" });
+    await expectBadge(page, 17);
+    await watchSearchMounts(page);
+    const start = await searchState(page);
+
+    await test.step('① 검색 "소매처 1" 한 글자씩 + 칩 안 읽음', async () => {
+      await typeSearch(page, "소매처 1");
+      const typed = await searchState(page);
+      expect(typed.focusInSearch, "칩 누르기 전 포커스 검색칸").toBe(true);
+      await chip(page, "안 읽음").click();
+      await expectChip(page, "안 읽음");
+      await expect(page).toHaveURL(/\/chats\?filter=UNREAD&q=/);
+      await frames(page);
+      const after = await searchState(page);
+      note("S2-3 ①", { start, typed, after });
+      expect(after.historyLength, "기록 수 그대로").toBe(start.historyLength);
+      expect(after.sameHandle, "검색칸 핸들 그대로").toBe(true);
+      expect(after.mounts, "재마운트 0").toBe(0);
+    });
+
+    await test.step("② 배지 → 기록 +1, 옛 핸들 끊김 + 새 칸 1(재마운트 1회), 포커스 검색칸 아님", async () => {
+      await chatLink(page).click();
+      await expect(page).toHaveURL(NEEDS_URL);
+      await expectChip(page, "답 필요");
+      await expect(search(page)).toHaveValue("");
+      await frames(page);
+      const after = await searchState(page);
+      note("S2-3 ②", after);
+      expect(after.historyLength, "기록 +1").toBe(start.historyLength + 1);
+      expect(after.sameHandle, "옛 검색칸 끊김").toBe(false);
+      expect(after.boxes, "새 검색칸 1개").toBe(1);
+      expect(after.mounts, "재마운트 1회").toBe(1);
+      expect(after.focusInSearch, "포커스 검색칸 아님").toBe(false);
+    });
+
+    await test.step("③ 뒤로 → 안 읽음 + 소매처 1, 재마운트 1회 더(2회 아님)", async () => {
+      await watchSearchMounts(page);
+      await page.goBack();
+      await expect(page).toHaveURL(/\/chats\?filter=UNREAD&q=/);
+      await expectChip(page, "안 읽음");
+      await expect(search(page)).toHaveValue("소매처 1");
+      await frames(page);
+      await frames(page);
+      const after = await searchState(page);
+      note("S2-3 ③", after);
+      expect(after.mounts, "뒤로 가기 재마운트 1회").toBe(1);
+      expect(after.boxes).toBe(1);
+    });
+  });
+
+  test("S2-4 /chats + 검색 소매처 1 + 방 101 쓰던 글 → 배지 → q, room 없음, 칩 답 필요, 빈칸, GET q 없음, 스켈레톤 0, 고르세요 → 방 101 글 그대로", async ({
+    page,
+  }) => {
+    await enterChats(page, { seed: "rooms-70" });
+    await expectBadge(page, 17);
+    await typeSearch(page, "소매처 1");
+    await openRoomReady(page, 101);
+    await expect(roomTitle(page)).toHaveText("소매처 1");
+    await composer(page).fill("답장 쓰는 중");
+    await expect
+      .poll(() => storedDraft(page, keyOf(ME, 101)))
+      .toBe("답장 쓰는 중");
+    await settled(page, ROOMS_GET);
+    await watchSkeletons(page);
+    const base = await roomListCount(page);
+
+    await chatLink(page).click();
+    await expect(page).toHaveURL(NEEDS_URL);
+    await expectChip(page, "답 필요");
+    await expect(search(page)).toHaveValue("");
+    await expect(page.getByText(PICK)).toBeVisible();
+    await expect(chatRows(page)).toHaveCount(17);
+    await settled(page, ROOMS_GET);
+    const calls = await roomListCalls(page, base);
+    note("S2-4 rooms GET", calls);
+    expect(
+      calls.filter((c) => c.q !== null),
+      "GET에 q 없음",
+    ).toHaveLength(0);
+    expect(
+      calls.filter((c) => c.filter === "NEEDS_REPLY").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(await skeletons(page), "스켈레톤 0").toBe(0);
+
+    await chip(page, "전체").click();
+    await openRoomReady(page, 101);
+    await expect(composer(page)).toHaveValue("답장 쓰는 중");
+  });
+
+  test("S2-5 방 104 보내기를 붙잡은 채 배지 → 방 104 → 보류 1 → 놓음 → 서버 말풍선 1, 보류 0, 중복 0", async ({
+    page,
+  }) => {
+    const BODY = "보류 중 배지 시험";
+    /* brief는 `page.context().route`였다. 이 POST는 MSW worker가 페이지 안에서 답해 네트워크로 나가지 않아
+       context route에 안 걸린다(30초 시간 초과, 02-dev-2 §5). 08b `installChatGate`(helpers 176행) 꼴로 fetch를
+       감싸 **목에 닿기 전에** 붙잡는다. 응답은 바꾸지 않는다 — 나가는 시각만 늦춘다 */
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __sendHeld: number;
+        __releaseSend: () => void;
+      };
+      w.__sendHeld = 0;
+      let open: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      w.__releaseSend = () => open();
+      const original = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (
+          (init?.method ?? "GET").toUpperCase() === "POST" &&
+          /\/api\/wholesale\/chat\/rooms\/104\/messages$/.test(url)
+        ) {
+          w.__sendHeld += 1;
+          await gate;
+        }
+        return original(input, init);
+      };
+    });
+    const held = () =>
+      page.evaluate(
+        () => (window as unknown as { __sendHeld: number }).__sendHeld,
+      );
+    await enterChats(page, { seed: "rooms-70" });
+    await expectBadge(page, 17);
+    await openRoomReady(page, 104);
+    await composer(page).fill(BODY);
+    await composer(page).press("Enter");
+    await expect.poll(held).toBe(1);
+    await expect(pendingBubbles(page)).toHaveCount(1);
+
+    await chatLink(page).click();
+    await expect(page).toHaveURL(NEEDS_URL);
+    await expectChip(page, "답 필요");
+    await openRoomReady(page, 104);
+    await expect(pendingBubbles(page)).toHaveCount(1);
+    await expect(pendingBubbles(page)).toContainText(BODY);
+
+    expect(await held(), "아직 붙잡힌 채 1건").toBe(1);
+    await page.evaluate(() =>
+      (window as unknown as { __releaseSend: () => void }).__releaseSend(),
+    );
+    await expect(pendingBubbles(page)).toHaveCount(0);
+    await settled(page, SEND_POST);
+    const log = page.getByRole("log", { name: "대화", exact: true });
+    await expect(log.locator("[data-sequence]", { hasText: BODY })).toHaveCount(
+      1,
+    );
+    await expect(log.getByText(BODY, { exact: true })).toHaveCount(1);
+  });
+
+  test("S2-7 /chats?room=101 → 배지 → 뒤로 → room=101, 전체, 방 101 → 앞으로 → 답 필요, 방 닫힘", async ({
+    page,
+  }) => {
+    await enterChats(page, { seed: "rooms-70" });
+    await expectBadge(page, 17);
+    await openRoomReady(page, 101);
+    await expect(page).toHaveURL(/\/chats\?room=101$/);
+    await chatLink(page).click();
+    await expect(page).toHaveURL(NEEDS_URL);
+    await expectChip(page, "답 필요");
+    await expect(page.getByText(PICK)).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/chats\?room=101$/);
+    await expectChip(page, "전체");
+    await expect(roomTitle(page)).toHaveText("소매처 1");
+
+    await page.goForward();
+    await expect(page).toHaveURL(NEEDS_URL);
+    await expectChip(page, "답 필요");
+    await expect(page.getByText(PICK)).toBeVisible();
+    await expect(chatRows(page)).toHaveCount(17);
+  });
 });

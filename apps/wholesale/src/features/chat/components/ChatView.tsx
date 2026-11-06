@@ -87,21 +87,32 @@ function ChatInbox({ email }: { email: string | null }) {
   useEffect(() => {
     latestList.current = list;
   }, [list]);
-  /* 뒤로, 앞으로 가기(loop-08b F2). 칩을 바꾸기 전에 연 방의 기록은 옛 조건을 달고 있어서, 돌아가면 주소와 칩이
-     어긋난다. popstate는 히스토리 이동에만 오고 우리 `replaceState`에는 안 온다 — 칩과 검색은 계속 state가 바로
-     받고, 기록을 옮긴 때만 주소에 맞춘다. 조건이 같으면 건드리지 않는다(치던 글, 미뤄 둔 목록 그대로) */
-  useEffect(() => {
-    const onPop = () => {
-      const next = readListParams(new URLSearchParams(window.location.search));
-      if (sameListParams(latestList.current, next)) return;
-      setList(next);
-      setSearchMount((m) => ({ n: m.n + 1, focus: false }));
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+  /* 주소가 바뀐 조건을 따른다. 주소를 읽는 곳은 `window.location` 하나다 — 우리 `replaceState`는 거기를 바로
+     바꾸고 `latestList`도 같이 바꾸니, 라우터가 그 주소를 늦게 렌더해도 같은 조건이라 아무것도 안 한다(치던 글,
+     미뤄 둔 목록 그대로). 다를 때만 state를 바꾸고 검색칸을 한 번 다시 마운트한다(포커스는 안 옮긴다).
+     두 곳에서 부른다. 둘이 한 이동에 같이 불려도 먼저 온 쪽이 `latestList`를 바꿔 두 번째는 같은 조건이다 */
+  const followAddress = useCallback(() => {
+    const next = readListParams(new URLSearchParams(window.location.search));
+    if (sameListParams(latestList.current, next)) return;
+    latestList.current = next;
+    setList(next);
+    setSearchMount((m) => ({ n: m.n + 1, focus: false }));
   }, []);
+  /* ① 뒤로, 앞으로 가기(loop-08b F2). 칩을 바꾸기 전에 연 방의 기록은 옛 조건을 달고 있어서, 돌아가면 주소와 칩이
+     어긋난다. popstate는 히스토리 이동에만 오고 우리 `replaceState`에는 안 온다 */
+  useEffect(() => {
+    window.addEventListener("popstate", followAddress);
+    return () => window.removeEventListener("popstate", followAddress);
+  }, [followAddress]);
+  /* ② 같은 라우트 안 push(loop-08h S2, 헤더 배지 `/chats?filter=NEEDS_REPLY`). 같은 페이지라 다시 마운트되지 않고
+     popstate도 없다 — 라우터가 새 주소를 렌더한 것(`searchParams`가 바뀜)을 신호로 받는다. 행 링크도 push지만
+     지금 조건을 달고 가서(`roomHref`) 같은 조건이다 */
+  useEffect(() => {
+    followAddress();
+  }, [searchParams, followAddress]);
   const changeList = useCallback(
     (next: RoomListParams) => {
+      latestList.current = next;
       setList(next);
       window.history.replaceState(
         null,
