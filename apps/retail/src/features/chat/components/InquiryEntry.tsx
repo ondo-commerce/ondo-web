@@ -16,8 +16,9 @@ import {
 import { useCreateRoomMutation } from "../api/mutations";
 import { isChatStaleResponseError, staleEntryText } from "../api/session";
 import { mockReady as chatMockReady } from "@/shared/api/mockReady";
+import { useChatShell } from "../ChatShellProvider";
 import { APPROVAL_PATH, ENTRY_TEXT } from "../constants";
-import { chatRoomHref, entryFailureOf } from "../derive";
+import { chatRoomHref, entryFailureOf, entryResponseAction } from "../derive";
 
 interface InquiryState {
   opening: boolean;
@@ -43,6 +44,10 @@ function useInquiry(): InquiryState {
  * 누르면 버튼이 `여는 중`으로 바뀌고 잠긴다. 목 모드면 먼저 worker 준비를 기다리고(S5-12), 그다음
  * `POST /rooms {wholesalerId, listingId}`. 200과 201을 똑같이 다룬다. 확인 창 없이 `router.push`로
  * `/chats/{roomId}?from={지금 경로}` — push라서 브라우저 뒤로가기가 보던 화면으로 간다(Q3, S5-13).
+ *
+ * 누른 뒤 떠났으면 응답을 버린다(#376, loop-08f §4-7 Q5 ①). 누를 때 셸 이동 세대를 쥐고, 응답 때 언마운트됐거나
+ * 세대가 다르면 이동도 문구도 승인 화면 이동도 안 한다 — 장바구니를 보던 사장을 몇 초 뒤 방으로 끌고 가지 않는다.
+ * 방은 서버에 생겼으니 다시 누르면 200으로 바로 열린다(D33 ③). 판정은 `entryResponseAction`.
  */
 export function InquiryEntry({
   wholesalerId,
@@ -61,6 +66,15 @@ export function InquiryEntry({
   const [error, setError] = useState<string | null>(null);
   /* 3연타 → POST 1회(S5-4). state는 다음 렌더에야 버튼을 잠그므로 같은 틱의 두 번째 클릭은 ref가 막는다 */
   const busy = useRef(false);
+  const { navigationGeneration } = useChatShell();
+  /* 응답이 왔을 때 이 입구가 아직 화면에 있나. 늦은 응답은 언마운트 뒤에도 then을 부른다(TanStack mutateAsync) */
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   /* 화면에 들어오자마자 worker를 깨운다. 누를 때 기다릴 시간이 줄어든다. 누를 때도 같은 Promise를 기다린다 */
   useEffect(() => {
@@ -74,12 +88,31 @@ export function InquiryEntry({
     busy.current = true;
     setOpening(true);
     setError(null);
+    const clickedGeneration = navigationGeneration();
+    const actionNow = () =>
+      entryResponseAction({
+        clickedGeneration,
+        currentGeneration: navigationGeneration(),
+        mounted: mounted.current,
+      });
+    const release = () => {
+      busy.current = false;
+      setOpening(false);
+    };
     mutateAsync({ wholesalerId, listingId }).then(
-      // 이동이 끝날 때까지 `여는 중`으로 둔다 — 풀면 이동 직전에 한 번 더 눌린다
-      (room) => router.push(chatRoomHref(room.roomId, pathname)),
+      (room) => {
+        const action = actionNow();
+        if (action === "release") release();
+        if (action !== "apply") return;
+        // 이동이 끝날 때까지 `여는 중`으로 둔다 — 풀면 이동 직전에 한 번 더 눌린다.
+        // 같은 세대면 해시만 바뀌었거나 그대로라 클로저의 `pathname`이 지금 경로다
+        router.push(chatRoomHref(room.roomId, pathname));
+      },
       (failure: unknown) => {
-        busy.current = false;
-        setOpening(false);
+        const action = actionNow();
+        if (action === "drop") return;
+        release();
+        if (action === "release") return;
         /* 누른 뒤 계정이 바뀌었다(리뷰 R7). 그 응답은 지금 사람 것이 아니라 아무것도 띄우지 않는다. 같은 소매처가
            다시 로그인한 뒤 온 옛 쿠키의 401이면(loop-08e Q6, S2-8) `/login` 대신 다시 누르라고 알린다 — 버튼은 위에서 켰다 */
         if (isChatStaleResponseError(failure)) {
@@ -93,7 +126,14 @@ export function InquiryEntry({
         else if (reaction !== "session") setError(reaction.message);
       },
     );
-  }, [listingId, mutateAsync, pathname, router, wholesalerId]);
+  }, [
+    listingId,
+    mutateAsync,
+    navigationGeneration,
+    pathname,
+    router,
+    wholesalerId,
+  ]);
 
   const value = useMemo(
     () => ({ opening, error, open }),

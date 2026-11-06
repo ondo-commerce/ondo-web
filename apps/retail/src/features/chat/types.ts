@@ -336,3 +336,6 @@ export type AddToCart = (input: {
 /** 담기 결과 한 줄. 결정 25 */
 export type CardNote =
   { type: "added"; qty: number } | { type: "failed"; message: string };
+
+/** 방 만들기 응답 처리(`entryResponseAction`). 지금처럼 / 버림 / 버림 + 버튼 다시 켬 */
+export type EntryResponseAction = "apply" | "drop" | "release";

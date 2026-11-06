@@ -45,6 +45,7 @@ import type {
   ChatThread,
   ClarifyView,
   ComposerCheck,
+  EntryResponseAction,
   HeaderCounts,
   HistorySlot,
   HistoryStatus,
@@ -242,6 +243,31 @@ export function entryFailureOf(
       return { message: ENTRY_TEXT.notFound };
   }
   return { message: ENTRY_TEXT.failed };
+}
+
+/**
+ * 셸이 세는 이동 단위(loop-08f §4-7). 경로와 쿼리만 — 해시는 Next 라우터가 경로도 쿼리도 안 바꾸는 같은 화면이라
+ * 떠남이 아니다. `search`는 `URLSearchParams.toString()` 값(앞 `?` 없음)
+ */
+export function navigationKeyOf(pathname: string, search: string): string {
+  return search === "" ? pathname : `${pathname}?${search}`;
+}
+
+/**
+ * 방 만들기 응답이 왔을 때 입구가 할 일(loop-08f §4-7, Q5 ①). **한 번 떠나면 무효**: 누를 때 쥔 세대와 지금
+ * 세대가 다르면 그 사이 경로나 쿼리가 바뀐 것이라 떠났다 돌아왔어도 버린다.
+ * - 언마운트됐다 → `drop`. 그 화면은 없다 — 이동도 문구도 상태 갱신도 안 한다
+ * - 살아 있는데 세대가 다르다(쿼리만 바뀐 같은 인스턴스) → `release`. 버리되 버튼을 다시 켠다
+ * - 같은 세대, 마운트 → `apply`. 지금처럼(성공이면 방으로, 실패면 입구 문구나 승인 화면)
+ */
+export function entryResponseAction(input: {
+  clickedGeneration: number;
+  currentGeneration: number;
+  mounted: boolean;
+}): EntryResponseAction {
+  if (!input.mounted) return "drop";
+  if (input.clickedGeneration !== input.currentGeneration) return "release";
+  return "apply";
 }
 
 /* ------------------------------------------------------------------------
