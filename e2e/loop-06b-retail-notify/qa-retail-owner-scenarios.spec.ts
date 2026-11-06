@@ -39,8 +39,37 @@ import {
 
 assertStubServers();
 test.afterAll(assertSameDay);
-/* stub 미송 표는 프로세스에 하나다(02-dev 부채 4). 리허설의 eta 주입을 다른 spec reset이 덮지 않게 */
+/* 파일 안 순서를 지킨다(장면 순서대로 스크린샷을 남긴다) */
 test.describe.configure({ mode: "serial" });
+
+const STUB = "http://localhost:3199";
+
+/**
+ * 이 시험만의 stub 미송 표(08f M2 격리, 08g 리뷰 R6). 공유 표는 stub 프로세스에 하나라 `serial`(파일 안만 직렬)로는 못
+ * 지킨다 — 다른 worker의 `POST /__stub/reset`, `stubEta`가 리허설 eta 주입과 서버 조회 사이에 끼면 시드 날짜로 돌아간다
+ * (08f-Q2 원인 후보). 시험마다 `?backorders=<키>`로 시드 표를 따로 만들고 쿠키 `stub_backorders`로 그 표를 읽게 한다.
+ * 키는 08f `retail-helpers.ts`와 같은 모양(반복, 재시도가 겹치지 않게). 지금 이 표를 읽는 건 (a)뿐이지만 파일 전체에 건다
+ */
+function backorderScope(): string {
+  const info = test.info();
+  return `06b-owner-${info.testId}-${info.repeatEachIndex}-${info.retry}`;
+}
+
+test.beforeEach(async ({ page }) => {
+  const scope = backorderScope();
+  const res = await page.request.post(
+    `${STUB}/__stub/reset?backorders=${encodeURIComponent(scope)}`,
+    { data: { backorders: "seed" } },
+  );
+  expect(res.status(), "stub 미송 범위 seed").toBe(200);
+  await page.context().addCookies([
+    {
+      name: "stub_backorders",
+      value: scope,
+      url: test.info().project.use.baseURL ?? "http://localhost:3101",
+    },
+  ]);
+});
 
 const SHOTS =
   "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-06b-retail-notify/qa";
@@ -101,9 +130,8 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
       `await fetch("/__mock/notifications/reset",{method:"POST",body:JSON.stringify({empty:true})})`,
     ),
   ).toBe(200);
-  expect(
-    (await page.request.post("http://localhost:3199/__stub/reset")).status(),
-  ).toBe(200);
+  /* stub 초기화는 `beforeEach`의 이 시험 범위 표(시드)다. 예전 공유 `POST /__stub/reset`(키 없음)은 다른 worker의
+     장바구니와 공유 미송 표까지 비워서 뺐다(리뷰 R6) */
   mark("초기화");
 
   /* 1. 도매 답 주입 → 30초 안 채팅 배지 */
@@ -181,7 +209,7 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
     ),
   ).toBe(200);
   const eta = await page.request.post(
-    "http://localhost:3199/__stub/backorders/eta",
+    `${STUB}/__stub/backorders/eta?backorders=${encodeURIComponent(backorderScope())}`,
     {
       headers: { "Content-Type": "application/json" },
       data: JSON.stringify({ variantId: 3019, expectedInboundDate: D }),
