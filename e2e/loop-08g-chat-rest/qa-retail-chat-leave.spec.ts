@@ -180,9 +180,7 @@ test("화면: 1280 상품 11 문의하기 → 장바구니로 떠남 → 3초 �
 });
 
 test.describe("02-dev-fix §6 1 프로그램 이동 시작~커밋 틈", () => {
-  /* 기대(AC S5-1 규칙 '떠나면 버림')를 단언한다. 지금 코드는 router.push 시작을 모른다 → 실패가 결함 재현이다 */
-  // 08g-Q1 accept, 프로그램 이동 틈(router.push는 Next 공개 API에 시작 이벤트가 없다). 아는 틈의 기록으로 test.fail 유지
-  test.fail();
+  /* AC S5-1 규칙 '떠나면 버림'. 헤더 검색은 router.push 직전에 이동 시작을 알린다(shared/navigation, codex-meta M1) */
   test("헤더 검색 제출(router.push /search)을 RSC 붙잡은 채 방 응답이 먼저 → 방 이동 0이어야 한다", async ({
     page,
   }) => {
@@ -218,6 +216,10 @@ test.describe("02-dev-fix §6 1 프로그램 이동 시작~커밋 틈", () => {
     });
     expect(pushesAtResponse.filter((c) => c.startsWith("push /chats"))).toEqual(
       [],
+    );
+    expect(await roomPushes(page)).toEqual([]);
+    await expect(page).toHaveURL(
+      `/search?${new URLSearchParams({ q: "린넨" }).toString()}`,
     );
   });
 });

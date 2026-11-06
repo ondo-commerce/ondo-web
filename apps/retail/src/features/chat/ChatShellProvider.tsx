@@ -10,6 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { subscribeNavigationStart } from "@/shared/navigation";
 import { navigationKeyOf } from "./derive";
 import { useChatOutbox, type ChatOutbox } from "./useChatSend";
 import type { ChatInquiry, PendingMessage } from "./types";
@@ -28,7 +29,7 @@ interface ChatShell {
   /** 셸 `/me`의 소매처 id. 모르면 null(스펙상 required 아님) */
   retailerId: number | null;
   outbox: ChatOutbox | null;
-  /** 지금 이동 세대. 내부 링크 클릭, 뒤로/앞으로, 경로나 쿼리 커밋 때 오른다. provider 밖이면 늘 0 */
+  /** 지금 이동 세대. 내부 링크 클릭, 뒤로/앞으로, 알린 프로그램 이동, 경로나 쿼리 커밋 때 오른다. provider 밖이면 늘 0 */
   navigationGeneration: () => number;
 }
 
@@ -44,11 +45,13 @@ const ChatShellContext = createContext<ChatShell>({
  * (memo)까지 다시 그린다. 이 값은 입구가 응답 때 한 번 읽으면 되고 화면에 안 그린다.
  *
  * 올리는 때가 둘이다(리뷰 R1).
- * 1. **이동 시작**: 셸 안 내부 링크 클릭(document capture)과 뒤로/앞으로(`popstate`). 커밋 기준만 두면 "이동 시작 ~
- *    새 화면 커밋" 사이(RSC 응답 시간)에 온 방 응답이 세대 같음 + 마운트로 `apply`돼 장바구니로 가던 사장을 방으로
- *    끌고 간다. 쿼리만 바뀌는 이동은 입구가 그대로 살아 있어 `mounted` 검사도 못 막는다.
- * 2. **새 화면 커밋**(경로나 쿼리 키가 바뀐 effect): `router.push`/`replace` 같은 프로그램 이동은 Next 공개 API로
- *    시작 시점을 알 수 없어 여기서만 잡힌다. 그 이동의 시작 ~ 커밋 틈은 그대로 남는다.
+ * 1. **이동 시작**: 셸 안 내부 링크 클릭(document capture), 뒤로/앞으로(`popstate`), 호출부가 알린 프로그램 이동
+ *    (`shared/navigation`의 `notifyNavigationStart`, 지금은 헤더 검색 제출. codex-meta M1). 커밋 기준만 두면 "이동
+ *    시작 ~ 새 화면 커밋" 사이(RSC 응답 시간)에 온 방 응답이 세대 같음 + 마운트로 `apply`돼 장바구니로 가던 사장을
+ *    방으로 끌고 간다. 쿼리만 바뀌는 이동은 입구가 그대로 살아 있어 `mounted` 검사도 못 막는다.
+ * 2. **새 화면 커밋**(경로나 쿼리 키가 바뀐 effect): 알리지 않는 프로그램 이동은 Next 공개 API로 시작 시점을 알 수
+ *    없어 여기서만 잡힌다. 입구가 살아 있는 화면에서 알리지 않는 이동은 로그아웃 `replace(/login)`뿐인데, 세션이
+ *    끝나 늦은 응답이 401(공용 처리)이라 틈이 결과를 안 바꾼다.
  * 링크 이동이면 두 번 오르는데 상관없다 — 입구는 "누를 때 세대와 같은가"만 본다.
  * 떠나는 입구가 언마운트되는 때는 커밋이라, 그 전에 온 응답은 `mounted`가 아니라 1의 세대가 받는다.
  */
@@ -77,9 +80,14 @@ function useNavigationGeneration(): () => number {
     };
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onPopState);
+    /* 알리는 쪽은 이미 이동을 걸기로 정했다 — 같은 주소인지 따지지 않고 올린다 */
+    const unsubscribe = subscribeNavigationStart(() => {
+      generation.current += 1;
+    });
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
+      unsubscribe();
     };
   }, []);
   return useCallback(() => generation.current, []);

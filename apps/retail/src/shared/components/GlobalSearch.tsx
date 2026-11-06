@@ -3,6 +3,7 @@
 import { cn, SearchInput } from "@ondo/ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent } from "react";
+import { notifyNavigationStart } from "@/shared/navigation";
 
 /**
  * 320 폭에서 펼친 검색 줄(loop-06b 디자인 결정 49)이 쓰는 것. 평소 헤더 검색칸은 셋 다 비운다.
@@ -31,6 +32,8 @@ function SearchForm({
     // 빈 검색은 이동하지 않는다 — 결과 0건 화면을 보여줄 이유가 없다
     if (!q) return;
 
+    /* 이 화면을 떠난다고 먼저 알린다 — 열리는 중인 문의 방 응답이 검색으로 가는 사장을 방으로 끌고 가지 않게(#376) */
+    notifyNavigationStart();
     router.push(`/search?${new URLSearchParams({ q }).toString()}`);
     onClose?.();
   }
