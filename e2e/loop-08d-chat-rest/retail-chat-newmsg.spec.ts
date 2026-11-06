@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import {
   AFTER_GET,
   assertStubServers,
@@ -109,25 +109,44 @@ async function readsSince(
   }));
 }
 
-/**
- * polling 한 번이 더 나가고 응답까지. 그 응답이 화면에 닿는 것은 부르는 쪽이 값(말풍선, 버튼, 요청 수)으로 기다린다 —
- * 예전 100ms 대기는 지웠다(08g S5-11)
- */
-async function nextPoll(page: Page): Promise<void> {
-  const before = await count(page, AFTER_GET);
-  await expect
-    .poll(() => count(page, AFTER_GET), { timeout: 8000 })
-    .toBeGreaterThan(before);
-  await settled(page, AFTER_GET);
+/** 부른 뒤에 **시작한** polling(after GET) 요청 하나. 이미 나가 있던 요청은 안 잡는다(리뷰 R5) */
+function pollStarted(page: Page): Promise<Request> {
+  return page.waitForRequest(
+    (r) => AFTER_GET.path.test(r.url()) && r.method() === "GET",
+    { timeout: 8000 },
+  );
 }
 
 /**
- * "그동안 읽음 POST가 더 안 나감"을 보는 구간. 예전엔 6초 고정 대기였다(08g S5-11) — polling 두 주기(3초 × 2)를
- * 응답 완료로 기다리고 읽음 POST가 다 끝난 뒤 센다
+ * polling 회차 하나: 부른 뒤 시작한 요청 → 응답 본문 끝(`finished()`) → 본문에 메시지가 있으면 그 마지막 sequence가
+ * log에 그려질 때까지. 예전엔 fetch wrapper의 status 기록(`settled`)을 봤는데 그건 본문 소비와 쿼리 반영보다 먼저다
+ * (08g S5-11, 리뷰 R5). 빈 응답은 화면에 바뀌는 게 없다 — 그 회차가 끝까지 처리됐는지는 `twoPolls`가 다음 회차 시작으로 본다
+ */
+async function nextPoll(page: Page): Promise<void> {
+  const request = await pollStarted(page);
+  const response = await request.response();
+  if (response === null) throw new Error("polling 응답이 없다");
+  await response.finished();
+  if (!response.ok()) return;
+  const body = (await response.json()) as { data: { sequence: number }[] };
+  const last = body.data.at(-1)?.sequence;
+  if (last !== undefined)
+    await expect(log(page).locator(`[data-sequence="${last}"]`)).toBeAttached();
+}
+
+/**
+ * "그동안 읽음 POST가 더 안 나감"을 보는 구간. 예전엔 6초 고정 대기였다(08g S5-11) — polling 두 회차를 본 뒤
+ * **세 번째 회차 요청이 시작될 때까지** 기다리고 읽음 POST가 다 끝난 뒤 센다(리뷰 R5).
+ *
+ * 왜 세 번째 시작인가: 같은 쿼리 키는 앞 queryFn이 끝나기 전엔 새 요청을 만들지 않는다(TanStack 중복 제거, interval이
+ * 불려도 진행 중 promise를 돌려준다). 그래서 세 번째 요청이 나갔다는 건 두 번째 회차의 본문 소비와 캐시 반영이 끝났다는
+ * 뜻이다. 그 반영이 낸 렌더와 읽음 effect는 반영 직후 task로 돌고, 다음 interval(3초 뒤 타이머)보다 먼저 끝난다 —
+ * 읽음 POST는 effect 안 `fetch` 호출 때 기록(`__watch`)에 들어가니 그 뒤 `settled`가 그것까지 기다린다
  */
 async function twoPolls(page: Page): Promise<void> {
   await nextPoll(page);
   await nextPoll(page);
+  await pollStarted(page);
   await settled(page, ROOM1_READ);
 }
 
@@ -456,8 +475,8 @@ test.describe("S4-6 탭 숨김과 읽음 실패", () => {
       status: 500,
       seq: 122,
     });
-    await nextPoll(page);
-    await nextPoll(page);
+    /* "그동안 POST 더 없음"이라 마지막 회차 반영까지 본다(리뷰 R5) */
+    await twoPolls(page);
     expect(await readsSince(page, mark)).toHaveLength(3);
     await scrollToBottom(page);
     await expect.poll(() => readsSince(page, mark)).toHaveLength(4);
