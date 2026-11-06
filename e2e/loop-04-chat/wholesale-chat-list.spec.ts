@@ -53,12 +53,19 @@ function focusedRoomId(page: Page): Promise<number | null> {
   });
 }
 
-test("S2-1 헤더 채팅 버튼 → /chats, 주 메뉴 7개 그대로", async ({ page }) => {
+/* AC가 loop-08h D55 Q1 ①로 바뀌었다: 배지가 있으면(`채팅, 답 필요 n건`) `/chats?filter=NEEDS_REPLY`, 없으면 `/chats`.
+   기획 결정으로 바뀐 AC라 옛 단언(`/\/chats$/`)은 test.fail로 남기지 않는다. 기본 시드는 답 필요가 1 이상이라 앞
+   경우를 단언한다 — count가 그려진 뒤 누른다(그 전에 누르면 아직 `/chats`라 갈 곳이 흔들린다) */
+test("S2-1 헤더 채팅 버튼 → 답 필요 n건이면 /chats?filter=NEEDS_REPLY(D55), 주 메뉴 7개 그대로", async ({
+  page,
+}) => {
   await page.goto("/orders");
   const chat = page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ });
   await expect(chat).not.toHaveAttribute("aria-current", "page");
+  await expect(chat).toHaveAccessibleName(/^채팅, 답 필요 [1-9]\d*건$/);
+  await expect(chat).toHaveAttribute("href", "/chats?filter=NEEDS_REPLY");
   await chat.click();
-  await page.waitForURL(/\/chats$/);
+  await page.waitForURL(/\/chats\?filter=NEEDS_REPLY$/);
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
   await expect(chat).toHaveAttribute("aria-current", "page");
   await expect(

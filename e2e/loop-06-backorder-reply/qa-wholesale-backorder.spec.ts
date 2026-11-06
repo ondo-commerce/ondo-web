@@ -3,6 +3,7 @@ import {
   installClock,
   log,
   login,
+  pushChats,
   roomList,
   row,
 } from "../loop-04-chat/helpers";
@@ -58,7 +59,8 @@ function bubbleOf(page: Page, m: Injected | undefined): Locator {
 }
 
 async function openRoom1(page: Page) {
-  await page.getByRole("banner").getByRole("link", { name: /^채팅/ }).click();
+  /* 헤더 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 가서(D55) 봄봄상회 행이 없을 수 있다 — 셸 라우터로 전체 목록 */
+  await pushChats(page);
   await row(page, "봄봄상회").click();
   await expect(page).toHaveURL(/room=1$/);
 }

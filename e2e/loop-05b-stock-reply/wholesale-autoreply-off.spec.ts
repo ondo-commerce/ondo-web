@@ -8,6 +8,7 @@ import {
   login,
   mock,
   openChats,
+  pushChats,
   ROOMS_GET,
   row,
   settled,
@@ -199,8 +200,9 @@ test.describe("S9-1 S9-2 목록 머리 스위치", () => {
     expect(put).toBe(200);
     const before = await count(page, SETTINGS_GET);
 
-    await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
-    await page.waitForURL(/\/chats$/);
+    /* 화면 안 이동으로 다시 들어온다. 헤더 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 가서(D55) 봄봄상회 행이 없다 —
+       셸 라우터로 전체 목록(`pushChats`) */
+    await pushChats(page);
     await waitCount(page, SETTINGS_GET, before + 1);
     await settled(page, SETTINGS_GET);
     await expect(autoSwitch(page)).not.toBeChecked();

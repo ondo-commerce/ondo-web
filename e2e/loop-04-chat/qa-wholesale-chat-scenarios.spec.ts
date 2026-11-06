@@ -12,6 +12,7 @@ import {
   MESSAGES_GET,
   mock,
   openChats,
+  pushChats,
   READ_POST,
   roomList,
   row,
@@ -108,8 +109,8 @@ test("(a) 헤더 채팅 → 목록 → 안 읽은 방 열기 → 배지 0, 읽�
   page,
 }) => {
   await page.goto("/orders");
-  await page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ }).click();
-  await page.waitForURL(/\/chats$/);
+  /* 헤더 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 간다(D55). 이 시험은 전체 목록이 전제라 셸 라우터로 간다 */
+  await pushChats(page);
   const unread = row(page, "봄봄상회").locator("[data-unread]");
   await expect(unread).toHaveCount(1);
   await page.screenshot({ path: path.join(QA_DIR, "a-list-1470.png") });

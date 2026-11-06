@@ -60,6 +60,26 @@ export async function openChats(page: Page, roomId?: number): Promise<void> {
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
 }
 
+/**
+ * 지금 화면에서 조건 없는 `/chats` 목록으로(클라이언트 이동이라 목 상태와 캐시가 산다). 헤더 `채팅` 링크는 답 필요
+ * n ≥ 1이면 `/chats?filter=NEEDS_REPLY`로 간다(loop-08h D55 Q1 ①) — 링크를 누르면 count 응답이 언제 왔느냐에 따라
+ * 시작 목록이 흔들린다. 링크가 보인 뒤(셸이 떴다) 셸 라우터로 간다(08b `gotoChats`와 같은 길)
+ */
+export async function pushChats(page: Page): Promise<void> {
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: /^채팅/ }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        next: { router: { push: (href: string) => void } };
+      }
+    ).next.router.push("/chats"),
+  );
+  await page.waitForURL(/\/chats$/);
+  await expect(roomList(page).getByRole("link").first()).toBeVisible();
+}
+
 export function roomList(page: Page): Locator {
   return page.getByRole("list", { name: "대화 목록", exact: true });
 }

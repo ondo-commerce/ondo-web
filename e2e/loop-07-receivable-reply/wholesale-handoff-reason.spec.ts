@@ -13,6 +13,7 @@ import {
   log,
   login,
   MESSAGES_GET,
+  pushChats,
   roomList,
   row,
   SEND_POST,
@@ -198,10 +199,9 @@ async function nextPoll(page: Page): Promise<number> {
   return n;
 }
 
-/** 헤더 채팅 → 방 1. 클라이언트 이동 */
+/** 전체 목록 → 방 1. 클라이언트 이동. 헤더 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 가서(D55) 셸 라우터로 간다 */
 async function openRoom1(page: Page): Promise<void> {
-  await chatLink(page).click();
-  await expect(roomList(page).getByRole("link").first()).toBeVisible();
+  await pushChats(page);
   await row(page, "봄봄상회").click();
   await expect(page).toHaveURL(/room=1$/);
   await expect(log(page)).toBeVisible();
