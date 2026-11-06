@@ -415,20 +415,26 @@ test.describe("S2 헤더 답 필요 배지 → 답 필요 목록", () => {
   });
 
   /* 원문 S2-9 ③은 행 101이다. rooms-70에서 101(i=1, 홀수)은 안 읽음이고 답 필요가 아니라 걸러진 목록에 없다.
-     위 두 시험은 첫 답 필요 방 104로 바꿨다(02-dev-2 §5). 원래 조건을 실패로 남긴다(brief 규칙 5) */
-  test.fail(
-    "S2-9 ③ 원문: 배지로 온 답 필요 목록에 행 101이 있다",
-    async ({ page }) => {
-      await enterDashboard(page, { seed: "rooms-70" });
-      await expectBadge(page, 17);
-      await chatLink(page).click();
-      await expect(page).toHaveURL(NEEDS_URL);
-      await expect(chatRows(page)).toHaveCount(17);
-      await expect(page.locator('a[data-room-id="101"]')).toBeVisible({
-        timeout: 2_000,
-      });
-    },
-  );
+     위 두 시험은 첫 답 필요 방 104로 바꿨다(02-dev-2 §5). 원래 조건을 실패로 남긴다(brief 규칙 5).
+     예상 실패는 행 101 단언 하나로 좁힌다(리뷰 08h-R3) — 로그인, 배지, href, 필터 주소, 행 17개는 보통 단언이라 거기서
+     깨지면 "예상 밖 실패"다. 예전엔 test.fail이 전부를 품어 href가 늘 `/chats`여도 "기대대로 실패"로 넘어갔다 */
+  test("S2-9 ③ 원문: 배지로 온 답 필요 목록에 행 101이 있다", async ({
+    page,
+  }) => {
+    await enterDashboard(page, { seed: "rooms-70" });
+    await expectBadge(page, 17);
+    await expect(chatLink(page)).toHaveAttribute(
+      "href",
+      "/chats?filter=NEEDS_REPLY",
+    );
+    await chatLink(page).click();
+    await expect(page).toHaveURL(NEEDS_URL);
+    await expect(chatRows(page)).toHaveCount(17);
+    test.fail(true, "D55 원문 조건: rooms-70에서 101은 답 필요가 아님");
+    await expect(page.locator('a[data-room-id="101"]')).toBeVisible({
+      timeout: 2_000,
+    });
+  });
 });
 
 /* `/chats` 안에서 배지를 누름(같은 라우트 push). 고치기 전(5009d04)엔 주소만 바뀌고 칩과 목록이 그대로였다 */
