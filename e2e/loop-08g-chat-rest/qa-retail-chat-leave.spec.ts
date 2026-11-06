@@ -33,8 +33,8 @@ test.skip(
   "fix-376-retail-chat-leave 전용(08g helpers.ts가 있는 트리)",
 );
 
-const SHOTS =
-  "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-08g-chat-rest/qa";
+/* 회귀 실행의 그림은 실행별 출력 폴더로(codex-meta M3). QA 증거 그림은 runs/qa/에 이미 있다 */
+const shot = (name: string) => ({ path: test.info().outputPath(name) });
 const PRODUCT_11 = "/products/11";
 const CART = "/cart";
 const LATE = 3_000;
@@ -157,26 +157,26 @@ test("화면: 1280 상품 11 문의하기 → 장바구니로 떠남 → 3초 �
 }) => {
   await startAt(page, PRODUCT_11);
   await pressLate(page);
-  await page.screenshot({ path: `${SHOTS}/leave-1-opening-1280.png` });
+  await page.screenshot(shot("leave-1-opening-1280.png"));
   await page.getByRole("link", { name: /^장바구니/ }).click();
   await expect(page).toHaveURL(CART);
   expect(await deliverLate(page)).toBe(200);
   await expect(page).toHaveURL(CART);
   expect(await roomPushes(page)).toEqual([]);
   await expect(appAlert(page)).toHaveCount(0);
-  await page.screenshot({ path: `${SHOTS}/leave-2-cart-after-3s-1280.png` });
+  await page.screenshot(shot("leave-2-cart-after-3s-1280.png"));
 
   /* 사장이 돌아오는 길: 브라우저 뒤로 */
   await page.goBack();
   await expect(page).toHaveURL(PRODUCT_11);
   await expect(inquiryButton(page)).toBeEnabled();
-  await page.screenshot({ path: `${SHOTS}/leave-3-back-enabled-1280.png` });
+  await page.screenshot(shot("leave-3-back-enabled-1280.png"));
   await inquiryButton(page).click();
   await expect(page).toHaveURL(`/chats/1?from=${PRODUCT_11}`);
   expect((await requests(page, CREATE_POST)).map((r) => r.status)).toEqual([
     200, 200,
   ]);
-  await page.screenshot({ path: `${SHOTS}/leave-4-room1-1280.png` });
+  await page.screenshot(shot("leave-4-room1-1280.png"));
 });
 
 test.describe("02-dev-fix §6 1 프로그램 이동 시작~커밋 틈", () => {
