@@ -37,6 +37,66 @@ const NEW_SEQ = 121;
 /** 사장 스크롤 창(`USER_SCROLL_WINDOW_MS`). 손으로 적는다 — 앱 상수를 가져다 쓰면 같은 실수를 같이 한다 */
 const USER_SCROLL_WINDOW_MS = 400;
 
+/** 페이지 안 시계 기록(`window.__ac08h`). 앱과 같은 `performance.now()`로 잰다(리뷰 R2) */
+interface InputClock {
+  /** 마지막 wheel 또는 scroll 시각 */
+  lastInput: number | null;
+  /** log 높이가 처음 바뀐 걸 ResizeObserver가 본 시각과 그때의 `lastInput` */
+  resizeAt: number | null;
+  inputAtResize: number | null;
+}
+
+/**
+ * log에 wheel·scroll 리스너와 ResizeObserver를 건다. 앱이 사장 스크롤 창을 여는 시각(마지막 wheel·scroll의
+ * `performance.now()`)과 실제 높이가 바뀐 시각을 같은 시계로 남긴다. `setViewportSize`는 Node에서 가서 그 반환 시각은
+ * 페이지의 창 변경 시각이 아니다 — 페이지 ResizeObserver 콜백 시각을 쓴다
+ */
+async function armInputClock(page: Page): Promise<void> {
+  await log(page).evaluate((el) => {
+    const clock: InputClock = {
+      lastInput: null,
+      resizeAt: null,
+      inputAtResize: null,
+    };
+    Object.assign(window, { __ac08h: clock });
+    const mark = () => {
+      clock.lastInput = performance.now();
+    };
+    el.addEventListener("wheel", mark, { passive: true });
+    el.addEventListener("scroll", mark);
+    const startHeight = el.clientHeight;
+    /* observe 직후 첫 콜백(지금 크기)은 건너뛴다 — 높이가 바뀐 첫 콜백만 */
+    const probe = new ResizeObserver(() => {
+      if (el.clientHeight === startHeight) return;
+      probe.disconnect();
+      clock.resizeAt = performance.now();
+      clock.inputAtResize = clock.lastInput;
+    });
+    probe.observe(el);
+  });
+}
+
+async function readInputClock(page: Page): Promise<InputClock> {
+  return page.evaluate(() => {
+    const clock = (window as { __ac08h?: InputClock }).__ac08h;
+    if (clock === undefined) throw new Error("armInputClock 안 함");
+    return clock;
+  });
+}
+
+/** 전제조건: 높이 변경이 마지막 wheel·scroll부터 사장 스크롤 창 안에 났다. 안 맞으면 실패(통과로 치지 않음) */
+function expectInsideUserScrollWindow(clock: InputClock): void {
+  note("input-clock", clock);
+  if (clock.resizeAt === null || clock.inputAtResize === null)
+    throw new Error(
+      `전제조건: 입력 또는 높이 변경 기록 없음 ${JSON.stringify(clock)}`,
+    );
+  expect(
+    clock.resizeAt - clock.inputAtResize,
+    "전제조건: 마지막 wheel·scroll → 높이 변경 < 사장 스크롤 창",
+  ).toBeLessThan(USER_SCROLL_WINDOW_MS);
+}
+
 /** 따라가기 0: 기준 말풍선 top 이동 ≤ 4px이고 scrollTop 변화 ≤ 4px */
 async function expectNoFollow(
   page: Page,
@@ -152,20 +212,18 @@ test.describe("1280×800", () => {
     page,
   }) => {
     const { reads, baseReads } = await openAtBottom(page);
+    await armInputClock(page);
     await wheelUp(page, 300);
-    const wheeledAt = Date.now();
     const anchor = await anchorOf(page);
     await page.setViewportSize({ width: 1280, height: 600 });
-    const elapsed = Date.now() - wheeledAt;
-    note("anchor", { anchor, elapsedMs: elapsed });
-    /* 전제조건: 창을 바꾼 때가 사장 스크롤 창 안이다(휠이 실제로 옮긴 뒤부터 잼 — 휠 이벤트는 그보다 앞이다) */
-    expect(elapsed, "전제조건: 사장 스크롤 창 안").toBeLessThan(
-      USER_SCROLL_WINDOW_MS,
-    );
     await expect
       .poll(async () => (await logMetrics(page)).clientHeight)
       .toBeLessThan(500);
     await frames(page);
+    note("anchor", anchor);
+    /* 전제조건: 창 변경이 사장 스크롤 창 안이다. 시각은 둘 다 페이지 `performance.now()`(리뷰 R2 — 전에는 wheelUp의
+       값 대기가 끝난 뒤 Node 시계로 찍어 실제 마지막 scroll과 달랐다) */
+    expectInsideUserScrollWindow(await readInputClock(page));
     const shrunk = await record(page, "after-resize");
     expect(shrunk.d, "바닥 아님 유지").toBeGreaterThan(48);
     expect(
