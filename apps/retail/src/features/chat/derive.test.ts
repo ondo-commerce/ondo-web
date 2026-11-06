@@ -437,10 +437,16 @@ describe("S5-1 S5-13 입구 주소와 돌아가기", () => {
       ).toBe("release");
     });
 
-    it("해시만 바뀜 → 세대 키가 같아 이동", () => {
-      const before = navigationKeyOf("/products/11", "");
-      // `location.hash = "#detail"` 뒤에도 usePathname, useSearchParams 값은 그대로다
-      expect(navigationKeyOf("/products/11", "")).toBe(before);
+    // 해시 규칙(`location.hash`만 바뀌면 세대 그대로)은 여기서 못 가른다 — `navigationKeyOf`는 해시를 입력으로 받지
+    // 않고, 주소에서 키를 만드는 `keyOfUrl`은 셸(`ChatShellProvider`) 안에 있다. 그 규칙은 e2e S5-9 해시 시험이 지킨다
+    it("같은 경로, 같은 쿼리면 세대 그대로 → 이동. 쿼리만 달라도 세대 키는 다르다", () => {
+      expect(navigationKeyOf("/products/11", "from=x")).toBe(
+        "/products/11?from=x",
+      );
+      // 쿼리를 무시하면 쿼리만 바뀐 이동(S5-9 쿼리)을 떠남으로 못 센다
+      expect(navigationKeyOf("/products/11", "from=x")).not.toBe(
+        navigationKeyOf("/products/11", "from=y"),
+      );
       expect(
         entryResponseAction({
           clickedGeneration: 0,
