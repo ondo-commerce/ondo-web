@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bottomCheckHeight,
   historySlotOf,
   isAtBottom,
   isTouchScrollUp,
@@ -112,6 +113,38 @@ describe("isAtBottom (S2-1)", () => {
     expect(isAtBottom(1000, 452, 500)).toBe(true);
     expect(isAtBottom(1000, 451, 500)).toBe(false);
     expect(isAtBottom(400, 0, 500)).toBe(true);
+  });
+});
+
+describe("bottomCheckHeight — scroll이 바닥을 잴 높이(loop-08h S1-8)", () => {
+  it("사장 스크롤 중이면 지금 높이 — 옛 높이로 재면 휠로 조금 올린 것을 바닥으로 본다", () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: 523,
+        clientHeight: 449,
+        userScrolled: true,
+      }),
+    ).toBe(449);
+  });
+
+  it("ResizeObserver가 없으면(observedHeight null) 지금 높이", () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: null,
+        clientHeight: 449,
+        userScrolled: false,
+      }),
+    ).toBe(449);
+  });
+
+  it('그 밖(프로그램 scroll)은 ResizeObserver가 마지막으로 본 높이 — 줄어든 높이로 "바닥 아님"을 쓰지 않는다', () => {
+    expect(
+      bottomCheckHeight({
+        observedHeight: 523,
+        clientHeight: 449,
+        userScrolled: false,
+      }),
+    ).toBe(523);
   });
 });
 
