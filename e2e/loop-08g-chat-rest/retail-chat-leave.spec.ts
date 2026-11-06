@@ -9,6 +9,7 @@ import {
   createCount,
   deliverLate,
   entryPushes,
+  holdRsc,
   inquiryButton,
   LATE,
   pressInquiry,
@@ -180,6 +181,38 @@ test.describe("S5-9 같은 인스턴스", () => {
     expect(await entryPushes(page)).toEqual([
       `push /chats/34?from=${PRODUCT_31}`,
     ]);
+  });
+});
+
+test.describe("R1 이동 시작 뒤, 새 화면 커밋 전에 온 응답", () => {
+  test("① 장바구니 RSC를 붙잡은 채 방 응답이 먼저 → 방 이동 0 → RSC 풀면 /cart, POST 1", async ({
+    page,
+  }) => {
+    await startAt(page, PRODUCT_11);
+    await pressLate(page);
+    const cartRsc = await holdRsc(page, CART);
+    await cartLink(page).click();
+    await cartRsc.held;
+    /* 새 화면이 아직 안 왔다 — 입구는 살아 있고 셸 effect도 아직 안 돌았다 */
+    await expect(page).toHaveURL(PRODUCT_11);
+    expect(await deliverLate(page)).toBe(200);
+    expect(await entryPushes(page)).toEqual([]);
+
+    cartRsc.release();
+    await expect(page).toHaveURL(CART);
+    await expectDropped(page, CART);
+  });
+
+  test("② 같은 인스턴스 쿼리 왕복(?from=x → 원래 주소) 뒤 방 응답 → 이동 0, 버튼 켜짐", async ({
+    page,
+  }) => {
+    await startAt(page, PRODUCT_31);
+    await pressLate(page);
+    await routerGo(page, `${PRODUCT_31}?from=x`, "replace");
+    await routerGo(page, PRODUCT_31, "replace");
+    expect(await deliverLate(page)).toBe(201);
+    await expectDropped(page, PRODUCT_31);
+    await expect(inquiryButton(page)).toBeEnabled();
   });
 });
 

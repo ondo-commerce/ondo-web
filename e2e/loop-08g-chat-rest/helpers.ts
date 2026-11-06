@@ -123,6 +123,40 @@ export async function routerGo(
   await expect(page).toHaveURL(path);
 }
 
+/**
+ * 그 경로의 RSC 요청(클라이언트 이동이 새 화면을 받는 fetch, 헤더 `rsc: 1`)을 붙잡아 둔다. "이동 시작 ~ 새 화면 커밋"
+ * 사이를 원하는 만큼 늘려 그 틈에 방 응답을 보내려고(리뷰 R1). `held`는 첫 요청이 걸렸을 때 풀리고, `release`를
+ * 부르면 붙잡은 요청을 그대로 서버로 보낸다
+ */
+export async function holdRsc(
+  page: Page,
+  pathname: string,
+): Promise<{ held: Promise<void>; release: () => void }> {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markHeld = () => {};
+  const held = new Promise<void>((resolve) => {
+    markHeld = resolve;
+  });
+  /* `page.route`가 아니라 context다 — 목 worker(MSW service worker)가 떠 있으면 페이지 요청은 worker가 받아 다시
+     fetch하고, 그 요청은 context route에만 걸린다(`page.route`로는 붙잡지 못해 시험이 멈췄다) */
+  await page.context().route(
+    (url) => url.pathname === pathname,
+    async (route) => {
+      if (route.request().headers()["rsc"] !== "1") {
+        await route.fallback();
+        return;
+      }
+      markHeld();
+      await gate;
+      await route.fallback();
+    },
+  );
+  return { held, release };
+}
+
 /** 헤더 장바구니 링크(뱃지 숫자가 이름에 붙는다) */
 export function cartLink(page: Page): Locator {
   return page.getByRole("link", { name: /^장바구니/ });
