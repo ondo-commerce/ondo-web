@@ -205,8 +205,19 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
   await expect(first).toContainText("방금");
   await page.screenshot({ path: `${SHOTS}/a-retail-panel-1470.png` });
 
-  /* 6. 행 → 미송 화면 D, 배지 없음 */
+  /* 6. 행 → 미송 화면 D, 배지 없음.
+     미송 표는 Server Component가 stub(3199)에서 읽어 RSC로 온다. 그 도착 응답(본문 끝까지)을 기다린 뒤 표를 본다 —
+     stub 묶음 `--workers=2` 부하에서 RSC가 5초를 넘겨 표 단언이 먼저 시간을 넘긴 적이 있다(08f-Q2, 08g) */
+  const arrived = page.waitForResponse((r) => {
+    const headers = r.request().headers();
+    return (
+      new URL(r.url()).pathname === "/backorders" &&
+      headers["rsc"] === "1" &&
+      headers["next-router-prefetch"] === undefined
+    );
+  });
   await first.click();
+  await (await arrived).finished();
   await expect(page).toHaveURL("/backorders?wholesaler=101");
   await expect(
     page
@@ -255,12 +266,10 @@ test("(b) bombom 패널 연 뒤 로그아웃 → miso 로그인. 새 count 오�
     });
     await page.clock.runFor(500);
   }
-  test
-    .info()
-    .annotations.push({
-      type: "miso-window",
-      description: JSON.stringify(seen),
-    });
+  test.info().annotations.push({
+    type: "miso-window",
+    description: JSON.stringify(seen),
+  });
   expect(
     seen.every((s) => s.badge === 0 && s.name === "알림"),
     "miso 로그인 직후 bombom 배지 0",
@@ -309,7 +318,8 @@ for (const vp of PHONES) {
     const markAllLines = await markAll.evaluate((el) => {
       const range = document.createRange();
       range.selectNodeContents(el);
-      return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      return new Set([...range.getClientRects()].map((r) => Math.round(r.top)))
+        .size;
     });
     const list = panel(page).locator(".overflow-y-auto");
     await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
@@ -381,12 +391,10 @@ test("누출: 3003 입고일 변경 주입 뒤 목록, count JSON과 패널 DOM�
     data: { title: string; body: string | null }[];
   };
   const mine = parsed.data.find((n) => n.body?.includes("남은 6장"));
-  test
-    .info()
-    .annotations.push({
-      type: "bodies",
-      description: JSON.stringify(parsed.data.slice(0, 3)),
-    });
+  test.info().annotations.push({
+    type: "bodies",
+    description: JSON.stringify(parsed.data.slice(0, 3)),
+  });
   expect(found, "금지 키").toEqual([]);
   expect(mine, "봄봄 몫 6장(9001 4 + 9006 2)").toBeDefined();
   expect(both).not.toMatch(/9장|15장|대기상회/);
