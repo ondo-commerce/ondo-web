@@ -85,7 +85,9 @@ test("S2-6 소매 보내기 지연 401 → 다른 탭 bombom 로그인 → 끊�
   expect(response.status(), "그 polling 응답").toBe(200);
   await response.finished();
   await expect
-    .poll(() => readMarkSequences(page), "그 회차 meta(7)가 화면에 반영")
+    .poll(() => readMarkSequences(page), {
+      message: "그 회차 meta(7)가 화면에 반영",
+    })
     .toEqual([7]);
   await expect
     .poll(async () => ({
