@@ -19,8 +19,8 @@ import {
 
 assertStubServers();
 
-const SHOTS =
-  "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-08g-chat-rest/qa";
+/* 회귀 실행의 그림은 실행별 출력 폴더로(codex-meta M3). QA 증거 그림은 runs/qa/에 이미 있다 */
+const shot = (name: string) => ({ path: test.info().outputPath(name) });
 
 for (const { width, height, h } of [
   { width: 390, height: 844, h: 44 },
@@ -57,8 +57,8 @@ for (const { width, height, h } of [
       type: "measure",
       description: JSON.stringify({ retry: a, remove: b }),
     });
-    await bubble.screenshot({ path: `${SHOTS}/failed-links-${width}.png` });
-    await page.screenshot({ path: `${SHOTS}/failed-links-page-${width}.png` });
+    await bubble.screenshot(shot(`failed-links-${width}.png`));
+    await page.screenshot(shot(`failed-links-page-${width}.png`));
 
     expect(a.h).toBe(h);
     expect(b.h).toBe(h);
