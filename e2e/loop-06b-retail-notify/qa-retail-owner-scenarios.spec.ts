@@ -39,8 +39,37 @@ import {
 
 assertStubServers();
 test.afterAll(assertSameDay);
-/* stub 미송 표는 프로세스에 하나다(02-dev 부채 4). 리허설의 eta 주입을 다른 spec reset이 덮지 않게 */
+/* 파일 안 순서를 지킨다(장면 순서대로 스크린샷을 남긴다) */
 test.describe.configure({ mode: "serial" });
+
+const STUB = "http://localhost:3199";
+
+/**
+ * 이 시험만의 stub 미송 표(08f M2 격리, 08g 리뷰 R6). 공유 표는 stub 프로세스에 하나라 `serial`(파일 안만 직렬)로는 못
+ * 지킨다 — 다른 worker의 `POST /__stub/reset`, `stubEta`가 리허설 eta 주입과 서버 조회 사이에 끼면 시드 날짜로 돌아간다
+ * (08f-Q2 원인 후보). 시험마다 `?backorders=<키>`로 시드 표를 따로 만들고 쿠키 `stub_backorders`로 그 표를 읽게 한다.
+ * 키는 08f `retail-helpers.ts`와 같은 모양(반복, 재시도가 겹치지 않게). 지금 이 표를 읽는 건 (a)뿐이지만 파일 전체에 건다
+ */
+function backorderScope(): string {
+  const info = test.info();
+  return `06b-owner-${info.testId}-${info.repeatEachIndex}-${info.retry}`;
+}
+
+test.beforeEach(async ({ page }) => {
+  const scope = backorderScope();
+  const res = await page.request.post(
+    `${STUB}/__stub/reset?backorders=${encodeURIComponent(scope)}`,
+    { data: { backorders: "seed" } },
+  );
+  expect(res.status(), "stub 미송 범위 seed").toBe(200);
+  await page.context().addCookies([
+    {
+      name: "stub_backorders",
+      value: scope,
+      url: test.info().project.use.baseURL ?? "http://localhost:3101",
+    },
+  ]);
+});
 
 const SHOTS =
   "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-06b-retail-notify/qa";
@@ -101,9 +130,8 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
       `await fetch("/__mock/notifications/reset",{method:"POST",body:JSON.stringify({empty:true})})`,
     ),
   ).toBe(200);
-  expect(
-    (await page.request.post("http://localhost:3199/__stub/reset")).status(),
-  ).toBe(200);
+  /* stub 초기화는 `beforeEach`의 이 시험 범위 표(시드)다. 예전 공유 `POST /__stub/reset`(키 없음)은 다른 worker의
+     장바구니와 공유 미송 표까지 비워서 뺐다(리뷰 R6) */
   mark("초기화");
 
   /* 1. 도매 답 주입 → 30초 안 채팅 배지 */
@@ -181,7 +209,7 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
     ),
   ).toBe(200);
   const eta = await page.request.post(
-    "http://localhost:3199/__stub/backorders/eta",
+    `${STUB}/__stub/backorders/eta?backorders=${encodeURIComponent(backorderScope())}`,
     {
       headers: { "Content-Type": "application/json" },
       data: JSON.stringify({ variantId: 3019, expectedInboundDate: D }),
@@ -205,8 +233,19 @@ test("(a) S4-3 리허설 근사: 대본 §8 콘솔 줄 그대로, 실제 시계,
   await expect(first).toContainText("방금");
   await page.screenshot({ path: `${SHOTS}/a-retail-panel-1470.png` });
 
-  /* 6. 행 → 미송 화면 D, 배지 없음 */
+  /* 6. 행 → 미송 화면 D, 배지 없음.
+     미송 표는 Server Component가 stub(3199)에서 읽어 RSC로 온다. 그 도착 응답(본문 끝까지)을 기다린 뒤 표를 본다 —
+     stub 묶음 `--workers=2` 부하에서 RSC가 5초를 넘겨 표 단언이 먼저 시간을 넘긴 적이 있다(08f-Q2, 08g) */
+  const arrived = page.waitForResponse((r) => {
+    const headers = r.request().headers();
+    return (
+      new URL(r.url()).pathname === "/backorders" &&
+      headers["rsc"] === "1" &&
+      headers["next-router-prefetch"] === undefined
+    );
+  });
   await first.click();
+  await (await arrived).finished();
   await expect(page).toHaveURL("/backorders?wholesaler=101");
   await expect(
     page
@@ -255,12 +294,10 @@ test("(b) bombom 패널 연 뒤 로그아웃 → miso 로그인. 새 count 오�
     });
     await page.clock.runFor(500);
   }
-  test
-    .info()
-    .annotations.push({
-      type: "miso-window",
-      description: JSON.stringify(seen),
-    });
+  test.info().annotations.push({
+    type: "miso-window",
+    description: JSON.stringify(seen),
+  });
   expect(
     seen.every((s) => s.badge === 0 && s.name === "알림"),
     "miso 로그인 직후 bombom 배지 0",
@@ -309,7 +346,8 @@ for (const vp of PHONES) {
     const markAllLines = await markAll.evaluate((el) => {
       const range = document.createRange();
       range.selectNodeContents(el);
-      return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      return new Set([...range.getClientRects()].map((r) => Math.round(r.top)))
+        .size;
     });
     const list = panel(page).locator(".overflow-y-auto");
     await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
@@ -381,12 +419,10 @@ test("누출: 3003 입고일 변경 주입 뒤 목록, count JSON과 패널 DOM�
     data: { title: string; body: string | null }[];
   };
   const mine = parsed.data.find((n) => n.body?.includes("남은 6장"));
-  test
-    .info()
-    .annotations.push({
-      type: "bodies",
-      description: JSON.stringify(parsed.data.slice(0, 3)),
-    });
+  test.info().annotations.push({
+    type: "bodies",
+    description: JSON.stringify(parsed.data.slice(0, 3)),
+  });
   expect(found, "금지 키").toEqual([]);
   expect(mine, "봄봄 몫 6장(9001 4 + 9006 2)").toBeDefined();
   expect(both).not.toMatch(/9장|15장|대기상회/);
