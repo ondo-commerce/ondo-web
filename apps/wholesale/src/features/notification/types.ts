@@ -75,6 +75,11 @@ export interface BadgeView {
   badge: string | null;
 }
 
+/** 채팅 링크. 배지와 같은 값에서 갈 곳도 고른다(loop-08h D55 Q1 ①) */
+export interface ChatBadgeView extends BadgeView {
+  href: string;
+}
+
 /** 패널 행 하나 */
 export interface NotificationRowView {
   id: number;

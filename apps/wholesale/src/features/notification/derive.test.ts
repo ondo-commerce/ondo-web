@@ -82,11 +82,12 @@ describe("S11-2 배지와 접근 이름", () => {
   });
 
   it("채팅 링크는 답 필요 방 수, 단위 '건'", () => {
-    expect(chatBadge(ok(3, 2))).toEqual({
+    /* href는 아래 loop-08h S2-1이 본다 — 여기는 이름과 알약만 */
+    expect(chatBadge(ok(3, 2))).toMatchObject({
       label: "채팅, 답 필요 2건",
       badge: "2",
     });
-    expect(chatBadge(ok(3, 0))).toEqual({ label: "채팅", badge: null });
+    expect(chatBadge(ok(3, 0))).toMatchObject({ label: "채팅", badge: null });
     expect(chatBadge(ok(0, 104)).badge).toBe("99+");
   });
 
@@ -97,7 +98,56 @@ describe("S11-2 배지와 접근 이름", () => {
       { kind: "unauthorized" } as const,
     ]) {
       expect(bellBadge(counts)).toEqual({ label: "알림", badge: null });
-      expect(chatBadge(counts)).toEqual({ label: "채팅", badge: null });
+      expect(chatBadge(counts)).toMatchObject({ label: "채팅", badge: null });
+    }
+  });
+});
+
+describe("loop-08h S2-1 채팅 링크가 갈 곳은 배지와 같은 값", () => {
+  /* 손으로 적는다 — 앱 상수를 가져다 쓰면 같은 실수를 같이 한다 */
+  const NEEDS = "/chats?filter=NEEDS_REPLY";
+
+  it("ok이고 답 필요 1, 99, 100 → 답 필요 목록. 이름과 알약은 그대로", () => {
+    expect(chatBadge(ok(0, 1))).toEqual({
+      label: "채팅, 답 필요 1건",
+      badge: "1",
+      href: NEEDS,
+    });
+    expect(chatBadge(ok(5, 99))).toEqual({
+      label: "채팅, 답 필요 99건",
+      badge: "99",
+      href: NEEDS,
+    });
+    expect(chatBadge(ok(0, 100))).toEqual({
+      label: "채팅, 답 필요 100건",
+      badge: "99+",
+      href: NEEDS,
+    });
+  });
+
+  it("ok 0 → /chats(알림만 있어도)", () => {
+    expect(chatBadge(ok(7, 0))).toEqual({
+      label: "채팅",
+      badge: null,
+      href: "/chats",
+    });
+  });
+
+  it("모름, 첫 실패, 이전 ok 뒤 재조회 실패, 401 → /chats", () => {
+    const afterOk = failedCounts(ok(0, 17));
+    expect(afterOk).toEqual({ kind: "failed", failures: 1 });
+    for (const counts of [
+      undefined,
+      failedCounts(undefined),
+      afterOk,
+      failedCounts(afterOk),
+      { kind: "unauthorized" } as const,
+    ]) {
+      expect(chatBadge(counts)).toEqual({
+        label: "채팅",
+        badge: null,
+        href: "/chats",
+      });
     }
   });
 });
