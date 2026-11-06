@@ -5,7 +5,9 @@ import {
   chatMock,
   chatNav,
   composer,
+  counterpartRead,
   log,
+  readMarkSequences,
   requests,
   roomRow,
   SEND_POST,
@@ -64,13 +66,27 @@ test("S2-6 소매 보내기 지연 401 → 다른 탭 bombom 로그인 → 끊�
     timeout: 8_000,
   });
   expect(await lastSendStatus(page)).toBe(401);
-  /* 끊김 안내가 늦게 서지 않는지는 다음 polling 응답이 끝난 뒤 본다(08g S5-7, 08e N4). 요청 수가 늘었다는 건 응답이
-     끝났다는 뜻이 아니라서 응답 완료(`waitForResponse`)를 기다리고, 그 응답의 React 반영은 값 poll로 본다 */
-  await page.waitForResponse(
+  /* 끊김 안내가 늦게 서지 않는지는 다음 polling 회차가 화면에 반영된 뒤 본다(08g S5-7, 08e N4, 리뷰 R4).
+     `{lost: 0, readonly: null}`은 기다리기 전부터 정상값이라 그것만 poll하면 첫 검사에서 통과한다. 이 시나리오엔
+     끊김 안내가 섰다가 사라지는 순서가 없다(처음부터 0) — 그래서 그 회차가 바꿀 다른 값을 만든다: 상대 읽음을 시드 6에서
+     7(마지막 소매 글)로 올리면 그 뒤 시작한 polling 응답 meta가 7을 들고, 반영되면 `읽음`이 seq 5 → 7로 옮겨 간다.
+     목은 요청 시점에 값을 정하니 올리기 전에 나가 있던 polling은 6을 든다 — 등록 뒤 시작한 요청만 잡는다 */
+  expect(await readMarkSequences(page), "시드 상대 읽음 6 → seq 5").toEqual([
+    5,
+  ]);
+  await counterpartRead(page, 1, 7);
+  const poll = await page.waitForRequest(
     (r) =>
       /\/api\/retail\/chat\/rooms\/1\/messages(\?|$)/.test(r.url()) &&
-      r.request().method() === "GET",
+      r.method() === "GET",
   );
+  const response = await poll.response();
+  if (response === null) throw new Error("polling 응답이 없다");
+  expect(response.status(), "그 polling 응답").toBe(200);
+  await response.finished();
+  await expect
+    .poll(() => readMarkSequences(page), "그 회차 meta(7)가 화면에 반영")
+    .toEqual([7]);
   await expect
     .poll(async () => ({
       lost: await page.getByRole("alert").filter({ hasText: LOST }).count(),
