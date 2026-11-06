@@ -1,11 +1,14 @@
 import {
   BADGE_MAX,
+  CHAT_HREF,
+  CHAT_NEEDS_REPLY_HREF,
   HEADER_BACKOFF_MS,
   HEADER_POLL_MS,
   ORDER_HREF,
 } from "./constants";
 import type {
   BadgeView,
+  ChatBadgeView,
   FetchedNotificationPage,
   HeaderCounts,
   Notification,
@@ -43,12 +46,18 @@ export function bellBadge(counts: HeaderCounts | undefined): BadgeView {
   };
 }
 
-/** 채팅 링크 배지(S11-2, Q2). 같은 규칙, 단위는 "건" */
-export function chatBadge(counts: HeaderCounts | undefined): BadgeView {
+/**
+ * 채팅 링크 배지(S11-2, Q2). 같은 규칙, 단위는 "건".
+ * 갈 곳도 배지가 보여 주는 같은 값으로 고른다(loop-08h D55 Q1 ①): 답 필요가 보이면 그 목록, 0이거나 count를
+ * 모르면(처음, 실패, 재조회 실패, 401) 조건 없는 받은편지함. 배지가 없는데 눌러서 빈 목록이 뜨지 않게 한다.
+ * 재조회 실패는 `failedCounts`가 이전 ok 값을 버리므로 배지와 href가 함께 내려간다
+ */
+export function chatBadge(counts: HeaderCounts | undefined): ChatBadgeView {
   const n = counts?.kind === "ok" ? counts.chatsNeedingReply : 0;
   return {
     label: n > 0 ? `채팅, 답 필요 ${n}건` : "채팅",
     badge: badgeText(n),
+    href: n > 0 ? CHAT_NEEDS_REPLY_HREF : CHAT_HREF,
   };
 }
 

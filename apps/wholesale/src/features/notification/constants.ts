@@ -29,6 +29,12 @@ export const ORDER_HREF = (orderId: number) => `/orders?order=${orderId}`;
 /** 채팅 받은편지함. 헤더 채팅 링크 */
 export const CHAT_HREF = "/chats";
 
+/**
+ * 답 필요 방만 모은 받은편지함(loop-08h S2). 채팅 feature의 URL 규칙(`?filter=`)을 import하지 않고 여기 적는다 —
+ * feature끼리 import 금지라 상수는 feature마다 따로 둔다
+ */
+export const CHAT_NEEDS_REPLY_HREF = "/chats?filter=NEEDS_REPLY";
+
 /** 패널 문구. 와이어프레임 `19_wholesale-notifications` 그대로 */
 export const PANEL_TEXT = {
   title: "알림",

@@ -48,10 +48,21 @@ export async function signOut(page: Page): Promise<void> {
   await page.waitForURL(/\/login/);
 }
 
-/** 헤더 `채팅` → `/chats` 목록 첫 행까지 */
+/**
+ * 조건 없는 `/chats` 목록 첫 행까지(클라이언트 이동이라 목 상태가 산다).
+ * 헤더 `채팅` 링크는 답 필요 n ≥ 1이면 `/chats?filter=NEEDS_REPLY`로 간다(loop-08h D55 Q1 ①). 그 값은 count 응답이
+ * 언제 오느냐에 따라 달라져 시작 주소가 흔들린다 — 그래서 링크가 보인 뒤(셸이 떴다) 셸 라우터로 `/chats`에 간다
+ */
 export async function gotoChats(page: Page): Promise<void> {
-  await chatLink(page).click();
-  await page.waitForURL(/\/chats/);
+  await expect(chatLink(page)).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        next: { router: { push: (href: string) => void } };
+      }
+    ).next.router.push("/chats"),
+  );
+  await page.waitForURL(/\/chats$/);
   await expect(chatRows(page).first()).toBeVisible();
 }
 

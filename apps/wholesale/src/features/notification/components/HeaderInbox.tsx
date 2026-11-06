@@ -44,9 +44,12 @@ function HeaderInboxBody() {
     <div className="contents" data-ac="S11-12 S11-15">
       {/* 채팅은 주 메뉴 탭이 아니다 — 어느 화면에서나 여는 받은편지함이고, 탭을 늘리면 `Topbar` 경고대로
           그 줄이 무너진다(loop-04 01-plan §4-1 1). 화면 이동이라 버튼이 아니라 `<a>`다.
-          IconButton은 asChild를 막아 두어 같은 모양(ghost, size-8, 아이콘 20px)을 여기서 그린다 */}
+          IconButton은 asChild를 막아 두어 같은 모양(ghost, size-8, 아이콘 20px)을 여기서 그린다.
+          갈 곳은 배지와 같은 count가 고른다(`chatBadge`). 헤더는 지금 주소(`useSearchParams`)를 안 본다 — 셸 전체에
+          Suspense 경계가 필요해지고 헤더가 채팅 URL 규칙을 알게 된다. 그래서 `/chats` 안에서 눌러도 방과 검색이
+          빠진다(loop-08h D55 Q2 ①) */}
       <Link
-        href={CHAT_HREF}
+        href={chat.href}
         aria-label={chat.label}
         title="채팅"
         aria-current={chatActive ? "page" : undefined}

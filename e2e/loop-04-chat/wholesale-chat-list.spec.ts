@@ -10,9 +10,11 @@ import {
   roomList,
   ROOMS_GET,
   row,
+  settled,
   waitCount,
   watchRequests,
 } from "./helpers";
+import { requests } from "../loop-03-upload-lifecycle/helpers";
 
 /**
  * #264 S2 — 도매 채팅 목록. 와이어프레임 `17_wholesale-chat` `#state-entry` `#state-list-default`
@@ -53,12 +55,19 @@ function focusedRoomId(page: Page): Promise<number | null> {
   });
 }
 
-test("S2-1 헤더 채팅 버튼 → /chats, 주 메뉴 7개 그대로", async ({ page }) => {
+/* AC가 loop-08h D55 Q1 ①로 바뀌었다: 배지가 있으면(`채팅, 답 필요 n건`) `/chats?filter=NEEDS_REPLY`, 없으면 `/chats`.
+   기획 결정으로 바뀐 AC라 옛 단언(`/\/chats$/`)은 test.fail로 남기지 않는다. 기본 시드는 답 필요가 1 이상이라 앞
+   경우를 단언한다 — count가 그려진 뒤 누른다(그 전에 누르면 아직 `/chats`라 갈 곳이 흔들린다) */
+test("S2-1 헤더 채팅 버튼 → 답 필요 n건이면 /chats?filter=NEEDS_REPLY(D55), 주 메뉴 7개 그대로", async ({
+  page,
+}) => {
   await page.goto("/orders");
   const chat = page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ });
   await expect(chat).not.toHaveAttribute("aria-current", "page");
+  await expect(chat).toHaveAccessibleName(/^채팅, 답 필요 [1-9]\d*건$/);
+  await expect(chat).toHaveAttribute("href", "/chats?filter=NEEDS_REPLY");
   await chat.click();
-  await page.waitForURL(/\/chats$/);
+  await page.waitForURL(/\/chats\?filter=NEEDS_REPLY$/);
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
   await expect(chat).toHaveAttribute("aria-current", "page");
   await expect(
@@ -66,6 +75,48 @@ test("S2-1 헤더 채팅 버튼 → /chats, 주 메뉴 7개 그대로", async ({
   ).toHaveCount(7);
   // 방을 자동으로 열지 않는다(디자인 결정 4)
   await expect(page.getByText("왼쪽 목록에서 대화를 고르세요")).toBeVisible();
+});
+
+const COUNT_GET = {
+  path: /\/api\/wholesale\/notifications\/unread-count(\?|$)/,
+  method: "GET",
+} as const;
+
+/* D55 Q1 ①의 다른 절반: 배지가 없으면 `/chats`. 방 0개 시드는 칩이 안 그려져 `전체`를 볼 수 없으니, 기본 시드에
+   count 500 한 번(08h 손잡이)으로 배지를 지운다. 목 상태는 문서 안에 있어 `goto` 뒤에 손잡이를 걸고, 30초 polling
+   한 번을 당겨 실패를 받는다. 실패 뒤 다음 count는 60초 뒤라 이 시험 안에서는 돌지 않는다 */
+test("S2-1 헤더 채팅 버튼 → 배지 없음(count 실패)이면 /chats, 칩 전체", async ({
+  page,
+}) => {
+  await page.goto("/orders");
+  const chat = page.getByRole("link", { name: /^채팅(, 답 필요 \d+건)?$/ });
+  await expect(chat).toHaveAccessibleName(/^채팅, 답 필요 [1-9]\d*건$/);
+  const status = await page.evaluate(
+    async () =>
+      (
+        await fetch("/__mock/notifications/fail", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "count", status: 500, times: 1 }),
+        })
+      ).status,
+  );
+  expect(status).toBe(200);
+  const before = await count(page, COUNT_GET);
+  await page.clock.fastForward(30_000);
+  await expect.poll(() => count(page, COUNT_GET)).toBeGreaterThan(before);
+  await settled(page, COUNT_GET);
+  expect((await requests(page, COUNT_GET)).at(-1)?.status).toBe(500);
+  await expect(chat).toHaveAccessibleName("채팅");
+  await expect(chat).toHaveAttribute("href", "/chats");
+  await chat.click();
+  await page.waitForURL(/\/chats$/);
+  await expect(
+    page
+      .getByRole("radiogroup", { name: "대화 필터" })
+      .getByRole("radio", { name: "전체", exact: true }),
+  ).toHaveAttribute("aria-checked", "true");
+  await expect(roomList(page).getByRole("link").first()).toBeVisible();
 });
 
 test.describe("S2-2 행: 이름, 미리보기, 시각, 안 읽은 수, 답 필요", () => {
