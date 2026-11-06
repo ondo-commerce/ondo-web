@@ -29,6 +29,8 @@ import {
   chatRoomHref,
   checkComposer,
   entryFailureOf,
+  entryResponseAction,
+  navigationKeyOf,
   failureText,
   formatClock,
   formatDateDivider,
@@ -394,6 +396,68 @@ describe("S5-1 S5-13 입구 주소와 돌아가기", () => {
     });
     expect(entryFailureOf(new TypeError("fetch failed"))).toEqual({
       message: "대화방을 열지 못했어요. 다시 눌러 주세요",
+    });
+  });
+
+  describe("loop-08g S5-3 방 만들기 응답 판정 — 이동 세대 + 마운트, 한 번 떠나면 무효", () => {
+    it("같은 세대, 마운트 → 지금처럼(이동)", () => {
+      expect(
+        entryResponseAction({
+          clickedGeneration: 3,
+          currentGeneration: 3,
+          mounted: true,
+        }),
+      ).toBe("apply");
+    });
+
+    it("언마운트 → 버림. 세대가 같아도(떠났다 같은 주소로 돌아와 새 입구가 섰어도) 옛 입구 응답은 버린다", () => {
+      expect(
+        entryResponseAction({
+          clickedGeneration: 3,
+          currentGeneration: 5,
+          mounted: false,
+        }),
+      ).toBe("drop");
+      expect(
+        entryResponseAction({
+          clickedGeneration: 3,
+          currentGeneration: 3,
+          mounted: false,
+        }),
+      ).toBe("drop");
+    });
+
+    it("같은 인스턴스, 세대 다름(쿼리만 바뀜) → 버림 + 버튼 풀기", () => {
+      expect(
+        entryResponseAction({
+          clickedGeneration: 3,
+          currentGeneration: 4,
+          mounted: true,
+        }),
+      ).toBe("release");
+    });
+
+    it("해시만 바뀜 → 세대 키가 같아 이동", () => {
+      const before = navigationKeyOf("/products/11", "");
+      // `location.hash = "#detail"` 뒤에도 usePathname, useSearchParams 값은 그대로다
+      expect(navigationKeyOf("/products/11", "")).toBe(before);
+      expect(
+        entryResponseAction({
+          clickedGeneration: 0,
+          currentGeneration: 0,
+          mounted: true,
+        }),
+      ).toBe("apply");
+    });
+
+    it("세대 키: 경로와 쿼리가 다르면 다르다", () => {
+      expect(navigationKeyOf("/products/11", "")).toBe("/products/11");
+      expect(navigationKeyOf("/products/11", "from=x")).toBe(
+        "/products/11?from=x",
+      );
+      expect(navigationKeyOf("/products/21", "")).not.toBe(
+        navigationKeyOf("/products/11", ""),
+      );
     });
   });
 
