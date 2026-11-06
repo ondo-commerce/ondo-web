@@ -6,6 +6,7 @@ import {
   captureReads,
   composer,
   count,
+  firstVisible,
   historyButton,
   historyEnd,
   historyFail,
@@ -15,6 +16,7 @@ import {
   log,
   logMetrics,
   openLongRoom,
+  READ_POST,
   ROOM_LONG,
   roomTitle,
   setScrollTop,
@@ -131,9 +133,14 @@ test.describe("리뷰 재현", () => {
   }) => {
     const reads = captureReads(page);
     await openLongRoom(page);
+    /* 첫 읽음(방 열 때 바닥이라 1건)은 요청이 나간 것만 보면 응답 전에 다음 단계로 간다. 그 POST 응답까지 받은 뒤
+       기록을 비워서, 뒤에 남는 건 incoming 뒤 읽음뿐이게 한다(메타 리뷰 08h-M1) */
     await expect
       .poll(() => reads.filter((r) => r.roomId === ROOM_LONG).length)
       .toBe(1);
+    await expect.poll(() => count(page, READ_POST)).toBeGreaterThan(0);
+    await settled(page, READ_POST);
+    reads.length = 0;
     /* 휠로 300px 올린다(바닥 판정 밖, 자동 불러오기 200px 밖) */
     const box = await log(page).boundingBox();
     if (box === null) throw new Error("log 없음");
@@ -142,11 +149,17 @@ test.describe("리뷰 재현", () => {
     await expect
       .poll(async () => (await logMetrics(page)).fromBottom)
       .toBeGreaterThanOrEqual(200);
+    /* 따라가기 0의 기준(기획 08h §6): 리사이즈 전에 처음 보이던 말풍선과 그 top */
+    const anchorSeq = await firstVisible(page);
+    const anchorTop = await topOf(page, anchorSeq);
     await shrinkTo700(page);
     const shrunk = await logMetrics(page);
     test.info().annotations.push({
       type: "evidence",
-      description: JSON.stringify({ afterResize: shrunk }),
+      description: JSON.stringify({
+        afterResize: shrunk,
+        anchor: { sequence: anchorSeq, top: anchorTop },
+      }),
     });
     expect(shrunk.fromBottom, "incoming 직전 바닥 아님").toBeGreaterThan(48);
 
@@ -154,21 +167,28 @@ test.describe("리뷰 재현", () => {
     await waitBubbles(page, 51);
     await nextPoll(page);
     const after = await logMetrics(page);
+    const afterTop = await topOf(page, anchorSeq);
     test.info().annotations.push({
       type: "evidence",
       description: JSON.stringify({
         afterIncoming: after,
+        anchorTopAfter: afterTop,
         reads: reads.filter((r) => r.roomId === ROOM_LONG),
       }),
     });
+    expect(anchorSeq, "전제조건: 기준 말풍선을 잡았다").toBeGreaterThan(0);
+    expect(
+      Math.abs(afterTop - anchorTop),
+      "따라가기 0: 기준 말풍선 top 이동",
+    ).toBeLessThanOrEqual(4);
     expect(
       Math.abs(after.scrollTop - shrunk.scrollTop),
-      "따라가기 0",
+      "따라가기 0: scrollTop 변화",
     ).toBeLessThanOrEqual(4);
     expect(
       reads.filter((r) => r.roomId === ROOM_LONG),
       "바닥이 아닌데 읽음",
-    ).toHaveLength(1);
+    ).toEqual([]);
     await expect(jumpButton(page)).toBeVisible();
   });
 });
