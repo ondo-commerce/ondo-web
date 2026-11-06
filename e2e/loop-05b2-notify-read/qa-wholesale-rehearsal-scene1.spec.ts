@@ -7,7 +7,7 @@ import {
   panel,
   rows,
 } from "./helpers";
-import { pushChats } from "../loop-04-chat/helpers";
+import { roomList } from "../loop-04-chat/helpers";
 
 /**
  * QA loop-05b2-notify-read — S13-3 리허설. `docs/12-demo-guide.md` 7절 도매 쪽 순서를 **진짜 시계로** 한 번 돈다.
@@ -55,9 +55,22 @@ test("S13-3 리허설 — 대본 7절 도매 쪽, 진짜 시계", async ({ page 
     200,
   );
 
-  /* 2. /chats 방 6 — 주 메뉴에 채팅이 없어 헤더 채팅 아이콘으로. 그 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 가서
-     (D55) 라온상점 행이 없다 — 시험은 링크가 아니라 방 6이 대상이라 셸 라우터로 전체 목록(`pushChats`) */
-  await pushChats(page);
+  /* 2. /chats 방 6 — 대본 7절 2단계 그대로 걷는다(메타 리뷰 08h-M3): 헤더 채팅(답 필요 n건) → 답 필요 목록 →
+     칩 `전체` → 라온상점. 리허설이라 셸 라우터로 건너뛰지 않는다. 배지 값은 누르기 전에 접근성 이름과 href로
+     확정한다 — count 응답 전에 누르면 `/chats`로 가서 대본과 다른 길이 된다 */
+  await expect(chatLink(page)).toHaveAccessibleName(/^채팅, 답 필요 \d+건$/);
+  await expect(chatLink(page)).toHaveAttribute(
+    "href",
+    "/chats?filter=NEEDS_REPLY",
+  );
+  await chatLink(page).click();
+  await expect(page).toHaveURL(/\/chats\?filter=NEEDS_REPLY$/);
+  await expect(roomList(page).getByRole("link").first()).toBeVisible();
+  await page
+    .getByRole("radiogroup", { name: "대화 필터" })
+    .getByRole("radio", { name: "전체", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/chats$/);
   await page.getByRole("link", { name: /^라온상점 / }).click();
   await expect(page).toHaveURL(/room=6/);
   const chatBefore = Number(

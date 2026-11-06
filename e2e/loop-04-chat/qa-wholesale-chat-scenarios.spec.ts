@@ -12,7 +12,6 @@ import {
   MESSAGES_GET,
   mock,
   openChats,
-  pushChats,
   READ_POST,
   roomList,
   row,
@@ -109,8 +108,19 @@ test("(a) 헤더 채팅 → 목록 → 안 읽은 방 열기 → 배지 0, 읽�
   page,
 }) => {
   await page.goto("/orders");
-  /* 헤더 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 간다(D55). 이 시험은 전체 목록이 전제라 셸 라우터로 간다 */
-  await pushChats(page);
+  /* 사장 시나리오라 진짜 헤더 링크로 간다(메타 리뷰 08h-M3). 링크는 답 필요 n ≥ 1이면 답 필요 목록으로 가므로(D55)
+     배지 값과 href를 누르기 전에 확정하고, 착지를 본 뒤 칩 `전체`로 전체 목록에 간다(대본 7절 2단계와 같은 순서) */
+  const link = page.getByRole("banner").getByRole("link", { name: /^채팅/ });
+  await expect(link).toHaveAccessibleName(/^채팅, 답 필요 \d+건$/);
+  await expect(link).toHaveAttribute("href", "/chats?filter=NEEDS_REPLY");
+  await link.click();
+  await expect(page).toHaveURL(/\/chats\?filter=NEEDS_REPLY$/);
+  await expect(roomList(page).getByRole("link").first()).toBeVisible();
+  await page
+    .getByRole("radiogroup", { name: "대화 필터" })
+    .getByRole("radio", { name: "전체", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/chats$/);
   const unread = row(page, "봄봄상회").locator("[data-unread]");
   await expect(unread).toHaveCount(1);
   await page.screenshot({ path: path.join(QA_DIR, "a-list-1470.png") });
