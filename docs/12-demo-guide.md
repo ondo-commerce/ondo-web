@@ -112,6 +112,8 @@ await fetch("/__mock/notifications/reset",{method:"POST",body:"{}"})
 1. 소매 탭 B: 빈티지 플라워 셔츠 상세 → `재고 문의` → 되묻기 칩 → 자동 답 카드 → 장바구니 담기(05b-1 소매 절반)
 2. 도매 탭 A `/chats`: 소매 문의가 도매 목에 닿지 않으므로 같은 문의를 넣는다. 방 6(라온상점)에 재고 문장 + 상품 문맥
 
+   헤더 채팅(답 필요 n건)을 누르면 답 필요 목록이 먼저 뜬다 → 칩 `전체` → 라온상점
+
    ```js
    await fetch("/__mock/chat/rooms/6/incoming",{method:"POST",body:JSON.stringify({body:"레드 M 몇 장 있어요",contextListingId:2001})})
    ```
