@@ -8,7 +8,6 @@ import {
   markAllButton,
   newerButton,
   openPanel,
-  panel,
   pauseClock,
   plus,
   R,
