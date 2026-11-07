@@ -19,7 +19,13 @@ import {
 } from "./backorder";
 import { chatHandlers, chatStore, resetChatMock } from "./chat";
 import { notificationHandlers } from "./notification";
-import { addMockOrder, mockOrders, mockPackings, orderHandlers } from "./order";
+import {
+  addMockOrder,
+  allocationPackingError,
+  mockOrders,
+  mockPackings,
+  orderHandlers,
+} from "./order";
 import { shipmentHandlers } from "./shipment";
 
 /**
@@ -432,10 +438,13 @@ describe("S1-6 삭제와 미송 부활", () => {
     ]);
   });
 
-  it("④ 주문 탭 길 포장(7002 8002 × 1) 삭제 → 미송 목 그대로(9002 남은 1, 3011 가용 6)", async () => {
+  // loop-08k S1-9 ③: 주문 탭 길 포장도 9002를 줄이게 돼 이름을 고치고 포장 직후 값을 더 본다. 끝 값은 그대로
+  it("④ 주문 탭 길 포장(7002 8002 × 1) → 9002 해소, 3011 가용 5 → 삭제 → 되살아남(9002 남은 1, 3011 가용 6)", async () => {
     await reset();
     const before = await snapshot();
     const id = await pack(7002, 8002, 1);
+    expect(backorderRow(9002)).toEqual([0, "RESOLVED"]);
+    expect((await snapshot()).available[3011]).toBe(5);
     expect((await del(id)).status).toBe(204);
     const after = await snapshot();
     expect([after.backorders, after.available]).toEqual([
@@ -606,13 +615,17 @@ describe("S1-5 출고 생명주기", () => {
 
 /* --- S1-7 부분 성공 없음 -------------------------------------------------- */
 
+/**
+ * ① ②는 loop-08k S1-9 ①에서 code가 `ALLOCATION_EXCEEDS_ORDER` → `BACKORDER_NOT_OPEN`으로 바뀌었다. 주문 탭 포장이
+ * 9002를 해소해서 미송 OPEN 검사에 먼저 걸린다. 주문 줄 잔량 가드 자체는 S1-11 ⑤의 직접 부름 시험이 본다
+ */
 describe("S1-7 부분 성공 없음(주문 줄 잔량 초과와 재고 실패)", () => {
   it.each([
     [
       "① 주문 탭 7002 포장 뒤 9002 × 1",
       true,
       [[9002, 1]],
-      "ALLOCATION_EXCEEDS_ORDER",
+      "BACKORDER_NOT_OPEN",
     ],
     [
       "② 같은 준비 뒤 [9003 × 2, 9002 × 1]",
@@ -621,7 +634,7 @@ describe("S1-7 부분 성공 없음(주문 줄 잔량 초과와 재고 실패)",
         [9003, 2],
         [9002, 1],
       ],
-      "ALLOCATION_EXCEEDS_ORDER",
+      "BACKORDER_NOT_OPEN",
     ],
     [
       "③ 기본 reset [9003 × 2, 9001 × 1](3003 재고 0)",
@@ -728,31 +741,34 @@ describe("S1-11 주문 취소와 배분", () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  /**
+   * ⑤ loop-08k S1-9 ②: HTTP로는 주문 탭 포장이 9002를 해소해 미송 OPEN 검사에 먼저 걸려, 08j-R1(취소 검사가 잔량
+   * 검사보다 먼저, D60)을 더는 증명하지 못한다. 그래서 가드 `allocationPackingError`를 직접 부른다(준비만 HTTP)
+   */
+  it("⑤ 직접 부름: 7002 주문 탭 포장 뒤 [7002 줄 × 1] → ALLOCATION_EXCEEDS_ORDER", async () => {
+    await reset();
+    await pack(7002, 8002, 1);
+    expect(
+      allocationPackingError([{ orderId: 7002, orderItemId: 8002, qty: 1 }]),
+    ).toBe("ALLOCATION_EXCEEDS_ORDER");
+  });
+
   it.each([
-    [
-      "[9002 × 1, 9003 × 1]",
-      [
-        [9002, 1],
-        [9003, 1],
-      ],
-    ],
-    [
-      "[9003 × 1, 9002 × 1]",
-      [
-        [9003, 1],
-        [9002, 1],
-      ],
-    ],
-  ] as [string, [number, number][]][])(
-    "⑤ 7002 주문 탭 포장 뒤 7003 취소 → %s → 409 BACKORDER_NOT_OPEN(취소 검사가 잔량 검사보다 먼저, 순서 무관), 불변",
-    async (_, items) => {
+    ["[7002 줄, 7003 줄]", false],
+    ["[7003 줄, 7002 줄]", true],
+  ] as const)(
+    "⑤ 직접 부름: 7002 주문 탭 포장 뒤 7003 취소 → %s → BACKORDER_NOT_OPEN(취소 검사가 잔량 검사보다 먼저, 순서 무관)",
+    async (_, reversed) => {
       await reset({ backorderIds: [9002, 9003] });
       await pack(7002, 8002, 1);
       expect((await cancelOrder(7003)).status).toBe(200);
-      const before = await snapshot();
-      const res = await allocate(items);
-      expect([res.status, res.body.code]).toEqual([409, "BACKORDER_NOT_OPEN"]);
-      expect(await snapshot()).toEqual(before);
+      const lines = [
+        { orderId: 7002, orderItemId: 8002, qty: 1 },
+        { orderId: 7003, orderItemId: 8003, qty: 1 },
+      ];
+      expect(
+        allocationPackingError(reversed ? [...lines].reverse() : lines),
+      ).toBe("BACKORDER_NOT_OPEN");
     },
   );
 });

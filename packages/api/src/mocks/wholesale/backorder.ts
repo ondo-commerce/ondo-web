@@ -9,9 +9,11 @@ import {
   addAllocationPacking,
   allocationPackingError,
   mockOrders,
+  onMockOrderPackingCreated,
   onMockPackingCancelled,
   type MockOrder,
   type MockOrderLine,
+  type MockPacking,
 } from "./order";
 
 /**
@@ -30,6 +32,7 @@ import {
  *  3. 주문 목과 저장소는 따로다(SKU 재고도 각자 든다). (loop-08j) 다만 배분은 대응되는 주문 목 줄이 있으면
  *     주문 목에 READY 포장을 만들고, 그 포장 삭제는 여기 미송을 되살린다(`orderLineOf`, `allocationRecords`).
  *     대응이 없는 미송(9006, 801)은 지금처럼 이 목 번호로 응답만 낸다.
+ *     (loop-08k) 거꾸로 주문 탭 길 포장도 대응되는 미송을 줄이고 같은 기록을 남긴다(`consumeByOrderPacking`).
  *
  *  4. (loop-06) 입고 예정일은 **reset 시각(서울)의 상대값**이다: 3003 = 오늘 −3일, 3019 = +7일, 3011 미정.
  *     미송 자동 답이 "예정 / 지남 / 미정"을 가르는데 고정 날짜면 날이 갈수록 답이 바뀐다. e2e는 reset 전에
@@ -548,7 +551,8 @@ function ownPacking(
 
 /**
  * 주문 목 포장 삭제(204) 뒤 불린다. 배분 기록이 있으면 미송마다 남은 수량 += 수량, OPEN, `reservedQty` −= 수량,
- * 기록을 지운다. 기록 없는 포장(주문 탭 `포장 준비`)이면 아무것도 안 한다(역방향은 범위 밖, 기획 Q2 ①)
+ * 기록을 지운다. 기록은 누가 만든 포장인지 안 가린다 — 주문 탭 길 포장도 대응 미송을 줄였으면 기록이 있다(loop-08k).
+ * 기록 없는 포장(대응 미송 없음)이면 아무것도 안 한다
  */
 function reviveAllocation(packingId: number): void {
   const record = allocationRecords.get(packingId);
@@ -565,6 +569,37 @@ function reviveAllocation(packingId: number): void {
 }
 
 onMockPackingCancelled(reviveAllocation);
+
+/**
+ * 주문 탭 길 포장(포장 준비, 확정 이번 출고, reset `readyPackings`)이 생긴 뒤 불린다(loop-08k §5-2 2). 포장 줄마다
+ * 대응되는 OPEN 미송(08j `orderLineOf` 넷 비교를 거꾸로: 그 주문 하나만 넘겨 줄이 이 포장 줄인 것)을 찾아
+ * n = min(포장 수량, 남은 수량)만큼 남은 −=, 0이면 RESOLVED, SKU `reservedQty` += n(Q1-2 ①, 미송 탭 배분과 같은 쪽).
+ * 줄인 몫은 그 포장 id로 배분 기록에 남겨 삭제가 `reviveAllocation`으로 되살린다. 대응 없는 줄(알림 incoming 7006 등)은
+ * 아무것도 안 한다. 미송 탭 배분 길은 여기를 안 지난다(그쪽은 배분 핸들러가 먼저 줄이고 기록한다)
+ */
+function consumeByOrderPacking(packing: MockPacking, order: MockOrder): void {
+  const record: { backorderId: number; qty: number }[] = [];
+  for (const item of packing.items) {
+    let left = item.qty;
+    for (const b of backorders) {
+      if (left <= 0) break;
+      if (b.status !== "OPEN") continue;
+      if (orderLineOf(b, [order])?.id !== item.orderItemId) continue;
+      const v = variants.find((x) => x.id === b.variantId);
+      if (v === undefined) continue;
+      const n = Math.min(left, b.remainingQty);
+      if (n <= 0) continue;
+      left -= n;
+      b.remainingQty -= n;
+      if (b.remainingQty === 0) b.status = "RESOLVED";
+      v.reservedQty += n;
+      record.push({ backorderId: b.id, qty: n });
+    }
+  }
+  if (record.length > 0) allocationRecords.set(packing.id, record);
+}
+
+onMockOrderPackingCreated(consumeByOrderPacking);
 
 /* --- 핸들러 ------------------------------------------------------------- */
 
