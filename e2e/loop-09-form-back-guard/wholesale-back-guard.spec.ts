@@ -285,9 +285,8 @@ test.describe("S1-7 (B4) 저장 뒤 남는 보초", () => {
   });
 
   /*
-   * 기획 원문은 판매가를 바꿔 "저장한 새 값"을 본다. 목 PATCH는 `variantId`로 온 판매가를
-   * 반영하지 않아(색, 사이즈로만 찾는다) 다시 열면 옛 값이다 — 목 결함이라 이 시험은 서버가
-   * 반영하는 품명으로 보고, 원문은 아래 `test.fail`로 남긴다(02-dev §4, §6).
+   * 품명 판. 기획 원문(판매가)은 아래 "원문"이다. 목 PATCH가 `variantId` 판매가를 버리던 동안(09-N1)
+   * 대신 쓰던 시험이고, 품명 저장 길도 같이 지키려고 남긴다.
    */
   test("② 수정(품명) 저장 → 상세 → 뒤로는 새 값 폼, 모달 0 → 뒤로는 들어오기 전 상세", async ({
     page,
@@ -310,31 +309,14 @@ test.describe("S1-7 (B4) 저장 뒤 남는 보초", () => {
   });
 
   /*
-   * 준비(저장, 이동, 뒤로, 모달 0)는 일반 단언이다. 예상 실패는 마지막 판매가 한 줄뿐(09-R2) —
-   * 준비가 깨지면 `test.fail()`에 닿기 전에 보통 실패로 드러난다. 다음 뒤로가기 목적지는 아래
-   * "이동 순서" 시험이 같은 판매가 경로로 본다. 09-N1(목 PATCH)을 고치면 `test.fail` 줄을 지운다.
+   * 기획 원문. 09-N1(목 PATCH가 `variantId` 판매가를 버림)을 고쳐 `test.fail`을 걷었다. 그동안 URL 순서와
+   * 모달 0만 따로 보던 "이동 순서" 시험은 이 시험이 같은 단언을 다 품어 합쳤다.
    */
-  test("② 원문 — 판매가 저장 뒤 뒤로가기 폼이 새 판매가", async ({ page }) => {
-    await enterEditFromDetail(page, A);
-    const price = await pinnedPriceInput(page);
-    await price.fill("15500");
-    await saveButton(page).click();
-    await page.waitForURL(/\/products\?productId=1001$/);
-    await expect(firstPriceInput(page)).toHaveCount(0);
-
-    await page.goBack();
-    await expectUrl(page, `/products/${A}/edit`);
-    await expect(price).toBeVisible();
-    await expect(leaveDialog(page)).toHaveCount(0);
-
-    test.fail(true, "09-N1 목 PATCH가 variantId 판매가를 반영 안 함");
-    await expect(price).toHaveValue("15500", { timeout: 3000 });
-  });
-
-  test("② 이동 순서 — 판매가 저장도 URL 순서와 모달 0은 같다", async ({
+  test("② 원문 — 판매가 저장 → 상세 → 뒤로는 새 판매가 폼, 모달 0 → 뒤로는 들어오기 전 상세", async ({
     page,
   }) => {
     await enterEditFromDetail(page, A);
+    const label = await firstPriceInput(page).getAttribute("aria-label");
     const price = await pinnedPriceInput(page);
     await price.fill("15500");
     await saveButton(page).click();
@@ -343,7 +325,12 @@ test.describe("S1-7 (B4) 저장 뒤 남는 보초", () => {
 
     await page.goBack();
     await expectUrl(page, `/products/${A}/edit`);
-    await expect(price).toBeVisible();
+    // 저장해도 가격표 첫 행이 같은 칸이다
+    await expect(firstPriceInput(page)).toHaveAttribute(
+      "aria-label",
+      label ?? "",
+    );
+    await expect(price).toHaveValue("15500");
     await expect(leaveDialog(page)).toHaveCount(0);
 
     await page.goBack();

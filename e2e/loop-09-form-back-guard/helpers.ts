@@ -24,8 +24,9 @@ export function firstPriceInput(page: Page): Locator {
 }
 
 /**
- * 첫 판매가 칸을 이름으로 고정한다. 저장 뒤엔 목이 행 순서를 바꿔(시드 1001에서 확인) "첫 칸"이
- * 다른 행이 된다 — 같은 칸을 따라가야 "저장한 새 값"을 본다.
+ * 첫 판매가 칸을 이름으로 고정한다. 저장 뒤 "첫 칸"이 다른 행이 되면 "저장한 새 값"을 엉뚱한 칸에서
+ * 보게 된다 — 같은 칸을 따라간다. 행 순서가 바뀐다는 처음 관찰은 재현되지 않았다(09-N1 api 라운드, 상세는
+ * 색상 id 순 정렬이라 시드 1001은 저장 앞뒤 모두 네이비 S가 첫 칸).
  */
 export async function pinnedPriceInput(page: Page): Promise<Locator> {
   const label = await firstPriceInput(page).getAttribute("aria-label");
