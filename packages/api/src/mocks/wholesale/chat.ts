@@ -21,16 +21,17 @@ import {
   STATS_FIXTURE_ROOMS,
   STATS_SEED_NAME,
 } from "../chat/inquiryStats.fixture";
+import type { InquiryPacking } from "../chat/packingOrders";
 import type { InquiryReceivable } from "../chat/receivable";
 import {
   BACKORDER_SEED_ETA_DAYS,
   inquiryBackorders,
   resetBackorderMock,
 } from "./backorder";
-import { resetOrderMock } from "./order";
+import { addReadyPackings, readyPackingsError, resetOrderMock } from "./order";
 import { chatStockListing } from "./product";
 import { mockReceivableRows, resetSettlementMock } from "./settlement";
-import { resetShipmentMock } from "./shipment";
+import { inquiryPackings, resetShipmentMock } from "./shipment";
 
 /**
  * 채팅 목 — 초안 op 5개(#263, 스냅샷 `x-ondo-draft`). 계약은 `01-plan.md` §5-2, 목은 §5-3.
@@ -97,6 +98,11 @@ export const CHAT_FAIL_OPS = [
   "settings",
   /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 보내기는 201 이고 답 대신 넘김(LOOKUP_FAILED)이 붙는다 */
   "receivable",
+  /**
+   * 미송 0일 때 포장 답의 포장 원본 조회(loop-08i S2-3). 보내기는 201 이고 답 대신 넘김(NO_BACKORDER)이 붙는다.
+   * `status`는 안 쓴다(HTTP 응답이 아니다)
+   */
+  "packing",
   /** 문의 지표 `inquiryStats`(loop-08 S2-5). 대시보드 카드 안 오류 */
   "stats",
 ] as const;
@@ -978,6 +984,15 @@ function chatReceivables(): readonly InquiryReceivable[] {
 }
 
 /**
+ * 포장 판정 원본(loop-08i §5-4 1): 주문 목 포장 + 출고 목 봉투(`./shipment` `inquiryPackings`). 부를 때마다 지금
+ * 읽는다. `fail {op: packing}`이 걸려 있으면 던진다 — 판정이 잡아 NO_BACKORDER 넘김으로 바꾼다(미수 원본과 같은 꼴)
+ */
+function chatPackings(): readonly InquiryPacking[] {
+  if (consumeFailure("packing")) throw new Error("목: 포장 조회 실패 손잡이");
+  return inquiryPackings();
+}
+
+/**
  * 방금 넣은 소매 메시지에 자동 답을 붙인다. 소매 목 보내기와 도매 `incoming` 주입이 같이 부른다.
  * 판정은 `../chat/inquiry.ts`(순수), 여기는 저장소에 줄을 넣기만 한다.
  *
@@ -1007,8 +1022,7 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
         catalog: chatCatalog,
         backorders: inquiryBackorders,
         receivables: chatReceivables,
-        // TODO(#391) 주문 목과 출고 목의 포장 원본. 그 전까지 빈 원본이라 미송 0 질문은 지금처럼 넘김이다
-        packings: () => [],
+        packings: chatPackings,
       }),
       message.sequence,
       now,
@@ -1975,12 +1989,18 @@ export const chatHandlers = [
       rooms?: number;
       noBackorders?: boolean;
       seed?: string;
+      readyPackings?: unknown;
     };
     if (input.seed !== undefined && !isChatSeedName(input.seed))
       return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
+    // 검사를 reset보다 먼저 전부(loop-08i §5-4 3). 틀리면 400이고 아무것도 안 바뀐다
+    const packingError = readyPackingsError(input.readyPackings);
+    if (packingError !== null)
+      return invalid("readyPackings", packingError.code, packingError.message);
     resetChatMock(input.rooms, {
       noBackorders: input.noBackorders === true,
       seed: input.seed,
+      readyPackings: input.readyPackings as number[] | undefined,
     });
     return HttpResponse.json({
       data: {
@@ -1993,11 +2013,22 @@ export const chatHandlers = [
   ...chatSharedKnobs,
 ];
 
-/** 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다 */
+/**
+ * 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다.
+ * `readyPackings`(loop-08i §5-4 3)는 주문 목 reset 뒤 그 주문들의 READY 포장을 만든다. 값이 틀리면 **아무것도
+ * 바꾸기 전에** 던진다 — HTTP 손잡이는 같은 검사를 먼저 해 400으로 돌려준다
+ */
 export function resetChatMock(
   keepRooms?: number,
-  options: { noBackorders?: boolean; seed?: string } = {},
+  options: {
+    noBackorders?: boolean;
+    seed?: string;
+    readyPackings?: readonly number[];
+  } = {},
 ) {
+  const packingError = readyPackingsError(options.readyPackings);
+  if (packingError !== null)
+    throw new Error(`mock: readyPackings ${packingError.code}`);
   rooms =
     options.seed === STATS_SEED_NAME
       ? seedStatsRooms()
@@ -2013,6 +2044,8 @@ export function resetChatMock(
   resetOrderMock();
   resetShipmentMock();
   resetSettlementMock();
+  // 소매 e2e는 주문 op가 목에 안 닿아(소매 worker는 채팅, 알림만) 포장을 여기서 만든다. 출고 목은 READY를 그대로 읽는다
+  addReadyPackings(options.readyPackings ?? []);
   if (keepRooms !== undefined) {
     const keep = new Set(
       rooms

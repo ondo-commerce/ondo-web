@@ -868,6 +868,101 @@ export const orderHandlers = [
   }),
 ];
 
+/* --- 채팅 reset 손잡이 `readyPackings` (loop-08i §5-4 3) -------------------- */
+
+/** 손잡이 실패 code. field는 늘 `readyPackings` */
+export type ReadyPackingsCode =
+  "INVALID" | "DUPLICATE" | "NOT_FOUND" | "NOT_PACKABLE" | "INSUFFICIENT_STOCK";
+
+type ReadyPackingsPlan =
+  | { ok: true; orderIds: number[] }
+  | { ok: false; code: ReadyPackingsCode; message: string };
+
+/**
+ * 손잡이 값 검사. **기본 시드**를 본다 — reset 뒤 시드 위에 포장을 만드는 손잡이라서, 지금 상태(이미 포장한 7002)로
+ * 보면 같은 값이 reset 전후로 다르게 판정된다. 시드를 새로 지어 읽기만 하고 저장소는 안 건드린다.
+ *
+ * 순서: 배열 아님, 정수 아님, 0 이하 → INVALID. 중복 → DUPLICATE. 그다음 앞 주문부터 시드에 없음 → NOT_FOUND,
+ * `isPackable` false → NOT_PACKABLE, 가용재고 모자람 → INSUFFICIENT_STOCK. `isPackable`은 재고를 안 본다(7001: 상태는
+ * 되는데 재고 0) — 그래서 재고는 따로 본다. 앞 주문이 잡은 재고는 뒤 주문 가용재고에서 뺀다(같은 SKU를 두 주문이 쓸 때)
+ */
+function planReadyPackings(value: unknown): ReadyPackingsPlan {
+  if (
+    !Array.isArray(value) ||
+    !value.every((v) => typeof v === "number" && Number.isInteger(v) && v > 0)
+  )
+    return {
+      ok: false,
+      code: "INVALID",
+      message: "readyPackings는 1 이상 정수 주문 id 배열입니다.",
+    };
+  const ids = value as number[];
+  if (new Set(ids).size !== ids.length)
+    return {
+      ok: false,
+      code: "DUPLICATE",
+      message: "같은 주문이 두 번 들어왔습니다.",
+    };
+  const seed = seedOrders();
+  const reserved = new Map<number, number>();
+  for (const id of ids) {
+    const order = seed.find((o) => o.id === id);
+    if (order === undefined)
+      return {
+        ok: false,
+        code: "NOT_FOUND",
+        message: `기본 시드에 없는 주문입니다(${id}).`,
+      };
+    if (!flags(order).isPackable)
+      return {
+        ok: false,
+        code: "NOT_PACKABLE",
+        message: `지금은 포장을 만들 수 없는 주문입니다(${id}).`,
+      };
+    for (const l of order.items) {
+      const want = l.qty - l.allocatedQty;
+      const taken = reserved.get(l.variantId) ?? 0;
+      if (want > availableQty(l) - taken)
+        return {
+          ok: false,
+          code: "INSUFFICIENT_STOCK",
+          message: `가용재고가 부족합니다(${id}).`,
+        };
+      reserved.set(l.variantId, taken + want);
+    }
+  }
+  return { ok: true, orderIds: ids };
+}
+
+/**
+ * 손잡이 값이 틀렸으면 그 이유, 맞으면 null. reset **전에** 부른다 — 틀린 값으로 반쪽만 reset되는 일이 없게
+ * (Codex 8). 빈 배열과 칸 없음(undefined)은 같은 뜻이라 null
+ */
+export function readyPackingsError(
+  value: unknown,
+): { code: ReadyPackingsCode; message: string } | null {
+  if (value === undefined) return null;
+  const plan = planReadyPackings(value);
+  return plan.ok ? null : { code: plan.code, message: plan.message };
+}
+
+/**
+ * 그 주문들의 미배분 수량 전부로 READY 포장을 만든다(주문 탭 `포장 준비`와 같은 `applyAllocation` 길). reset 뒤
+ * 시드 위에서만 부른다. 검사를 다시 하고 틀리면 던진다 — 부르는 쪽이 `readyPackingsError`를 먼저 봤어야 한다
+ */
+export function addReadyPackings(orderIds: readonly number[]): void {
+  const plan = planReadyPackings(orderIds);
+  if (!plan.ok) throw new Error(`mock: readyPackings ${plan.code}`);
+  for (const id of plan.orderIds) {
+    const order = orders.find((o) => o.id === id);
+    if (order === undefined) throw new Error(`mock: 주문이 없다 ${id}`);
+    applyAllocation(
+      order,
+      new Map(order.items.map((l) => [l.id, l.qty - l.allocatedQty])),
+    );
+  }
+}
+
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다 */
 export function resetOrderMock() {
   orders = seedOrders();

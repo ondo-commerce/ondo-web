@@ -14,6 +14,7 @@ import {
   isAuto,
   isHandoff,
   projectDecision,
+  projectV4Lines,
   runScenario,
   type GoldenExpect,
   type GoldenInquiry,
@@ -391,6 +392,52 @@ describe("loop-08i S1-9 S1-10 기존 기대와 투영별 결과 보존(골든 v7
     expect(
       v7.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
     ).toEqual([]);
+  });
+
+  it("S1-10 반대 사례: 일반 갈래 재고 답 줄과 미송 답 줄(backorderId 있음)에는 facts 키가 없다(08i-M2)", () => {
+    // 골든 줄 투영 시나리오에는 이 두 줄이 없어(재고 답은 판정 투영, K 자동 답은 전부 포장 답) 투영에 직접 넣는다
+    const at = new Date(GOLDEN_T0).toISOString();
+    const projected = projectV4Lines(
+      [
+        {
+          kind: "AUTO_REPLY",
+          body: "재고 있어요",
+          autoReply: {
+            intent: "STOCK",
+            checkedAt: at,
+            subject: { variantId: 3001, backorderId: null },
+            facts: { stock: { status: "IN_STOCK" }, receivable: null },
+          },
+        },
+        {
+          kind: "AUTO_REPLY",
+          body: "미송 입고 예정이에요",
+          autoReply: {
+            intent: "BACKORDER",
+            checkedAt: at,
+            subject: { variantId: 3001, backorderId: 501 },
+            facts: { backorder: { eta: "2026-11-02" }, receivable: null },
+          },
+        },
+      ],
+      { self: 1, nowMs: GOLDEN_T0, asOf: null },
+    );
+    expect(projected.lines).toEqual([
+      {
+        kind: "AUTO_REPLY",
+        intent: "STOCK",
+        target: 3001,
+        body: "재고 있어요",
+      },
+      {
+        kind: "AUTO_REPLY",
+        intent: "BACKORDER",
+        target: 501,
+        body: "미송 입고 예정이에요",
+      },
+    ]);
+    for (const line of (projected.lines ?? []) as Record<string, unknown>[])
+      expect(line).not.toHaveProperty("facts");
   });
 
   it("room.packings 행 → 포장 답 줄에만 facts: null, packingFailTimes 1 → 넘김 하나", () => {
