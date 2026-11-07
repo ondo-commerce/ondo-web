@@ -651,13 +651,67 @@ export const backorderHandlers = [
   ),
 ];
 
+/** reset 칸 `backorderIds` 실패 code. field는 늘 `backorderIds` */
+export type BackorderIdsCode =
+  "INVALID" | "DUPLICATE" | "NOT_FOUND" | "CONFLICT";
+
+/**
+ * reset 칸 `backorderIds`(loop-08j §5-4) 값이 틀렸으면 그 이유, 맞으면 null. reset **전에** 부른다 — 틀린 값으로
+ * 반쪽만 reset되는 일이 없게(08i `readyPackingsError`와 같은 꼴). 칸 없음(undefined)은 시드 전부라 null.
+ *
+ * 순서: 배열 아님, 빈 배열, 정수 아님, 0 이하 → INVALID. 중복 → DUPLICATE. 시드 7행에 없음 → NOT_FOUND.
+ * `noBackorders: true`와 같이 줌 → CONFLICT(`false`는 성공). 빈 배열을 "다 비움"으로 받지 않는다 — 그 뜻은
+ * `noBackorders`가 맡는다. 두 칸이 같은 일을 하면 시험이 어느 쪽을 봤는지 흐려진다
+ */
+export function backorderIdsError(
+  value: unknown,
+  noBackorders: unknown,
+): { code: BackorderIdsCode; message: string } | null {
+  if (value === undefined) return null;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((v) => typeof v === "number" && Number.isInteger(v) && v > 0)
+  )
+    return {
+      code: "INVALID",
+      message: "backorderIds는 1 이상 정수 미송 id의 빈 배열 아닌 배열입니다.",
+    };
+  const ids = value as number[];
+  if (new Set(ids).size !== ids.length)
+    return { code: "DUPLICATE", message: "같은 미송이 두 번 들어왔습니다." };
+  const seed = new Set(seedBackorders().map((b) => b.id));
+  const missing = ids.find((id) => !seed.has(id));
+  if (missing !== undefined)
+    return {
+      code: "NOT_FOUND",
+      message: `기본 시드에 없는 미송입니다(${missing}).`,
+    };
+  if (noBackorders === true)
+    return {
+      code: "CONFLICT",
+      message: "noBackorders: true와 backorderIds는 같이 쓸 수 없습니다.",
+    };
+  return null;
+}
+
 /**
  * 시드로 되돌린다. 입고 예정일은 이 시각 기준이라 채팅 목 reset(`/__mock/chat/reset`)이 같이 부른다.
- * `empty`면 미송을 다 비운다(소매 "후보 0개" 시험, loop-06 S3-4). 앱은 부르지 않는다
+ * `empty`면 미송을 다 비운다(소매 "후보 0개" 시험, loop-06 S3-4). `ids`면 그 미송만 남긴다(loop-08j §5-4,
+ * 기본 시드는 3003 재고 0이라 방 1의 열린 미송을 미송 탭만으로 0으로 만들 수 없다). variants는 늘 시드 그대로.
+ * 앱은 부르지 않는다
  */
-export function resetBackorderMock(options: { empty?: boolean } = {}) {
+export function resetBackorderMock(
+  options: { empty?: boolean; ids?: readonly number[] } = {},
+) {
+  const error = backorderIdsError(options.ids, options.empty);
+  if (error !== null) throw new Error(`mock: backorderIds ${error.code}`);
   variants = seedVariants(Date.now());
-  backorders = options.empty === true ? [] : seedBackorders();
+  const ids = options.ids === undefined ? null : new Set(options.ids);
+  backorders =
+    options.empty === true
+      ? []
+      : seedBackorders().filter((b) => ids === null || ids.has(b.id));
   nextBatchId = 4401;
   nextPackingId = 7710;
   nextPackingItemId = 91101;
@@ -681,6 +735,16 @@ export function replaceExpectedInbound(
   v.expectedInboundDate = date;
   v.expectedInboundReason = date === null ? null : reason;
   return { before, after: v.expectedInboundDate };
+}
+
+export type { MockBackorder };
+
+/**
+ * 미송 행 전부(상태, 주문 줄 id 포함). 시험만 읽는다 — 배분 대응(주문, 줄, variant, 소매처)과 "아무것도 안 바뀜"
+ * 스냅샷을 행 값으로 보려고. `let` 재할당(reset) 뒤에도 지금 배열을 주게 함수로 꺼낸다
+ */
+export function mockBackorders(): readonly MockBackorder[] {
+  return backorders;
 }
 
 /** 소매 알림 목이 읽는 SKU 하나와 그 미송 전부(상태 포함). 이름은 상품명, 색상, 사이즈만 싣는다 */
