@@ -14,6 +14,7 @@ import {
   LIST_PARAM,
 } from "../constants";
 import {
+  clearFormError,
   clearImagesError,
   clearPostErrors,
   clearProductErrors,
@@ -75,6 +76,8 @@ export function ProductCreateView() {
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
       setLostAt(productSessionEpoch());
+      // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
+      setErrors(clearFormError);
       return;
     }
     // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다

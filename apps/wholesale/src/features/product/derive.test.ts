@@ -18,6 +18,7 @@ import {
   isPriceMissing,
   isProductFormDirty,
   isUploadLocked,
+  isUploadStopped,
   linkLeaveTarget,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   orderCompleted,
@@ -442,6 +443,22 @@ describe("shouldLockOnAuth — S2-1: 업로드 401을 받은 요청의 시작 �
 
   it("(3, 4) 재로그인 전에 떠난 요청의 늦은 401 → 잠그지 않는다", () => {
     expect(shouldLockOnAuth(3, 4)).toBe(false);
+  });
+});
+
+describe("isUploadStopped — 09-M2: 403 정지는 세대와 무관", () => {
+  it("401 정지(3) → 지금 3이면 참, 재로그인 4면 거짓", () => {
+    const stop = { at: 3, reason: "session" } as const;
+    expect(isUploadStopped(stop, 3)).toBe(true);
+    expect(isUploadStopped(stop, 4)).toBe(false);
+  });
+
+  it("403 정지(3) → 재로그인 4여도 참(새 파일 선택으로만 풀림)", () => {
+    expect(isUploadStopped({ at: 3, reason: "forbidden" }, 4)).toBe(true);
+  });
+
+  it("정지 없음 → 거짓", () => {
+    expect(isUploadStopped(null, 0)).toBe(false);
   });
 });
 

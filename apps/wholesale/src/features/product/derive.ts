@@ -39,6 +39,7 @@ import type {
   UploadFailure,
   UploadSlot,
   UploadSlotStatus,
+  UploadStop,
 } from "./types";
 import { formatNumber } from "@/shared/lib/format";
 
@@ -393,6 +394,18 @@ export function isUploadLocked(lostAt: number | null, epoch: number): boolean {
  */
 export function shouldLockOnAuth(startedAt: number, epoch: number): boolean {
   return startedAt === epoch;
+}
+
+/**
+ * 격자 큐가 지금 멈춰 있는가(#403). 401 정지만 세대를 본다 — 403은 계정 승인 문제라 같은 계정
+ * 재로그인으로 달라지지 않는다(D64 ②, 기획 §4-4는 세대 비교를 401에만 건다).
+ */
+export function isUploadStopped(
+  stop: UploadStop | null,
+  epoch: number,
+): boolean {
+  if (stop === null) return false;
+  return stop.reason === "forbidden" || isUploadLocked(stop.at, epoch);
 }
 
 /**
@@ -1002,6 +1015,16 @@ export function clearPostErrors(
     delete rest["listing.variantPrices"];
     delete rest.priceRowIds;
   }
+  return rest;
+}
+
+/**
+ * 폼 위 한 줄 오류만 지운다(#403 D64 ①). 업로드 401로 잠글 때 부른다 — 잠금 문구가 그 줄을
+ * 가리고, 풀리면 풀림 문구가 대신한다. 남겨 두면 풀린 뒤 옛 오류가 다시 떠 풀림 문구를 가린다.
+ */
+export function clearFormError(errors: ProductFormErrors): ProductFormErrors {
+  const rest: ProductFormErrors = { ...errors };
+  delete rest._form;
   return rest;
 }
 
