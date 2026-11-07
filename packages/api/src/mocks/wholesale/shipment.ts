@@ -13,7 +13,8 @@ import {
   type MockOrderLine,
   type MockPacking,
 } from "./order";
-import { findMockVariant } from "./product";
+import type { InquiryPacking } from "../chat/packingOrders";
+import { findMockProduct, findMockVariant } from "./product";
 import { recordMockSale } from "./settlement";
 
 /**
@@ -644,6 +645,80 @@ export const shipmentHandlers = [
     });
   }),
 ];
+
+/* --- 채팅 포장 답의 원본 (loop-08i §5-4 1, 2) ----------------------------- */
+
+/**
+ * 포장 원본 순수 변환. 주문 목 포장 **전부**를 한 줄씩 만든다 — 도매처, 소매처, 상태, 출고 여부로 거르지 않는다.
+ * 고르는 건 판정(`../chat/packingOrders.ts` `packingOrdersOf`)이다. 거르는 곳이 판정 안에 있어야 골든이 규칙까지 잡는다.
+ *
+ * 저장소를 직접 안 읽고 인자로 받는 이유: 기본 시드엔 102 도매처 주문이 없어 소유 매핑을 시드로 못 본다.
+ * 합성 주문과 합성 소유 함수로 unit을 하려고 뗐다(시드는 안 바꾼다).
+ *
+ * 소유는 포장 줄마다 `ownerOf(variantId)`로 읽는다. 하나라도 모르거나(null) 줄마다 도매처가 다르면 그 포장은 null —
+ * 판정이 뺀다. 한 포장이 두 도매처에 걸치면 어느 쪽 사장에게도 "준비 중"이라고 말할 수 없어서다
+ */
+export function packingRowsOf(input: {
+  orders: readonly MockOrder[];
+  packings: readonly MockPacking[];
+  /** 봉투 id → 출고됐나. 모르는 봉투면 null */
+  outboundShipped: (outboundId: number) => boolean | null;
+  /** variant id → 도매처. 모르면 null */
+  ownerOf: (variantId: number) => number | null;
+}): InquiryPacking[] {
+  return input.packings.flatMap((packing) => {
+    const order = input.orders.find((o) => o.id === packing.orderId);
+    if (order === undefined) return [];
+    const owners = packing.items.map((item) => {
+      const line = order.items.find((l) => l.id === item.orderItemId);
+      return line === undefined ? null : input.ownerOf(line.variantId);
+    });
+    const first = owners[0] ?? null;
+    const wholesalerId =
+      first !== null && owners.every((o) => o === first) ? first : null;
+    return [
+      {
+        packingId: packing.id,
+        orderId: order.id,
+        wholesalerId,
+        retailerId: order.retailerId,
+        orderCancelled: order.status === "CANCELLED",
+        packingStatus: packing.status,
+        outboundShipped:
+          packing.outboundId === null
+            ? null
+            : input.outboundShipped(packing.outboundId),
+        qty: sumQty(packing.items),
+      },
+    ];
+  });
+}
+
+/**
+ * 상품 목 소유. variant → 상품 → 도매처. 재고 답 `chatStockListing`과 같은 경로다(`MockVariant`엔 도매처 칸이 없다).
+ * 101로 박지 않는다 — 박으면 남의 도매처 포장이 이 방 답에 섞인다
+ */
+export function mockVariantOwner(variantId: number): number | null {
+  const variant = findMockVariant(variantId);
+  if (variant === null) return null;
+  return findMockProduct(variant.productId)?.wholesalerId ?? null;
+}
+
+/**
+ * 채팅 판정이 읽는 포장 원본(`InquiryPackingSource`). **부를 때마다** 주문 목, 출고 목을 지금 읽는다 — 주문 탭 포장,
+ * 출고 탭 봉투 담기와 출고 확정이 다음 답에 바로 쓰인다. 봉투 출고 여부 = `shippedAt !== null`
+ */
+export function inquiryPackings(): InquiryPacking[] {
+  return packingRowsOf({
+    orders: mockOrders(),
+    packings: mockPackings(),
+    outboundShipped: (id) => {
+      const outbound = outbounds.find((o) => o.id === id);
+      return outbound === undefined ? null : outbound.shippedAt !== null;
+    },
+    ownerOf: mockVariantOwner,
+  });
+}
 
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다. 주문 목도 같이 되돌려야 맞물린다 */
 export function resetShipmentMock() {
