@@ -17,6 +17,8 @@ import {
   isIntegerText,
   isPriceMissing,
   isProductFormDirty,
+  isUploadLocked,
+  isUploadStopped,
   linkLeaveTarget,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   orderCompleted,
@@ -25,6 +27,7 @@ import {
   rejectImageFile,
   remainingImageSlots,
   requeueForRetry,
+  shouldLockOnAuth,
   shouldPushGuard,
   uploadFailure,
   uploadNote,
@@ -416,6 +419,46 @@ describe("shouldPushGuard — S1-2: 보초 넣기 2행", () => {
     expect(shouldPushGuard(true, { ondoLeaveGuard: true, __NA: true })).toBe(
       false,
     );
+  });
+});
+
+describe("isUploadLocked — S2-1: 잠글 때 세대와 지금 세대", () => {
+  it("(null, 0) 잠긴 적 없음 → 거짓", () => {
+    expect(isUploadLocked(null, 0)).toBe(false);
+  });
+
+  it("(3, 3) 잠근 세션 그대로 → 참", () => {
+    expect(isUploadLocked(3, 3)).toBe(true);
+  });
+
+  it("(3, 4) 그 뒤 재로그인 → 거짓(풀림)", () => {
+    expect(isUploadLocked(3, 4)).toBe(false);
+  });
+});
+
+describe("shouldLockOnAuth — S2-1: 업로드 401을 받은 요청의 시작 세대", () => {
+  it("(3, 3) 지금 세션의 401 → 잠근다", () => {
+    expect(shouldLockOnAuth(3, 3)).toBe(true);
+  });
+
+  it("(3, 4) 재로그인 전에 떠난 요청의 늦은 401 → 잠그지 않는다", () => {
+    expect(shouldLockOnAuth(3, 4)).toBe(false);
+  });
+});
+
+describe("isUploadStopped — 09-M2: 403 정지는 세대와 무관", () => {
+  it("401 정지(3) → 지금 3이면 참, 재로그인 4면 거짓", () => {
+    const stop = { at: 3, reason: "session" } as const;
+    expect(isUploadStopped(stop, 3)).toBe(true);
+    expect(isUploadStopped(stop, 4)).toBe(false);
+  });
+
+  it("403 정지(3) → 재로그인 4여도 참(새 파일 선택으로만 풀림)", () => {
+    expect(isUploadStopped({ at: 3, reason: "forbidden" }, 4)).toBe(true);
+  });
+
+  it("정지 없음 → 거짓", () => {
+    expect(isUploadStopped(null, 0)).toBe(false);
   });
 });
 

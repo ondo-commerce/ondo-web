@@ -4,6 +4,7 @@ import { Button, cn, Dialog, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { FormMessageLine } from "./FormMessageLine";
 import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
@@ -19,12 +20,14 @@ import {
   LIST_PARAM,
 } from "../constants";
 import {
+  clearFormError,
   clearImagesError,
   clearPostErrors,
   clearProductErrors,
   firstInvalidField,
   isProductFormDirty,
   isSessionLostError,
+  isUploadLocked,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   shouldSendListing,
   toPostForm,
@@ -35,6 +38,7 @@ import {
   validateProductForm,
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
+import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
 import type { PostStatus, ProductView, UploadState } from "../types";
 import { useBackLeaveGuard } from "../useBackLeaveGuard";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
@@ -133,12 +137,18 @@ function ProductEditForm({ product }: { product: ProductView }) {
    * 401이라 전역 핸들러가 `/login`으로 보내 폼이 날아간다. `errors._form`에 넣지 않는 이유:
    * 칸을 고칠 때마다 `_form`이 지워지는데 잠금은 남으면 버튼이 왜 잠겼는지 사라진다.
    */
-  const [sessionLost, setSessionLost] = useState(false);
+  /* 잠근 때의 세션 세대(#403). 같은 계정 재로그인으로 풀린다(`ProductCreateView`와 같은 이유) */
+  const epoch = useProductSessionEpoch();
+  const [lostAt, setLostAt] = useState<number | null>(null);
+  const sessionLost = isUploadLocked(lostAt, epoch);
+  const restored = lostAt !== null && !sessionLost;
   const formAlertId = useId();
   const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
-      setSessionLost(true);
+      setLostAt(productSessionEpoch());
+      // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
+      setErrors(clearFormError);
       return;
     }
     // 403(승인 안 됨)은 서버 문구 그대로. 저장은 잠그지 않는다 — 저장 경로의 403 처리에 맡긴다
@@ -242,6 +252,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
    * 그 전에 고친 제목·판매가는 PATCH에 같이 실린다(`shouldSendListing`은 상태를 안 본다).
    */
   const submit = async () => {
+    setLostAt(null);
     const sendListing = shouldSendListing(product, productForm, postForm);
     const found = validateProductForm(
       productForm,
@@ -356,16 +367,12 @@ function ProductEditForm({ product }: { product: ProductView }) {
       }
       actions={
         <>
-          {formMessage ? (
-            <p
-              id={formAlertId}
-              role="alert"
-              data-ac={sessionLost ? "S4-3 S4-7" : undefined}
-              className="text-destructive-strong mr-auto text-sm"
-            >
-              {formMessage}
-            </p>
-          ) : null}
+          <FormMessageLine
+            id={formAlertId}
+            message={formMessage}
+            sessionLost={sessionLost}
+            restored={restored}
+          />
           {note ? (
             <p
               id={noteId}

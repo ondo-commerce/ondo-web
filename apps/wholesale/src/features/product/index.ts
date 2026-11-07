@@ -5,6 +5,7 @@
 export { ProductCreateView } from "./components/ProductCreateView";
 export { ProductEditView } from "./components/ProductEditView";
 export { ProductListView } from "./components/ProductListView";
+export { refreshProductSession } from "./sessionRefresh";
 export type {
   ProductView,
   SkuView,

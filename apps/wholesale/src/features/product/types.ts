@@ -238,6 +238,15 @@ export type UploadFailure =
 /** 사전 검사 거절 사유(S2-6). `null`이면 통과 */
 export type ImageRejectReason = "TYPE" | "EMPTY" | "SIZE";
 
+/**
+ * 업로드 큐가 멈춘 이유와 그때의 세션 세대(#403). `session`(401)은 같은 계정 재로그인으로 풀리고,
+ * `forbidden`(403, 승인 안 됨)은 세대와 무관하게 새 파일 선택으로만 풀린다(D64 ②)
+ */
+export interface UploadStop {
+  at: number;
+  reason: "session" | "forbidden";
+}
+
 export interface UploadSlot {
   /** `crypto.randomUUID()`. 같은 파일을 두 번 골라도 다른 칸이다 */
   slotId: string;
