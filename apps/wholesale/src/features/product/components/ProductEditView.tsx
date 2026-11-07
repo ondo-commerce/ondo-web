@@ -3,7 +3,7 @@
 import { Button, cn, Dialog, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
@@ -36,6 +36,7 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostStatus, ProductView, UploadState } from "../types";
+import { useBackLeaveGuard } from "../useBackLeaveGuard";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
 import { useLinkLeaveGuard } from "../useLinkLeaveGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
@@ -201,8 +202,36 @@ function ProductEditForm({ product }: { product: ProductView }) {
     setLeaveOpen(true);
   });
 
+  /* 브라우저 뒤로가기(#255). `ProductCreateView`와 같은 꼴, 대체 이동만 상세로 */
+  const [backOpened, setBackOpened] = useState(false);
+  const savingRef = useRef(false);
+  const { leaveBack } = useBackLeaveGuard({
+    dirty,
+    leaving,
+    dialogOpen: leaveOpen,
+    savingRef,
+    onOpen: () => {
+      setBackOpened(true);
+      setLeaveOpen(true);
+    },
+    fallbackHref: detailPath,
+  });
+
+  /*
+   * 이 폼이 아직 화면에 있나(#255 ⑬). `await` 뒤 줄은 언마운트와 상관없이 돌아서, Link 모달
+   * `나가기`로 재고에 간 뒤 끝난 저장이 상세로 끌고 갔다. 등록은 TanStack이 콜백을 안 불러 괜찮다.
+   */
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const leave = () => {
     setLeaving(true);
+    if (backOpened) return leaveBack();
     router.push(linkHref ?? detailPath);
   };
 
@@ -234,6 +263,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
     showErrors(found);
     if (firstInvalidField(found)) return;
 
+    savingRef.current = true;
     try {
       await update.mutateAsync(toUpdateRequest(productForm, postForm, product));
       if (product.post && status !== product.post.status) {
@@ -243,9 +273,12 @@ function ProductEditForm({ product }: { product: ProductView }) {
           next: status,
         });
       }
+      // 저장은 서버에 남긴다. 사장이 이미 다른 화면으로 갔으면 끌고 오지만 않는다
+      if (!mountedRef.current) return;
       setLeaving(true);
       router.push(detailPath);
     } catch (error) {
+      savingRef.current = false;
       const mapped = toProductFormErrors(error, productForm);
       if (mapped) {
         showErrors(mapped);
@@ -359,7 +392,9 @@ function ProductEditForm({ product }: { product: ProductView }) {
             onOpenChange={(open) => {
               if (open && !dirty) return leave();
               setLeaveOpen(open);
-              if (!open) setLinkHref(null);
+              if (open) return;
+              setLinkHref(null);
+              setBackOpened(false);
             }}
             onLeave={leave}
           >

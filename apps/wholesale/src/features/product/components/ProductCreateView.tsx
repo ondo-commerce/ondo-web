@@ -2,7 +2,7 @@
 
 import { Button, Checkbox, cn, Panel } from "@ondo/ui";
 import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { LeaveConfirmDialog } from "./LeaveConfirmDialog";
 import { PostFormPanel } from "./PostFormPanel";
 import { ProductFormPanel } from "./ProductFormPanel";
@@ -28,6 +28,7 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import type { PostFormValue, ProductFormValue, UploadState } from "../types";
+import { useBackLeaveGuard } from "../useBackLeaveGuard";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
 import { useLinkLeaveGuard } from "../useLinkLeaveGuard";
 import { useProductFormErrors } from "../useProductFormErrors";
@@ -106,8 +107,27 @@ export function ProductCreateView() {
     setLeaveOpen(true);
   });
 
+  /*
+   * 브라우저 뒤로가기(#255). 모달을 연 게 뒤로가기면 `나가기`는 `history.go(-2)`로 들어오기 전
+   * 화면에 한 번에 간다. `saving`은 저장 시작부터 끝까지 — 저장 중 뒤로가기는 모달 없이 머문다.
+   */
+  const [backOpened, setBackOpened] = useState(false);
+  const savingRef = useRef(false);
+  const { leaveBack } = useBackLeaveGuard({
+    dirty,
+    leaving,
+    dialogOpen: leaveOpen,
+    savingRef,
+    onOpen: () => {
+      setBackOpened(true);
+      setLeaveOpen(true);
+    },
+    fallbackHref: LIST_PATH,
+  });
+
   const leave = () => {
     setLeaving(true);
+    if (backOpened) return leaveBack();
     router.push(linkHref ?? LIST_PATH);
   };
 
@@ -124,12 +144,18 @@ export function ProductCreateView() {
     showErrors(found);
     if (firstInvalidField(found)) return;
 
+    savingRef.current = true;
+    /*
+     * 화면을 떠난 뒤 끝난 저장은 이동하지 않는다(#255 ⑬). 따로 막지 않아도 되는 이유:
+     * TanStack은 `mutate`에 넘긴 콜백을 관찰자 구독자가 있을 때만 부른다(언마운트 = 구독 끝).
+     */
     create.mutate(toCreateRequest(product, postToSend), {
       onSuccess: (created) => {
         setLeaving(true);
         router.push(`${LIST_PATH}?${LIST_PARAM.productId}=${created.id}`);
       },
       onError: (error) => {
+        savingRef.current = false;
         const mapped = toProductFormErrors(error, product);
         if (mapped) {
           showErrors(mapped);
@@ -256,7 +282,9 @@ export function ProductCreateView() {
             onOpenChange={(open) => {
               if (open && !dirty) return leave();
               setLeaveOpen(open);
-              if (!open) setLinkHref(null);
+              if (open) return;
+              setLinkHref(null);
+              setBackOpened(false);
             }}
             onLeave={leave}
           >

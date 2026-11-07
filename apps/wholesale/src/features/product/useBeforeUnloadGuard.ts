@@ -7,7 +7,7 @@ import { useEffect } from "react";
  * 안에서 조건을 보면 "입력 없음"에서도 브라우저가 이탈을 한 번 붙잡는 경우가 있다.
  *
  * 문구는 브라우저 기본이다(현대 브라우저는 사용자 문구를 안 보여 준다). 앱 안 Link 이탈은
- * `useLinkLeaveGuard`가 받는다(#252). 뒤로가기는 아직 없다 — 다음 회차.
+ * `useLinkLeaveGuard`가 받는다(#252). 뒤로가기는 `useBackLeaveGuard`(#255).
  */
 export function useBeforeUnloadGuard(active: boolean): void {
   useEffect(() => {
