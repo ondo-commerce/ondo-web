@@ -164,6 +164,24 @@ describe("attachBackGuard — S1-16: 가짜 window 컨트롤러", () => {
     expect(counts.fallback).toBe(0);
   });
 
+  it("④' 같은 URL 앞 항목: 나가기 → popstate(URL 그대로) → 400ms 넘김 → go(-2) 1, 대체 이동 0 (09-R3)", () => {
+    // 같은 폼을 두 번 연 이력. 앞 항목도 /products/new라 URL 비교로는 "도착"을 못 가린다
+    const fake = fakeWindow();
+    const { handlers, counts } = handlersFor();
+    const guard = attachBackGuard(fake.win, handlers);
+    guard.sync();
+    const href = fake.win.location.pathname + fake.win.location.search;
+
+    guard.leave();
+    fake.back();
+    expect(fake.win.location.pathname + fake.win.location.search).toBe(href);
+    fake.advance(BACK_GUARD_FALLBACK_MS + 1);
+
+    expect(fake.calls.go).toEqual([-2]);
+    expect(counts.fallback).toBe(0);
+    expect(counts.open).toBe(0);
+  });
+
   it("⑥ 변경 없이 저장 중: sync가 보초 1, 뒤로가기는 hold(보초 다시, 모달 0, back 0) (09-R1)", () => {
     const fake = fakeWindow();
     const { handlers, counts } = handlersFor({ dirty: false, saving: true });

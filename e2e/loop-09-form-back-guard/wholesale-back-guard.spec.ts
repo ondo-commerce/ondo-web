@@ -46,6 +46,8 @@ const LIST = "/products";
 const NEW = "/products/new";
 const A = 1001;
 const B = 1002;
+/** 목 시드 1002의 판매가(`packages/api/src/mocks/wholesale/product.ts` variant 3006, 3007) */
+const B_SEED_PRICE = "23000";
 
 async function expectUrl(page: Page, url: string) {
   await expect.poll(() => here(page)).toBe(url);
@@ -307,20 +309,27 @@ test.describe("S1-7 (B4) 저장 뒤 남는 보초", () => {
     await expect(leaveDialog(page)).toHaveCount(0);
   });
 
-  test.fail(
-    "② 원문 — 판매가 저장 뒤 뒤로가기 폼이 새 판매가",
-    async ({ page }) => {
-      await enterEditFromDetail(page, A);
-      const price = await pinnedPriceInput(page);
-      await price.fill("15500");
-      await saveButton(page).click();
-      await page.waitForURL(/\/products\?productId=1001$/);
+  /*
+   * 준비(저장, 이동, 뒤로, 모달 0)는 일반 단언이다. 예상 실패는 마지막 판매가 한 줄뿐(09-R2) —
+   * 준비가 깨지면 `test.fail()`에 닿기 전에 보통 실패로 드러난다. 다음 뒤로가기 목적지는 아래
+   * "이동 순서" 시험이 같은 판매가 경로로 본다. 09-N1(목 PATCH)을 고치면 `test.fail` 줄을 지운다.
+   */
+  test("② 원문 — 판매가 저장 뒤 뒤로가기 폼이 새 판매가", async ({ page }) => {
+    await enterEditFromDetail(page, A);
+    const price = await pinnedPriceInput(page);
+    await price.fill("15500");
+    await saveButton(page).click();
+    await page.waitForURL(/\/products\?productId=1001$/);
+    await expect(firstPriceInput(page)).toHaveCount(0);
 
-      await page.goBack();
-      await expectUrl(page, `/products/${A}/edit`);
-      await expect(price).toHaveValue("15500", { timeout: 3000 });
-    },
-  );
+    await page.goBack();
+    await expectUrl(page, `/products/${A}/edit`);
+    await expect(price).toBeVisible();
+    await expect(leaveDialog(page)).toHaveCount(0);
+
+    test.fail(true, "09-N1 목 PATCH가 variantId 판매가를 반영 안 함");
+    await expect(price).toHaveValue("15500", { timeout: 3000 });
+  });
 
   test("② 이동 순서 — 판매가 저장도 URL 순서와 모달 0은 같다", async ({
     page,
@@ -381,27 +390,26 @@ test.describe("S1-9 (⑨) 앞 이력 없는 새 탭", () => {
    * 빈 페이지로 간다. "앞 이력 없음"을 못 만드는 조건이라 위 시험은 `window.open`으로 바꿨고,
    * 원문은 지금 못 맞는다는 기록으로 남긴다(02-dev §4).
    */
-  test.fail(
-    "① 원문 — context.newPage() 첫 항목에서 나가기 → 2초 안에 목록",
-    async ({ page, context }) => {
-      const session = await readSession(page);
-      const tab = await context.newPage();
-      await seedSession(tab, session);
-      await tab.goto(NEW);
-      await expect(nameInput(tab)).toBeVisible();
-      await nameInput(tab).fill("새 탭");
-      await expect
-        .poll(() => historyFields(tab))
-        .toMatchObject({
-          mark: true,
-        });
+  test("① 원문 — context.newPage() 첫 항목에서 나가기 → 2초 안에 목록", async ({
+    page,
+    context,
+  }) => {
+    const session = await readSession(page);
+    const tab = await context.newPage();
+    await seedSession(tab, session);
+    await tab.goto(NEW);
+    await expect(nameInput(tab)).toBeVisible();
+    await nameInput(tab).fill("새 탭");
+    await expect.poll(() => historyFields(tab)).toMatchObject({ mark: true });
 
-      await tab.goBack();
-      await expect(leaveDialog(tab)).toBeVisible();
-      await leaveButton(tab).click();
-      await expect.poll(() => here(tab), { timeout: 2000 }).toBe(LIST);
-    },
-  );
+    await tab.goBack();
+    await expect(leaveDialog(tab)).toBeVisible();
+    await leaveButton(tab).click();
+
+    // 예상 실패는 도착지 한 줄(09-R2). newPage의 about:blank 항목으로 간다
+    test.fail(true, "context.newPage()는 첫 about:blank 항목이 남는다");
+    await expect.poll(() => here(tab), { timeout: 2000 }).toBe(LIST);
+  });
 
   /*
    * 기획 원문은 `page.goto("/products/new")`로 같은 URL 항목을 하나 더 만든다. HTML 표준은 지금
@@ -435,11 +443,13 @@ test.describe("S1-9 (⑨) 앞 이력 없는 새 탭", () => {
     await expect(nameInput(tab)).toHaveValue("");
   });
 
-  test.fail("② 원문 — 같은 URL을 두 번 연 이력", async ({ page }) => {
+  test("② 원문 — 같은 URL을 두 번 연 이력", async ({ page }) => {
     const tab = await openPopup(page, NEW);
     await expect(nameInput(tab)).toBeVisible();
     await tab.goto(NEW);
     await expect(nameInput(tab)).toBeVisible();
+    // 예상 실패는 이력 길이 한 줄(09-R2). 같은 URL 이동은 replace라 1이다. 아래는 원문 그대로
+    test.fail(true, "HTML 표준이 같은 URL 이동을 replace로 바꾼다");
     expect(await historyLength(tab)).toBe(2);
     await nameInput(tab).fill("두 번째");
     await expect.poll(() => historyFields(tab)).toMatchObject({ mark: true });
@@ -449,6 +459,7 @@ test.describe("S1-9 (⑨) 앞 이력 없는 새 탭", () => {
     await leaveButton(tab).click();
     await expect(nameInput(tab)).toHaveValue("");
     await expectUrl(tab, NEW);
+    await tab.clock.install({ time: T0 });
     await tab.clock.runFor(1000);
     await expectUrl(tab, NEW);
     await expect(nameInput(tab)).toHaveValue("");
@@ -490,9 +501,9 @@ test("S1-13 A 수정 → 뒤로 나가기 → 목록에서 B → B 서버값 →
   await expectUrl(page, `${LIST}?productId=${B}`);
   await page.getByRole("link", { name: "상품 관리" }).click();
   await page.waitForURL((url) => url.pathname === `/products/${B}/edit`);
-  await expect(firstPriceInput(page)).toBeVisible();
-  const bServer = await firstPriceInput(page).inputValue();
-  expect(bServer).not.toBe(aValue);
+  // B 서버값은 시드(목 1002 판매가 23000)와 따로 맞춘다 — 화면 값끼리 비교하면 빈칸도 통과(09-M5)
+  await expect(firstPriceInput(page)).toHaveValue(B_SEED_PRICE);
+  expect(B_SEED_PRICE).not.toBe(aValue);
   await expect(nameInput(page)).toHaveValue(/루즈핏 니트 가디건/);
 
   await firstPriceInput(page).fill("24000");

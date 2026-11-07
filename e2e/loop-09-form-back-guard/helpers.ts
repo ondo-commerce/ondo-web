@@ -225,5 +225,57 @@ export async function openPopup(page: Page, path: string): Promise<Page> {
   return popup;
 }
 
-/** 흐르는 페이지 시계. "이동 0"은 `page.clock.runFor(1000)` 뒤 URL로 본다(08h M5) */
+/**
+ * 흐르는 페이지 시계. "이동 0"은 `page.clock.runFor(1000)` 뒤 URL로 본다(08h M5).
+ * 시계는 도착 뒤에 깐다(컨텍스트 전체 clock.install 뒤 다른 문서 traverse는 빈 화면, 원인 미조사, 09-N2).
+ */
 export const T0 = new Date("2026-11-07T14:00:00+09:00");
+
+/**
+ * 떠난 뒤 끝난 저장(S1-15 ③④)을 networkidle 없이 보는 기록(09-R4). 문서마다 `Response.json()`이
+ * 끝난 URL을 남긴다. 앱은 본문 파싱 뒤 mutation 콜백으로 가는데, 그 사이는 마이크로태스크와
+ * TanStack 알림의 `setTimeout(0)`뿐이라 고정 시계를 밀면 전부 돈다. 그 안에 이동이 났다면
+ * `spyRouter`가 남긴다.
+ */
+export async function recordParsedResponses(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const log = { parsed: [] as string[], router: [] as string[] };
+    (window as unknown as { __save: typeof log }).__save = log;
+    const json = Response.prototype.json;
+    Response.prototype.json = function (this: Response) {
+      const url = this.url;
+      return json.call(this).then((value: unknown) => {
+        log.parsed.push(url);
+        return value;
+      });
+    };
+  });
+}
+
+/** 지금 문서의 `window.next.router` push, replace를 감싸 호출을 남긴다. 도착한 뒤 부른다 */
+export async function spyRouter(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      next: { router: Record<string, (...args: unknown[]) => unknown> };
+      __save: { router: string[] };
+    };
+    for (const name of ["push", "replace"]) {
+      const original = w.next.router[name]!.bind(w.next.router);
+      w.next.router[name] = (...args: unknown[]) => {
+        w.__save.router.push(`${name} ${String(args[0])}`);
+        return original(...args);
+      };
+    }
+  });
+}
+
+export function saveLog(
+  page: Page,
+): Promise<{ parsed: string[]; router: string[] }> {
+  return page.evaluate(() => {
+    const log = (
+      window as unknown as { __save: { parsed: string[]; router: string[] } }
+    ).__save;
+    return { parsed: [...log.parsed], router: [...log.router] };
+  });
+}
