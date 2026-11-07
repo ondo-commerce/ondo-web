@@ -16,6 +16,7 @@ import { backorderSku, inquiryBackorders } from "./backorder";
 import { chatHandlers, chatStore, resetChatMock } from "./chat";
 import { orderHandlers, type MockOrder, type MockPacking } from "./order";
 import { findMockProduct, findMockVariant } from "./product";
+import type * as ProductMock from "./product";
 import {
   inquiryPackings,
   mockVariantOwner,
@@ -31,6 +32,13 @@ import {
  */
 
 const ORIGIN = "http://mock.test";
+
+/* `findMockVariant`만 감싼다. 기본은 진짜 상품 목을 그대로 부르고, "variant는 있는데 상품이 없음"(08i-M3) 한 시험만
+   상품 없는 productId를 가리키는 합성 variant를 한 번 돌려준다. 상품 목 시드를 바꾸면 다른 회차 시험이 흔들려서 */
+vi.mock("./product", async (importOriginal) => {
+  const actual = await importOriginal<typeof ProductMock>();
+  return { ...actual, findMockVariant: vi.fn(actual.findMockVariant) };
+});
 
 const server = setupServer(
   ...chatHandlers,
@@ -213,6 +221,48 @@ describe("S2-1 ① 원본 변환(packingRowsOf)", () => {
     expect(mockVariantOwner(3020)).toBe(103);
     expect(mockVariantOwner(3002)).toBe(101);
     expect(mockVariantOwner(99999)).toBeNull();
+  });
+
+  it("상품 목 소유 경로: variant는 있는데 상품이 없음 → null(도매처를 지어내지 않는다, 08i-M3)", () => {
+    const real = findMockVariant(3002);
+    expect(real).not.toBeNull();
+    if (real === null) return;
+    const ORPHAN_PRODUCT = 99999;
+    expect(findMockProduct(ORPHAN_PRODUCT)).toBeNull();
+    vi.mocked(findMockVariant).mockReturnValueOnce({
+      ...real,
+      productId: ORPHAN_PRODUCT,
+    });
+    expect(mockVariantOwner(3002)).toBeNull();
+    // 한 번만 바꿨다 — 다음 호출은 진짜 경로(3002 → 101)
+    expect(mockVariantOwner(3002)).toBe(101);
+  });
+
+  it("연결 주문 없는 포장은 행에서 빠지고, 나머지 행과 packingId는 그대로(08i-M1 accept, 08i-M4)", () => {
+    // 예외로 둔다: 목에서 포장은 주문 탭 `포장 준비`로만 생겨 주문 없는 포장이 안 생긴다. 생겨도 줄 소유를 알 길이
+    // 없어 wholesalerId null이 되고, 판정(`packingOrdersOf`)이 도매처 불일치로 어차피 뺀다. adapter에서 빼도 답이 같다
+    const input = {
+      orders: [order(9701, [{ id: 1, variantId: 3002 }])],
+      outboundShipped,
+      ownerOf: mockVariantOwner,
+    };
+    const first = packing(9801, 9701, [{ orderItemId: 1, qty: 1 }]);
+    const second = packing(
+      9802,
+      9701,
+      [{ orderItemId: 1, qty: 2 }],
+      "PACKED",
+      OPEN_OUTBOUND,
+    );
+    const orphan = packing(9899, 9999, [{ orderItemId: 1, qty: 1 }]);
+    const without = packingRowsOf({ ...input, packings: [first, second] });
+    const withOrphan = packingRowsOf({
+      ...input,
+      packings: [first, orphan, second],
+    });
+    expect(withOrphan.map((r) => r.packingId)).toEqual([9801, 9802]);
+    expect(withOrphan).toEqual(without);
+    expect(packingOrdersOf(withOrphan, 101, 1)).toEqual([9701]);
   });
 });
 
