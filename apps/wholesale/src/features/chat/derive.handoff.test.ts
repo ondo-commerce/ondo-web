@@ -36,7 +36,8 @@ const PLAN_REASONS_08D: Record<string, string> = {
   INVALID_TARGET: "선택한 상품이나 미송을 확인하지 못했어요",
   CLARIFY_AGAIN: "다시 물었지만 무엇을 묻는지 확인하지 못했어요",
   NOT_LISTED: "목록에 없는 다른 주문이라고 했어요",
-  NO_BACKORDER: "열린 미송이 없는 소매처예요",
+  // loop-08i Q5 ②(D57, #392 S3-1)가 바꾼 글. 08d 원문 "열린 미송이 없는 소매처예요"
+  NO_BACKORDER: "열린 미송이 없어요. 언제 받을 수 있는지 알려 주세요",
   NO_MATCH: "말한 미송을 찾지 못했어요",
   STOCK_ZERO: "재고가 없다고 답했어요. 입고 계획을 알려 주세요",
   ETA_UNKNOWN: "입고 예정일이 정해지지 않았다고 답했어요",
@@ -85,6 +86,33 @@ describe("S6-1 넘김 이유 21값", () => {
     expect(Object.keys(HANDOFF_REASON_TEXT).sort()).toEqual(
       [...Object.keys(PLAN_REASONS), ...Object.keys(PLAN_REASONS_08D)].sort(),
     );
+  });
+});
+
+describe("loop-08i S3-1 NO_BACKORDER 이유 줄(#392)", () => {
+  const NEXT = "열린 미송이 없어요. 언제 받을 수 있는지 알려 주세요";
+  const OLD = "열린 미송이 없는 소매처예요";
+
+  it("NO_BACKORDER → 새 글(Q5 ②), 넘김 말에서도 같은 글, 옛 글은 표 어디에도 없다", () => {
+    expect(handoffReasonText("NO_BACKORDER")).toBe(NEXT);
+    expect(
+      handoffReasonOf({ kind: "HANDOFF", handoff: handoff("NO_BACKORDER") }),
+    ).toBe(NEXT);
+    expect(Object.values(HANDOFF_REASON_TEXT)).not.toContain(OLD);
+  });
+
+  it("나머지 20값은 글자 그대로, 키 수 21", () => {
+    const expected = { ...PLAN_REASONS, ...PLAN_REASONS_08D };
+    expect(Object.keys(HANDOFF_REASON_TEXT)).toHaveLength(21);
+    const rest = Object.entries(expected).filter(
+      ([reason]) => reason !== "NO_BACKORDER",
+    );
+    expect(rest).toHaveLength(20);
+    for (const [reason, text] of rest)
+      expect(
+        HANDOFF_REASON_TEXT[reason as keyof typeof HANDOFF_REASON_TEXT],
+        reason,
+      ).toBe(text);
   });
 });
 

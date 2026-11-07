@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { roomList } from "../loop-04-chat/helpers";
 import {
   ask,
   bubbleOf,
@@ -8,9 +9,11 @@ import {
   deletePacking,
   handoffLines,
   kindsAfter,
+  log,
   nextKind,
   openRoomOne,
   PACKING_ONE,
+  resetChat,
   shipOutbound,
   type Line,
 } from "./helpers";
@@ -128,4 +131,52 @@ test("S2-8 ③ 7002 포장 → 삭제 → [HANDOFF], 그 소매 글 뒤 자동 �
     .poll(() => kindsAfter(page, question.sequence))
     .toEqual(["HANDOFF"]);
   expect(await kindsAfter(page, question.sequence)).not.toContain("AUTO_REPLY");
+});
+
+/** #392 Q5 ②(D57)가 고른 NO_BACKORDER 이유 줄과 바뀌기 전 글 */
+const REASON_NEXT = "열린 미송이 없어요. 언제 받을 수 있는지 알려 주세요";
+const REASON_OLD = "열린 미송이 없는 소매처예요";
+
+/** 그 말풍선 바로 다음 형제(넘김 note)의 이유 줄 */
+function reasonAfter(bubble: Locator): Locator {
+  return bubble
+    .locator("xpath=following-sibling::*[1]")
+    .locator("[data-reason-text]");
+}
+
+test("S3-2 포장 답 뒤 넘김과 포장 없는 넘김의 이유 줄이 같은 새 글, 옛 글 0", async ({
+  page,
+}) => {
+  // ① S2-7 준비: 7002 포장 → 질문 → 자동 답 바로 아래 넘김 줄의 이유 줄
+  await openRoomOne(page);
+  await createPacking(page, 7002, 8002, 1);
+  const first = await ask(page);
+  expect(kinds(first.lines)).toEqual(["AUTO_REPLY", "HANDOFF"]);
+  expect(first.lines[1]?.handoff?.reason).toBe("NO_BACKORDER");
+  const reply = first.lines[0];
+  if (reply === undefined) throw new Error("자동 답");
+  await expect(reasonAfter(bubbleOf(page, reply.sequence))).toHaveText(
+    REASON_NEXT,
+  );
+  await expect(log(page).getByText(REASON_OLD)).toHaveCount(0);
+
+  // ② 같은 시험에서 포장 없는 새 reset. 목은 페이지 안이라 문서를 다시 열어 화면을 비우고 `{noBackorders: true}`만
+  // (방이 시드로 돌아가 sequence가 다시 시작하므로, 문서를 그대로 두면 앞 말과 번호가 겹친다)
+  await page.goto("/chats?room=1");
+  await expect(roomList(page).getByRole("link").first()).toBeVisible();
+  await resetChat(page, { noBackorders: true });
+  await expect(log(page)).toBeVisible();
+  const handoffsBefore = await handoffLines(page).count();
+
+  const second = await ask(page);
+  expect(kinds(second.lines)).toEqual(["HANDOFF"]);
+  expect(second.lines[0]?.handoff?.reason).toBe("NO_BACKORDER");
+  await expect
+    .poll(() => kindsAfter(page, second.question.sequence))
+    .toEqual(["HANDOFF"]);
+  await expect(handoffLines(page)).toHaveCount(handoffsBefore + 1);
+  await expect(
+    reasonAfter(bubbleOf(page, second.question.sequence)),
+  ).toHaveText(REASON_NEXT);
+  await expect(log(page).getByText(REASON_OLD)).toHaveCount(0);
 });
