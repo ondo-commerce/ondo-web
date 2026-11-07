@@ -322,6 +322,63 @@ export function linkLeaveTarget(
 }
 
 /**
+ * 뒤로가기 보초 history 항목의 표시(#255). Next가 `__NA`와 내부 트리를 옆에 복사해 넣으므로
+ * 우리는 이 한 칸만 쓴다 — `{ __NA: true }`를 직접 넣으면 Next가 복사를 건너뛰어 트리가 빠진다.
+ */
+export const BACK_GUARD_MARK = "ondoLeaveGuard";
+
+/** `history.state`가 우리 보초 항목인가. Next 항목·`null`·남의 값은 전부 거짓 */
+export function isBackGuardState(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[BACK_GUARD_MARK] === true
+  );
+}
+
+/**
+ * 보초를 새로 쌓을지(#255 정책표 ⑥). 가드가 켜졌고 지금 항목이 아직 보초가 아닐 때만 —
+ * Strict Mode의 effect 재실행이나 입력·지움 왕복에도 보초는 한 개다.
+ */
+export function shouldPushGuard(active: boolean, state: unknown): boolean {
+  return active && !isBackGuardState(state);
+}
+
+/**
+ * popstate 한 번에 가드가 할 일(#255 판정표 8행).
+ * - `ignore` 아무것도 안 한다. 떠나는 중, 다른 URL로 왔음(이력 메뉴 건너뛰기), 앞으로가기로
+ *   보초에 내려옴, 보초를 넣은 적 없는 인스턴스.
+ * - `hold` 저장 중. 보초만 다시 넣고 머문다(모달 없음, 저장이 끝나면 원래 목적지로).
+ * - `open` 보초를 다시 넣고 이탈 모달을 연다.
+ * - `keep` 모달이 이미 열렸다. 보초만 다시 넣는다(열린 이유는 그대로).
+ * - `continue` 입력이 없다. `history.back()`을 한 번 더 불러 이전 화면으로.
+ *
+ * `hold`와 `keep`은 하는 일이 같지만 이유가 달라 나눴다 — 저장 중엔 모달이 열릴 수 없다
+ * (저장 버튼이 모달 밑에 있다).
+ */
+export type BackGuardAction = "ignore" | "hold" | "open" | "keep" | "continue";
+
+export function backGuardAction(input: {
+  leaving: boolean;
+  /** 지금 `pathname + search`가 폼을 연 URL과 같다 */
+  atFormUrl: boolean;
+  /** popstate 뒤 지금 항목이 보초다 */
+  onGuardEntry: boolean;
+  /** 이 폼 인스턴스가 보초를 넣었거나, 보초 위에서 마운트됐다 */
+  sawGuard: boolean;
+  saving: boolean;
+  /** 입력이 있거나 업로드 중 */
+  guardActive: boolean;
+  dialogOpen: boolean;
+}): BackGuardAction {
+  if (input.leaving || !input.atFormUrl) return "ignore";
+  if (input.onGuardEntry || !input.sawGuard) return "ignore";
+  if (input.saving) return "hold";
+  if (!input.guardActive) return "continue";
+  return input.dialogOpen ? "keep" : "open";
+}
+
+/**
  * 저장 버튼 옆 한 줄. 대기·진행 칸이 있으면 잠금 안내가 실패 안내보다 앞선다 —
  * 잠긴 이유를 먼저 말해야 한다. `null`이면 문구 없음.
  */

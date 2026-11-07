@@ -6,6 +6,7 @@ import {
   PRICE_INPUT_MAX_DIGITS,
 } from "./constants";
 import {
+  backGuardAction,
   cancelUploads,
   clearImagesError,
   EMPTY_POST_FORM,
@@ -24,6 +25,7 @@ import {
   rejectImageFile,
   remainingImageSlots,
   requeueForRetry,
+  shouldPushGuard,
   uploadFailure,
   uploadNote,
   validateProductForm,
@@ -348,6 +350,72 @@ describe("cancelUploads — S4-2·S4-5: 거둘 때 abort 는 진행 칸만, revo
       abort: ["A"],
       revoke: ["blob:preview-B", "blob:preview-A"],
     });
+  });
+});
+
+/**
+ * #255 S1-2 — 뒤로가기 판정표 8행. 행 이름은 기획 §4-2 판정표 순서 그대로다.
+ * 각 행은 바로 위 행이 걸리지 않는 값에서 그 행의 칸 하나만 바꾼다.
+ */
+describe("backGuardAction — S1-2: popstate 판정표 8행", () => {
+  const base = {
+    leaving: false,
+    atFormUrl: true,
+    onGuardEntry: false,
+    sawGuard: true,
+    saving: false,
+    guardActive: true,
+    dialogOpen: false,
+  };
+
+  it("1행 떠나는 중이면 다른 칸과 상관없이 ignore", () => {
+    expect(backGuardAction({ ...base, leaving: true, saving: true })).toBe(
+      "ignore",
+    );
+  });
+
+  it("2행 URL이 폼과 다르면 ignore(이력 메뉴 건너뛰기)", () => {
+    expect(backGuardAction({ ...base, atFormUrl: false })).toBe("ignore");
+  });
+
+  it("3행 지금 항목이 보초면 ignore(앞으로가기로 보초에 내려옴)", () => {
+    expect(backGuardAction({ ...base, onGuardEntry: true })).toBe("ignore");
+  });
+
+  it("4행 보초를 본 적 없는 인스턴스면 ignore", () => {
+    expect(backGuardAction({ ...base, sawGuard: false })).toBe("ignore");
+  });
+
+  it("5행 저장 중이면 가드, 모달과 상관없이 hold", () => {
+    expect(backGuardAction({ ...base, saving: true, guardActive: false })).toBe(
+      "hold",
+    );
+  });
+
+  it("6행 입력 있음 + 모달 닫힘이면 open", () => {
+    expect(backGuardAction(base)).toBe("open");
+  });
+
+  it("7행 입력 있음 + 모달 열림이면 keep", () => {
+    expect(backGuardAction({ ...base, dialogOpen: true })).toBe("keep");
+  });
+
+  it("8행 입력 없음이면 모달과 상관없이 continue", () => {
+    expect(
+      backGuardAction({ ...base, guardActive: false, dialogOpen: true }),
+    ).toBe("continue");
+  });
+});
+
+describe("shouldPushGuard — S1-2: 보초 넣기 2행", () => {
+  it("켜짐 + 지금 항목에 표시 없음(Next 항목)이면 넣는다", () => {
+    expect(shouldPushGuard(true, { __NA: true })).toBe(true);
+  });
+
+  it("켜짐 + 지금 항목이 이미 보초면 넣지 않는다", () => {
+    expect(shouldPushGuard(true, { ondoLeaveGuard: true, __NA: true })).toBe(
+      false,
+    );
   });
 });
 
