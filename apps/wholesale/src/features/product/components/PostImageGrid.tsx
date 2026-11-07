@@ -39,12 +39,15 @@ import {
 } from "../constants";
 import {
   cancelUploads,
+  isUploadLocked,
   orderCompleted,
   rejectImageFile,
   remainingImageSlots,
   requeueForRetry,
+  shouldLockOnAuth,
   uploadFailure,
 } from "../derive";
+import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
 import type { UploadSlot, UploadState } from "../types";
 
 /** 격자 아래 거절 목록 한 줄. `name`이 없으면 "N장은 칸이 없어 빠졌어요" 같은 묶음 문구다 */
@@ -158,9 +161,21 @@ export function PostImageGrid({
    * 401/403으로 큐가 멈췄다(§4-3-3). 멈춘 동안엔 어떤 길로도 새 요청을 띄우지 않는다 —
    * 같은 세션으로 보내면 같은 답이다. 로직은 ref를, `다시 시도` 잠금은 거울 state를 본다.
    * 새로 고른 파일(403일 때만 `+`가 열려 있다)은 사장이 다시 해 보겠다는 뜻이라 정지를 푼다.
+   *
+   * 불 대신 멈춘 때의 세션 세대를 쥔다(#403). 같은 계정이 다른 탭에서 다시 로그인하면 세대가
+   * 올라 정지가 풀린다 — 잠겨 있던 실패 칸의 `다시 시도`가 다시 눌린다. `null`이면 멈춘 적 없음.
    */
-  const authStoppedRef = useRef(false);
-  const [authStopped, setAuthStopped] = useState(false);
+  const stoppedAtRef = useRef<number | null>(null);
+  const [stoppedAt, setStoppedAt] = useState<number | null>(null);
+  const epoch = useProductSessionEpoch();
+  const authStopped = isUploadLocked(stoppedAt, epoch);
+  /* 응답 콜백은 렌더 값이 아니라 지금 세대를 본다 — 그 사이 재로그인이 끼었을 수 있다 */
+  const isAuthStopped = () =>
+    isUploadLocked(stoppedAtRef.current, productSessionEpoch());
+  const setStopped = (at: number | null) => {
+    stoppedAtRef.current = at;
+    setStoppedAt(at);
+  };
   /* 진행 칸마다 하나. 끝나면 지운다 — 남아 있는 것이 곧 "지금 나가 있는 요청"이다 */
   const controllersRef = useRef(new Map<string, AbortController>());
   /*
@@ -243,7 +258,7 @@ export function PostImageGrid({
 
     const running = current.filter((s) => s.status === "uploading").length;
     const next = current
-      .filter((s) => s.status === "queued" && !authStoppedRef.current)
+      .filter((s) => s.status === "queued" && !isAuthStopped())
       .slice(0, Math.max(0, IMAGE_UPLOAD_CONCURRENCY - running));
     commit(
       current.map((s) =>
@@ -257,6 +272,8 @@ export function PostImageGrid({
 
   /** 요청 하나. 끝나면 그 칸만 바꾼다 — 다른 칸은 그 사이 몇 번이고 바뀌었을 수 있다 */
   async function startUpload(slot: UploadSlot) {
+    // 요청을 띄운 세션(#403). 401이 늦게 왔을 때 그 사이 재로그인이 있었는지 이걸로 가른다
+    const startedAt = productSessionEpoch();
     const controller = new AbortController();
     controllersRef.current.set(slot.slotId, controller);
     let settled: Pick<UploadSlot, "status" | "url" | "failure">;
@@ -285,8 +302,19 @@ export function PostImageGrid({
     )
       return;
     if (authError !== null) {
-      stopForAuth(authError);
-      return;
+      if (shouldLockOnAuth(startedAt, productSessionEpoch())) {
+        stopForAuth(authError);
+        return;
+      }
+      /*
+       * 늦은 401(#403 S2-8). 재로그인 전 쿠키로 떠난 요청이라 새 세션을 잠그지 않는다. 사진은
+       * 안 올라갔으니 그 칸만 `다시 시도` 실패 칸으로 남기고 큐는 계속 돈다(08d 늦은 401과 같은 규칙).
+       */
+      settled = {
+        status: "failed",
+        url: null,
+        failure: uploadFailure(TRANSPORT_ERROR_CODE.NETWORK),
+      };
     }
     slotsRef.current = slotsRef.current.map((s) =>
       s.slotId === slot.slotId ? { ...s, ...settled } : s,
@@ -305,8 +333,7 @@ export function PostImageGrid({
    * 그다음 화면(View)에 알린다. 401이면 화면이 저장과 `+`를 잠근다.
    */
   function stopForAuth(error: unknown) {
-    authStoppedRef.current = true;
-    setAuthStopped(true);
+    setStopped(productSessionEpoch());
     const removed = slotsRef.current.filter(
       (s) => s.status === "queued" || s.status === "uploading",
     );
@@ -353,8 +380,7 @@ export function PostImageGrid({
     setRejected(lines);
 
     if (taken.length === 0) return;
-    authStoppedRef.current = false;
-    setAuthStopped(false);
+    setStopped(null);
     slotsRef.current = [
       ...slotsRef.current,
       ...taken.map((file): UploadSlot => ({
@@ -376,7 +402,7 @@ export function PostImageGrid({
    * 건너뛰었던 뒤쪽 완료분이 다시 보류된다(F1). 그래서 재시도 뒤 칸 번호가 바뀐다.
    */
   function retry(slotId: string) {
-    if (authStoppedRef.current) return;
+    if (isAuthStopped()) return;
     slotsRef.current = requeueForRetry(slotsRef.current, slotId);
     process();
   }
