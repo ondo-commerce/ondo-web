@@ -429,6 +429,11 @@ test("09-M2 (D64 ②) 늦은 403은 세대와 무관하게 기존 정지 — 서
   await reloginInSecondTab(page);
   await waitSessionBroadcast(page, 2);
   await expect(retryButton(page)).toBeDisabled();
+
+  // 새 파일 선택이 정지를 푼다(기존 길, 09-F1) — 새 장이 올라가고 다시 시도가 다시 눌린다
+  await chooseFiles(page, [jpg("b.jpg")]);
+  await expect(registered(page)).toHaveCount(1);
+  await expect(retryButton(page)).toBeEnabled();
 });
 
 test("S2-9 (재로그인 뒤 재시도) fail500once 실패 칸 → auth401 잠금, 다시 시도 disabled → 탭 2 로그인 → enabled → 눌러서 등록", async ({
