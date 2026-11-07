@@ -18,7 +18,7 @@ import { linkLeaveTarget } from "./derive";
  * - 버튼에서 직접 `router.push`(로그아웃)는 못 잡는다. 진행 중 업로드는 언마운트가 abort한다.
  * - `나가기` 뒤 `router.push`라 원래 Link의 `replace`·`scroll={false}`는 잃는다. 지금 대상
  *   Link 중 그 둘을 쓰는 곳이 없다.
- * - 뒤로가기는 여기 없다 — 다음 회차(Next history 상태 전이 정책부터 정해야 한다).
+ * - 뒤로가기는 여기 없다 — `useBackLeaveGuard`(#255)가 history 보초로 받는다.
  */
 export function useLinkLeaveGuard(
   active: boolean,

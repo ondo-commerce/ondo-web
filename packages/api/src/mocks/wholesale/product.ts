@@ -705,32 +705,44 @@ function matchesQuery(p: MockProduct, q: string | null): boolean {
   );
 }
 
-/** 등록·수정 요청의 색상×사이즈를 variant 행으로. 기존 SKU는 id를 지키고 새 것만 만든다 */
+/**
+ * 등록·수정 요청의 색상×사이즈를 variant 행으로. 기존 SKU는 id를 지키고 새 것만 만든다.
+ *
+ * 판매가 행은 SKU를 `variantId` **또는** `(colorId, size)` 한쪽으로 가리킨다(스펙 `targetSpecified`).
+ * 수정 화면은 기존 SKU를 `variantId`로만 보내므로 둘 다 찾아야 한다 — 색, 사이즈로만 찾으면
+ * 수정한 판매가가 버려진다(09-N1).
+ *
+ * 남는 기존 SKU는 전체 배열에서 **제자리**에 둔다. 상세와 채팅 보기는 따로 정렬해 지금은 순서가 안
+ * 드러나지만, 배열 순서에 기대는 핸들러가 생겨도 저장 한 번에 순서가 바뀌지 않게 한다. 새 SKU만 뒤에 붙인다.
+ */
 function upsertVariants(
   productId: number,
   options: readonly { colorId: number; sizes?: readonly Size[] }[],
   prices: readonly WholesaleSchema<"VariantPriceRequest">[] | undefined,
 ) {
   const existing = variants.filter((v) => v.productId === productId);
-  const next: MockVariant[] = [];
+  const kept = new Set<MockVariant>();
+  const added: MockVariant[] = [];
   let seq = existing.reduce((max, v) => Math.max(max, v.variantNumber), 0);
   for (const option of options) {
     for (const size of option.sizes ?? []) {
       const known = existing.find(
         (v) => v.colorId === option.colorId && v.size === size,
       );
-      const price = (prices ?? []).find(
-        (x) => x.colorId === option.colorId && x.size === size,
+      const price = (prices ?? []).find((x) =>
+        known && x.variantId !== undefined
+          ? x.variantId === known.id
+          : x.colorId === option.colorId && x.size === size,
       );
       if (known) {
         if (price) {
           known.salePrice = price.salePrice;
           known.orderLimit = price.orderLimit ?? 0;
         }
-        next.push(known);
+        kept.add(known);
       } else {
         seq += 1;
-        next.push(
+        added.push(
           variant(
             nextVariantId++,
             productId,
@@ -745,7 +757,10 @@ function upsertVariants(
       }
     }
   }
-  variants = [...variants.filter((v) => v.productId !== productId), ...next];
+  variants = [
+    ...variants.filter((v) => v.productId !== productId || kept.has(v)),
+    ...added,
+  ];
 }
 
 function upsertListing(
