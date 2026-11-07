@@ -24,6 +24,7 @@ packages/config/  eslint · typescript 공유 설정 (prettier는 루트 .pretti
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
+- `pnpm typecheck`와 `pnpm lint`는 `e2e/`도 본다(`typecheck:e2e`, `lint:e2e`. 실행은 안 한다)
 - `pnpm test` = vitest. **순수 함수만**(`features/*/derive.ts` 옆 `*.test.ts`). 컴포넌트 렌더 테스트는 안 한다(`docs/08` 규칙 7)
 - `pnpm e2e` = Playwright, mock 모드(`NEXT_PUBLIC_API_MOCK=1`). `e2e/<회차>/`에 쌓인다. CI는 아직 안 돈다(dev 서버 필요)
 - CI(`.github/workflows/ci.yml`)는 위 4개를 돈다. 없는 테스트를 있다고 말하지 않는다
