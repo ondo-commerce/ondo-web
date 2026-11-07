@@ -23,6 +23,7 @@ import {
   recordMockPayment,
   replayMockPayment,
 } from "../wholesale/settlement";
+import { readyPackingsError } from "../wholesale/order";
 import { retailNotificationCount } from "./notification";
 import { RETAIL_ME_RETAILER_ID, RETAIL_WHOLESALERS } from "./parties";
 
@@ -932,9 +933,14 @@ export const retailChatHandlers = [
       noBackorders?: boolean;
       rooms?: unknown;
       seed?: unknown;
+      readyPackings?: unknown;
     };
     if (input.seed !== undefined && !isChatSeedName(input.seed))
       return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
+    // 소매 worker엔 주문 op가 없어 포장을 이 손잡이로 만든다(loop-08i §5-4 3). 검사는 reset보다 먼저 전부
+    const packingError = readyPackingsError(input.readyPackings);
+    if (packingError !== null)
+      return invalid("readyPackings", packingError.code, packingError.message);
     if (
       input.rooms !== undefined &&
       (typeof input.rooms !== "number" ||
@@ -952,6 +958,7 @@ export const retailChatHandlers = [
       noBackorders: input.noBackorders === true,
       rooms: input.rooms,
       seed: input.seed,
+      readyPackings: input.readyPackings as number[] | undefined,
     });
     return HttpResponse.json({
       data: {
@@ -998,11 +1005,14 @@ export function resetRetailChatMock(
     noBackorders?: boolean;
     rooms?: number;
     seed?: string;
+    /** 그 주문들의 READY 포장(loop-08i). 틀린 값이면 아무것도 바꾸기 전에 던진다(도매 `resetChatMock`) */
+    readyPackings?: readonly number[];
   } = {},
 ) {
   resetChatMock(undefined, {
     noBackorders: options.noBackorders === true,
     seed: options.seed,
+    readyPackings: options.readyPackings,
   });
   // "나"를 먼저 되돌린다 — 아래 empty, rooms가 기본 소매처 기준이다
   meRetailerId = RETAIL_ME_RETAILER_ID;

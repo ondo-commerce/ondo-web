@@ -28,7 +28,7 @@ import {
   inquiryBackorders,
   resetBackorderMock,
 } from "./backorder";
-import { resetOrderMock } from "./order";
+import { addReadyPackings, readyPackingsError, resetOrderMock } from "./order";
 import { chatStockListing } from "./product";
 import { mockReceivableRows, resetSettlementMock } from "./settlement";
 import { inquiryPackings, resetShipmentMock } from "./shipment";
@@ -1989,12 +1989,18 @@ export const chatHandlers = [
       rooms?: number;
       noBackorders?: boolean;
       seed?: string;
+      readyPackings?: unknown;
     };
     if (input.seed !== undefined && !isChatSeedName(input.seed))
       return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
+    // 검사를 reset보다 먼저 전부(loop-08i §5-4 3). 틀리면 400이고 아무것도 안 바뀐다
+    const packingError = readyPackingsError(input.readyPackings);
+    if (packingError !== null)
+      return invalid("readyPackings", packingError.code, packingError.message);
     resetChatMock(input.rooms, {
       noBackorders: input.noBackorders === true,
       seed: input.seed,
+      readyPackings: input.readyPackings as number[] | undefined,
     });
     return HttpResponse.json({
       data: {
@@ -2007,11 +2013,22 @@ export const chatHandlers = [
   ...chatSharedKnobs,
 ];
 
-/** 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다 */
+/**
+ * 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다.
+ * `readyPackings`(loop-08i §5-4 3)는 주문 목 reset 뒤 그 주문들의 READY 포장을 만든다. 값이 틀리면 **아무것도
+ * 바꾸기 전에** 던진다 — HTTP 손잡이는 같은 검사를 먼저 해 400으로 돌려준다
+ */
 export function resetChatMock(
   keepRooms?: number,
-  options: { noBackorders?: boolean; seed?: string } = {},
+  options: {
+    noBackorders?: boolean;
+    seed?: string;
+    readyPackings?: readonly number[];
+  } = {},
 ) {
+  const packingError = readyPackingsError(options.readyPackings);
+  if (packingError !== null)
+    throw new Error(`mock: readyPackings ${packingError.code}`);
   rooms =
     options.seed === STATS_SEED_NAME
       ? seedStatsRooms()
@@ -2027,6 +2044,8 @@ export function resetChatMock(
   resetOrderMock();
   resetShipmentMock();
   resetSettlementMock();
+  // 소매 e2e는 주문 op가 목에 안 닿아(소매 worker는 채팅, 알림만) 포장을 여기서 만든다. 출고 목은 READY를 그대로 읽는다
+  addReadyPackings(options.readyPackings ?? []);
   if (keepRooms !== undefined) {
     const keep = new Set(
       rooms
