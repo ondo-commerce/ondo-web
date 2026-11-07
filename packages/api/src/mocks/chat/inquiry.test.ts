@@ -287,6 +287,84 @@ describe("S7-3, S1-2, 08c S3-6, 08f S1-2 골든셋 116개 지표(v4 84개 포함
   });
 });
 
+describe("loop-08i S1-10 기존 투영별 결과 보존(포장 답 줄 투영 칸 추가 뒤)", () => {
+  /** v6까지의 116개. v7은 뒤에 붙이기만 한다 */
+  const OLD = GOLDEN.scenarios.slice(0, 116);
+  const lineProjected = (s: (typeof OLD)[number]) =>
+    (s.since ?? 0) >= 4 && s.projection !== "decision";
+
+  it("줄 투영 56개 + 판정 투영 60개, 전 단계 actual = expect, 어느 줄에도 facts 칸이 없다", () => {
+    expect(OLD.filter(lineProjected)).toHaveLength(56);
+    expect(OLD.filter((s) => !lineProjected(s))).toHaveLength(60);
+    const ids = new Set(OLD.map((s) => s.id));
+    const old = RESULTS.filter((r) => ids.has(r.scenario));
+    expect(old).toHaveLength(150);
+    expect(
+      old.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+    const withFacts = old.filter((r) =>
+      ((r.actual.lines ?? []) as Record<string, unknown>[]).some(
+        (l) => "facts" in l,
+      ),
+    );
+    expect(withFacts.map((r) => r.scenario)).toEqual([]);
+  });
+
+  it("room.packings 행 → 포장 답 줄에만 facts: null, packingFailTimes 1 → 넘김 하나", () => {
+    const room = {
+      wholesalerId: 101,
+      retailerId: 3,
+      context: null,
+      autoReply: true,
+      packings: [
+        {
+          packingId: 9201,
+          orderId: 7101,
+          wholesalerId: 101,
+          retailerId: 3,
+          orderCancelled: false,
+          packingStatus: "READY" as const,
+          outboundShipped: null,
+          qty: 1,
+          note: "유효 READY",
+        },
+      ],
+    };
+    const run = (packingFailTimes?: number) =>
+      runScenario({
+        id: "K-adhoc",
+        title: "K-adhoc",
+        required: false,
+        group: "backorder",
+        since: 7,
+        room: {
+          ...room,
+          ...(packingFailTimes === undefined ? {} : { packingFailTimes }),
+        },
+        steps: [{ text: "미송 언제 와요?", inquiry: null, expect: {} }],
+      })[0]?.actual;
+    const handoff = {
+      kind: "HANDOFF",
+      reason: "NO_BACKORDER",
+      intent: "BACKORDER",
+      sourceSequence: "self",
+    };
+    expect(run()).toEqual({
+      lines: [
+        {
+          kind: "AUTO_REPLY",
+          intent: "BACKORDER",
+          target: null,
+          body: "출고 준비 중인 주문이 있어요(#7101)",
+          facts: null,
+        },
+        handoff,
+      ],
+    });
+    expect(run(1)).toEqual({ lines: [handoff] });
+  });
+});
+
 /** 골든셋 밖 시나리오. 골든셋 파일은 계약 stage에서만 바꾼다 — 그래서 여기 unit으로 둔다 */
 function adhoc(
   id: string,
