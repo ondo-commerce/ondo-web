@@ -1,5 +1,6 @@
 {
-  "version": 6,
+  "version": 7,
+  "aboutV7": "v7(since 7, loop-08i §5-3)는 미송 0일 때 출고 준비 중 주문 답 16개다(K01~K16, O07 뒤에 붙이기만 함). 포장 원본은 시나리오 칸 room.packings(거르지 않은 행, 없으면 빈 원본)이고 room.packingFailTimes 횟수만큼 원본이 던진다. 판정은 미송 가지의 앞 단계(다른 주문이에요, 칩, 배송어, 되묻기 계승)를 지나 미송 후보가 0이고 본문이 대상(색상, 사이즈, 숫자, 모르는 말)을 말하지 않았을 때만 원본을 부른다. 남기는 행은 도매처 = 방 도매처(null이면 뺌), 소매처 = 방 소매처, 취소 아님, 수량 > 0, READY + 봉투 없음 또는 PACKED + 봉투 출고 전뿐이고 주문으로 묶는다(orderId 오름차순). 1건 이상이면 AUTO_REPLY(intent BACKORDER, subject 넷 null, facts 셋 null) + HANDOFF(NO_BACKORDER, BACKORDER), 0건이나 원본 실패나 대상을 말한 질문은 HANDOFF NO_BACKORDER 하나. 본문은 1건 '출고 준비 중인 주문이 있어요(#7101)', 2건부터 '출고 준비 중인 주문 n건이 있어요(#7101, #7102)', 4건부터 앞 3개 번호 + ' 외 k건'. 기대값은 v4 줄 투영(`{lines}`)이고 포장 답 줄에만 facts: null 칸이 붙는다. K13만 projection decision이고 기대가 B04와 같다(열린 미송이 있으면 포장을 안 본다).",
   "aboutV6": "v6(since 6, loop-08f §5-3)는 전부 꺼짐 때 의도 분류 7개다(O01~O07). 이유는 OFF 그대로, intent는 settings.enabled만 켜고(의도별 설정, 본문, 칩, 문맥, 이력은 그대로) 다시 판정한 intent다(조회 실패면 null). 줄은 OFF 넘김 하나뿐이다. U08 기대값은 그대로(켜짐에서도 HUMAN_REQUEST intent null), H15는 v1 투영(kind, reason)이라 intent 변화가 기대값에 안 보인다. 기대값은 v4 줄 투영(`{lines}`).",
   "aboutV5": "v5(since 5, loop-08c §5-4)는 넘김 낱말 25개다: 협상 N01~N12, 사람 요청 HUMAN_REQUEST U01~U09, 낱말 경계 G01 X01~X03. 기대값은 v4 와 같은 줄 투영(`{lines}`)이다. 시나리오에 projection \"decision\" 이 있으면(G01) 그 시나리오만 v3 판정 투영이다 — B01 과 같은 판정임을 같은 모양으로 비교하려고. 판정 순서는 꺼짐 → 사람 요청 → 협상 → 입금 알림 이하 그대로.",
   "about": "재고, 미송, 미수 문의 자동 답 골든셋(loop-05b §5-4, loop-06 §5-4 6, loop-07 §5-4 5).목 unit(packages/api src/mocks/chat/inquiry.test.ts)과 BE 테스트가 같은 파일을 읽는다. 필수 5(P1~P5)는 모든 단계가 정확히 일치해야 한다. v4(since 4 인 시나리오)의 expect 는 판정이 아니라 **방에 들어간 줄** 투영이다: {lines: [...]} 이고 열린 넘김과 이유가 같은 넘김 줄은 빠진다(줄 0 = lines []). 미수 AUTO_REPLY 줄은 kind intent outstanding prepaid overdue{count amount maxDaysOverdue} body checkedAt(asOf = 그 행의 asOf, now = 그 단계 시각). HANDOFF 줄은 kind reason intent sourceSequence(self = 그 단계 소매 메시지). 재고 CLARIFY 줄은 kind intent choices. step.sender WHOLESALER 는 사장이 직접 쓴 글이고 expect 는 {openHandoff}. room.receivableFailTimes 는 미수 원본 조회가 그 횟수만큼 던진다(LOOKUP_FAILED). receivables 표는 도매처 × 소매처 정산 요약 원본 한 줄이고(balance 플러스 = 갚을 돈) 판정에는 거르지 않은 채 전부 넘긴다. source 가 settlement.ts seed, extraReceivables.ts 인 행은 목 시드와 같아야 한다(asOf 제외). receivableAnomalies 는 toReceivableFacts 이상값 표다(\"NaN\" 글자는 NaN). 아래 aboutV3 은 v3 설명 그대로다.",
@@ -1750,6 +1751,228 @@
       "room": {"wholesalerId": 101, "retailerId": 1, "context": null, "autoReply": false},
       "steps": [
         {"text": "조금 깎아 주세요", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": null, "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K01",
+      "title": "미송 0 + 출고 준비 중 주문 1건(READY) → 번호 답 + 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY, 봉투 없음"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문이 있어요(#7101)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K02",
+      "title": "READY 1건 + PACKED 출고 전 1건 → 2건 답 + 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"},
+        {"packingId": 9202, "orderId": 7102, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "PACKED", "outboundShipped": false, "qty": 2, "note": "유효 PACKED, 봉투 출고 전"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문 2건이 있어요(#7101, #7102)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K03",
+      "title": "READY 4건(행 순서 섞임) + \"언제 와요?\" → 앞 3개 번호 + 외 1건",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9203, "orderId": 7103, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효, 순서 섞음"},
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효"},
+        {"packingId": 9204, "orderId": 7104, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효, 넷째라 외 1건"},
+        {"packingId": 9202, "orderId": 7102, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효"}
+      ]},
+      "steps": [
+        {"text": "언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문 4건이 있어요(#7101, #7102, #7103 외 1건)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K04",
+      "title": "같은 주문 포장 둘(분할 결과: READY + PACKED 출고 전) → 주문으로 묶어 1건",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "분할 뒤 남은 쪽 READY"},
+        {"packingId": 9202, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "PACKED", "outboundShipped": false, "qty": 1, "note": "분할 뒤 봉투에 담긴 쪽, 출고 전"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문이 있어요(#7101)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K05",
+      "title": "PACKED 출고됨뿐 → 넘김(출고된 물건을 준비 중이라 말하지 않는다)",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "PACKED", "outboundShipped": true, "qty": 1, "note": "봉투 출고됨"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K06",
+      "title": "다른 도매처(102) 포장뿐 → 넘김(남의 주문 번호를 말하지 않는다)",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 102, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "소유 102"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K07",
+      "title": "다른 소매처(4) 포장뿐 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 4, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "소매처 4"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K08",
+      "title": "취소 주문 포장 + 수량 0 포장뿐 → 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": true, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "취소 주문"},
+        {"packingId": 9202, "orderId": 7102, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 0, "note": "수량 0"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K09",
+      "title": "거르기 표 한 방에: 유효 1 + 빠질 행 6 → 유효한 주문 1건만 답",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"},
+        {"packingId": 9202, "orderId": 7102, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "PACKED", "outboundShipped": true, "qty": 1, "note": "출고됨"},
+        {"packingId": 9203, "orderId": 7103, "wholesalerId": 102, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "소유 102"},
+        {"packingId": 9204, "orderId": 7104, "wholesalerId": 101, "retailerId": 3, "orderCancelled": true, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "취소 주문"},
+        {"packingId": 9205, "orderId": 7105, "wholesalerId": null, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "소유 모름(줄마다 도매처 다름)"},
+        {"packingId": 9206, "orderId": 7106, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": false, "qty": 1, "note": "이상값: READY인데 봉투 있음"},
+        {"packingId": 9207, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "PACKED", "outboundShipped": true, "qty": 1, "note": "같은 주문의 출고된 다른 포장(일부 출고)"}
+      ]},
+      "steps": [
+        {"text": "주문한 거 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문이 있어요(#7101)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K10",
+      "title": "\"블랙 셔츠 미송 언제 와요?\"(대상 말함) → 포장을 안 보고 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"}
+      ]},
+      "steps": [
+        {"text": "블랙 셔츠 미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K11",
+      "title": "\"#7101 언제 와요?\"(번호 말함) → 넘김",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"}
+      ]},
+      "steps": [
+        {"text": "#7101 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K12",
+      "title": "포장 원본 조회 실패 1회 → 넘김(오류 아님)",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packingFailTimes": 1, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY, 하지만 조회가 던진다"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K13",
+      "title": "대기상회 방(열린 미송 9005) + 포장 READY → 포장 무시, B04와 같은 칩 1개 되묻기",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "projection": "decision",
+      "room": {"wholesalerId": 101, "retailerId": 2, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7005, "wholesalerId": 101, "retailerId": 2, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY, 하지만 열린 미송이 있어 안 본다"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요", "inquiry": null, "expect": {"kind": "CLARIFY", "intent": "BACKORDER", "choices": [{"kind": "BACKORDER", "backorderId": 9005}, {"kind": "NOT_LISTED", "backorderId": null}], "labels": ["빈티지 플라워 셔츠 레드/L, 남은 9장, 9/5 주문 #7005", "다른 주문이에요"]}}
+      ]
+    },
+    {
+      "id": "K14",
+      "title": "포장 답 뒤 2분 만에 다시 물음 → 두 번 다 답 + 넘김(답 + 넘김은 열린 넘김이 있어도 넣는다)",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문이 있어요(#7101)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}},
+        {"text": "언제 와요?", "inquiry": null, "afterMinutes": 2, "expect": {"lines": [{"kind": "AUTO_REPLY", "intent": "BACKORDER", "target": null, "body": "출고 준비 중인 주문이 있어요(#7101)", "facts": null}, {"kind": "HANDOFF", "reason": "NO_BACKORDER", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K15",
+      "title": "자동 답 전부 꺼짐 + 포장 READY → OFF, 의도는 미송",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": false, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"}
+      ]},
+      "steps": [
+        {"text": "미송 언제 와요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "OFF", "intent": "BACKORDER", "sourceSequence": "self"}]}}
+      ]
+    },
+    {
+      "id": "K16",
+      "title": "\"미송 출고 언제 돼요?\"(배송어) → NOT_SUPPORTED, 포장 단계까지 안 온다",
+      "required": false,
+      "group": "backorder",
+      "since": 7,
+      "room": {"wholesalerId": 101, "retailerId": 3, "context": null, "autoReply": true, "packings": [
+        {"packingId": 9201, "orderId": 7101, "wholesalerId": 101, "retailerId": 3, "orderCancelled": false, "packingStatus": "READY", "outboundShipped": null, "qty": 1, "note": "유효 READY"}
+      ]},
+      "steps": [
+        {"text": "미송 출고 언제 돼요?", "inquiry": null, "expect": {"lines": [{"kind": "HANDOFF", "reason": "NOT_SUPPORTED", "intent": "BACKORDER", "sourceSequence": "self"}]}}
       ]
     }
   ]

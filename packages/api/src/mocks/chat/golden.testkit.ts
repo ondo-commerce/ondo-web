@@ -174,6 +174,8 @@ export interface GoldenCase {
 
 export interface GoldenDoc {
   version: number;
+  /** v7 = loop-08i 미송 0일 때 출고 준비 중 주문 답(K01~K16) */
+  aboutV7: string;
   /** 판 설명. 판이 오를 때마다 하나씩 붙는다(v6 = loop-08f 전부 꺼짐 때 의도 분류) */
   aboutV6: string;
   rules: {

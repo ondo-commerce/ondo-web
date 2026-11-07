@@ -192,10 +192,25 @@ describe("골든셋을 소매 목 HTTP로 — 판정 함수와 같은 결과", (
     const room1 = GOLDEN.scenarios.filter(inRoom1);
     // 방 1 밖: 미송 B04 B05, 미수 R01~R03 R05~R07(다른 소매처, 골든 전용 행), R04(방 33 = 102) — 판정 unit 이 받는다.
     // R04 의 HTTP 몫은 `receivableReply.test.ts`(방 33 구조 단언)가 본다
+    // v7 K01~K16(08i)은 전부 방 1 밖(가람상회 3, K13 대기상회 2)이다 — 소매 목 HTTP는 포장 원본도 아직 빈 원본(#391)
     expect(
       GOLDEN.scenarios.filter((s) => !inRoom1(s)).map((s) => s.id),
-    ).toEqual(["B04", "B05", "R01", "R02", "R03", "R04", "R05", "R06", "R07"]);
-    expect(room1).toHaveLength(116 - 9);
+    ).toEqual([
+      "B04",
+      "B05",
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R06",
+      "R07",
+      ...Array.from(
+        { length: 16 },
+        (_, i) => `K${String(i + 1).padStart(2, "0")}`,
+      ),
+    ]);
+    expect(room1).toHaveLength(132 - 25);
     for (const s of room1) {
       for (const step of await replay(s))
         expect(step.actual, s.id).toEqual(step.expect);
