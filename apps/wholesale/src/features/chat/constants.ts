@@ -160,7 +160,8 @@ export const HANDOFF_REASON_TEXT: Readonly<
   INVALID_TARGET: "선택한 상품이나 미송을 확인하지 못했어요",
   CLARIFY_AGAIN: "다시 물었지만 무엇을 묻는지 확인하지 못했어요",
   NOT_LISTED: "목록에 없는 다른 주문이라고 했어요",
-  NO_BACKORDER: "열린 미송이 없는 소매처예요",
+  // 포장 답 뒤 넘김과 포장 없는 넘김이 같은 값이라 두 경우 다 맞고 사장 할 일이 있는 말로 둔다(loop-08i Q5 ②, D57)
+  NO_BACKORDER: "열린 미송이 없어요. 언제 받을 수 있는지 알려 주세요",
   NO_MATCH: "말한 미송을 찾지 못했어요",
   STOCK_ZERO: "재고가 없다고 답했어요. 입고 계획을 알려 주세요",
   ETA_UNKNOWN: "입고 예정일이 정해지지 않았다고 답했어요",
