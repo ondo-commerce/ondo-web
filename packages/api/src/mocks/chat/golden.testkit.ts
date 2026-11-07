@@ -658,6 +658,7 @@ export function runScenario(
       catalog,
       backorders,
       receivables,
+      packings: () => [],
     });
     const sentAt = new Date(now).toISOString();
     const before = [...history];

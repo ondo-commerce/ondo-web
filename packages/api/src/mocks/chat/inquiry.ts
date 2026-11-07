@@ -4,11 +4,17 @@ import {
   candidatesOf,
   etaState,
   koreanDate,
+  mentionsTarget,
   narrowBackorders,
   type EtaState,
   type InquiryBackorder,
   type InquiryBackorderSource,
 } from "./backorderCandidates";
+import {
+  packingOrdersOf,
+  packingReplyBody,
+  type InquiryPackingSource,
+} from "./packingOrders";
 import {
   receivableOf,
   receivableReplyBody,
@@ -102,6 +108,11 @@ export interface InquiryInput {
    * 이 방 한 줄을 고르는 건 판정이 한다(`receivableOf`) — 화면이 보낸 값은 보지 않는다(loop-07 §4-1 5)
    */
   receivables: InquiryReceivableSource;
+  /**
+   * 포장 원본 전체(거르지 않은 것, loop-08i). 미송 후보가 0이고 본문이 대상을 말하지 않았을 때만 부른다.
+   * 던지면 지금처럼 NO_BACKORDER 넘김이다. 이 방 도매처, 소매처의 유효한 포장을 고르는 건 판정이 한다(`packingOrdersOf`)
+   */
+  packings: InquiryPackingSource;
 }
 
 /* --- 규칙 상수 ------------------------------------------------------------ */
@@ -533,6 +544,16 @@ export type InquiryDecision =
       today: string;
     }
   | {
+      /**
+       * 미송 0 + 출고 준비 중 주문(loop-08i §4-2). 미송 답 갈래지만 미송 하나를 가리키지 않는다 — subject, facts가
+       * 전부 null이고 넘김 줄(NO_BACKORDER)이 늘 붙는다. 출고일은 사장만 안다
+       */
+      kind: "AUTO_REPLY";
+      intent: "BACKORDER";
+      /** 주문으로 묶은 orderId(오름차순, 1개 이상) */
+      packingOrderIds: number[];
+    }
+  | {
       kind: "AUTO_REPLY";
       intent: "RECEIVABLE";
       /** 이 방 도매처 몫만. `toReceivableFacts`를 지난 값 */
@@ -729,13 +750,40 @@ function backorderAnswer(b: InquiryBackorder, today: string): InquiryDecision {
 }
 
 /**
+ * 미송 후보 0일 때(e단계, loop-08i §4-2). 위에서부터:
+ *  1. 본문이 대상(색상, 사이즈, 숫자, 모르는 말)을 말함 → NO_BACKORDER. 원본을 부르지 않는다(D57 Q2 ①)
+ *  2. 포장 원본이 던짐 → NO_BACKORDER(D57 Q3 ①). 예외는 판정 밖으로 안 나간다
+ *  3. 유효한 출고 준비 중 주문 0 → NO_BACKORDER(D37 ① 그대로)
+ *  4. 1건 이상 → 포장 답(+ NO_BACKORDER 넘김 줄, 생성 단계가 붙인다)
+ * 넘김 이유 enum은 늘리지 않는다 — 도매 이유 줄 표(`satisfies Record<ChatHandoffReason, string>`)가 깨진다.
+ * "열린 미송 0개"는 포장 답 뒤에도 맞는 말이다
+ */
+function decidePacking(input: InquiryInput, text: string): InquiryDecision {
+  if (mentionsTarget(text)) return handoff("NO_BACKORDER", "BACKORDER");
+  let rows;
+  try {
+    rows = input.packings();
+  } catch {
+    return handoff("NO_BACKORDER", "BACKORDER");
+  }
+  const packingOrderIds = packingOrdersOf(
+    rows,
+    input.wholesalerId,
+    input.retailerId,
+  );
+  if (packingOrderIds.length === 0) return handoff("NO_BACKORDER", "BACKORDER");
+  return { kind: "AUTO_REPLY", intent: "BACKORDER", packingOrderIds };
+}
+
+/**
  * 미송 가지(loop-06 §4-2 1~6). 의도가 미송으로 정해지고 미송 설정이 켜진 뒤에 온다. 위에서부터:
  *  a. `다른 주문이에요`(notListed) → NOT_LISTED. 본문은 안 본다
  *  b. 칩(backorderId) → 30분 안 가장 최근 미송 되묻기의 보기 안이고 지금도 후보면 답, 아니면 INVALID_TARGET.
  *     계승도 본문도 안 본다
  *  c. 배송어 → NOT_SUPPORTED
  *  d. 열린 미송 되묻기 계승 → 그 보기 안에서 본문이 확정하면 답, 아니면 CLARIFY_AGAIN(되묻기 1회)
- *  e. 후보 0 → NO_BACKORDER
+ *  e. 후보 0 → 포장 단계({@link decidePacking}). 포장 원본은 여기서만 부른다 — a~d를 지난 뒤라 되묻기 중인
+ *     소매에게 고르지 않은 주문을 안내하지 않는다(loop-08i §4-1 11, D37 ④, D34 ①)
  *  f. 본문 좁히기: 말했는데 0개 → NO_MATCH, 확정 → 답, 그 밖 → 되묻기(1개여도 칩 1개로 묻는다, Codex 1)
  */
 function decideBackorder(
@@ -772,7 +820,7 @@ function decideBackorder(
       : backorderAnswer(confirmed, today);
   }
 
-  if (all.length === 0) return handoff("NO_BACKORDER", "BACKORDER");
+  if (all.length === 0) return decidePacking(input, text);
   const { said, left, confirmed, blocked } = narrowBackorders(text, all);
   // blocked: 후보 하나로 좁혀졌지만 본문에 모르는 말(후보에 없는 상품명일 수 있다)이 있다. 그 칩 하나로 되물으면
   // 소매가 말하지 않은 상품을 내미는 셈이라 넘긴다(리뷰 M1)
@@ -995,7 +1043,7 @@ type StockAuto = Extract<
 >;
 type BackorderAuto = Extract<
   InquiryDecision,
-  { kind: "AUTO_REPLY"; intent: "BACKORDER" }
+  { kind: "AUTO_REPLY"; intent: "BACKORDER"; backorder: InquiryBackorder }
 >;
 
 /**
@@ -1218,6 +1266,11 @@ function backorderLines(
         },
       },
     ];
+  if ("packingOrderIds" in d)
+    return [
+      packingLine(d.packingOrderIds, replyToSequence, checkedAt),
+      handoffLineOf("NO_BACKORDER", "BACKORDER", replyToSequence),
+    ];
   const b = d.backorder;
   const reply: GeneratedLine = {
     sender: "WHOLESALER",
@@ -1252,6 +1305,38 @@ function backorderLines(
   if (d.eta === "PAST")
     return [reply, handoffLineOf("ETA_PAST", "BACKORDER", replyToSequence)];
   return [reply];
+}
+
+/**
+ * 포장 답 한 줄(loop-08i §4-3). 미송 하나를 가리키지 않아 subject, facts가 전부 null이다 — 그래서 소매는 미송 카드도
+ * `미송 대기 현황 보기` 링크도 안 그리고, 도매 근거 칸은 끝 줄 "HH:mm 조회"만 남는다(두 앱 코드 변경 0).
+ * 넘김 줄(NO_BACKORDER)은 부르는 쪽이 늘 붙인다: 답 + 넘김이라 열린 넘김이 있어도 둘 다 남는다(`linesToAppend`)
+ */
+function packingLine(
+  orderIds: readonly number[],
+  replyToSequence: number,
+  checkedAt: string,
+): GeneratedLine {
+  return {
+    sender: "WHOLESALER",
+    kind: "AUTO_REPLY",
+    body: packingReplyBody(orderIds),
+    handoff: null,
+    autoReply: {
+      intent: "BACKORDER",
+      replyToSequence,
+      generatedBy: "RULE",
+      checkedAt,
+      subject: {
+        listingId: null,
+        variantId: null,
+        backorderId: null,
+        label: null,
+      },
+      facts: { stock: null, backorder: null, receivable: null },
+      choices: null,
+    },
+  };
 }
 
 /* --- 열린 넘김 (loop-07 §4-2) --------------------------------------------- */

@@ -87,6 +87,8 @@ function decide(
     receivables: () => {
       throw new Error("미송 unit 이 미수 원본을 읽었다");
     },
+    // 포장 답(loop-08i)은 `packingOrders.test.ts`가 본다. 여기는 포장 0 = 지금처럼 NO_BACKORDER
+    packings: () => [],
   });
 }
 
@@ -297,7 +299,7 @@ describe("S1-6 날짜 경계(서울)", () => {
       const d = decide("린넨 셋업 자켓 베이지 L 미송 언제 와요?", rows, {
         now,
       });
-      return d.kind === "AUTO_REPLY" && d.intent === "BACKORDER"
+      return d.kind === "AUTO_REPLY" && d.intent === "BACKORDER" && "eta" in d
         ? d.eta
         : d.kind;
     };

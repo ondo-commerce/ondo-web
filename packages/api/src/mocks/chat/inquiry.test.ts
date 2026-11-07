@@ -40,6 +40,7 @@ import {
   type InquiryReceivableSource,
 } from "./receivable";
 import { mockReceivable, resetSettlementMock } from "../wholesale/settlement";
+import type { InquiryPacking, InquiryPackingSource } from "./packingOrders";
 
 /**
  * 판정 규칙 unit(loop-05b S7-2 ~ S7-5). 골든셋을 순수 함수로 돌린다 — 서버도 목 저장소도 없다.
@@ -51,6 +52,8 @@ const CATALOG = goldenCatalog(GOLDEN.stock);
 const BACKORDERS = goldenBackorders(GOLDEN.backorders);
 const RECEIVABLE_ROWS = goldenReceivableRows();
 const RECEIVABLES: InquiryReceivableSource = () => RECEIVABLE_ROWS;
+/** 포장 원본 0(loop-08i). 방 1은 열린 미송이 있어 어차피 안 부른다 */
+const NO_PACKINGS: InquiryPackingSource = () => [];
 /** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
 const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
@@ -60,6 +63,7 @@ const ROOM1 = {
   today: seoulDate(BASE),
   backorders: BACKORDERS,
   receivables: RECEIVABLES,
+  packings: NO_PACKINGS,
 };
 
 /** 골든셋 전 단계 결과. 점수(`goldenScore.test.ts`)도 같은 `runScenario`를 돈다 */
@@ -1015,6 +1019,7 @@ function decideRoom1(
     catalog?: typeof CATALOG;
     receivables?: InquiryReceivableSource;
     backorders?: typeof BACKORDERS;
+    packings?: InquiryPackingSource;
   } = {},
 ) {
   return decideInquiry({
@@ -1032,6 +1037,7 @@ function decideRoom1(
       ? {}
       : { receivables: opts.receivables }),
     ...(opts.backorders === undefined ? {} : { backorders: opts.backorders }),
+    ...(opts.packings === undefined ? {} : { packings: opts.packings }),
   });
 }
 
@@ -1144,9 +1150,20 @@ describe("loop-08f S1-7 꺼짐 재판정의 원본 조회", () => {
     });
   });
 
-  it("④ 콜백 호출 수: 꺼짐 판정 1회 = 켜짐 판정 1회(catalog, 미송, 미수 각각)", () => {
-    const counted = () => {
-      const n = { catalog: 0, backorders: 0, receivables: 0 };
+  it("④ 콜백 호출 수: 꺼짐 판정 1회 = 켜짐 판정 1회(catalog, 미송, 미수, 포장 각각). 08i S1-6 포장 칸 추가", () => {
+    /** 포장 READY 한 건(방 1 소매처 1). 미송 0이면 포장 단계까지 간다 */
+    const ready: InquiryPacking = {
+      packingId: 9201,
+      orderId: 7101,
+      wholesalerId: 101,
+      retailerId: 1,
+      orderCancelled: false,
+      packingStatus: "READY",
+      outboundShipped: null,
+      qty: 1,
+    };
+    const counted = (noBackorders: boolean) => {
+      const n = { catalog: 0, backorders: 0, receivables: 0, packings: 0 };
       return {
         n,
         catalog: (id: number) => {
@@ -1155,33 +1172,41 @@ describe("loop-08f S1-7 꺼짐 재판정의 원본 조회", () => {
         },
         backorders: () => {
           n.backorders += 1;
-          return BACKORDERS();
+          return noBackorders ? [] : BACKORDERS();
         },
         receivables: () => {
           n.receivables += 1;
           return RECEIVABLE_ROWS;
         },
+        packings: () => {
+          n.packings += 1;
+          return [ready];
+        },
       };
     };
-    for (const [body, context] of [
-      ["레드 M 몇 장 있어요?", true],
-      ["미송 언제 와요?", false],
-      ["지금 미수 얼마예요?", false],
-      ["레드 L 재고랑 미송 같이 알려 주세요", true],
+    for (const [body, context, noBackorders] of [
+      ["레드 M 몇 장 있어요?", true, false],
+      ["미송 언제 와요?", false, false],
+      ["지금 미수 얼마예요?", false, false],
+      ["레드 L 재고랑 미송 같이 알려 주세요", true, false],
+      // 08i: 미송 0 + 대상 없음 → 포장 원본 1회(꺼짐도 켜짐도)
+      ["미송 언제 와요?", false, true],
     ] as const) {
-      const off = counted();
-      const on = counted();
+      const label = `${body}${noBackorders ? " (미송 0)" : ""}`;
+      const off = counted(noBackorders);
+      const on = counted(noBackorders);
       decideRoom1(body, { context, ...off });
       decideRoom1(body, {
         context,
         ...on,
         settings: DEFAULT_AUTO_REPLY_SETTINGS,
       });
-      expect(off.n, body).toEqual(on.n);
+      expect(off.n, label).toEqual(on.n);
       expect(
         off.n.catalog + off.n.backorders + off.n.receivables,
-        body,
+        label,
       ).toBeGreaterThan(0);
+      expect(off.n.packings, label).toBe(noBackorders ? 1 : 0);
     }
   });
 });
