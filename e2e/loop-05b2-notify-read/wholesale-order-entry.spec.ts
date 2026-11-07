@@ -67,16 +67,16 @@ test("S11-6 2쪽을 보던 중 알림 → 1쪽으로 돌아와 그 주문 펼침
 }) => {
   /* 주문 탭 밖에서 쌓는다 — 주문 탭에 들어갈 때 목록을 새로 받는다. 시드 5 + 96 = 101건 → 100행씩 2쪽 */
   await start(page);
+  type Incoming = { notification: { id: number }; orderId: number };
   const latest = await page.evaluate(async () => {
-    let last: { notification: { id: number }; orderId: number } | null = null;
+    let last: Incoming | null = null;
     for (let i = 0; i < 96; i++) {
       const response = await fetch("/__mock/notifications/incoming", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "NEW_ORDER" }),
       });
-      last = ((await response.json()) as { data: NonNullable<typeof last> })
-        .data;
+      last = ((await response.json()) as { data: Incoming }).data;
     }
     return last;
   });

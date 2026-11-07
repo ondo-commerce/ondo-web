@@ -2,7 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   bell,
   chatLink,
-  chatMock,
   composer,
   COUNT_GET,
   count,
