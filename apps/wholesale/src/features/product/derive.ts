@@ -379,6 +379,23 @@ export function backGuardAction(input: {
 }
 
 /**
+ * 업로드 401로 잠겼는가(#403). 화면은 잠글 때의 세션 세대(`lostAt`)를 쥔다. 같은 계정이
+ * 다른 탭에서 다시 로그인하면 세대가 올라 둘이 달라진다 — 그때 잠금이 풀린다. 불 하나로 두면
+ * "언제의 세션이 끊겼나"를 잃어 재로그인 뒤에도 잠긴 채 남는다.
+ */
+export function isUploadLocked(lostAt: number | null, epoch: number): boolean {
+  return lostAt !== null && lostAt === epoch;
+}
+
+/**
+ * 업로드 401을 받았을 때 잠글지(#403 늦은 401). 요청을 띄운 세대가 지금 세대와 같을 때만 —
+ * 그 사이 재로그인했으면 그 401은 옛 쿠키의 답이라 새 세션을 잠그면 안 된다(08d 세대 규칙).
+ */
+export function shouldLockOnAuth(startedAt: number, epoch: number): boolean {
+  return startedAt === epoch;
+}
+
+/**
  * 저장 버튼 옆 한 줄. 대기·진행 칸이 있으면 잠금 안내가 실패 안내보다 앞선다 —
  * 잠긴 이유를 먼저 말해야 한다. `null`이면 문구 없음.
  */
