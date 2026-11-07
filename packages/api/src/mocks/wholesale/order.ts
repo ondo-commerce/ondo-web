@@ -381,6 +381,15 @@ function statusKey(order: MockOrder): OrderStatusKey {
   return shipped < total ? "PARTIALLY_SHIPPED" : "SHIPPED";
 }
 
+/**
+ * 그 주문에 포장(READY, PACKED)이 하나라도 있나. 있으면 취소할 수 없다(loop-08j §5-2 7) — 스펙 `cancel` 설명
+ * "이미 배분이 달려 있다". 미송 탭 배분이 신규 주문 7003에 포장을 만들 수 있게 되면서 필요해졌다. 취소 op,
+ * 알림 취소(`cancelMockOrder`), 상세와 목록의 `isCancellable`이 이 함수 하나를 본다
+ */
+function hasPacking(order: MockOrder): boolean {
+  return packings.some((p) => p.orderId === order.id);
+}
+
 function flags(order: MockOrder) {
   const key = statusKey(order);
   const isNew = key === "NEW";
@@ -391,7 +400,7 @@ function flags(order: MockOrder) {
   return {
     key,
     isConfirmable: isNew,
-    isCancellable: isNew,
+    isCancellable: isNew && !hasPacking(order),
     isPackable: packable,
   };
 }
@@ -648,9 +657,12 @@ export function addMockOrder(input: {
   return order;
 }
 
-/** 확정 전 소매 취소를 흉내 낸다. 신규 주문이 아니면 바꾸지 않고 false(취소 op의 409와 같은 규칙) */
+/**
+ * 확정 전 소매 취소를 흉내 낸다. 신규 주문이 아니거나 포장이 달렸으면 바꾸지 않고 false(취소 op의 409와 같은
+ * 규칙, `flags`의 `isCancellable`)
+ */
 export function cancelMockOrder(order: MockOrder): boolean {
-  if (order.status !== "NEW") return false;
+  if (!flags(order).isCancellable) return false;
   order.status = "CANCELLED";
   return true;
 }
@@ -659,15 +671,51 @@ export function cancelMockOrder(order: MockOrder): boolean {
  * 미송 목(`./backorder`)이 이 모듈을 import한다. 반대 방향 import는 순환이라 포장 삭제는 등록받은 함수로 알린다.
  * ----------------------------------------------------------------------- */
 
+/** 배분 한 줄. 주문 목 주문 id와 줄 id, 수량 */
+export interface AllocationLine {
+  orderId: number;
+  orderItemId: number;
+  qty: number;
+}
+
+export type AllocationPackingCode =
+  "BACKORDER_NOT_OPEN" | "ALLOCATION_EXCEEDS_ORDER";
+
+/**
+ * 미송 탭 배분을 주문 목에 적용해도 되는지 검사한다. 저장소는 안 바꾼다(08i `readyPackingsError` 꼴, 검사와 적용
+ * 분리). 앞 줄부터 ① 주문 취소 → `BACKORDER_NOT_OPEN`(BE에선 취소 주문의 미송이 열려 있을 수 없어 스펙 목록에서
+ * 가장 가까운 code) ② 같은 줄 요청 합이 줄 잔량(`qty − allocatedQty`)을 넘음 → `ALLOCATION_EXCEEDS_ORDER`(주문 탭이
+ * 먼저 잡은 잔량, 기획 Q2 ①). 없는 주문, 줄은 대응 단계에서 걸러져 오므로 던진다. `isPackable`은 안 본다
+ */
+export function allocationPackingError(
+  lines: readonly AllocationLine[],
+): AllocationPackingCode | null {
+  const want = new Map<number, number>();
+  for (const req of lines) {
+    const order = orders.find((o) => o.id === req.orderId);
+    const l = order?.items.find((x) => x.id === req.orderItemId);
+    if (order === undefined || l === undefined)
+      throw new Error(`mock: 배분 줄이 없다 ${req.orderId}/${req.orderItemId}`);
+    if (order.status === "CANCELLED") return "BACKORDER_NOT_OPEN";
+    const total = (want.get(l.id) ?? 0) + req.qty;
+    if (total > l.qty - l.allocatedQty) return "ALLOCATION_EXCEEDS_ORDER";
+    want.set(l.id, total);
+  }
+  return null;
+}
+
 /**
  * 주문 하나에 배분 수량만큼 READY 포장을 만들고 돌려준다. 주문 탭 `포장 준비`와 같은 `applyAllocation` 길이라 줄
  * `allocatedQty`도 같이 오른다. `addReadyPackings`를 못 쓰는 이유: 기본 시드로 검사해 신규 7003을 거절하고, 미배분량
- * 전부를 포장하며, 만든 포장을 안 돌려준다(Codex 5). 여기선 `isPackable`을 안 본다 — 신규 주문 7003도 받는다
+ * 전부를 포장하며, 만든 포장을 안 돌려준다(Codex 5). 여기선 `isPackable`을 안 본다 — 신규 주문 7003도 받는다.
+ * 검사는 부르는 쪽이 `allocationPackingError`로 먼저 했어야 한다 — 틀리면 던진다
  */
 export function addAllocationPacking(
   orderId: number,
   lines: readonly { orderItemId: number; qty: number }[],
 ): MockPacking {
+  const error = allocationPackingError(lines.map((l) => ({ orderId, ...l })));
+  if (error !== null) throw new Error(`mock: 배분 포장 ${error}`);
   const order = orders.find((o) => o.id === orderId);
   if (order === undefined) throw new Error(`mock: 주문이 없다 ${orderId}`);
   const qtyByLine = new Map<number, number>();
@@ -813,6 +861,12 @@ export const orderHandlers = [
         409,
         "TRANSITION_NOT_ALLOWED",
         "확정된 주문은 취소할 수 없습니다.",
+      );
+    if (!flags(order).isCancellable)
+      return fail(
+        409,
+        "TRANSITION_NOT_ALLOWED",
+        "포장이 달린 주문은 취소할 수 없습니다.",
       );
     order.status = "CANCELLED";
     return HttpResponse.json({ data: detailResponse(order) });

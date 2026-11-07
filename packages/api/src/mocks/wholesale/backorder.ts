@@ -7,6 +7,7 @@ import {
 } from "../chat/backorderCandidates";
 import {
   addAllocationPacking,
+  allocationPackingError,
   mockOrders,
   onMockPackingCancelled,
   type MockOrder,
@@ -683,6 +684,29 @@ export const backorderHandlers = [
           "items",
         );
     }
+    // 주문 목 쪽 검사(loop-08j §5-2 1). 재고 검사 뒤, 적용 전. 대응되는 몫만 본다 — 걸리면 아무것도 안 바뀐다
+    const orderError = allocationPackingError(
+      items.flatMap((item) => {
+        const b = backorders.find((x) => x.id === item.backorderId);
+        return b === undefined || orderLineOf(b, mockOrders()) === null
+          ? []
+          : [
+              {
+                orderId: b.orderId,
+                orderItemId: b.orderItemId,
+                qty: item.allocateQty,
+              },
+            ];
+      }),
+    );
+    if (orderError === "BACKORDER_NOT_OPEN")
+      return fail(409, "BACKORDER_NOT_OPEN", "취소된 주문의 미송입니다.");
+    if (orderError === "ALLOCATION_EXCEEDS_ORDER")
+      return fail(
+        409,
+        "ALLOCATION_EXCEEDS_ORDER",
+        "배분 수량이 주문 잔량을 넘었습니다.",
+      );
 
     // 적용 — 주문마다 포장 카드 한 장
     const createdAt = new Date().toISOString();

@@ -215,6 +215,30 @@ async function bag(packingItemIds: number[]): Promise<number> {
   return res.body.data.id;
 }
 
+async function ship(outboundId: number) {
+  const res = await call("POST", `${API}/outbounds/${outboundId}/ship`);
+  expect(res.status).toBe(200);
+}
+
+let keySeq = 0;
+/** 도매 사장 직접 답(TEXT). 열린 넘김이 닫힌다 */
+async function ownerText(body = "내일 보내 드릴게요") {
+  keySeq += 1;
+  const res = await call(
+    "POST",
+    `${API}/chat/rooms/1/messages`,
+    { body, inquiry: null },
+    {
+      "Idempotency-Key": `00000000-0000-4000-b008-${String(keySeq).padStart(12, "0")}`,
+    },
+  );
+  expect(res.status).toBe(201);
+}
+
+async function cancelOrder(orderId: number) {
+  return call<ErrorBody>("POST", `${API}/orders/${orderId}/cancel`);
+}
+
 /** 배분 성공을 확인하고 응답 포장들 */
 async function allocated(items: [backorderId: number, qty: number][]) {
   const res = await allocate(items);
@@ -542,5 +566,165 @@ describe("S1-8 reset backorderIds", () => {
     expect((await del(9101)).status).toBe(204);
     expect(backorderRow(9002)).toEqual([1, "OPEN"]);
     expect((await openBackorders(3011)).stats.availableQty).toBe(6);
+  });
+});
+
+/* --- S1-5 출고 생명주기 --------------------------------------------------- */
+
+describe("S1-5 출고 생명주기", () => {
+  it("배분 → [A, H] → 봉투 → [A, H] → 출고 → [] → [] → 사장 TEXT → [HANDOFF], 9003 끝까지 RESOLVED 0, 끝에 7003 취소 409", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 2]]);
+    const seen: string[][] = [];
+    seen.push(kinds(await ask()));
+    const outbound = await bag(p?.items.map((i) => i.id) ?? []);
+    seen.push(kinds(await ask()));
+    await ship(outbound);
+    seen.push(kinds(await ask()));
+    seen.push(kinds(await ask()));
+    await ownerText();
+    seen.push(kinds(await ask()));
+    expect(seen).toEqual([
+      ["AUTO_REPLY", "HANDOFF"],
+      ["AUTO_REPLY", "HANDOFF"],
+      [],
+      [],
+      ["HANDOFF"],
+    ]);
+    expect(backorderSku(3019)?.backorders).toEqual([
+      { retailerId: 1, remainingQty: 0, status: "RESOLVED" },
+    ]);
+    // 출고 뒤에도 7003은 NEW지만 PACKED 포장이 남아 취소할 수 없다(Codex 1)
+    expect((await orderDetail(7003)).status.key).toBe("NEW");
+    const cancel = await cancelOrder(7003);
+    expect([cancel.status, cancel.body.code]).toEqual([
+      409,
+      "TRANSITION_NOT_ALLOWED",
+    ]);
+  });
+});
+
+/* --- S1-7 부분 성공 없음 -------------------------------------------------- */
+
+describe("S1-7 부분 성공 없음(주문 줄 잔량 초과와 재고 실패)", () => {
+  it.each([
+    [
+      "① 주문 탭 7002 포장 뒤 9002 × 1",
+      true,
+      [[9002, 1]],
+      "ALLOCATION_EXCEEDS_ORDER",
+    ],
+    [
+      "② 같은 준비 뒤 [9003 × 2, 9002 × 1]",
+      true,
+      [
+        [9003, 2],
+        [9002, 1],
+      ],
+      "ALLOCATION_EXCEEDS_ORDER",
+    ],
+    [
+      "③ 기본 reset [9003 × 2, 9001 × 1](3003 재고 0)",
+      false,
+      [
+        [9003, 2],
+        [9001, 1],
+      ],
+      "INSUFFICIENT_STOCK",
+    ],
+    [
+      "④ 기본 reset [9001 × 1, 9006 × 1](같은 SKU 3003 합산)",
+      false,
+      [
+        [9001, 1],
+        [9006, 1],
+      ],
+      "INSUFFICIENT_STOCK",
+    ],
+  ] as [string, boolean, [number, number][], string][])(
+    "%s → 409 code, snapshot() 그대로",
+    async (_, packFirst, items, code) => {
+      await reset();
+      if (packFirst) await pack(7002, 8002, 1);
+      const before = await snapshot();
+      const res = await allocate(items);
+      expect([res.status, res.body.code]).toEqual([409, code]);
+      expect(await snapshot()).toEqual(before);
+      expect(backorderRow(9003)).toEqual([2, "OPEN"]);
+      expect(mockPackings().filter((p) => p.orderId === 7003)).toEqual([]);
+    },
+  );
+});
+
+/* --- S1-11 주문 취소와 배분 ----------------------------------------------- */
+
+describe("S1-11 주문 취소와 배분", () => {
+  it("① 9003 배분 뒤 7003 isCancellable false(상세, 목록), isConfirmable true, 취소 409, snapshot() 그대로, NEW", async () => {
+    await reset({ backorderIds: [9003] });
+    await allocated([[9003, 2]]);
+    const detail = await orderDetail(7003);
+    expect([detail.isCancellable, detail.isConfirmable]).toEqual([false, true]);
+    const list = await call<{
+      data: WholesaleSchema<"OrderSummaryResponse">[];
+    }>("GET", `${API}/orders`);
+    expect(list.body.data.find((o) => o.id === 7003)?.isCancellable).toBe(
+      false,
+    );
+    const before = await snapshot();
+    const res = await cancelOrder(7003);
+    expect([res.status, res.body.code]).toEqual([
+      409,
+      "TRANSITION_NOT_ALLOWED",
+    ]);
+    expect(await snapshot()).toEqual(before);
+    expect((await orderDetail(7003)).status.key).toBe("NEW");
+  });
+
+  it("② 같은 준비 → 알림 incoming ORDER_CANCELLED 7003 → 409, 7003 NEW, snapshot() 그대로", async () => {
+    await reset({ backorderIds: [9003] });
+    await allocated([[9003, 2]]);
+    const before = await snapshot();
+    const res = await call<ErrorBody>(
+      "POST",
+      `${ORIGIN}/__mock/notifications/incoming`,
+      { type: "ORDER_CANCELLED", orderId: 7003 },
+    );
+    expect(res.status).toBe(409);
+    expect((await orderDetail(7003)).status.key).toBe("NEW");
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("③ 7003 먼저 취소(200) → 9003 × 2 → 409 BACKORDER_NOT_OPEN, snapshot() 그대로, 포장 대기에 7003 줄 0", async () => {
+    await reset({ backorderIds: [9003] });
+    const cancel = await call<{ data: WholesaleSchema<"OrderDetailResponse"> }>(
+      "POST",
+      `${API}/orders/7003/cancel`,
+    );
+    expect([cancel.status, cancel.body.data.status.key]).toEqual([
+      200,
+      "CANCELLED",
+    ]);
+    const before = await snapshot();
+    const res = await allocate([[9003, 2]]);
+    expect([res.status, res.body.code]).toEqual([409, "BACKORDER_NOT_OPEN"]);
+    expect(await snapshot()).toEqual(before);
+    expect(backorderRow(9003)).toEqual([2, "OPEN"]);
+    expect((await openBackorders(3019)).stats.availableQty).toBe(4);
+    const items = await call<{
+      data: WholesaleSchema<"PackingItemRowResponse">[];
+    }>("GET", `${API}/packing-items?retailerId=1`);
+    expect(items.body.data.filter((r) => r.orderId === 7003)).toEqual([]);
+  });
+
+  it("④ 1장 배분 → 포장 삭제 → isCancellable true → 취소 200 → 다시 1장 배분 → 409 BACKORDER_NOT_OPEN, 불변", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 1]]);
+    expect((await del(p?.id ?? -1)).status).toBe(204);
+    expect((await orderDetail(7003)).isCancellable).toBe(true);
+    expect((await cancelOrder(7003)).status).toBe(200);
+    const before = await snapshot();
+    const res = await allocate([[9003, 1]]);
+    expect([res.status, res.body.code]).toEqual([409, "BACKORDER_NOT_OPEN"]);
+    expect(await snapshot()).toEqual(before);
   });
 });
