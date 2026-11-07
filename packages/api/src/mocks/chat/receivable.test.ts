@@ -66,6 +66,7 @@ function decide(
     catalog: () => null,
     backorders: () => [],
     receivables: () => rows,
+    packings: () => [],
   });
 }
 

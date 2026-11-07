@@ -206,7 +206,8 @@ describe("M5 발송 지표는 남긴 줄에서, 판정 정확도는 투영에서
         kindsOf(r.actual).includes("HANDOFF") !== r.sent.includes("HANDOFF"),
     );
     expect(mismatch.map((r) => r.scenario)).toEqual([]);
-    expect(results).toHaveLength(149);
+    // 08i S1-11 v7: 149 + K01~K16 17단계
+    expect(results).toHaveLength(166);
   });
 });
 
@@ -219,21 +220,23 @@ describe("S2-3, S2-4 골든셋 점수", () => {
   /* 08c S3-7 v5 = 기획(loop-08c §5-4) 손 계산. v4 116 소매 단계(자동 30 + 답+확인 5 + 넘김 51 + 되묻기 29 + 줄 없음 1)
      + 새 26(넘김 25 = N 12 + U01~U08 8 + U09 2 + X 3, 되묻기 1 = G01). 사장 1 */
   /* 08f S1-2 v6 = 기획(loop-08f §5-3) 손 계산. v5 142 소매 단계 + 새 7(O01~O07, 전부 OFF 넘김 줄 1개). 사장 1 */
-  it("v6 = 기획 §5-3 손 계산(149 소매 단계 = 자동 35 + 넘김 83 + 되묻기 30 + 줄 없음 1, 사장 1)", () => {
+  /* 08i S1-11 v7 = 기획(loop-08i §5-3 끝) 조건부 목표. v6 149 소매 단계 + 새 17(자동 7 = K01 K02 K03 K04 K09 + K14 둘,
+     넘김 9 = K05~K08 K10~K12 K15 K16, 되묻기 1 = K13). 사장 1 */
+  it("v7 = 기획 §5-3 손 계산(166 소매 단계 = 자동 42 + 넘김 92 + 되묻기 31 + 줄 없음 1, 사장 1)", () => {
     expect(score).toEqual({
-      version: 6,
-      scenarios: 116,
-      steps: 150,
-      retailSteps: 149,
-      exact: 150,
-      autoSent: 35,
+      version: 7,
+      scenarios: 132,
+      steps: 167,
+      retailSteps: 166,
+      exact: 167,
+      autoSent: 42,
       autoWrong: 0,
-      autoExpected: 35,
-      autoRight: 35,
-      handoffExpected: 83,
-      handoffSafe: 83,
-      clarifyExpected: 30,
-      clarifyRight: 30,
+      autoExpected: 42,
+      autoRight: 42,
+      handoffExpected: 92,
+      handoffSafe: 92,
+      clarifyExpected: 31,
+      clarifyRight: 31,
       noneExpected: 1,
       noneRight: 1,
       rates: {
@@ -247,8 +250,7 @@ describe("S2-3, S2-4 골든셋 점수", () => {
   });
 
   it("점수 파일 inquiry-golden.score.json 고정, version = 골든셋 version", async () => {
-    expect(score.version).toBe(GOLDEN.version);
-    // 골든셋이나 판정이 바뀌면 여기서 실패한다. `vitest -u`로 갱신한 diff가 PR에 남는다
+    expect(score.version).toBe(GOLDEN.version); // 골든셋이나 판정이 바뀌면 여기서 실패한다. `vitest -u`로 갱신한 diff가 PR에 남는다
     await expect(`${JSON.stringify(score, null, 2)}\n`).toMatchFileSnapshot(
       "../../../openapi/golden/inquiry-golden.score.json",
     );

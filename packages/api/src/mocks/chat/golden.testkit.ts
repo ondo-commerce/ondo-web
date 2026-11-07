@@ -20,6 +20,7 @@ import {
   type InquiryHistoryItem,
   type InquiryListing,
 } from "./inquiry";
+import type { InquiryPacking, InquiryPackingSource } from "./packingOrders";
 import {
   receivableOf,
   type InquiryReceivable,
@@ -112,8 +113,34 @@ export interface GoldenScenario {
     afterDays?: number;
     /** 미수 원본 조회가 이 횟수만큼 던진다(LOOKUP_FAILED, R16) */
     receivableFailTimes?: number;
+    /**
+     * 이 시나리오의 포장 원본(v7, 거르지 않은 행). 없으면 빈 원본이다. 최상위 표를 두지 않는다 — 두면 같은 방, 같은
+     * 글에 포장이 없어야 하는 B05가 그 표를 같이 읽는다(loop-08i §5-3 2)
+     */
+    packings?: GoldenPackingRow[];
+    /** 포장 원본 조회가 이 횟수만큼 던진다(NO_BACKORDER, K12) */
+    packingFailTimes?: number;
   };
   steps: GoldenStep[];
+}
+
+/** 포장 행 = 판정 원본 한 줄 + 무엇을 시험하는 행인지(v7) */
+export type GoldenPackingRow = InquiryPacking & { note: string };
+
+/** 시나리오 포장 행 → 판정 원본. 메모 칸은 넘기지 않는다 */
+export function goldenPackingRows(
+  rows: readonly GoldenPackingRow[] = [],
+): InquiryPacking[] {
+  return rows.map((r) => ({
+    packingId: r.packingId,
+    orderId: r.orderId,
+    wholesalerId: r.wholesalerId,
+    retailerId: r.retailerId,
+    orderCancelled: r.orderCancelled,
+    packingStatus: r.packingStatus,
+    outboundShipped: r.outboundShipped,
+    qty: r.qty,
+  }));
 }
 
 /** 미수 표 한 줄 = 판정 원본 한 줄 + 출처, 메모. `asOf`는 ISO(오프셋 포함) */
@@ -147,6 +174,8 @@ export interface GoldenCase {
 
 export interface GoldenDoc {
   version: number;
+  /** v7 = loop-08i 미송 0일 때 출고 준비 중 주문 답(K01~K16) */
+  aboutV7: string;
   /** 판 설명. 판이 오를 때마다 하나씩 붙는다(v6 = loop-08f 전부 꺼짐 때 의도 분류) */
   aboutV6: string;
   rules: {
@@ -293,6 +322,9 @@ interface V4Line {
     subject: { variantId: number | null; backorderId: number | null };
     choices?: { variantId: number }[] | null;
     facts: {
+      /** 포장 답 판별(v7)에만 읽는다. 값 모양은 안 본다 */
+      stock?: unknown;
+      backorder?: unknown;
       receivable: {
         outstandingAmount: number;
         prepaidAmount: number;
@@ -358,9 +390,29 @@ export function projectV4Lines(
         intent: a?.intent,
         target: a?.subject.backorderId ?? a?.subject.variantId ?? null,
         body: l.body,
+        // 포장 답 줄(v7)에만 붙는 칸. 기존 줄(재고 답, 미송 답)에는 안 붙어 116 시나리오 기대가 그대로다
+        ...(isPackingReply(l) ? { facts: null } : {}),
       };
     }),
   };
+}
+
+/**
+ * 포장 답 줄(loop-08i §5-3 3): 미송 답 갈래인데 미송을 가리키지 않고(subject.backorderId null) 근거 칸 셋이 다
+ * null. 투영에 `facts: null`을 실어 "근거 없이 번호만 말했다"를 계약으로 본다 — 원본이 facts.backorder를 채우면
+ * 소매 카드가 생겨 화면이 바뀐다. 미송 답 줄은 backorderId가 늘 있어 여기 안 걸린다
+ */
+function isPackingReply(l: V4Line): boolean {
+  const a = l.autoReply;
+  return (
+    l.kind === "AUTO_REPLY" &&
+    a !== null &&
+    a.intent === "BACKORDER" &&
+    a.subject.backorderId === null &&
+    (a.facts.stock ?? null) === null &&
+    (a.facts.backorder ?? null) === null &&
+    a.facts.receivable === null
+  );
 }
 
 /** 소매 HTTP 비교용 v4 기대: HANDOFF 줄은 `{kind}`만(이유, 의도, 원인 메시지는 도매 응답에만 있다) */
@@ -602,6 +654,15 @@ export function runScenario(
     }
     return rows;
   };
+  const packingRows = goldenPackingRows(s.room.packings);
+  let packingFailsLeft = s.room.packingFailTimes ?? 0;
+  const packings: InquiryPackingSource = () => {
+    if (packingFailsLeft > 0) {
+      packingFailsLeft -= 1;
+      throw new Error("골든셋: 포장 조회 실패");
+    }
+    return packingRows;
+  };
   const rowAsOf =
     receivableOf(rows, s.room.wholesalerId, s.room.retailerId ?? 1)?.asOf ??
     null;
@@ -658,6 +719,7 @@ export function runScenario(
       catalog,
       backorders,
       receivables,
+      packings,
     });
     const sentAt = new Date(now).toISOString();
     const before = [...history];

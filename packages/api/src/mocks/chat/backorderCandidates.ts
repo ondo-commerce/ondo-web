@@ -217,6 +217,22 @@ function unknownWords(rest: string): string[] {
     .filter((t) => t.length > 0 && !FILLER_WORDS.has(t));
 }
 
+/**
+ * 본문이 무엇을 묻는지(대상)를 말했는가(loop-08i §4-2 1, D57 Q2 ①). 미송 후보가 0일 때 포장 답을 낼지 가른다.
+ * 색상 사전, 사이즈, 숫자(주문 번호), 모르는 말(흔한 말과 조사를 뺀 나머지) 중 하나라도 있으면 true다.
+ * 대상을 말한 질문에 출고 준비 중 주문 전부를 답하면 소매가 묻지 않은 주문까지 안내한다(D37 ④). 그래서 넘긴다.
+ * 좁히기와 같은 낱말 표를 쓴다 — `FILLER_WORDS`를 넓히면 미송 좁히기 결과도 같이 바뀐다
+ */
+export function mentionsTarget(normalized: string): boolean {
+  const byColor = takeLongest(normalized, COLOR_WORDS);
+  return (
+    byColor.found.length > 0 ||
+    [...normalized.matchAll(SIZE_TOKEN)].length > 0 ||
+    /\d/.test(normalized) ||
+    unknownWords(byColor.rest).length > 0
+  );
+}
+
 export interface Narrowed {
   /** 상품명 낱말, 색상, 사이즈 중 하나라도 나왔다 */
   said: boolean;

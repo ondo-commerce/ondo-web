@@ -1007,6 +1007,8 @@ function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
         catalog: chatCatalog,
         backorders: inquiryBackorders,
         receivables: chatReceivables,
+        // TODO(#391) 주문 목과 출고 목의 포장 원본. 그 전까지 빈 원본이라 미송 0 질문은 지금처럼 넘김이다
+        packings: () => [],
       }),
       message.sequence,
       now,

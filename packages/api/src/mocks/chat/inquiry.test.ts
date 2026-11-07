@@ -40,6 +40,7 @@ import {
   type InquiryReceivableSource,
 } from "./receivable";
 import { mockReceivable, resetSettlementMock } from "../wholesale/settlement";
+import type { InquiryPacking, InquiryPackingSource } from "./packingOrders";
 
 /**
  * 판정 규칙 unit(loop-05b S7-2 ~ S7-5). 골든셋을 순수 함수로 돌린다 — 서버도 목 저장소도 없다.
@@ -51,6 +52,8 @@ const CATALOG = goldenCatalog(GOLDEN.stock);
 const BACKORDERS = goldenBackorders(GOLDEN.backorders);
 const RECEIVABLE_ROWS = goldenReceivableRows();
 const RECEIVABLES: InquiryReceivableSource = () => RECEIVABLE_ROWS;
+/** 포장 원본 0(loop-08i). 방 1은 열린 미송이 있어 어차피 안 부른다 */
+const NO_PACKINGS: InquiryPackingSource = () => [];
 /** 첫 단계 시각. 재고 시나리오는 상대 시간만 보고, 미송은 이 날(서울)이 D+0이다 */
 const BASE = GOLDEN_T0;
 const MINUTE = 60_000;
@@ -60,6 +63,7 @@ const ROOM1 = {
   today: seoulDate(BASE),
   backorders: BACKORDERS,
   receivables: RECEIVABLES,
+  packings: NO_PACKINGS,
 };
 
 /** 골든셋 전 단계 결과. 점수(`goldenScore.test.ts`)도 같은 `runScenario`를 돈다 */
@@ -69,11 +73,11 @@ const SCORE = goldenScore(RESULTS, GOLDEN);
 const isV4 = (e: GoldenExpect) => Array.isArray(e.lines);
 
 describe("골든셋 모양", () => {
-  it("v6 시나리오 116개 = 필수 5 + 재고 답 17 + 넘김 53 + 미송 24 + 미수 17, id 중복 없음, v4 몫 25, v5 몫 25, v6 몫 7", () => {
+  it("v7 시나리오 132개 = 필수 5 + 재고 답 17 + 넘김 53 + 미송 40 + 미수 17, id 중복 없음, v4 몫 25, v5 몫 25, v6 몫 7, v7 몫 16", () => {
     const count = (g: string) =>
       GOLDEN.scenarios.filter((s) => s.group === g).length;
-    expect(GOLDEN.version).toBe(6);
-    expect(GOLDEN.scenarios).toHaveLength(116);
+    expect(GOLDEN.version).toBe(7);
+    expect(GOLDEN.scenarios).toHaveLength(132);
     // v4 84개(넘김 22, 미송 23) + v5 넘김 24(N 12 + U 9 + X 3), 미송 1(G01) + v6 넘김 7(O01~O07)
     expect([
       count("required"),
@@ -81,8 +85,8 @@ describe("골든셋 모양", () => {
       count("handoff"),
       count("backorder"),
       count("receivable"),
-    ]).toEqual([5, 17, 53, 24, 17]);
-    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(116);
+    ]).toEqual([5, 17, 53, 40, 17]);
+    expect(new Set(GOLDEN.scenarios.map((s) => s.id)).size).toBe(132);
     // S3-6 v5는 뒤에 붙이기만 했다: 앞 84개는 since 5가 아니고, 판정 투영을 고른 건 G01뿐
     expect(GOLDEN.scenarios.slice(0, 84).every((s) => (s.since ?? 0) < 5)).toBe(
       true,
@@ -95,7 +99,7 @@ describe("골든셋 모양", () => {
       GOLDEN.scenarios.filter((s) => s.since === 6).map((s) => s.id),
     ).toEqual(["O01", "O02", "O03", "O04", "O05", "O06", "O07"]);
     expect(GOLDEN.aboutV6).toMatch(/^v6\(since 6, loop-08f §5-3\)/);
-    expect(GOLDEN.scenarios.slice(109).map((s) => s.id)).toEqual([
+    expect(GOLDEN.scenarios.slice(109, 116).map((s) => s.id)).toEqual([
       "O01",
       "O02",
       "O03",
@@ -104,11 +108,29 @@ describe("골든셋 모양", () => {
       "O06",
       "O07",
     ]);
+    // 08i S1-9 v7도 뒤에 붙이기만 했다: 앞 116개는 since 7이 아니고, 뒤 16개가 K01~K16(전부 미송, 필수 아님)
+    expect(
+      GOLDEN.scenarios.slice(0, 116).every((s) => (s.since ?? 0) < 7),
+    ).toBe(true);
+    const k16 = Array.from(
+      { length: 16 },
+      (_, i) => `K${String(i + 1).padStart(2, "0")}`,
+    );
+    expect(GOLDEN.scenarios.slice(116).map((s) => s.id)).toEqual(k16);
+    expect(
+      GOLDEN.scenarios.filter((s) => s.since === 7).map((s) => s.id),
+    ).toEqual(k16);
+    expect(
+      GOLDEN.scenarios
+        .slice(116)
+        .every((s) => s.group === "backorder" && !s.required),
+    ).toBe(true);
+    expect(GOLDEN.aboutV7).toMatch(/^v7\(since 7, loop-08i §5-3\)/);
     expect(
       GOLDEN.scenarios
         .filter((s) => s.projection !== undefined)
         .map((s) => s.id),
-    ).toEqual(["G01"]);
+    ).toEqual(["G01", "K13"]);
     const two = (p: string, n: number) =>
       Array.from(
         { length: n },
@@ -223,7 +245,7 @@ describe("loop-07 S1-2 골든셋 v4 미수와 넘김", () => {
   });
 });
 
-describe("S7-3, S1-2, 08c S3-6, 08f S1-2 골든셋 116개 지표(v4 84개 포함 전 단계)", () => {
+describe("S7-3, S1-2, 08c S3-6, 08f S1-2, 08i S1-9 골든셋 132개 지표(v4 84개 포함 전 단계)", () => {
   it("전 단계 정확 일치(필수 밖도 기대값과 같다)", () => {
     const misses = RESULTS.filter(
       (r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect),
@@ -280,6 +302,149 @@ describe("S7-3, S1-2, 08c S3-6, 08f S1-2 골든셋 116개 지표(v4 84개 포함
         GOLDEN.stock.filter((r) => r.listingId === id).map((r) => r.variantId),
       );
     }
+  });
+});
+
+describe("loop-08i S1-9 S1-10 기존 기대와 투영별 결과 보존(골든 v7, 포장 답 줄 투영 칸)", () => {
+  /** v6까지의 116개. v7은 뒤에 붙이기만 한다 */
+  const OLD = GOLDEN.scenarios.slice(0, 116);
+  const lineProjected = (s: (typeof OLD)[number]) =>
+    (s.since ?? 0) >= 4 && s.projection !== "decision";
+
+  it("줄 투영 56개 + 판정 투영 60개, 전 단계 actual = expect, 어느 줄에도 facts 칸이 없다", () => {
+    expect(OLD.filter(lineProjected)).toHaveLength(56);
+    expect(OLD.filter((s) => !lineProjected(s))).toHaveLength(60);
+    const ids = new Set(OLD.map((s) => s.id));
+    const old = RESULTS.filter((r) => ids.has(r.scenario));
+    expect(old).toHaveLength(150);
+    expect(
+      old.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+    const withFacts = old.filter((r) =>
+      ((r.actual.lines ?? []) as Record<string, unknown>[]).some(
+        (l) => "facts" in l,
+      ),
+    );
+    expect(withFacts.map((r) => r.scenario)).toEqual([]);
+  });
+
+  it("S1-9 앞 116개 시나리오 JSON(기대 포함)이 v6 파일과 같다: 직렬화 길이 49214, FNV-1a da65aad3(v6 커밋 009ce48에서 잼)", () => {
+    const text = JSON.stringify(OLD);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    expect([text.length, h.toString(16)]).toEqual([49214, "da65aad3"]);
+  });
+
+  it("S1-9 앞 116개에는 room.packings 칸이 없다(빈 원본), B05는 그대로 NO_BACKORDER", () => {
+    expect(
+      OLD.filter(
+        (s) => s.room.packings !== undefined || s.room.packingFailTimes,
+      ).map((s) => s.id),
+    ).toEqual([]);
+    const b05 = RESULTS.filter((r) => r.scenario === "B05");
+    expect(b05.map((r) => r.actual)).toEqual([
+      { kind: "HANDOFF", reason: "NO_BACKORDER" },
+    ]);
+  });
+
+  it("S1-10 K13 기대 JSON = B04 기대 JSON(글자까지), 실제도 같다", () => {
+    const expectOf = (id: string) =>
+      GOLDEN.scenarios.find((s) => s.id === id)?.steps.map((st) => st.expect);
+    expect(expectOf("K13")).toEqual(expectOf("B04"));
+    expect(JSON.stringify(expectOf("K13"))).toBe(
+      JSON.stringify(expectOf("B04")),
+    );
+    const actualOf = (id: string) =>
+      RESULTS.filter((r) => r.scenario === id).map((r) => r.actual);
+    expect(actualOf("K13")).toEqual(actualOf("B04"));
+  });
+
+  it("S1-10 v7: facts 칸은 포장 답 줄(AUTO_REPLY BACKORDER target null)에만, 값은 null. 7단계(K01 K02 K03 K04 K09 K14 둘)", () => {
+    const v7 = RESULTS.filter((r) => /^K\d\d$/.test(r.scenario));
+    expect(v7).toHaveLength(17);
+    const lines = v7.flatMap((r) =>
+      ((r.actual.lines ?? []) as Record<string, unknown>[]).map((l) => ({
+        id: r.scenario,
+        l,
+      })),
+    );
+    const withFacts = lines.filter(({ l }) => "facts" in l);
+    expect(withFacts.map(({ id }) => id)).toEqual([
+      "K01",
+      "K02",
+      "K03",
+      "K04",
+      "K09",
+      "K14",
+      "K14",
+    ]);
+    for (const { l } of withFacts)
+      expect(l).toMatchObject({
+        kind: "AUTO_REPLY",
+        intent: "BACKORDER",
+        target: null,
+        facts: null,
+      });
+    expect(
+      v7.filter((r) => JSON.stringify(r.actual) !== JSON.stringify(r.expect)),
+    ).toEqual([]);
+  });
+
+  it("room.packings 행 → 포장 답 줄에만 facts: null, packingFailTimes 1 → 넘김 하나", () => {
+    const room = {
+      wholesalerId: 101,
+      retailerId: 3,
+      context: null,
+      autoReply: true,
+      packings: [
+        {
+          packingId: 9201,
+          orderId: 7101,
+          wholesalerId: 101,
+          retailerId: 3,
+          orderCancelled: false,
+          packingStatus: "READY" as const,
+          outboundShipped: null,
+          qty: 1,
+          note: "유효 READY",
+        },
+      ],
+    };
+    const run = (packingFailTimes?: number) =>
+      runScenario({
+        id: "K-adhoc",
+        title: "K-adhoc",
+        required: false,
+        group: "backorder",
+        since: 7,
+        room: {
+          ...room,
+          ...(packingFailTimes === undefined ? {} : { packingFailTimes }),
+        },
+        steps: [{ text: "미송 언제 와요?", inquiry: null, expect: {} }],
+      })[0]?.actual;
+    const handoff = {
+      kind: "HANDOFF",
+      reason: "NO_BACKORDER",
+      intent: "BACKORDER",
+      sourceSequence: "self",
+    };
+    expect(run()).toEqual({
+      lines: [
+        {
+          kind: "AUTO_REPLY",
+          intent: "BACKORDER",
+          target: null,
+          body: "출고 준비 중인 주문이 있어요(#7101)",
+          facts: null,
+        },
+        handoff,
+      ],
+    });
+    expect(run(1)).toEqual({ lines: [handoff] });
   });
 });
 
@@ -1015,6 +1180,7 @@ function decideRoom1(
     catalog?: typeof CATALOG;
     receivables?: InquiryReceivableSource;
     backorders?: typeof BACKORDERS;
+    packings?: InquiryPackingSource;
   } = {},
 ) {
   return decideInquiry({
@@ -1032,6 +1198,7 @@ function decideRoom1(
       ? {}
       : { receivables: opts.receivables }),
     ...(opts.backorders === undefined ? {} : { backorders: opts.backorders }),
+    ...(opts.packings === undefined ? {} : { packings: opts.packings }),
   });
 }
 
@@ -1144,9 +1311,20 @@ describe("loop-08f S1-7 꺼짐 재판정의 원본 조회", () => {
     });
   });
 
-  it("④ 콜백 호출 수: 꺼짐 판정 1회 = 켜짐 판정 1회(catalog, 미송, 미수 각각)", () => {
-    const counted = () => {
-      const n = { catalog: 0, backorders: 0, receivables: 0 };
+  it("④ 콜백 호출 수: 꺼짐 판정 1회 = 켜짐 판정 1회(catalog, 미송, 미수, 포장 각각). 08i S1-6 포장 칸 추가", () => {
+    /** 포장 READY 한 건(방 1 소매처 1). 미송 0이면 포장 단계까지 간다 */
+    const ready: InquiryPacking = {
+      packingId: 9201,
+      orderId: 7101,
+      wholesalerId: 101,
+      retailerId: 1,
+      orderCancelled: false,
+      packingStatus: "READY",
+      outboundShipped: null,
+      qty: 1,
+    };
+    const counted = (noBackorders: boolean) => {
+      const n = { catalog: 0, backorders: 0, receivables: 0, packings: 0 };
       return {
         n,
         catalog: (id: number) => {
@@ -1155,33 +1333,41 @@ describe("loop-08f S1-7 꺼짐 재판정의 원본 조회", () => {
         },
         backorders: () => {
           n.backorders += 1;
-          return BACKORDERS();
+          return noBackorders ? [] : BACKORDERS();
         },
         receivables: () => {
           n.receivables += 1;
           return RECEIVABLE_ROWS;
         },
+        packings: () => {
+          n.packings += 1;
+          return [ready];
+        },
       };
     };
-    for (const [body, context] of [
-      ["레드 M 몇 장 있어요?", true],
-      ["미송 언제 와요?", false],
-      ["지금 미수 얼마예요?", false],
-      ["레드 L 재고랑 미송 같이 알려 주세요", true],
+    for (const [body, context, noBackorders] of [
+      ["레드 M 몇 장 있어요?", true, false],
+      ["미송 언제 와요?", false, false],
+      ["지금 미수 얼마예요?", false, false],
+      ["레드 L 재고랑 미송 같이 알려 주세요", true, false],
+      // 08i: 미송 0 + 대상 없음 → 포장 원본 1회(꺼짐도 켜짐도)
+      ["미송 언제 와요?", false, true],
     ] as const) {
-      const off = counted();
-      const on = counted();
+      const label = `${body}${noBackorders ? " (미송 0)" : ""}`;
+      const off = counted(noBackorders);
+      const on = counted(noBackorders);
       decideRoom1(body, { context, ...off });
       decideRoom1(body, {
         context,
         ...on,
         settings: DEFAULT_AUTO_REPLY_SETTINGS,
       });
-      expect(off.n, body).toEqual(on.n);
+      expect(off.n, label).toEqual(on.n);
       expect(
         off.n.catalog + off.n.backorders + off.n.receivables,
-        body,
+        label,
       ).toBeGreaterThan(0);
+      expect(off.n.packings, label).toBe(noBackorders ? 1 : 0);
     }
   });
 });
