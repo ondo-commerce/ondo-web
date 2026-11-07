@@ -25,6 +25,7 @@ import type { InquiryPacking } from "../chat/packingOrders";
 import type { InquiryReceivable } from "../chat/receivable";
 import {
   BACKORDER_SEED_ETA_DAYS,
+  backorderIdsError,
   inquiryBackorders,
   resetBackorderMock,
 } from "./backorder";
@@ -1990,17 +1991,22 @@ export const chatHandlers = [
       noBackorders?: boolean;
       seed?: string;
       readyPackings?: unknown;
+      backorderIds?: unknown;
     };
     if (input.seed !== undefined && !isChatSeedName(input.seed))
       return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
-    // 검사를 reset보다 먼저 전부(loop-08i §5-4 3). 틀리면 400이고 아무것도 안 바뀐다
+    // 검사를 reset보다 먼저 전부(loop-08i §5-4 3, loop-08j §5-4 2). 틀리면 400이고 아무것도 안 바뀐다
     const packingError = readyPackingsError(input.readyPackings);
     if (packingError !== null)
       return invalid("readyPackings", packingError.code, packingError.message);
+    const idsError = backorderIdsError(input.backorderIds, input.noBackorders);
+    if (idsError !== null)
+      return invalid("backorderIds", idsError.code, idsError.message);
     resetChatMock(input.rooms, {
       noBackorders: input.noBackorders === true,
       seed: input.seed,
       readyPackings: input.readyPackings as number[] | undefined,
+      backorderIds: input.backorderIds as number[] | undefined,
     });
     return HttpResponse.json({
       data: {
@@ -2024,11 +2030,18 @@ export function resetChatMock(
     noBackorders?: boolean;
     seed?: string;
     readyPackings?: readonly number[];
+    /** 그 미송만 남긴다(loop-08j §5-4). 틀린 값이면 아무것도 바꾸기 전에 던진다 */
+    backorderIds?: readonly number[];
   } = {},
 ) {
   const packingError = readyPackingsError(options.readyPackings);
   if (packingError !== null)
     throw new Error(`mock: readyPackings ${packingError.code}`);
+  const idsError = backorderIdsError(
+    options.backorderIds,
+    options.noBackorders,
+  );
+  if (idsError !== null) throw new Error(`mock: backorderIds ${idsError.code}`);
   rooms =
     options.seed === STATS_SEED_NAME
       ? seedStatsRooms()
@@ -2038,7 +2051,10 @@ export function resetChatMock(
           ? seedRetailHistoryRooms()
           : seedRooms();
   // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
-  resetBackorderMock({ empty: options.noBackorders === true });
+  resetBackorderMock({
+    empty: options.noBackorders === true,
+    ids: options.backorderIds,
+  });
   // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는
   // 출고는 출고 목에 있어 셋을 같이 돌린다(정산 목 reset 주석: 같이 되돌려야 맞물린다)
   resetOrderMock();
