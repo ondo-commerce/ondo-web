@@ -164,6 +164,20 @@ describe("attachBackGuard — S1-16: 가짜 window 컨트롤러", () => {
     expect(counts.fallback).toBe(0);
   });
 
+  it("⑥ 변경 없이 저장 중: sync가 보초 1, 뒤로가기는 hold(보초 다시, 모달 0, back 0) (09-R1)", () => {
+    const fake = fakeWindow();
+    const { handlers, counts } = handlersFor({ dirty: false, saving: true });
+    const guard = attachBackGuard(fake.win, handlers);
+
+    guard.sync();
+    expect(fake.calls.pushState).toBe(1);
+    fake.back();
+
+    expect(fake.calls.pushState).toBe(2);
+    expect(counts.open).toBe(0);
+    expect(fake.calls.back).toBe(0);
+  });
+
   it("⑤ 400ms 안에 pagehide → 대체 이동 0", () => {
     const fake = fakeWindow();
     const { handlers, counts } = handlersFor();

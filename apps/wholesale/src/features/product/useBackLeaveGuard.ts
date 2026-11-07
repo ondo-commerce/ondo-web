@@ -28,7 +28,7 @@ export function useBackLeaveGuard(options: {
   onOpen: () => void;
   /** `go(-2)`가 갈 곳이 없을 때(앞 이력 없는 새 탭) 대신 갈 곳 */
   fallbackHref: string;
-}): { leaveBack: () => void } {
+}): { leaveBack: () => void; armSaving: () => void } {
   const router = useRouter();
   // 리스너를 렌더마다 갈아 끼우지 않는다 — popstate 때 최신 값만 ref로 본다
   const latest = useRef(options);
@@ -61,5 +61,10 @@ export function useBackLeaveGuard(options: {
   }, [dirty, leaving]);
 
   const leaveBack = useCallback(() => controller.current?.leave(), []);
-  return { leaveBack };
+  /*
+   * 저장 시작 직후 부른다(`savingRef.current = true` 다음 줄). ref 변경은 effect를 안 돌리므로
+   * 변경 없는 폼도 여기서 바로 보초를 넣어야 저장 중 뒤로가기가 hold된다(09-R1).
+   */
+  const armSaving = useCallback(() => controller.current?.sync(), []);
+  return { leaveBack, armSaving };
 }

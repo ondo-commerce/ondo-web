@@ -51,7 +51,7 @@ export interface BackGuardHandlers {
 }
 
 export interface BackGuardController {
-  /** 가드가 켜졌으면 보초를 넣는다. 이미 보초 위면 아무것도 안 한다 */
+  /** 가드가 켜졌으면(입력 있음 또는 저장 중) 보초를 넣는다. 이미 보초 위면 아무것도 안 한다 */
   sync: () => void;
   /** 뒤로가기 모달의 `나가기`. 다시 넣은 보초 + 폼 항목을 건너 이전 화면으로 한 번에 */
   leave: () => void;
@@ -122,7 +122,8 @@ export function attachBackGuard(
   return {
     sync: () => {
       const snap = handlers.read();
-      const active = snap.dirty && !snap.leaving && !leaving;
+      // 저장 중도 켠다 — 변경 없이 저장을 누른 폼은 보초가 없어 뒤로가기가 hold 없이 빠진다(09-R1)
+      const active = (snap.dirty || snap.saving) && !snap.leaving && !leaving;
       if (!shouldPushGuard(active, win.history.state)) return;
       pushGuard(win);
       sawGuard = true;

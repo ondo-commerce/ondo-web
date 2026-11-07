@@ -205,7 +205,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
   /* 브라우저 뒤로가기(#255). `ProductCreateView`와 같은 꼴, 대체 이동만 상세로 */
   const [backOpened, setBackOpened] = useState(false);
   const savingRef = useRef(false);
-  const { leaveBack } = useBackLeaveGuard({
+  const { leaveBack, armSaving } = useBackLeaveGuard({
     dirty,
     leaving,
     dialogOpen: leaveOpen,
@@ -264,6 +264,8 @@ function ProductEditForm({ product }: { product: ProductView }) {
     if (firstInvalidField(found)) return;
 
     savingRef.current = true;
+    // 변경 없이 저장을 눌러도 저장 중 뒤로가기는 머문다 — 이 폼은 아직 보초가 없을 수 있다
+    armSaving();
     try {
       await update.mutateAsync(toUpdateRequest(productForm, postForm, product));
       if (product.post && status !== product.post.status) {

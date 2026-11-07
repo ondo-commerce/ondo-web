@@ -113,7 +113,7 @@ export function ProductCreateView() {
    */
   const [backOpened, setBackOpened] = useState(false);
   const savingRef = useRef(false);
-  const { leaveBack } = useBackLeaveGuard({
+  const { leaveBack, armSaving } = useBackLeaveGuard({
     dirty,
     leaving,
     dialogOpen: leaveOpen,
@@ -145,6 +145,8 @@ export function ProductCreateView() {
     if (firstInvalidField(found)) return;
 
     savingRef.current = true;
+    // 등록은 검사를 통과했으면 이미 입력이 있어 보초가 있다. 수정과 같은 꼴로 맞춰 둔다
+    armSaving();
     /*
      * 화면을 떠난 뒤 끝난 저장은 이동하지 않는다(#255 ⑬). 따로 막지 않아도 되는 이유:
      * TanStack은 `mutate`에 넘긴 콜백을 관찰자 구독자가 있을 때만 부른다(언마운트 = 구독 끝).
