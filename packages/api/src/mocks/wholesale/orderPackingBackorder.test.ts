@@ -395,13 +395,14 @@ describe("S1-5 reset readyPackings", () => {
 
 describe("S1-6 실패 원자성(미송 있는 기본 reset)", () => {
   it.each([
-    ["7002 × 2", 7002, 8002, 2, 409, "ALLOCATION_EXCEEDS_ORDER"],
-    ["7001 × 1(3003 재고 0)", 7001, 8001, 1, 409, "INSUFFICIENT_STOCK"],
-    ["7003 × 1(신규)", 7003, 8003, 1, 409, "TRANSITION_NOT_ALLOWED"],
-    ["7002 × 0", 7002, 8002, 0, 400, "INVARIANT_VIOLATED"],
+    ["7002 × 2", 409, "ALLOCATION_EXCEEDS_ORDER", 7002, 8002, 2],
+    ["7001 × 1(3003 재고 0)", 409, "INSUFFICIENT_STOCK", 7001, 8001, 1],
+    ["7003 × 1(신규)", 409, "TRANSITION_NOT_ALLOWED", 7003, 8003, 1],
+    ["7002 × 0", 400, "INVARIANT_VIOLATED", 7002, 8002, 0],
   ] as const)(
+    // 이름 틀이 앞 세 값만 받는다. 기대 상태와 code가 이름에 보이게 그 둘을 줄 id 앞에 둔다(08k-Q1)
     "① 포장 준비 %s → %i %s, snapshot() 그대로",
-    async (_, orderId, lineId, qty, status, code) => {
+    async (_, status, code, orderId, lineId, qty) => {
       const before = await snapshot();
       const res = await packRaw(orderId, lineId, qty);
       expect(res.status).toBe(status);
@@ -475,6 +476,33 @@ describe("S1-13 min 경계(합성)", () => {
     expect(backorderRow(9003)).toEqual([1, "OPEN"]);
     expect(await availableOf(3019)).toBe(4);
     expect((await orderLine(7003, 8003)).allocatedQty).toBe(0);
+  });
+});
+
+/* --- 한 줄 대응 미송 여럿 ------------------------------------------------- */
+
+describe("한 줄 대응 미송 여럿(합성, 08k-F1)", () => {
+  /**
+   * 한 포장 줄에 대응 미송이 여럿이면 앞에서부터 나눈다(02-dev-398 판단 2). 시드는 줄당 대응 미송 1개라
+   * `mockBackorders()` 배열에 9002와 같은 주문, 줄, SKU, 소매처의 행(9902, 남은 1)을 하나 더 넣는다.
+   * 다음 reset이 배열을 새로 만들어 이 행은 남지 않는다
+   */
+  it("기본 reset → 9002 복제 9902(남은 1) → 7002 포장 8002 × 1 → 9002 [0, RESOLVED], 9902 [1, OPEN] 그대로, 3011 가용 5 → 삭제 → 9002 [1, OPEN], 가용 6", async () => {
+    await reset();
+    const list = mockBackorders();
+    const seed = list.find((b) => b.id === 9002);
+    if (seed === undefined) throw new Error("9002");
+    (list as (typeof seed)[]).push({ ...seed, id: 9902 });
+
+    const { id } = await pack(7002, 8002, 1);
+    expect(backorderRow(9002)).toEqual([0, "RESOLVED"]);
+    expect(backorderRow(9902)).toEqual([1, "OPEN"]);
+    expect(await availableOf(3011)).toBe(5);
+
+    expect((await del(id)).status).toBe(204);
+    expect(backorderRow(9002)).toEqual([1, "OPEN"]);
+    expect(backorderRow(9902)).toEqual([1, "OPEN"]);
+    expect(await availableOf(3011)).toBe(6);
   });
 });
 
