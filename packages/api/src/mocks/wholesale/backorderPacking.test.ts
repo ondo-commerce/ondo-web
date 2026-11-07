@@ -727,4 +727,32 @@ describe("S1-11 주문 취소와 배분", () => {
     expect([res.status, res.body.code]).toEqual([409, "BACKORDER_NOT_OPEN"]);
     expect(await snapshot()).toEqual(before);
   });
+
+  it.each([
+    [
+      "[9002 × 1, 9003 × 1]",
+      [
+        [9002, 1],
+        [9003, 1],
+      ],
+    ],
+    [
+      "[9003 × 1, 9002 × 1]",
+      [
+        [9003, 1],
+        [9002, 1],
+      ],
+    ],
+  ] as [string, [number, number][]][])(
+    "⑤ 7002 주문 탭 포장 뒤 7003 취소 → %s → 409 BACKORDER_NOT_OPEN(취소 검사가 잔량 검사보다 먼저, 순서 무관), 불변",
+    async (_, items) => {
+      await reset({ backorderIds: [9002, 9003] });
+      await pack(7002, 8002, 1);
+      expect((await cancelOrder(7003)).status).toBe(200);
+      const before = await snapshot();
+      const res = await allocate(items);
+      expect([res.status, res.body.code]).toEqual([409, "BACKORDER_NOT_OPEN"]);
+      expect(await snapshot()).toEqual(before);
+    },
+  );
 });

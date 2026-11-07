@@ -683,21 +683,27 @@ export type AllocationPackingCode =
 
 /**
  * 미송 탭 배분을 주문 목에 적용해도 되는지 검사한다. 저장소는 안 바꾼다(08i `readyPackingsError` 꼴, 검사와 적용
- * 분리). 앞 줄부터 ① 주문 취소 → `BACKORDER_NOT_OPEN`(BE에선 취소 주문의 미송이 열려 있을 수 없어 스펙 목록에서
- * 가장 가까운 code) ② 같은 줄 요청 합이 줄 잔량(`qty − allocatedQty`)을 넘음 → `ALLOCATION_EXCEEDS_ORDER`(주문 탭이
- * 먼저 잡은 잔량, 기획 Q2 ①). 없는 주문, 줄은 대응 단계에서 걸러져 오므로 던진다. `isPackable`은 안 본다
+ * 분리). 두 단계로 본다 — ① 모든 줄의 주문 취소 → `BACKORDER_NOT_OPEN`(BE에선 취소 주문의 미송이 열려 있을 수
+ * 없어 스펙 목록에서 가장 가까운 code) ② 그다음 모든 줄의 잔량: 같은 줄 요청 합이 `qty − allocatedQty`를 넘음 →
+ * `ALLOCATION_EXCEEDS_ORDER`(주문 탭이 먼저 잡은 잔량, 기획 Q2 ①). 줄마다 번갈아 보면 요청 순서에 따라 code가
+ * 바뀌어서 단계를 나눴다(기획 §5-2 1, 08j-R1). 없는 주문, 줄은 대응 단계에서 걸러져 오므로 던진다. `isPackable`은
+ * 안 본다
  */
 export function allocationPackingError(
   lines: readonly AllocationLine[],
 ): AllocationPackingCode | null {
-  const want = new Map<number, number>();
-  for (const req of lines) {
+  const resolved = lines.map((req) => {
     const order = orders.find((o) => o.id === req.orderId);
     const l = order?.items.find((x) => x.id === req.orderItemId);
     if (order === undefined || l === undefined)
       throw new Error(`mock: 배분 줄이 없다 ${req.orderId}/${req.orderItemId}`);
-    if (order.status === "CANCELLED") return "BACKORDER_NOT_OPEN";
-    const total = (want.get(l.id) ?? 0) + req.qty;
+    return { order, l, qty: req.qty };
+  });
+  if (resolved.some(({ order }) => order.status === "CANCELLED"))
+    return "BACKORDER_NOT_OPEN";
+  const want = new Map<number, number>();
+  for (const { l, qty } of resolved) {
+    const total = (want.get(l.id) ?? 0) + qty;
     if (total > l.qty - l.allocatedQty) return "ALLOCATION_EXCEEDS_ORDER";
     want.set(l.id, total);
   }
