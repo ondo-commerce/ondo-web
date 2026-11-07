@@ -233,7 +233,7 @@ test.describe("S2-19 사용자 스크롤 — 터치, 스크롤바 드래그", ()
     const box = await log(page).boundingBox();
     if (box === null) throw new Error("log 없음");
     const scrollbar = await log(page).evaluate(
-      (el) => el.offsetWidth - el.clientWidth,
+      (el: HTMLElement) => el.offsetWidth - el.clientWidth,
     );
     test.info().annotations.push({
       type: "evidence",

@@ -39,7 +39,7 @@ function upload(page: Page, parts: Part[]): Promise<Reply> {
         fd.append("file", p.text);
         continue;
       }
-      let bytes: Uint8Array;
+      let bytes: Uint8Array<ArrayBuffer>;
       if (p.kind === "bytes")
         bytes = Uint8Array.from(atob(p.base64), (c) => c.charCodeAt(0));
       else if (p.kind === "zeros") {

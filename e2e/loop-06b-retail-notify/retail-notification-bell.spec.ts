@@ -407,13 +407,13 @@ test("S2-5 안 읽은 BACKORDERS 행 같은 틱 3연타 → read 1회 {ids}, 이
   await startNotify(page, "/");
   await openPanel(page);
   await firstPageShown(page);
-  const history = await page.evaluate(() => history.length);
+  const history = await page.evaluate(() => window.history.length);
   await tripleClick(page, `[role="dialog"] [data-id="${SEED_FIRST}"]`);
   await expect(page).toHaveURL("/backorders?wholesaler=101");
   await settled(page, NREAD_POST);
   expect(await count(page, NREAD_POST)).toBe(1);
   expect(await notificationReads(page)).toEqual([{ ids: [SEED_FIRST] }]);
-  expect(await page.evaluate(() => history.length)).toBe(history + 1);
+  expect(await page.evaluate(() => window.history.length)).toBe(history + 1);
   await expect(
     page.getByRole("link", { name: "무드온", exact: true }),
   ).toHaveAttribute("aria-current", "true");
@@ -481,11 +481,11 @@ test("S2-5 같은 SKU 두 번 바꿈 → 행 2개, 옛 행 본문 그대로, 옛
   await stubEta(page, 3019, plus(R, 12));
   await openPanel(page);
   await firstPageShown(page);
-  const history = await page.evaluate(() => history.length);
+  const history = await page.evaluate(() => window.history.length);
   await rowById(page, newest ?? 0).click();
   await expect(linen).toContainText(tableDate(plus(R, 12)));
   await expect(page).toHaveURL("/backorders?wholesaler=101");
-  expect(await page.evaluate(() => history.length)).toBe(history);
+  expect(await page.evaluate(() => window.history.length)).toBe(history);
 });
 
 test("S2-6 '안 읽은 알림 2개 모두 읽음'(첫 장 안 읽음 1개여도 2), 3연타 POST 1회 → 점 0, 배지 없음, 더 보기 뒤 21번째도 점 0", async ({

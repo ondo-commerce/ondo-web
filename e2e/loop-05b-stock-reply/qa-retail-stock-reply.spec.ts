@@ -3,11 +3,9 @@ import {
   addButton,
   askChip,
   assertStubServers,
-  autoBubbles,
   box,
   captureCartPosts,
   cards,
-  CART_POST,
   cartLink,
   choice,
   choiceGroups,
@@ -355,12 +353,10 @@ test.describe("반복 4패턴 나머지 값", () => {
         dataAc: el.getAttribute("data-ac"),
         url: location.pathname + location.search,
       }));
-      test
-        .info()
-        .annotations.push({
-          type: "caught",
-          description: JSON.stringify(caught),
-        });
+      test.info().annotations.push({
+        type: "caught",
+        description: JSON.stringify(caught),
+      });
       await chip.evaluate((el) => {
         (el as HTMLButtonElement).click();
         (el as HTMLButtonElement).click();

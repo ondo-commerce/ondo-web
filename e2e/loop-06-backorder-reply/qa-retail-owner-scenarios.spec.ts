@@ -10,7 +10,6 @@ import {
   count,
   countLoginNavigations,
   handoffLines,
-  incoming,
   log,
   navBadge,
   navUnread,
@@ -36,10 +35,13 @@ import {
 
 assertStubServers();
 
-const SHOTS = "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-06-backorder-reply/qa";
+const SHOTS =
+  "/Users/oh-chang-eun/onDo/.claude/harness/runs/loop-06-backorder-reply/qa";
 
 async function shot(page: Page, name: string) {
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false }).catch(() => undefined);
+  await page
+    .screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false })
+    .catch(() => undefined);
 }
 
 async function askInRoom(page: Page, text = ASK_WHEN) {
@@ -85,7 +87,9 @@ test("(a) 장면 2 소매 절반 — 질문 → 보기 4 → 9003 → 남은 2�
   await expect(card).toContainText("도매 입고 예정 11월 5일");
   await expect(
     log(page).locator('[data-kind="AUTO_REPLY"]').last(),
-  ).toContainText("남은 미송 2장은 11월 5일 도매 입고 예정이에요(원단 수급 지연)");
+  ).toContainText(
+    "남은 미송 2장은 11월 5일 도매 입고 예정이에요(원단 수급 지연)",
+  );
   await shot(page, "a-1470-card");
 });
 
@@ -98,7 +102,8 @@ test("(a-390) 390 장면 2: 보기 글자 30자 넘는 것 전부 잘림 0, 두 
   await expect(group.locator("button[data-backorder-id]")).toHaveCount(4);
   const measured = await group.locator("button").evaluateAll((nodes) =>
     nodes.map((n) => {
-      const label = n.querySelector("span.min-w-0")?.textContent ?? n.textContent ?? "";
+      const label =
+        n.querySelector("span.min-w-0")?.textContent ?? n.textContent ?? "";
       const lineHeight = parseFloat(getComputedStyle(n).lineHeight);
       const span = n.querySelector("span.min-w-0") as HTMLElement | null;
       return {
@@ -106,7 +111,9 @@ test("(a-390) 390 장면 2: 보기 글자 30자 넘는 것 전부 잘림 0, 두 
         len: label.length,
         clipped: n.scrollWidth > n.clientWidth,
         ellipsis: getComputedStyle(n).textOverflow === "ellipsis",
-        lines: span ? Math.round(span.getBoundingClientRect().height / lineHeight) : 1,
+        lines: span
+          ? Math.round(span.getBoundingClientRect().height / lineHeight)
+          : 1,
         right: n.getBoundingClientRect().right,
       };
     }),
@@ -118,13 +125,24 @@ test("(a-390) 390 장면 2: 보기 글자 30자 넘는 것 전부 잘림 0, 두 
     expect(m.ellipsis, m.label).toBe(false);
     expect(m.right, m.label).toBeLessThanOrEqual(390);
   }
-  expect(long.some((m) => m.lines >= 2), "긴 보기는 두 줄로 접힌다").toBe(true);
+  expect(
+    long.some((m) => m.lines >= 2),
+    "긴 보기는 두 줄로 접힌다",
+  ).toBe(true);
   const page390 = await page.evaluate(() => ({
-    x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    search: (document.querySelector('header input[type="search"]') as HTMLElement | null)
-      ?.getBoundingClientRect().width,
-    searchForm: (document.querySelector('header form[role="search"], header form') as HTMLElement | null)
-      ?.getBoundingClientRect().width,
+    x:
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+    search: (
+      document.querySelector(
+        'header input[type="search"]',
+      ) as HTMLElement | null
+    )?.getBoundingClientRect().width,
+    searchForm: (
+      document.querySelector(
+        'header form[role="search"], header form',
+      ) as HTMLElement | null
+    )?.getBoundingClientRect().width,
     inputs: [...document.querySelectorAll("header input")].map((i) => ({
       type: (i as HTMLInputElement).type,
       name: (i as HTMLInputElement).name,
@@ -132,7 +150,12 @@ test("(a-390) 390 장면 2: 보기 글자 30자 넘는 것 전부 잘림 0, 두 
     })),
   }));
   expect(page390.x).toBe(0);
-  test.info().annotations.push({ type: "measure", description: JSON.stringify({ measured, page390 }) });
+  test
+    .info()
+    .annotations.push({
+      type: "measure",
+      description: JSON.stringify({ measured, page390 }),
+    });
   console.log("QA measure", JSON.stringify({ measured, page390 }));
   /* 검색칸 폭(결정 33)은 qa-retail-design-audit 가 본다(F2) */
   await orderChoice(group, 9003).click();
@@ -148,7 +171,9 @@ test("(b) 후보 1건인데 옵션 미확정('데님 팬츠 언제 와요?') →
   await expect(group).toBeVisible();
   const ids = await group
     .locator("button[data-backorder-id]")
-    .evaluateAll((ns) => ns.map((n) => Number((n as HTMLElement).dataset.backorderId)));
+    .evaluateAll((ns) =>
+      ns.map((n) => Number((n as HTMLElement).dataset.backorderId)),
+    );
   expect(ids).toEqual([9002]);
   await expect(notListedChip(group)).toBeVisible();
   await expect(orderCards(page)).toHaveCount(0);
@@ -183,7 +208,9 @@ for (const [id, sentence, stateLine] of [
   });
 }
 
-test("(f) 다른 주문이에요 → 넘김 줄, 그 뒤 주문 보기 전부 잠김, 카드 0", async ({ page }) => {
+test("(f) 다른 주문이에요 → 넘김 줄, 그 뒤 주문 보기 전부 잠김, 카드 0", async ({
+  page,
+}) => {
   await askInRoom(page);
   const group = orderGroups(page).first();
   await notListedChip(group).click();
@@ -207,7 +234,9 @@ test("(g-1) 방에서 '가나다' 쓰는 중 헤더 count 401 → /login 이동 
   await expect(chatNav(page)).toHaveAccessibleName("채팅");
   await expect(composer(page)).toHaveValue("가나다");
   await expect(sendButton(page)).toBeEnabled();
-  await expect(appAlert(page).filter({ hasText: "로그인이 끊겼어요" })).toHaveCount(0);
+  await expect(
+    appAlert(page).filter({ hasText: "로그인이 끊겼어요" }),
+  ).toHaveCount(0);
   expect(loginNavs()).toBe(0);
   await expect(page).toHaveURL("/chats/1?from=/chats");
 });
@@ -236,7 +265,11 @@ test("(g-2) 401로 멈춘 헤더 → 로그아웃해 /login 다녀온 뒤 셸이
   /* 다시 로그인한 것과 같은 상태(쿠키 그대로) — LoginView 성공 경로와 같은 router.replace + refresh.
      가짜 API에 로그인 op가 없어 dev 빌드의 app router 핸들(window.nd)로 같은 호출을 낸다 */
   await page.evaluate(() => {
-    const nd = (window as unknown as { nd?: { router: { replace(h: string): void; refresh(): void } } }).nd;
+    const nd = (
+      window as unknown as {
+        nd?: { router: { replace(h: string): void; refresh(): void } };
+      }
+    ).nd;
     nd?.router.replace("/");
     nd?.router.refresh();
   });
@@ -247,7 +280,12 @@ test("(g-2) 401로 멈춘 헤더 → 로그아웃해 /login 다녀온 뒤 셸이
     label: a.getAttribute("aria-label"),
     url: location.pathname,
   }));
-  test.info().annotations.push({ type: "evidence", description: JSON.stringify(evidence) });
+  test
+    .info()
+    .annotations.push({
+      type: "evidence",
+      description: JSON.stringify(evidence),
+    });
   console.log("QA g-2 back", JSON.stringify(evidence), "count", stopped);
   /* 고친 뒤(F1): 셸이 붙자마자 1회(새로고침과 같다), 그 뒤 30초 polling 1회. 둘을 따로 센다 */
   await waitCount(page, COUNT_GET, stopped + 1);
@@ -281,7 +319,9 @@ test("누출 구조 단언 — 미송 답 2건(9006, 9003) 뒤 소매가 받은 
   await page.getByRole("link", { name: "채팅 목록", exact: true }).click();
   await expect(roomRow(page, 1)).toBeVisible();
   await page.clock.fastForward(31_000);
-  await expect.poll(() => bodies.some((b) => /unread-count/.test(b.url))).toBe(true);
+  await expect
+    .poll(() => bodies.some((b) => /unread-count/.test(b.url)))
+    .toBe(true);
 
   const keys = new Set<string>();
   for (const b of bodies) {
@@ -291,13 +331,23 @@ test("누출 구조 단언 — 미송 답 2건(9006, 9003) 뒤 소매가 받은 
       /* JSON 아님 */
     }
   }
-  for (const k of ["availableQty", "remainingQty", "retailerName", "retailerId"])
+  for (const k of [
+    "availableQty",
+    "remainingQty",
+    "retailerName",
+    "retailerId",
+  ])
     expect(keys.has(k), `키 ${k}`).toBe(false);
   const all = bodies.map((b) => b.text).join("\n");
   expect(all).not.toMatch(/(^|[^\d~])(9|15)장/);
   expect(all).not.toContain("대기상회");
   expect(all).not.toContain("#7005");
-  const send9006 = bodies.find((b) => /messages$/.test(b.url) && b.text.includes("남은 미송 2장") && b.text.includes("9006"));
+  const send9006 = bodies.find(
+    (b) =>
+      /messages$/.test(b.url) &&
+      b.text.includes("남은 미송 2장") &&
+      b.text.includes("9006"),
+  );
   expect(send9006, "9006 답 응답").toBeDefined();
   expect(send9006?.text).not.toMatch(/(^|[^\d~])4장/);
   await expect(navBadge(page)).toHaveCount(0);
@@ -306,7 +356,9 @@ test("누출 구조 단언 — 미송 답 2건(9006, 9003) 뒤 소매가 받은 
 
 /* 변이 3(계승 의도 검사) 화면 e2e. 골든 B20과 같은 길: 미송 되묻기가 열린 채 재고 질문이면 계승하지 않고
    재고 판정(방 1 문맥 2001 빈티지 플라워 셔츠 → 레드 L 3003 재고 카드). 계승하면 미송 CLARIFY_AGAIN 넘김만 나온다 */
-test("(B20) 미송 되묻기 열린 채 '레드 L 재고 있어요?' → 재고 카드(3003), 미송 카드 0", async ({ page }) => {
+test("(B20) 미송 되묻기 열린 채 '레드 L 재고 있어요?' → 재고 카드(3003), 미송 카드 0", async ({
+  page,
+}) => {
   await askInRoom(page);
   await expect(orderGroups(page)).toHaveCount(1);
   await say(page, "레드 L 재고 있어요?");
