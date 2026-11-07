@@ -668,7 +668,8 @@ export function cancelMockOrder(order: MockOrder): boolean {
 }
 
 /* --- 미송 탭 배분이 쓰는 문 (loop-08j §5-2) --------------------------------
- * 미송 목(`./backorder`)이 이 모듈을 import한다. 반대 방향 import는 순환이라 포장 삭제는 등록받은 함수로 알린다.
+ * 미송 목(`./backorder`)이 이 모듈을 import한다. 반대 방향 import는 순환이라 포장 삭제와 주문 탭 길 포장 생성은
+ * 등록받은 함수로 알린다(loop-08k).
  * ----------------------------------------------------------------------- */
 
 /** 배분 한 줄. 주문 목 주문 id와 줄 id, 수량 */
@@ -742,6 +743,21 @@ export function onMockPackingCancelled(
   listener: (packingId: number) => void,
 ): void {
   packingCancelledListener = listener;
+}
+
+/**
+ * 주문 탭 길(포장 준비 op, 확정 op의 이번 출고, reset `readyPackings`)로 포장을 만든 뒤 들을 함수 하나(loop-08k §5-2 1).
+ * 미송 목이 등록해 대응되는 미송을 줄이고 배분 기록을 남긴다 — 그래야 그 포장 삭제가 08j 부활 길로 미송을 되살린다.
+ * `applyAllocation` 안에서 부르지 않는다: 미송 탭 배분(`addAllocationPacking`)도 그 함수를 지나서, 미송 목이 이미 줄인
+ * 미송을 한 번 더 줄이게 된다(Codex 7). 포장이 저장소에 들어간 뒤에만 부른다(실패 경로는 안 부름). 칸 하나(삭제 칸과 같은 이유)
+ */
+let orderPackingCreatedListener:
+  ((packing: MockPacking, order: MockOrder) => void) | null = null;
+
+export function onMockOrderPackingCreated(
+  listener: (packing: MockPacking, order: MockOrder) => void,
+): void {
+  orderPackingCreatedListener = listener;
 }
 
 function findOrder(raw: string | readonly string[] | undefined) {
@@ -847,7 +863,9 @@ export const orderHandlers = [
       const result = validateAllocation(order, body.items ?? [], true);
       if (result instanceof Map) {
         order.status = "CONFIRMED";
-        applyAllocation(order, result);
+        // 이번 출고가 0이면 포장이 안 생겨(null) 미송 목도 그대로다
+        const packing = applyAllocation(order, result);
+        if (packing !== null) orderPackingCreatedListener?.(packing, order);
         return HttpResponse.json({ data: detailResponse(order) });
       }
       return result;
@@ -921,6 +939,7 @@ export const orderHandlers = [
           "배분할 라인이 없습니다.",
           "items",
         );
+      orderPackingCreatedListener?.(packing, order);
       const data: WholesaleSchema<"PackingCreatedResponse"> = {
         id: packing.id,
         orderId: order.id,
@@ -1053,10 +1072,13 @@ export function addReadyPackings(orderIds: readonly number[]): void {
   for (const id of plan.orderIds) {
     const order = orders.find((o) => o.id === id);
     if (order === undefined) throw new Error(`mock: 주문이 없다 ${id}`);
-    applyAllocation(
+    const packing = applyAllocation(
       order,
       new Map(order.items.map((l) => [l.id, l.qty - l.allocatedQty])),
     );
+    // 주문 탭 길과 같은 포장이라 미송 목도 같이 줄인다(loop-08k §5-2 4). chat reset이 미송 목을 먼저 돌려서
+    // 여기서 남는 기록은 이번 reset이 만든 것뿐이다
+    if (packing !== null) orderPackingCreatedListener?.(packing, order);
   }
 }
 
