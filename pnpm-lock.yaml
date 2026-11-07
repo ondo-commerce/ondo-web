@@ -14,9 +14,21 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.2
         version: 21.2.2
+      '@eslint/js':
+        specifier: ^9.39.5
+        version: 9.39.5
+      '@ondo/config':
+        specifier: workspace:*
+        version: link:packages/config
       '@playwright/test':
         specifier: ^1.64.1
         version: 1.64.1
+      '@types/node':
+        specifier: ^20.19.43
+        version: 20.19.43
+      eslint:
+        specifier: ^9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
       husky:
         specifier: ^9.1.7
         version: 9.1.7
@@ -29,6 +41,12 @@ importers:
       turbo:
         specifier: ^2.10.8
         version: 2.10.8
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
 
   apps/retail:
     dependencies:

@@ -5,8 +5,10 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint && pnpm lint:e2e",
+    "lint:e2e": "eslint e2e",
+    "typecheck": "turbo run typecheck && pnpm typecheck:e2e",
+    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "codegen": "turbo run codegen",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -20,11 +22,17 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
+    "@eslint/js": "^9.39.5",
+    "@ondo/config": "workspace:*",
     "@playwright/test": "^1.64.1",
+    "@types/node": "^20.19.43",
+    "eslint": "^9.39.5",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
-    "turbo": "^2.10.8"
+    "turbo": "^2.10.8",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0"
   },
   "lint-staged": {
     "apps/wholesale/**/*.{ts,tsx}": [
