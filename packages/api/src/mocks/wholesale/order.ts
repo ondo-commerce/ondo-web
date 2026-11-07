@@ -655,6 +655,41 @@ export function cancelMockOrder(order: MockOrder): boolean {
   return true;
 }
 
+/* --- 미송 탭 배분이 쓰는 문 (loop-08j §5-2) --------------------------------
+ * 미송 목(`./backorder`)이 이 모듈을 import한다. 반대 방향 import는 순환이라 포장 삭제는 등록받은 함수로 알린다.
+ * ----------------------------------------------------------------------- */
+
+/**
+ * 주문 하나에 배분 수량만큼 READY 포장을 만들고 돌려준다. 주문 탭 `포장 준비`와 같은 `applyAllocation` 길이라 줄
+ * `allocatedQty`도 같이 오른다. `addReadyPackings`를 못 쓰는 이유: 기본 시드로 검사해 신규 7003을 거절하고, 미배분량
+ * 전부를 포장하며, 만든 포장을 안 돌려준다(Codex 5). 여기선 `isPackable`을 안 본다 — 신규 주문 7003도 받는다
+ */
+export function addAllocationPacking(
+  orderId: number,
+  lines: readonly { orderItemId: number; qty: number }[],
+): MockPacking {
+  const order = orders.find((o) => o.id === orderId);
+  if (order === undefined) throw new Error(`mock: 주문이 없다 ${orderId}`);
+  const qtyByLine = new Map<number, number>();
+  for (const l of lines)
+    qtyByLine.set(l.orderItemId, (qtyByLine.get(l.orderItemId) ?? 0) + l.qty);
+  const packing = applyAllocation(order, qtyByLine);
+  if (packing === null) throw new Error(`mock: 배분할 줄이 없다 ${orderId}`);
+  return packing;
+}
+
+/**
+ * 포장 삭제(204)를 들을 함수 하나. 미송 목이 등록해 배분이 만든 포장이면 미송을 되살린다(스펙 `cancelPacking`
+ * "해소했던 미송이 되살아난다"). 칸이 하나뿐이라 다시 등록하면 바뀐다(모듈이 두 번 읽혀도 두 번 안 불린다)
+ */
+let packingCancelledListener: ((packingId: number) => void) | null = null;
+
+export function onMockPackingCancelled(
+  listener: (packingId: number) => void,
+): void {
+  packingCancelledListener = listener;
+}
+
 function findOrder(raw: string | readonly string[] | undefined) {
   const id = Number(raw);
   return orders.find((o) => o.id === id) ?? null;
@@ -864,6 +899,8 @@ export const orderHandlers = [
       }
     }
     packings = packings.filter((p) => p.id !== id);
+    // 미송 탭 배분이 만든 포장이면 미송 목도 되살린다(loop-08j §5-2 4). 기록 없는 포장이면 듣는 쪽이 아무것도 안 한다
+    packingCancelledListener?.(id);
     return new HttpResponse(null, { status: 204 });
   }),
 ];

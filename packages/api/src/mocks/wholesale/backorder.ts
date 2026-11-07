@@ -5,6 +5,13 @@ import {
   seoulDate,
   type InquiryBackorder,
 } from "../chat/backorderCandidates";
+import {
+  addAllocationPacking,
+  mockOrders,
+  onMockPackingCancelled,
+  type MockOrder,
+  type MockOrderLine,
+} from "./order";
 
 /**
  * 미송 목 — BE `V900__seed_dev.sql`(MUL-97)의 `backorder`·`order_item`·`variant` 행을 그대로 옮겼다.
@@ -19,7 +26,9 @@ import {
  *     보면 SKU가 하나(3003)뿐이라 배분을 볼 수 없다(재고 0).
  *  2. 시드의 시각은 `now() - interval`이라 절대값이 없다. 주문 목과 같은 기준일 2026-09-07(KST)로 박았다.
  *     `elapsedDays`는 그 기준일과 미송 발생일의 차다.
- *  3. 주문 목과 상태를 **공유하지 않는다.** 여기서 배분해도 주문 탭의 포장 대기열엔 안 생긴다.
+ *  3. 주문 목과 저장소는 따로다(SKU 재고도 각자 든다). (loop-08j) 다만 배분은 대응되는 주문 목 줄이 있으면
+ *     주문 목에 READY 포장을 만들고, 그 포장 삭제는 여기 미송을 되살린다(`orderLineOf`, `allocationRecords`).
+ *     대응이 없는 미송(9006, 801)은 지금처럼 이 목 번호로 응답만 낸다.
  *
  *  4. (loop-06) 입고 예정일은 **reset 시각(서울)의 상대값**이다: 3003 = 오늘 −3일, 3019 = +7일, 3011 미정.
  *     미송 자동 답이 "예정 / 지남 / 미정"을 가르는데 고정 날짜면 날이 갈수록 답이 바뀐다. e2e는 reset 전에
@@ -284,6 +293,16 @@ let backorders = seedBackorders();
 let nextBatchId = 4401;
 let nextPackingId = 7710;
 let nextPackingItemId = 91101;
+/**
+ * 배분 기록: 주문 목 포장 id → 그 포장이 해소한 [미송 id, 수량]. 포장 삭제가 이걸 보고 미송을 되살린다.
+ * 이 목에 둔다 — 되살릴 대상(미송 잔량, `reservedQty`)이 여기 있고, 주문 목은 이 목을 모른다(순환 import 0).
+ * 포장마다 따로 남는다: 같은 미송에 1장씩 두 번 배분하면 기록도 둘(미송 id 키로 덮어쓰지 않는다, Codex 6).
+ * reset에서 비운다 — 주문 목 포장 id가 reset 뒤 9101부터 다시 쓰여서 지난 기록이 새 포장에 붙으면 안 된다(Codex 7)
+ */
+let allocationRecords = new Map<
+  number,
+  { backorderId: number; qty: number }[]
+>();
 
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
 
@@ -305,6 +324,28 @@ function myBackorder(id: number): MockBackorder | undefined {
   return b !== undefined && myVariants().some((v) => v.id === b.variantId)
     ? b
     : undefined;
+}
+
+/**
+ * 미송 → 주문 목 줄(loop-08j §5-2 5). 주문 id, 줄 id, variant id, 소매처 id 넷이 다 같을 때만 그 줄, 아니면 null.
+ * 주문 상태는 안 본다(취소 주문 배분 거절은 따로, `allocationPackingError`).
+ * 넷 비교는 알림 목 `incoming`이 주문 목에 만드는 7006(줄 8006, variant 3002)과 이 목 9006(주문 7006, 줄 8006,
+ * variant 3003)의 번호 겹침을 막는 장치다. 같은 주문임을 일반적으로 증명하지는 않는다(Codex 8, S1-1 ⑥)
+ */
+export function orderLineOf(
+  b: Pick<
+    MockBackorder,
+    "orderId" | "orderItemId" | "variantId" | "retailerId"
+  >,
+  orders: readonly MockOrder[],
+): MockOrderLine | null {
+  const order = orders.find(
+    (o) => o.id === b.orderId && o.retailerId === b.retailerId,
+  );
+  const line = order?.items.find(
+    (l) => l.id === b.orderItemId && l.variantId === b.variantId,
+  );
+  return line ?? null;
 }
 
 function openOf(variantId: number): MockBackorder[] {
@@ -430,6 +471,100 @@ function isWireDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/* --- 배분과 주문 목 포장 (loop-08j §5-2) ---------------------------------- */
+
+type AllocationEntry = { b: MockBackorder; v: MockVariant; qty: number };
+
+function packingItemOf(
+  e: AllocationEntry,
+  id: number,
+  qty: number,
+): WholesaleSchema<"AllocationPackingResponse">["items"][number] {
+  return {
+    id,
+    orderItemId: e.b.orderItemId,
+    variantId: e.v.id,
+    variantNumber: e.v.variantNumber,
+    productNumber: e.v.productNumber,
+    productName: e.v.productName,
+    color: e.v.color,
+    size: e.v.size,
+    qty,
+  };
+}
+
+/**
+ * 대응되는 주문 하나의 몫 → 주문 목에 READY 포장을 만들고 그 포장으로 응답한다(id, 줄 id 둘 다 주문 목 번호).
+ * 그래서 주문 탭 포장 카드, 출고 탭 포장 대기, 채팅 포장 원본이 같은 포장을 읽는다. 배분 기록을 포장마다 남긴다
+ */
+function orderPacking(
+  entries: readonly AllocationEntry[],
+): WholesaleSchema<"AllocationPackingResponse"> {
+  const first = entries[0];
+  if (first === undefined) throw new Error("mock: 빈 배분 묶음");
+  const packing = addAllocationPacking(
+    first.b.orderId,
+    entries.map((e) => ({ orderItemId: e.b.orderItemId, qty: e.qty })),
+  );
+  allocationRecords.set(
+    packing.id,
+    entries.map((e) => ({ backorderId: e.b.id, qty: e.qty })),
+  );
+  return {
+    id: packing.id,
+    orderId: first.b.orderId,
+    orderNumber: first.b.orderNumber,
+    status: "READY",
+    outboundId: null as unknown as number,
+    isCancellable: true,
+    createdAt: packing.createdAt,
+    items: packing.items.map((i) => {
+      const e = entries.find((x) => x.b.orderItemId === i.orderItemId);
+      if (e === undefined) throw new Error(`mock: 포장 줄 ${i.orderItemId}`);
+      return packingItemOf(e, i.id, i.qty);
+    }),
+  };
+}
+
+/** 대응 없는 몫(9006, 801) → 지금처럼 이 목 번호로 응답만. 주문 목, 출고 탭, 채팅엔 안 보인다 */
+function ownPacking(
+  entries: readonly AllocationEntry[],
+  createdAt: string,
+): WholesaleSchema<"AllocationPackingResponse"> {
+  const first = entries[0];
+  if (first === undefined) throw new Error("mock: 빈 배분 묶음");
+  return {
+    id: nextPackingId++,
+    orderId: first.b.orderId,
+    orderNumber: first.b.orderNumber,
+    status: "READY",
+    outboundId: null as unknown as number,
+    isCancellable: true,
+    createdAt,
+    items: entries.map((e) => packingItemOf(e, nextPackingItemId++, e.qty)),
+  };
+}
+
+/**
+ * 주문 목 포장 삭제(204) 뒤 불린다. 배분 기록이 있으면 미송마다 남은 수량 += 수량, OPEN, `reservedQty` −= 수량,
+ * 기록을 지운다. 기록 없는 포장(주문 탭 `포장 준비`)이면 아무것도 안 한다(역방향은 범위 밖, 기획 Q2 ①)
+ */
+function reviveAllocation(packingId: number): void {
+  const record = allocationRecords.get(packingId);
+  if (record === undefined) return;
+  allocationRecords.delete(packingId);
+  for (const { backorderId, qty } of record) {
+    const b = backorders.find((x) => x.id === backorderId);
+    const v = b ? variants.find((x) => x.id === b.variantId) : undefined;
+    if (!b || !v) continue;
+    b.remainingQty += qty;
+    b.status = "OPEN";
+    v.reservedQty -= qty;
+  }
+}
+
+onMockPackingCancelled(reviveAllocation);
+
 /* --- 핸들러 ------------------------------------------------------------- */
 
 /**
@@ -552,9 +687,10 @@ export const backorderHandlers = [
     // 적용 — 주문마다 포장 카드 한 장
     const createdAt = new Date().toISOString();
     const resolved: number[] = [];
-    const byOrder = new Map<
-      number,
-      WholesaleSchema<"AllocationPackingResponse">
+    // 주문마다 모은다. 주문 목 줄에 대응되는 몫(`order:`)과 대응 없는 몫(`own:`)을 따로. 응답은 요청에 처음 나온 순
+    const groups = new Map<
+      string,
+      { b: MockBackorder; v: MockVariant; qty: number }[]
     >();
     for (const item of items) {
       const b = backorders.find((x) => x.id === item.backorderId);
@@ -566,37 +702,23 @@ export const backorderHandlers = [
         b.status = "RESOLVED";
         resolved.push(b.id);
       }
-      let packing = byOrder.get(b.orderId);
-      if (!packing) {
-        packing = {
-          id: nextPackingId++,
-          orderId: b.orderId,
-          orderNumber: b.orderNumber,
-          status: "READY",
-          outboundId: null as unknown as number,
-          isCancellable: true,
-          createdAt,
-          items: [],
-        };
-        byOrder.set(b.orderId, packing);
-      }
-      packing.items.push({
-        id: nextPackingItemId++,
-        orderItemId: b.orderItemId,
-        variantId: v.id,
-        variantNumber: v.variantNumber,
-        productNumber: v.productNumber,
-        productName: v.productName,
-        color: v.color,
-        size: v.size,
-        qty: item.allocateQty,
-      });
+      const kind = orderLineOf(b, mockOrders()) === null ? "own" : "order";
+      const key = `${kind}:${b.orderId}`;
+      groups.set(key, [
+        ...(groups.get(key) ?? []),
+        { b, v, qty: item.allocateQty },
+      ]);
     }
+    const packings = [...groups.entries()].map(([key, entries]) =>
+      key.startsWith("order:")
+        ? orderPacking(entries)
+        : ownPacking(entries, createdAt),
+    );
 
     const data: WholesaleSchema<"AllocationBatchResponse"> = {
       allocationBatchId: nextBatchId++,
       createdAt,
-      packings: [...byOrder.values()],
+      packings,
       resolvedBackorderIds: resolved,
     };
     return HttpResponse.json({ data }, { status: 201 });
@@ -715,6 +837,7 @@ export function resetBackorderMock(
   nextBatchId = 4401;
   nextPackingId = 7710;
   nextPackingItemId = 91101;
+  allocationRecords = new Map();
 }
 
 /**

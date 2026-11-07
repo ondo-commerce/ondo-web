@@ -11,10 +11,15 @@ import {
 } from "vitest";
 import type { WholesaleSchema } from "../../wholesale";
 import { GOLDEN_T0 } from "../chat/golden.testkit";
-import { backorderHandlers, mockBackorders } from "./backorder";
+import {
+  backorderHandlers,
+  backorderSku,
+  mockBackorders,
+  orderLineOf,
+} from "./backorder";
 import { chatHandlers, chatStore, resetChatMock } from "./chat";
 import { notificationHandlers } from "./notification";
-import { mockOrders, mockPackings, orderHandlers } from "./order";
+import { addMockOrder, mockOrders, mockPackings, orderHandlers } from "./order";
 import { shipmentHandlers } from "./shipment";
 
 /**
@@ -162,6 +167,284 @@ async function skus() {
   return res.body.data;
 }
 
+/** 미송 탭 펼친 표(OPEN만) */
+async function openBackorders(variantId: number) {
+  const res = await call<{
+    data: WholesaleSchema<"BackorderResponse">[];
+    stats: WholesaleSchema<"BackorderStatsResponse">;
+  }>("GET", `${API}/variants/${variantId}/backorders`);
+  return res.body;
+}
+
+/** 주문 탭 상세 */
+async function orderDetail(orderId: number) {
+  const res = await call<{ data: WholesaleSchema<"OrderDetailResponse"> }>(
+    "GET",
+    `${API}/orders/${orderId}`,
+  );
+  return res.body.data;
+}
+
+/** 미송 목 행 하나(상태 포함). RESOLVED는 OPEN 표에서 빠지므로 저장소 값으로 본다 */
+function backorderRow(id: number) {
+  const b = mockBackorders().find((x) => x.id === id);
+  return b === undefined ? null : [b.remainingQty, b.status];
+}
+
+async function del(packingId: number) {
+  return call<ErrorBody>("DELETE", `${API}/packings/${packingId}`);
+}
+
+/** 주문 탭 `포장 준비`. 만든 포장 id와 포장 줄 id */
+async function pack(orderId: number, orderItemId: number, qty: number) {
+  const res = await call<{
+    data: { id: number; items: { id: number }[] };
+  }>("POST", `${API}/orders/${orderId}/packings`, {
+    items: [{ orderItemId, allocateQty: qty }],
+  });
+  expect(res.status).toBe(201);
+  return res.body.data.id;
+}
+
+/** 출고 탭 봉투 담기 → 출고 확정 전 봉투 id */
+async function bag(packingItemIds: number[]): Promise<number> {
+  const res = await call<{ data: { id: number } }>("POST", `${API}/outbounds`, {
+    packingItemIds,
+  });
+  expect(res.status).toBe(201);
+  return res.body.data.id;
+}
+
+/** 배분 성공을 확인하고 응답 포장들 */
+async function allocated(items: [backorderId: number, qty: number][]) {
+  const res = await allocate(items);
+  expect(res.status).toBe(201);
+  return res.body.data.packings;
+}
+
+/* --- S1-1 대응 함수 ------------------------------------------------------- */
+
+describe("S1-1 대응 함수 orderLineOf(순수)", () => {
+  const lineOf = (id: number) => {
+    const b = mockBackorders().find((x) => x.id === id);
+    if (b === undefined) throw new Error(`미송 ${id}`);
+    return orderLineOf(b, mockOrders())?.id ?? null;
+  };
+  const incoming = (variantId: 3002 | 3003) =>
+    addMockOrder({
+      retailerId: 1,
+      retailerName: "봄봄상회",
+      variantId,
+      qty: 1,
+      unitPrice: 12500,
+      orderedAt: "2026-10-29T14:20:00+09:00",
+    });
+
+  it("① 시드 9001~9005 → 줄 8001~8005(9004 RESOLVED도 상태는 안 본다)", () => {
+    expect([9001, 9002, 9003, 9004, 9005].map(lineOf)).toEqual([
+      8001, 8002, 8003, 8004, 8005,
+    ]);
+  });
+
+  it("② 9006 → null(주문 목 시드에 7006 없음), ④ 801 → null", () => {
+    expect(lineOf(9006)).toBeNull();
+    expect(lineOf(801)).toBeNull();
+  });
+
+  it("③ 알림 incoming 꼴 7006(줄 8006, variant 3002, 소매처 1)을 만든 뒤에도 9006 → null(variant 다름)", () => {
+    const o = incoming(3002);
+    expect([o.id, o.items[0]?.id]).toEqual([7006, 8006]);
+    expect(lineOf(9006)).toBeNull();
+  });
+
+  it("⑤ 합성: 주문, 줄, variant 같고 소매처만 다름 → null", () => {
+    const b = mockBackorders().find((x) => x.id === 9003);
+    if (b === undefined) throw new Error("9003");
+    expect(orderLineOf({ ...b, retailerId: 2 }, mockOrders())).toBeNull();
+    expect(orderLineOf(b, mockOrders())?.id).toBe(8003);
+  });
+
+  it("⑥ 한계 기록: 넷 비교는 알림 fixture 3002 겹침 방어, 일반 증명 아님 — variant 3003, 소매처 1로 7006을 만들면 9006 → 줄 8006", () => {
+    incoming(3003);
+    expect(lineOf(9006)).toBe(8006);
+  });
+});
+
+/* --- S1-2 ~ S1-4 배분 → 주문 목 포장과 답 ---------------------------------- */
+
+describe("S1-2 다 배분 → 주문 목 포장과 포장 답", () => {
+  it("reset [9003] → 9003 × 2 → 응답 포장 = 주문 목 7003 READY 포장, 줄 배분 2 미송 0, 포장 대기 2, 미송 탭 비움, [A, H] (#7003)", async () => {
+    await reset({ backorderIds: [9003] });
+    const res = await allocate([[9003, 2]]);
+    expect(res.status).toBe(201);
+    expect(res.body.data.resolvedBackorderIds).toEqual([9003]);
+    const [p, ...rest] = res.body.data.packings;
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ orderId: 7003, orderNumber: 1, status: "READY" });
+    expect(p?.items.map((i) => [i.orderItemId, i.qty])).toEqual([[8003, 2]]);
+
+    const queue = await call<{
+      data: { id: number; status: string; items: { id: number }[] }[];
+    }>("GET", `${API}/orders/7003/packings`);
+    expect(queue.body.data.map((q) => [q.id, q.status])).toEqual([
+      [p?.id, "READY"],
+    ]);
+    expect(queue.body.data[0]?.items.map((i) => i.id)).toEqual(
+      p?.items.map((i) => i.id),
+    );
+
+    const detail = await orderDetail(7003);
+    expect(detail.status.key).toBe("NEW");
+    expect(
+      detail.items.map((l) => [l.id, l.allocatedQty, l.backorderQty]),
+    ).toEqual([[8003, 2, 0]]);
+
+    const items = await call<{
+      data: WholesaleSchema<"PackingItemRowResponse">[];
+    }>("GET", `${API}/packing-items?retailerId=1`);
+    expect(
+      items.body.data
+        .filter((r) => r.orderId === 7003)
+        .map((r) => [r.packingId, r.qty]),
+    ).toEqual([[p?.id, 2]]);
+
+    expect((await skus()).map((s) => s.variantId)).toEqual([]);
+
+    const lines = await ask();
+    expect(kinds(lines)).toEqual(["AUTO_REPLY", "HANDOFF"]);
+    expect(lines[0]?.body).toBe("출고 준비 중인 주문이 있어요(#7003)");
+  });
+});
+
+describe("S1-3 두 주문 한 번에", () => {
+  it("reset [9002, 9003] → [9002 × 1, 9003 × 2] → 포장 2장(7002, 7003) → [A, H] 2건 (#7002, #7003)", async () => {
+    await reset({ backorderIds: [9002, 9003] });
+    const packings = await allocated([
+      [9002, 1],
+      [9003, 2],
+    ]);
+    expect(packings.map((p) => p.orderId)).toEqual([7002, 7003]);
+    expect(
+      mockPackings()
+        .filter((p) => p.status === "READY")
+        .map((p) => p.id),
+    ).toEqual(packings.map((p) => p.id));
+    const lines = await ask();
+    expect(kinds(lines)).toEqual(["AUTO_REPLY", "HANDOFF"]);
+    expect(lines[0]?.body).toBe(
+      "출고 준비 중인 주문 2건이 있어요(#7002, #7003)",
+    );
+  });
+});
+
+describe("S1-4 부분 배분", () => {
+  it("reset [9003] → 9003 × 1 → 포장 READY 1, 주문 목 미송 1 = 미송 목 남은 1, 가용 3 → [CLARIFY] 남은 1장, 포장 답 0", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 1]]);
+    expect(
+      mockPackings()
+        .filter((x) => x.id === p?.id)
+        .map((x) => [x.status, x.items.map((i) => i.qty)]),
+    ).toEqual([["READY", [1]]]);
+    const detail = await orderDetail(7003);
+    expect(detail.items.map((l) => [l.allocatedQty, l.backorderQty])).toEqual([
+      [1, 1],
+    ]);
+    const open = await openBackorders(3019);
+    expect(open.data.map((b) => [b.id, b.remainingQty])).toEqual([[9003, 1]]);
+    expect(
+      (await skus()).map((s) => [s.variantId, s.backorderQty, s.availableQty]),
+    ).toEqual([[3019, 1, 3]]);
+
+    const lines = await ask();
+    expect(kinds(lines)).toEqual(["CLARIFY"]);
+    expect(choiceLabels(lines)).toEqual([
+      "린넨 셋업 자켓 베이지/L, 남은 1장, 9/7 주문 #7003",
+    ]);
+    expect(JSON.stringify(lines)).not.toContain("출고 준비 중");
+  });
+});
+
+/* --- S1-6 삭제와 미송 부활 ----------------------------------------------- */
+
+describe("S1-6 삭제와 미송 부활", () => {
+  it("① 배분 포장 삭제 → 3019 미송 2 가용 4, 9003 남은 2, 줄 배분 0 미송 2 → [CLARIFY] 남은 2장", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 2]]);
+    expect((await del(p?.id ?? -1)).status).toBe(204);
+    expect(
+      (await skus()).map((s) => [s.variantId, s.backorderQty, s.availableQty]),
+    ).toEqual([[3019, 2, 4]]);
+    expect(
+      (await openBackorders(3019)).data.map((b) => [b.id, b.remainingQty]),
+    ).toEqual([[9003, 2]]);
+    const detail = await orderDetail(7003);
+    expect(detail.items.map((l) => [l.allocatedQty, l.backorderQty])).toEqual([
+      [0, 2],
+    ]);
+    const lines = await ask();
+    expect(kinds(lines)).toEqual(["CLARIFY"]);
+    expect(choiceLabels(lines)).toEqual([
+      "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003",
+    ]);
+  });
+
+  it("② 부분 배분 1장 뒤 삭제 → 9003 OPEN 남은 2(원래대로)", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 1]]);
+    expect((await del(p?.id ?? -1)).status).toBe(204);
+    expect(backorderRow(9003)).toEqual([2, "OPEN"]);
+  });
+
+  it("③ 배분 포장을 봉투에 담은 뒤(PACKED) 삭제 → 409, snapshot() 그대로, backorderSku(3019)의 9003 RESOLVED 남은 0", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 2]]);
+    await bag(p?.items.map((i) => i.id) ?? []);
+    const before = await snapshot();
+    expect((await del(p?.id ?? -1)).status).toBe(409);
+    expect(await snapshot()).toEqual(before);
+    expect(backorderSku(3019)?.backorders).toEqual([
+      { retailerId: 1, remainingQty: 0, status: "RESOLVED" },
+    ]);
+  });
+
+  it("④ 주문 탭 길 포장(7002 8002 × 1) 삭제 → 미송 목 그대로(9002 남은 1, 3011 가용 6)", async () => {
+    await reset();
+    const before = await snapshot();
+    const id = await pack(7002, 8002, 1);
+    expect((await del(id)).status).toBe(204);
+    const after = await snapshot();
+    expect([after.backorders, after.available]).toEqual([
+      before.backorders,
+      before.available,
+    ]);
+    expect(backorderRow(9002)).toEqual([1, "OPEN"]);
+    expect(after.available[3011]).toBe(6);
+  });
+
+  it("⑤ 9003 × 1 두 번(포장 A, B) → A 삭제 → 남은 1, 줄 배분 1, READY는 B, 가용 3 → B 삭제 → 남은 2, 배분 0, 가용 4", async () => {
+    await reset({ backorderIds: [9003] });
+    const [a] = await allocated([[9003, 1]]);
+    const [b] = await allocated([[9003, 1]]);
+    expect(a?.id).not.toBe(b?.id);
+
+    expect((await del(a?.id ?? -1)).status).toBe(204);
+    expect(backorderRow(9003)).toEqual([1, "OPEN"]);
+    expect((await orderDetail(7003)).items[0]?.allocatedQty).toBe(1);
+    expect(
+      mockPackings()
+        .filter((p) => p.orderId === 7003)
+        .map((p) => [p.id, p.status, p.items.map((i) => i.qty)]),
+    ).toEqual([[b?.id, "READY", [1]]]);
+    expect((await openBackorders(3019)).stats.availableQty).toBe(3);
+
+    expect((await del(b?.id ?? -1)).status).toBe(204);
+    expect(backorderRow(9003)).toEqual([2, "OPEN"]);
+    expect((await orderDetail(7003)).items[0]?.allocatedQty).toBe(0);
+    expect((await openBackorders(3019)).stats.availableQty).toBe(4);
+  });
+});
+
 /* --- S1-8 reset backorderIds -------------------------------------------- */
 
 describe("S1-8 reset backorderIds", () => {
@@ -231,5 +514,33 @@ describe("S1-8 reset backorderIds", () => {
     expect(choiceLabels(lines)).toEqual([
       "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003",
     ]);
+  });
+
+  /**
+   * ⑤ 성공 reset 뒤 포장 id 재사용(Codex 7). 9003 배분이 9101을 만든 뒤 reset이 주문 탭 길로 7002 포장을 다시 9101로
+   * 만든다. 지난 배분 기록이 남아 있으면 9101 삭제가 9003을 2 → 4로 되살린다
+   */
+  it("⑤ 9003 배분(9101) → reset {[9003], readyPackings [7002]}(다시 9101) → 9101 삭제 → 9003 남은 2(4 아님), 3019 가용 4, 7002 배분 0", async () => {
+    await reset({ backorderIds: [9003] });
+    const [p] = await allocated([[9003, 2]]);
+    expect(p?.id).toBe(9101);
+    await reset({ backorderIds: [9003], readyPackings: [7002] });
+    expect(mockPackings().map((x) => [x.id, x.orderId])).toEqual([
+      [9100, 7004],
+      [9101, 7002],
+    ]);
+    expect((await del(9101)).status).toBe(204);
+    expect(backorderRow(9003)).toEqual([2, "OPEN"]);
+    expect((await openBackorders(3019)).stats.availableQty).toBe(4);
+    expect((await orderDetail(7002)).items[0]?.allocatedQty).toBe(0);
+  });
+
+  it("⑤ 보조: 9003 배분(9101) → reset {[9002], readyPackings [7002]} → 9101 삭제 → 9002 남은 1, 3011 가용 6", async () => {
+    await reset({ backorderIds: [9003] });
+    await allocated([[9003, 2]]);
+    await reset({ backorderIds: [9002], readyPackings: [7002] });
+    expect((await del(9101)).status).toBe(204);
+    expect(backorderRow(9002)).toEqual([1, "OPEN"]);
+    expect((await openBackorders(3011)).stats.availableQty).toBe(6);
   });
 });
