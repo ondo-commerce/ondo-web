@@ -10,6 +10,7 @@ import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
 import {
   IDLE_UPLOAD_STATE,
+  SAVE_AUTH_LATE_MESSAGE,
   SESSION_LOST_MESSAGE,
   LIST_PARAM,
 } from "../constants";
@@ -24,6 +25,7 @@ import {
   isProductFormDirty,
   isSessionLostError,
   isUploadLocked,
+  saveAuthOutcome,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
@@ -165,6 +167,8 @@ export function ProductCreateView() {
      * 화면을 떠난 뒤 끝난 저장은 이동하지 않는다(#255 ⑬). 따로 막지 않아도 되는 이유:
      * TanStack은 `mutate`에 넘긴 콜백을 관찰자 구독자가 있을 때만 부른다(언마운트 = 구독 끝).
      */
+    // 401이 왔을 때 "그 사이 재로그인했나"를 가르려고 보내기 직전 세대를 쥔다(#404)
+    const startedAt = productSessionEpoch();
     create.mutate(toCreateRequest(product, postToSend), {
       onSuccess: (created) => {
         setLeaving(true);
@@ -172,6 +176,25 @@ export function ProductCreateView() {
       },
       onError: (error) => {
         savingRef.current = false;
+        /*
+         * 저장 401(#404). 지금 세션이면 업로드 401과 같은 잠금 — 폼은 남고 다른 탭 재로그인으로
+         * 풀린다. 재로그인 전에 떠난 요청이면 새 세션을 잠그지 않고 다시 저장하라고만 한다.
+         * 자동으로 다시 보내지 않는다 — 등록엔 멱등 키가 없어 상품이 둘 생길 수 있다.
+         */
+        const outcome = saveAuthOutcome(
+          error,
+          startedAt,
+          productSessionEpoch(),
+        );
+        if (outcome === "lock") {
+          setLostAt(productSessionEpoch());
+          setErrors(clearFormError);
+          return;
+        }
+        if (outcome === "late") {
+          setErrors({ _form: SAVE_AUTH_LATE_MESSAGE });
+          return;
+        }
         const mapped = toProductFormErrors(error, product);
         if (mapped) {
           showErrors(mapped);
@@ -314,7 +337,7 @@ export function ProductCreateView() {
             onClick={submit}
             disabled={create.isPending || uploadState.uploading || sessionLost}
             aria-describedby={saveDescribedBy}
-            data-ac="S2-3 S2-4"
+            data-ac="S2-3 S2-4 10:S2-3 10:S2-4 10:S2-7"
           >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
           </Button>

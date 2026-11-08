@@ -29,6 +29,14 @@ import {
 const SAVE_INVALIDATE = { refetchType: "none" } as const;
 
 /**
+ * 저장 401을 화면이 받는다(#404). 전역 `MutationCache.onError`가 `/login`으로 보내면 쓰던 폼이
+ * 날아간다 — 업로드처럼 화면이 잠그고 다른 탭 재로그인으로 이어서 저장한다. 문자열은
+ * `app/sessionLoss.ts`의 `SESSION_LOSS_INLINE`과 같아야 한다(feature는 app을 import 못 한다).
+ * 401만 이 표시를 본다 — 403, 500, 네트워크 오류는 원래도 전역 이동이 없다. 삭제는 그대로 이동한다.
+ */
+const INLINE_SESSION_LOSS = { sessionLoss: "inline" } as const;
+
+/**
  * 응답을 wire 그대로 돌려준다. 상세 쿼리의 캐시에 **wire를** 넣어야 해서다 —
  * `useProductDetailQuery`의 `select`가 읽을 때 뷰로 바꾼다. 여기서 먼저 뷰로 바꿔 넣으면
  * `select`가 뷰를 한 번 더 변환해 값이 깨진다.
@@ -43,6 +51,7 @@ function createProduct(body: ProductCreateRequest): Promise<ProductDetail> {
 export function useCreateProductMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: createProduct,
     onSuccess: (created) => {
       // 응답이 곧 상세다 — 등록 직후 우측 패널이 한 번 더 부르지 않게 미리 넣는다
@@ -58,6 +67,7 @@ export function useCreateProductMutation() {
 export function useUpdateProductMutation(productId: number) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: (body: ProductUpdateRequest) =>
       apiFetch<ProductDetail>(PRODUCT_READ_PATH.product(productId), {
         method: "PATCH",
@@ -135,6 +145,7 @@ export function useUploadListingImageMutation() {
 export function useListingStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: (input: {
       listingId: number;
       productId: number;
