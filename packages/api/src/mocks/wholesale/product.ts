@@ -483,12 +483,16 @@ let nextListingId = 2007;
  * - `imageFailedOnce`: 파일명에 `fail500once`가 있는 업로드. 키는 파일명
  * - `titleFailedOnce`: 제목에 `[fail400once]`가 있는 POST/PATCH `/products`. 키는 제목
  * - `statusFailedOnce`: 제목에 `[status-fail-once]`가 있는 게시글의 시즌 종료/재개. 키는 listing id
+ * - `nameAuthFailedOnce`: 품명에 `[auth401]`이 있는 POST/PATCH `/products`. 키는 품명 (#404)
+ * - `statusAuthFailedOnce`: 저장된 게시글 제목에 `[auth401]`이 있는 시즌 종료/재개. 키는 listing id (#404)
  *
  * 새로고침하면 비워진다 — 목 전체가 그렇다.
  */
 const imageFailedOnce = new Set<string>();
 const titleFailedOnce = new Set<string>();
 const statusFailedOnce = new Set<number>();
+const nameAuthFailedOnce = new Set<string>();
+const statusAuthFailedOnce = new Set<number>();
 
 /** 파일명 손잡이. `fail500once`가 `fail500`을 포함하므로 **once를 먼저** 본다 */
 const IMAGE_FILENAME_HOOK = {
@@ -503,6 +507,12 @@ const IMAGE_FILENAME_HOOK = {
 const TITLE_HOOK = {
   FAIL_400_ONCE: "[fail400once]",
   STATUS_FAIL_ONCE: "[status-fail-once]",
+  /**
+   * 저장 401(#404). POST/PATCH는 품명, 상태 변경은 저장된 게시글 제목을 본다 — 서로 다른 칸을 봐야
+   * "PATCH 200 뒤 상태 변경만 401"(반쯤 저장)을 손잡이 하나로 만든다. 대괄호가 있어 파일명 손잡이
+   * `auth401`(업로드)과 섞이지 않는다.
+   */
+  AUTH_401: "[auth401]",
 } as const;
 
 /** 성공 응답까지 걸리는 시간. 진행 중 슬롯이 눈에 보일 만큼, 테스트가 지루하지 않을 만큼 */
@@ -542,6 +552,30 @@ function titleFailsOnce(title: string | undefined): boolean {
   if (titleFailedOnce.has(title)) return false;
   titleFailedOnce.add(title);
   return true;
+}
+
+/**
+ * `[auth401]` — 그 품명의 첫 저장만 401. 늘 401이면 다른 탭에서 다시 로그인한 뒤의 재저장도 401이라
+ * "풀린 뒤 저장 성공"을 못 본다. 목은 세션을 기억하지 않으니 "한 번만"으로 재로그인을 흉내 낸다
+ */
+function nameAuthFailsOnce(name: string | undefined): boolean {
+  if (name === undefined || !name.includes(TITLE_HOOK.AUTH_401)) return false;
+  if (nameAuthFailedOnce.has(name)) return false;
+  nameAuthFailedOnce.add(name);
+  return true;
+}
+
+/** `[auth401]` — 저장된 게시글 제목에 있으면 그 게시글의 첫 시즌 종료/재개만 401 */
+function statusAuthFailsOnce(listing: MockListing): boolean {
+  if (!listing.title.includes(TITLE_HOOK.AUTH_401)) return false;
+  if (statusAuthFailedOnce.has(listing.id)) return false;
+  statusAuthFailedOnce.add(listing.id);
+  return true;
+}
+
+/** 인증 실패 응답. 업로드 파일명 손잡이 `auth401`과 같은 봉투다 */
+function unauthenticated() {
+  return fail(401, "UNAUTHENTICATED", "로그인이 필요합니다.");
 }
 
 /** `[status-fail-once]` — 그 게시글의 첫 시즌 종료/재개만 500 */
@@ -871,6 +905,8 @@ export const productHandlers = [
     const body =
       (await request.json()) as WholesaleSchema<"ProductCreateRequest">;
     recordLastProductRequest(body);
+    // 인증은 본문 검증보다 먼저다(실서버 순서). 그래서 `[fail400once]`·400 검사보다 앞에 둔다
+    if (nameAuthFailsOnce(body.name)) return unauthenticated();
     // dev와 같은 400 — variantId 와 (colorId, size)를 같이 실으면 거절 (#156)
     const targetErrors = variantPriceTargetErrors(body.listing);
     if (targetErrors.length > 0) return validationFailed(targetErrors);
@@ -926,6 +962,8 @@ export const productHandlers = [
       const body =
         (await request.json()) as WholesaleSchema<"ProductUpdateRequest">;
       recordLastProductRequest(body);
+      // 품명만 본다. 게시글 제목의 `[auth401]`은 상태 변경 몫이라 PATCH는 통과시킨다(반쯤 저장)
+      if (nameAuthFailsOnce(body.name)) return unauthenticated();
       // 생략 = 무변경(스펙)이라 키가 없을 수 있다. 있으면 dev와 같은 400 검사 (#156)
       const targetErrors = variantPriceTargetErrors(body.listing);
       if (targetErrors.length > 0) return validationFailed(targetErrors);
@@ -949,6 +987,7 @@ export const productHandlers = [
   http.post("*/api/wholesale/listings/:listingId/season-end", ({ params }) => {
     const listing = listings.find((l) => l.id === Number(params.listingId));
     if (!listing) return fail(404, "RESOURCE_NOT_FOUND", "게시글이 없습니다.");
+    if (statusAuthFailsOnce(listing)) return unauthenticated();
     if (statusFailsOnce(listing))
       return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
     listing.status = "SEASON_ENDED";
@@ -959,6 +998,7 @@ export const productHandlers = [
   http.post("*/api/wholesale/listings/:listingId/reopen", ({ params }) => {
     const listing = listings.find((l) => l.id === Number(params.listingId));
     if (!listing) return fail(404, "RESOURCE_NOT_FOUND", "게시글이 없습니다.");
+    if (statusAuthFailsOnce(listing)) return unauthenticated();
     if (statusFailsOnce(listing))
       return fail(500, "INTERNAL_ERROR", "서버 오류가 발생했습니다.");
     listing.status = "ON_SALE";
@@ -1072,4 +1112,6 @@ export function resetProductMock() {
   imageFailedOnce.clear();
   titleFailedOnce.clear();
   statusFailedOnce.clear();
+  nameAuthFailedOnce.clear();
+  statusAuthFailedOnce.clear();
 }
