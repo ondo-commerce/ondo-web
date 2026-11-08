@@ -1,4 +1,4 @@
-import { TRANSPORT_ERROR_CODE } from "@ondo/api";
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
 import { describe, expect, it } from "vitest";
 import {
   IMAGE_MAX_BYTES,
@@ -27,14 +27,18 @@ import {
   rejectImageFile,
   remainingImageSlots,
   requeueForRetry,
+  saveAuthOutcome,
   shouldLockOnAuth,
   shouldPushGuard,
   uploadFailure,
   uploadNote,
   validateProductForm,
+  withListing,
 } from "./derive";
 import type {
+  Listing,
   PostFormValue,
+  ProductDetail,
   ProductFormSnapshot,
   ProductFormValue,
   UploadSlotStatus,
@@ -443,6 +447,71 @@ describe("shouldLockOnAuth — S2-1: 업로드 401을 받은 요청의 시작 �
 
   it("(3, 4) 재로그인 전에 떠난 요청의 늦은 401 → 잠그지 않는다", () => {
     expect(shouldLockOnAuth(3, 4)).toBe(false);
+  });
+});
+
+describe("saveAuthOutcome — 10:S2-2: 저장 401만 세대로 가르고 나머지는 지금 길", () => {
+  const error = (status: number, code: string) =>
+    new ApiError({ status, code, message: "서버 문구" });
+
+  it("401 (3, 3) 지금 세션 → lock", () => {
+    expect(
+      saveAuthOutcome(error(401, WHOLESALE_ERROR_CODE.UNAUTHENTICATED), 3, 3),
+    ).toBe("lock");
+  });
+
+  it("401 (3, 4) 재로그인 전에 떠난 요청 → late", () => {
+    expect(
+      saveAuthOutcome(error(401, WHOLESALE_ERROR_CODE.UNAUTHENTICATED), 3, 4),
+    ).toBe("late");
+  });
+
+  it("403 NOT_APPROVED → other(세션은 살아 있다)", () => {
+    expect(
+      saveAuthOutcome(error(403, WHOLESALE_ERROR_CODE.NOT_APPROVED), 3, 3),
+    ).toBe("other");
+  });
+
+  it("500 → other", () => {
+    expect(
+      saveAuthOutcome(error(500, WHOLESALE_ERROR_CODE.INTERNAL_ERROR), 3, 3),
+    ).toBe("other");
+  });
+
+  it("ApiError 아님(네트워크) → other", () => {
+    expect(saveAuthOutcome(new TypeError("Failed to fetch"), 3, 3)).toBe(
+      "other",
+    );
+  });
+});
+
+describe("withListing — 10:S2-9: 상태 변경 응답을 상세 캐시의 게시글 칸에만", () => {
+  const listing = (status: Listing["status"]) =>
+    ({ id: 2001, status, title: "셔츠" }) as Listing;
+
+  it("listing만 바뀌고 나머지 칸은 같은 참조", () => {
+    const colorOptions: ProductDetail["colorOptions"] = [];
+    const categoryPath: ProductDetail["categoryPath"] = [];
+    const detail = {
+      id: 1001,
+      name: "셔츠",
+      colorOptions,
+      categoryPath,
+      listing: listing("ON_SALE"),
+    } as unknown as ProductDetail;
+    const next = listing("SEASON_ENDED");
+
+    const result = withListing(detail, next);
+    expect(result?.listing).toBe(next);
+    expect(result?.colorOptions).toBe(colorOptions);
+    expect(result?.categoryPath).toBe(categoryPath);
+    expect(result?.name).toBe("셔츠");
+    // 원본은 그대로 — 캐시 값을 직접 고치면 TanStack이 바뀐 줄 모른다
+    expect(detail.listing.status).toBe("ON_SALE");
+  });
+
+  it("상세 캐시가 없으면 undefined", () => {
+    expect(withListing(undefined, listing("SEASON_ENDED"))).toBeUndefined();
   });
 });
 
