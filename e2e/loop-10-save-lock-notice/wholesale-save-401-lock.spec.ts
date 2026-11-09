@@ -212,30 +212,16 @@ async function lockPartially(page: Page, dialogs: { count: number }) {
 }
 
 /*
- * AC 조건 변경(02-dev-404 §조건 변경 1): ④ "잠금 중 판매가 한 칸을 P로"는 화면에서 할 수 없다. `시즌 종료`를 고른
- * 폼은 게시글 칸(이름, 설명, 가격표)을 잠근다 — 반쯤 저장은 늘 `시즌 종료`를 고른 상태라 판매가 칸이 disabled다.
- * 그래서 잠금 중엔 열려 있는 품명을 고치고, 원래 조건은 아래 시험이 `test.fail`로 남긴다.
+ * ④는 "잠금 중 품명 한 칸을 고친다"다(AC 수정 D66, 10-Q1). 반쯤 저장은 늘 `시즌 종료`를 고른 상태이고
+ * 그 폼은 게시글 칸(이름, 설명, 가격표)을 잠그므로, 잠금 중에도 열려 있는 상품 칸 품명으로 본다.
  */
-test("S2-6 원래 조건 ④ 반쯤 저장 잠금 중 판매가 칸을 고칠 수 있다", async ({
-  page,
-}) => {
-  const dialogs = countDialogs(page);
-  await lockPartially(page, dialogs);
-  const price = await pinnedPriceInput(page);
-  test.fail(
-    true,
-    "시즌 종료를 고른 폼은 가격표를 잠근다(기존 동작, 이번 변경 아님)",
-  );
-  await expect(price).toBeEnabled({ timeout: 1_000 });
-});
-
 test("S2-6 반쯤 저장(PATCH 200 → 시즌 종료 401) → 반쯤 저장 잠금, 저장 도중 GET 0 → 잠금 중 품명 고침 → 풀림 → PATCH → 시즌 종료, 서버 = 지금 입력", async ({
   page,
 }) => {
   const dialogs = countDialogs(page);
   await lockPartially(page, dialogs);
 
-  // ④ 잠금 중 품명 고침(조건 변경, 위 주석)
+  // ④ 잠금 중 품명 고침(AC 수정 D66, 위 주석)
   const renamed = "잠금 중 고친 셔츠";
   await nameInput(page).fill(renamed);
 
