@@ -324,25 +324,4 @@ test.describe("S2-16 [셸 안 이동]", () => {
   });
 });
 
-test.describe("S2-17 [영구 거절, 지금 동작 고정]", () => {
-  for (const status of [403, 404]) {
-    test(`보내기 ${status} → "못 보냈어요" R+D → 다시 보내기 POST 1회 더, 같은 키`, async ({
-      page,
-    }) => {
-      const sent = captureSendBodies(page);
-      await start(page, "/");
-      await openRoomById(page, ROOM_1);
-      await chatMock(page, "fail", { op: "send", status });
-      await sendText(page, `${status} 받을 말`);
-      const bubble = failedBubbles(page);
-      await expectRetryAndRemove(bubble);
-      await expect(bubble).toContainText("못 보냈어요");
-      expect(await lastSettled(page, SEND_POST)).toBe(status);
-      await expect(page).toHaveURL(`/chats/${ROOM_1}?from=/chats`);
-      await retryOf(bubble).click();
-      await waitSendsSettled(page, 2);
-      expect(sent).toHaveLength(2);
-      expect(sent[1]).toEqual(sent[0]);
-    });
-  }
-});
+// S2-17은 loop-12 S1-6으로 바뀌었다(e2e/loop-12-chat-permanent-reject/)

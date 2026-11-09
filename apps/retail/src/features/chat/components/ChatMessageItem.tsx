@@ -1,5 +1,8 @@
+"use client";
+
 import { Button, Chip, cn } from "@ondo/ui";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { PENDING_TEXT, ROOM_TEXT } from "../constants";
 import {
   autoReplySeen,
@@ -7,6 +10,7 @@ import {
   canRetrySend,
   failureText,
   formatClock,
+  keepActionOf,
   pendingAc,
   senderLabel,
   systemLineText,
@@ -112,22 +116,37 @@ export function ChatMessageItem({
   );
 }
 
+/** 실패 말풍선 링크 모양. ≤40rem 높이 44(08f Q6 ①), 넓은 화면은 글자 높이 16 */
+const FAILED_LINK = "phone:h-11 text-xs underline";
+
 /**
  * 아직 sequence가 없는 내 말풍선 — 보내는 중, 못 보냄. 방 맨 아래에 붙는다(도매 디자인 결정 14).
- * 401이면 `다시 보내기`를 빼고 `지우기`만 둔다 — 다시 보내도 401이다.
+ * 잠긴 동안은 `다시 보내기`를 빼고 `지우기`만 둔다 — 다시 보내도 401이다.
+ * 영구 실패(loop-12)는 `다시 보내기` 대신 글을 남기는 버튼 하나(`keepActionOf`) + `지우기`.
  */
 export function PendingItem({
   item,
   sessionLost,
   onRetry,
   onRemove,
+  onToComposer,
+  onApproval,
+  approvalBusy,
 }: {
   item: PendingMessage;
+  /** 새 보내기 잠금(`roomSendLockedOf`). 끊김, 로그아웃 중에 더해 닫힌 방도 일시 실패 `다시 보내기`를 뺀다(D69) */
   sessionLost: boolean;
   onRetry: () => void;
   onRemove: () => void;
+  /** 409, 400 `입력창으로` — 글을 입력창 뒤에 붙이고 말풍선을 뺀다 */
+  onToComposer: () => void;
+  /** 403 `승인 상태 보기` — 글을 그 방 초안에 저장한 뒤 승인 화면으로 */
+  onApproval: () => void;
+  /** 승인 화면으로 가는 중. 버튼을 잠근다 — 두 번째 누름이 글을 또 붙이지 않게(12-R2) */
+  approvalBusy: boolean;
 }) {
   const sending = item.status === "sending";
+  const keep = keepActionOf(item.failure);
   return (
     <div
       aria-busy={sending || undefined}
@@ -152,37 +171,98 @@ export function PendingItem({
       ) : (
         <span
           role="alert"
-          className="text-destructive-strong flex items-center gap-1.5 text-xs leading-4"
+          /* 줄바꿈 허용(loop-12 S1-10): 영구 문구는 길어 390에서 문구와 버튼 둘이 한 줄에 안 든다. 넘치면 버튼이 다음 줄로 */
+          className="text-destructive-strong flex flex-wrap items-center justify-end gap-x-1.5 text-xs leading-4"
         >
           {failureText(item.failure)}
-          {/* 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
-              두 링크는 ≤40rem에서 높이 44 — 소매 다른 터치 대상(문의하기, 방 머리 링크, 칩)과 같은 손가락 기준(08f Q6 ①).
+          {/* 일시 실패는 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
+              08e §4-1 규칙의 영구 실패 예외(loop-12 D68): 영구 넷은 잠금과 무관하게 늘 뺀다.
+              링크는 ≤40rem에서 높이 44 — 소매 다른 터치 대상(문의하기, 방 머리 링크, 칩)과 같은 손가락 기준(08f Q6 ①).
               글자는 12px 그대로, 상자만 키워 가운데 둔다. 넓은 화면은 예전 글자 높이(16) */}
-          {!canRetrySend(sessionLost) ? null : (
+          {!canRetrySend(item.failure, sessionLost) ? null : (
             <Button
               type="button"
               variant="link"
               size="sm"
-              className="phone:h-11 text-xs underline"
+              className={FAILED_LINK}
               onClick={onRetry}
               data-ac="S6-4 S6-6"
             >
               {PENDING_TEXT.retry}
             </Button>
           )}
+          {keep === "approval" ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className={FAILED_LINK}
+              disabled={approvalBusy}
+              onClick={onApproval}
+              data-ac="12:S1-6 12:S1-8"
+            >
+              {PENDING_TEXT.approval}
+            </Button>
+          ) : keep === "copy" ? (
+            <CopyBodyButton body={item.body} />
+          ) : keep === "toComposer" ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className={FAILED_LINK}
+              onClick={onToComposer}
+              data-ac="12:S1-6 12:S1-7"
+            >
+              {PENDING_TEXT.toComposer}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="link"
             size="sm"
-            className="phone:h-11 text-xs underline"
+            className={FAILED_LINK}
             onClick={onRemove}
-            data-ac="S6-4"
+            data-ac={keep === null ? "S6-4" : "S6-4 12:S1-6"}
           >
             {PENDING_TEXT.remove}
           </Button>
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * 404 `복사하기`(loop-12 §4-2 3의 3). 그 방 입력창은 닫혀 있어 글을 다른 대화로 가져갈 길이 클립보드뿐이다.
+ * 결과를 버튼 글자로 알린다. 막힌 브라우저(권한 거절, 보안 맥락 아님)는 `복사 못 했어요` — 말풍선 글은 그대로라
+ * 직접 선택해 복사할 수 있다. `navigator.clipboard`가 없는 맥락도 같은 실패로 받으려고 promise 안에서 부른다
+ */
+function CopyBodyButton({ body }: { body: string }) {
+  const [result, setResult] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = () => {
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(body))
+      .then(
+        () => setResult("copied"),
+        () => setResult("failed"),
+      );
+  };
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="sm"
+      className={FAILED_LINK}
+      onClick={copy}
+      data-ac="12:S1-6 12:S1-9"
+    >
+      {result === "copied"
+        ? PENDING_TEXT.copied
+        : result === "failed"
+          ? PENDING_TEXT.copyFailed
+          : PENDING_TEXT.copy}
+    </Button>
   );
 }
 

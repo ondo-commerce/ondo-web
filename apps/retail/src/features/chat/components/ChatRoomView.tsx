@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatComposer } from "./ChatComposer";
+import { ChatComposer, type ComposerAppend } from "./ChatComposer";
 import { ChatHistorySlot } from "./ChatHistorySlot";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { BackorderReplyCard } from "./BackorderReplyCard";
@@ -36,6 +36,7 @@ import {
   askListingId,
   backorderChoiceInquiry,
   backorderGuardSequences,
+  canRetrySend,
   choiceInquiry,
   choiceSendFailed,
   confirmedReadOf,
@@ -52,6 +53,8 @@ import {
   readMarkerSequence,
   replyLinkOf,
   returnLinkOf,
+  roomClosedOf,
+  roomSendLockedOf,
   stockAskInquiry,
   toReplyExtra,
   toThreadItems,
@@ -250,6 +253,21 @@ function ChatRoom({
   /* 보류 말풍선은 셸 수명(loop-08e §4-2 7) — 방을 떠났다 와도 남는다. 이 방 몫만 읽는다 */
   const { pending, send, retry, remove } = useRoomOutbox(roomId);
   const shownPending = visiblePending(pending, thread.messages);
+  /* 보내기 404로 닫힌 방(loop-12 Q3). 404 말풍선을 지워도 이 화면이 떠 있는 동안은 닫힌 채다 — 본 적을 state로 든다.
+     렌더 중 갱신은 React의 "이전 값에 맞춰 state 고치기" 꼴이라 effect 한 바퀴 동안 입력창이 열려 보이는 틈이 없다 */
+  const [seenNotFound, setSeenNotFound] = useState(false);
+  const closed = roomClosedOf(pending, seenNotFound);
+  if (closed && !seenNotFound) setSeenNotFound(true);
+  /* 새 보내기 요청 잠금 하나(12-N1 12-R1). 칩, 카드 담기, 다시 보내기가 이것만 본다. 입력창은 같은 함수로 같은 값을 낸다.
+     D69: 닫힌 방에선 재시도도 막음(서버가 이 방엔 못 보낸다고 했다). 읽기 쪽은 `locked`(끊김, 로그아웃 중)만 본다 */
+  const sendLocked = roomSendLockedOf({ sessionLost, leaving, closed });
+  /* 영구 실패 말풍선이 입력창에 글을 넘기는 손잡이(loop-12 §4-2 3) */
+  const appendRef = useRef<ComposerAppend>(null);
+  const router = useRouter();
+  /* `승인 상태 보기`는 한 번만(12-R2). 이동이 끝나기 전 두 번째 누름이 같은 글을 초안에 또 붙였다. ref가 같은 틱의
+     연속 누름을 막고, state가 버튼을 잠가 누를 수 없다는 것을 보인다. 이 방 화면은 이동으로 내려가 다시 풀 일이 없다 */
+  const approvalFlight = useRef(false);
+  const [toApproval, setToApproval] = useState(false);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
   /* 이전 메시지(loop-08d S3), 바닥 따라가기, `새 메시지 N개`, 리사이즈 때 바닥 지키기(S4)를 이 훅이 맡는다 */
@@ -386,7 +404,7 @@ function ChatRoom({
                       wholesalerId={room.counterpart.id}
                       pending={shownPending}
                       now={now}
-                      sessionLost={locked}
+                      sessionLost={sendLocked}
                       documentNav={sessionLost}
                       addToCart={addToCart}
                       onChoose={sendChip}
@@ -400,9 +418,26 @@ function ChatRoom({
             <PendingItem
               key={item.clientMessageId}
               item={item}
-              sessionLost={locked}
-              onRetry={() => retry(item)}
+              sessionLost={sendLocked}
+              onRetry={() => {
+                /* 표시와 같은 판정으로 실행도 막는다 — 버튼이 그려진 뒤 잠금이 걸린 틈의 누름(12-R1) */
+                if (canRetrySend(item.failure, sendLocked)) retry(item);
+              }}
               onRemove={() => remove(item.clientMessageId)}
+              onToComposer={() => {
+                appendRef.current?.(item.body, false);
+                remove(item.clientMessageId);
+              }}
+              approvalBusy={toApproval}
+              onApproval={() => {
+                if (approvalFlight.current) return;
+                approvalFlight.current = true;
+                setToApproval(true);
+                /* 저장소에 바로 쓰고 이동한다. 입력창을 거쳐야 언마운트 저장이 붙인 값을 덮지 않는다(§4-1 9).
+                   `/approval`은 `(account)` 묶음이라 셸과 이 말풍선은 내려가고 글은 그 방 초안에 남는다 */
+                appendRef.current?.(item.body, true);
+                router.push(APPROVAL_PATH);
+              }}
             />
           ))}
         </div>
@@ -437,6 +472,8 @@ function ChatRoom({
         onSend={send}
         askBusy={askListing === null ? null : askChipBusy(shownPending)}
         onAsk={onAsk}
+        appendRef={appendRef}
+        closed={closed}
       />
 
       {/* 알림 통로는 이것 하나(도매 디자인 결정 20). log는 off — 내 말, 한 번에 받은 50개까지 읽지 않게.
@@ -551,7 +588,7 @@ function AutoReplyExtra({
   wholesalerId: number;
   pending: readonly PendingMessage[];
   now: number;
-  /** 새 요청 잠금(끊김 또는 로그아웃 중). 보기와 담기를 잠근다 */
+  /** 새 요청 잠금(끊김, 로그아웃 중, 보내기 404로 닫힌 방 — `roomSendLockedOf`). 보기와 담기를 잠근다 */
   sessionLost: boolean;
   /** 세션 끊김만. 링크를 전체 이동으로 바꾼다 — 방 머리 돌아가기와 같은 값이다 */
   documentNav: boolean;

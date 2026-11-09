@@ -176,7 +176,7 @@ export async function dropStaleSession<T>(run: () => Promise<T>): Promise<T> {
  * - `drop`: 계정이 바뀌었다 — 성공이든 실패든 아무 데도 안 쓴다(다음 소매처 화면에 앞 소매처 말풍선 0)
  * - 같은 계정 갱신을 넘긴 401(`session` 갈래 stale) → `server`(R+D, 잠금 0). 새 세션을 다시 잠그지 않는다
  * - `ChatSessionLostError`(지금 세션 401, 떠난 화면의 401) → `session`. `다시 보내기`는 잠금으로만 가린다(`canRetrySend`)
- * - 그 밖은 `sendFailureOf`(500, 403, 404 → server, 네트워크 → offline)
+ * - 그 밖은 `sendFailureOf`(500, 403 `FORBIDDEN` → server, 네트워크 → offline, 영구 code 넷 → 영구 종류, loop-12)
  * 성공 갈래는 여기 없다 — 계정이 같으면 `guardSession`이 결과를 돌려준다(같은 계정 갱신 뒤 201은 그대로 쓴다)
  */
 export function sendOutcomeOf(

@@ -184,12 +184,32 @@ export interface ReadState {
 }
 
 /**
- * 왜 못 보냈나. 화면이 다르게 반응해야 하는 셋뿐이다(도매와 같다).
+ * 같은 키로 몇 번을 다시 보내도 같은 답이 오는 거절(loop-12 §5-1, BE 답 D49). 서버 code 넷과 하나씩 짝이다.
+ * - `notApproved` 403 `ACCOUNT_NOT_APPROVED` — 열린 방에서 승인이 취소된 방어 장면
+ * - `notFound` 404 `RESOURCE_NOT_FOUND` — 그 방에 더 보낼 수 없다. 방 화면을 닫는다(`roomClosedOf`)
+ * - `keyReused` 409 `IDEMPOTENCY_KEY_REUSED`
+ * - `invalid` 400 `VALIDATION_FAILED` — 본문 잘못으로 단정하지 않는다(키 헤더로도 난다)
+ */
+export type PermanentSendFailure =
+  "notApproved" | "notFound" | "keyReused" | "invalid";
+
+/**
+ * 왜 못 보냈나. 일시 셋(도매와 같다) + 영구 넷(loop-12).
  * - `server` 500 등 — `다시 보내기`(같은 키) `지우기`
  * - `offline` 보낼 때 오프라인이었거나 서버까지 못 갔다 — 같은 버튼, 문구만 다르다. 자동 재전송은 없다
  * - `session` 401 — 잠긴 동안 `지우기`만. 같은 계정 재로그인으로 풀리면 `다시 보내기`도(loop-08e, 도매 08d F1 D48)
+ * - 영구 넷 — `다시 보내기` 없이 글을 남기는 버튼 하나 + `지우기`(`keepActionOf`)
  */
-export type SendFailure = "server" | "offline" | "session";
+export type SendFailure =
+  "server" | "offline" | "session" | PermanentSendFailure;
+
+/**
+ * 영구 실패 말풍선의 글 남기는 버튼(loop-12 §4-2 표). 요청을 만들지 않아 잠금과 무관하다.
+ * - `approval` 403 — 글을 그 방 입력창에 붙여 저장한 뒤 승인 화면으로
+ * - `copy` 404 — 클립보드로. 그 방 입력창은 닫혀 있어 다른 대화로 가져갈 길이 이것뿐이다
+ * - `toComposer` 409, 400 — 입력창 글 뒤에 붙인다(`appendToDraft`)
+ */
+export type KeepAction = "approval" | "copy" | "toComposer";
 
 /**
  * 아직 서버 sequence가 없는 내 말풍선. 방 아래에 붙어 있다가 서버 메시지 중 같은 `clientMessageId`가

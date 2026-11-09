@@ -49,10 +49,12 @@ import type {
   HeaderCounts,
   HistorySlot,
   HistoryStatus,
+  KeepAction,
   MoreInput,
   MoreState,
   PendingByRoom,
   PendingMessage,
+  PermanentSendFailure,
   ReadState,
   ReceivableCardView,
   ReplyExtra,
@@ -962,32 +964,124 @@ export function checkComposer(text: string): ComposerCheck {
 }
 
 /**
- * 보내기 실패를 화면 반응 셋으로. **`code`로만 가른다.** 서버까지 못 간 것(`NETWORK_ERROR`)은
- * 오프라인과 같은 안내다 — 사장이 할 일(연결 확인 뒤 다시 보내기)이 같다. 401 코드는 소매 어휘
- * (`UNAUTHORIZED`)다 — 도매는 `UNAUTHENTICATED`.
+ * 영구 거절 code → 실패 종류(loop-12 §5-1). 이 넷만 영구다. 같은 status라도 다른 code(403 `FORBIDDEN`, 502 프록시
+ * code)는 일시(`server`)로 둔다 — 모르는 거절을 영구로 단정하면 사장이 다시 보낼 길을 잃는다(§4-3 5)
+ */
+const PERMANENT_FAILURE_BY_CODE: Readonly<
+  Record<string, PermanentSendFailure>
+> = {
+  [RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED]: "notApproved",
+  [RETAIL_ERROR_CODE.RESOURCE_NOT_FOUND]: "notFound",
+  [IDEMPOTENCY_KEY_REUSED]: "keyReused",
+  [RETAIL_ERROR_CODE.VALIDATION_FAILED]: "invalid",
+};
+
+function isPermanentFailure(
+  failure: SendFailure | null,
+): failure is PermanentSendFailure {
+  return (
+    failure === "notApproved" ||
+    failure === "notFound" ||
+    failure === "keyReused" ||
+    failure === "invalid"
+  );
+}
+
+/**
+ * 보내기 실패를 화면 반응으로. **`code`로만 가른다** — status가 어긋나도 code가 영구 넷이면 영구다(500 +
+ * `RESOURCE_NOT_FOUND` → `notFound`, §4-3 6). 서버까지 못 간 것(`NETWORK_ERROR`)은 오프라인과 같은 안내다 — 사장이 할
+ * 일(연결 확인 뒤 다시 보내기)이 같다. 401 코드는 소매 어휘(`UNAUTHORIZED`)다 — 도매는 `UNAUTHENTICATED`.
  */
 export function sendFailureOf(error: unknown): SendFailure {
   if (isApiError(error)) {
     if (error.code === RETAIL_ERROR_CODE.UNAUTHORIZED) return "session";
     if (error.code === TRANSPORT_ERROR_CODE.NETWORK) return "offline";
-    // 같은 키에 다른 본문 — 정상 흐름에선 안 온다. 500과 같이 다시 보내기, 지우기를 준다
-    if (error.code === IDEMPOTENCY_KEY_REUSED) return "server";
+    const permanent = PERMANENT_FAILURE_BY_CODE[error.code];
+    if (permanent !== undefined) return permanent;
   }
   return "server";
 }
 
 /**
- * 실패 말풍선에 `다시 보내기`를 둘까(loop-08e §4-1, 도매 08d F1 D48 복제). **잠겨 있는 동안만 뺀다** — 실패 종류는
- * 묻지 않는다. 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리거나 다른 방 화면에서 실패했으면(잠금 0)
- * 다시 보낼 수 있다. 처음 `clientMessageId` 그대로라 서버엔 하나만 생긴다
+ * 실패 말풍선에 `다시 보내기`를 둘까(loop-08e §4-1, 도매 08d F1 D48 복제). 일시 실패는 **잠겨 있는 동안만 뺀다**.
+ * 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리거나 다른 방 화면에서 실패했으면(잠금 0) 다시 보낼
+ * 수 있다. 처음 `clientMessageId` 그대로라 서버엔 하나만 생긴다.
+ * 08e §4-1 규칙의 영구 실패 예외(loop-12 D68): 영구 넷은 잠금과 무관하게 늘 뺀다 — 같은 키로 몇 번을 보내도 같은
+ * 답이다. null(보내는 중)은 `server`처럼 다룬다(`failureText(null)`과 맞춘다)
  */
-export function canRetrySend(sessionLost: boolean): boolean {
-  return !sessionLost;
+export function canRetrySend(
+  failure: SendFailure | null,
+  locked: boolean,
+): boolean {
+  return !isPermanentFailure(failure) && !locked;
 }
 
-/** 실패 말풍선 아래 문구 */
+/**
+ * 이 방에서 새 보내기 요청을 막을까. 입력창, `재고 문의`, 되묻기 칩, 카드 담기, 보류 말풍선 `다시 보내기`가 모두 이
+ * 값 하나를 본다(12-N1 12-R1 — 경로마다 따로 읽으면 하나가 빠진다). 끊김, 로그아웃 중, 보내기 404로 닫힌 방 중 하나면 막는다.
+ * D69: 닫힌 방에선 재시도도 막음(서버가 이 방엔 못 보낸다고 했다). 기획 §4-2 5.4의 "일시 실패 재시도는 그대로"를 뒤집었다.
+ * 읽기(polling, 읽음, 이전 메시지)는 이 값을 보지 않는다 — 닫힌 방도 지난 대화는 보인다
+ */
+export function roomSendLockedOf(state: {
+  sessionLost: boolean;
+  leaving: boolean;
+  closed: boolean;
+}): boolean {
+  return state.sessionLost || state.leaving || state.closed;
+}
+
+/** 영구 실패 말풍선의 글 남기는 버튼(loop-12 §4-2 표). 일시 실패와 null은 없음 */
+export function keepActionOf(failure: SendFailure | null): KeepAction | null {
+  switch (failure) {
+    case "notApproved":
+      return "approval";
+    case "notFound":
+      return "copy";
+    case "keyReused":
+    case "invalid":
+      return "toComposer";
+    default:
+      return null;
+  }
+}
+
+/** 실패 말풍선 아래 문구. 영구 넷은 code마다(loop-12 Q1 표), 일시는 오프라인만 다르다 */
 export function failureText(failure: SendFailure | null): string {
-  return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
+  switch (failure) {
+    case "offline":
+      return PENDING_TEXT.offline;
+    case "notApproved":
+    case "notFound":
+    case "keyReused":
+    case "invalid":
+      return PENDING_TEXT[failure];
+    default:
+      return PENDING_TEXT.failed;
+  }
+}
+
+/**
+ * 영구 실패 글을 입력창 글에 붙인다(loop-12 §4-2 3). **덮지 않는다** — 입력창이 비었으면(공백만도 빈 것) 본문만,
+ * 글이 있으면 그 글 뒤에 줄바꿈 하나 + 본문. 쓰던 글은 한 글자도 손대지 않는다(끝 줄바꿈도 그대로). 1,000자를
+ * 넘어도 자르지 않는다 — 입력창 규칙(`checkComposer`)이 안내하고 보내기를 잠근다
+ */
+export function appendToDraft(draft: string, body: string): string {
+  return draft.trim() === "" ? body : `${draft}\n${body}`;
+}
+
+/**
+ * 이 방 화면을 닫을까(loop-12 Q3). 서버가 보내기를 404로 거절한 방엔 더 보낼 수 없다. 그 방 보류 말풍선에 404 실패가
+ * 있거나, 이 화면이 404를 본 적이 있으면(말풍선을 지운 뒤에도) 닫는다. 방을 떠났다 오면 화면이 새로 마운트돼 "본 적"은
+ * 지워지고 서버가 다시 정한다(방 머리 404면 `NotFoundState`)
+ */
+export function roomClosedOf(
+  pending: readonly Pick<PendingMessage, "status" | "failure">[],
+  seenNotFound: boolean,
+): boolean {
+  return (
+    seenNotFound ||
+    pending.some((p) => p.status === "failed" && p.failure === "notFound")
+  );
 }
 
 /**

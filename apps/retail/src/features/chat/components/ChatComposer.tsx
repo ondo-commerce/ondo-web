@@ -2,11 +2,25 @@
 
 import { Button, cn, Textarea, ToggleChip } from "@ondo/ui";
 import { CircleAlert } from "lucide-react";
-import type { ClipboardEvent, KeyboardEvent } from "react";
-import { memo, useEffect, useId, useRef, useState } from "react";
-import { COMPOSER_TEXT, STOCK_TEXT } from "../constants";
-import { checkComposer } from "../derive";
+import type { ClipboardEvent, KeyboardEvent, Ref } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import Link from "next/link";
+import { CHATS_HREF, COMPOSER_TEXT, STOCK_TEXT } from "../constants";
+import { checkComposer, roomSendLockedOf } from "../derive";
 import { useRoomDraft } from "../useRoomDraft";
+
+/**
+ * 말풍선이 입력창에 글을 넘기는 통로(loop-12 §4-2 3). 입력 글은 이 컴포넌트만 들고 있어(memo, S6-9) 방이 손잡이로
+ * 부른다. `saveNow`는 붙인 뒤 바로 다른 화면으로 가는 갈래(403 승인 링크)
+ */
+export type ComposerAppend = (body: string, saveNow: boolean) => void;
 
 /**
  * 방 아래 입력창. 도매 `ChatComposer`와 짝이다. 메시지 목록과 **다른 컴포넌트**이고 `memo`인 이유:
@@ -29,6 +43,8 @@ export const ChatComposer = memo(function ChatComposer({
   onSend,
   askBusy,
   onAsk,
+  appendRef,
+  closed,
 }: {
   /** 쓰던 글을 기억할 키(`draftKey`). null이면 기억하지 않는다 */
   draftKey: string | null;
@@ -51,15 +67,35 @@ export const ChatComposer = memo(function ChatComposer({
   askBusy: boolean | null;
   /** 칩 보내기. 입력창 글은 건드리지 않는다 — 따로 보내는 말이다(S8-2) */
   onAsk: () => void;
+  /** 영구 실패 말풍선 `입력창으로`, `승인 상태 보기`가 부른다(`ComposerAppend`). 같은 ref 객체라 memo를 깨지 않는다 */
+  appendRef: Ref<ComposerAppend>;
+  /**
+   * 보내기 404로 닫힌 방(loop-12 Q3, `roomClosedOf`). 잠금 모양은 끊김과 같고(쓴 글은 남는다, D28) 안내 줄은 닫힌 방
+   * 줄이 끊김 줄보다 앞선다 — 재로그인해도 그 방엔 못 보낸다
+   */
+  closed: boolean;
 }) {
   const {
     text: draft,
     setText: setDraft,
+    append: appendDraft,
     discard: discardDraft,
   } = useRoomDraft(draftKey);
+  /* 붙인 뒤 포커스를 입력창 끝으로(§4-2 3). 값이 그려진 뒤에 커서를 놓아야 해서 박자로 넘긴다 */
+  const [caretTick, setCaretTick] = useState(0);
+  useImperativeHandle(
+    appendRef,
+    () => (body: string, saveNow: boolean) => {
+      appendDraft(body, saveNow);
+      setPhotoNote(false);
+      setCaretTick((t) => t + 1);
+    },
+    [appendDraft],
+  );
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const locked = sessionLost || leaving;
+  /* 방이 칩, 카드, 다시 보내기에 쓰는 잠금과 같은 함수(12-N1 12-R1) */
+  const locked = roomSendLockedOf({ sessionLost, leaving, closed });
   const canSend = !check.blank && !check.over && !locked;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
@@ -76,6 +112,14 @@ export const ChatComposer = memo(function ChatComposer({
     if (focusTick === 0)
       input.setSelectionRange(input.value.length, input.value.length);
   }, [focusTick]);
+
+  useEffect(() => {
+    if (caretTick === 0) return;
+    const input = boxRef.current?.querySelector("textarea");
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [caretTick]);
 
   /* 보내면 입력창은 비우고 포커스는 남긴다(S6-1). 비우는 게 연타 방지다 — 두 번째 Enter·클릭은 빈 칸을
      본다(S6-2). React는 키·클릭 같은 사용자 이벤트의 state를 다음 이벤트 전에 반영한다 */
@@ -104,7 +148,23 @@ export const ChatComposer = memo(function ChatComposer({
   };
 
   const noteId = useId();
-  const note = sessionLost ? (
+  const note = closed ? (
+    <span
+      role="status"
+      data-ac="12:S1-9 12:S1-10"
+      className="border-border-strong text-secondary-foreground flex flex-1 flex-wrap items-center gap-x-1.5 rounded-control border px-3 py-2 text-sm"
+    >
+      <CircleAlert aria-hidden className="size-4 shrink-0" />
+      {COMPOSER_TEXT.closed}
+      <Link
+        href={CHATS_HREF}
+        data-ac="12:S1-9 12:S1-10"
+        className="text-foreground phone:h-11 inline-flex items-center underline"
+      >
+        {COMPOSER_TEXT.closedLink}
+      </Link>
+    </span>
+  ) : sessionLost ? (
     <span
       role="alert"
       data-ac="S6-5"

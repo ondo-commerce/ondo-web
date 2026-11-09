@@ -50,13 +50,19 @@ import {
   canRetrySend,
   pendingOfRoom,
   withRoomPending,
+  appendToDraft,
+  keepActionOf,
+  roomClosedOf,
+  roomSendLockedOf,
 } from "./derive";
 import type {
   ChatMessage,
   ChatRoomSummary,
   ChatThread,
+  KeepAction,
   MoreInput,
   PendingMessage,
+  SendFailure,
 } from "./types";
 
 /*
@@ -544,8 +550,9 @@ describe("S6-4 S6-5 S6-6 보내기 실패와 보류 말풍선", () => {
       "offline",
     );
     expect(sendFailureOf(apiError("INTERNAL_ERROR", 500))).toBe("server");
+    // loop-12 S1-1: 같은 키에 다른 본문은 다시 보내도 같은 409라 영구 종류
     expect(sendFailureOf(apiError("IDEMPOTENCY_KEY_REUSED", 409))).toBe(
-      "server",
+      "keyReused",
     );
     expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
   });
@@ -1315,9 +1322,176 @@ describe("S4-1 목록 중복, 더 보기 (loop-08)", () => {
 });
 
 describe("S2-13 canRetrySend(loop-08e, 도매 08d F1 복제)", () => {
-  it("잠긴 동안만 뺀다 — 실패 종류는 묻지 않는다", () => {
-    expect(canRetrySend(true)).toBe(false);
-    expect(canRetrySend(false)).toBe(true);
+  it("일시 실패는 잠긴 동안만 뺀다", () => {
+    expect(canRetrySend("server", true)).toBe(false);
+    expect(canRetrySend("server", false)).toBe(true);
+  });
+});
+
+describe("loop-12 S1-1 sendFailureOf 영구 거절은 code로만 가른다", () => {
+  it.each<[string, number, SendFailure]>([
+    ["ACCOUNT_NOT_APPROVED", 403, "notApproved"],
+    ["RESOURCE_NOT_FOUND", 404, "notFound"],
+    ["IDEMPOTENCY_KEY_REUSED", 409, "keyReused"],
+    ["VALIDATION_FAILED", 400, "invalid"],
+    // status가 어긋나도 code를 따른다(§4-3 6)
+    ["RESOURCE_NOT_FOUND", 500, "notFound"],
+    ["UNAUTHORIZED", 401, "session"],
+    [TRANSPORT_ERROR_CODE.NETWORK, 0, "offline"],
+    ["INTERNAL_ERROR", 500, "server"],
+    // 같은 status에 다른 code는 일시 — 모르는 거절을 영구로 단정하지 않는다(§4-3 5)
+    ["FORBIDDEN", 403, "server"],
+    ["NOT_FOUND", 404, "server"],
+    // 웹 프록시와 봉투 해석이 내는 502(§4-3 4)
+    ["PROXY_NOT_CONFIGURED", 502, "server"],
+    ["UPSTREAM_UNREACHABLE", 502, "server"],
+    ["PARSE_ERROR", 502, "server"],
+  ])("%s %i → %s", (code, status, expected) => {
+    expect(sendFailureOf(apiError(code, status))).toBe(expected);
+  });
+
+  it("ApiError 아님 → server", () => {
+    expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+});
+
+describe("loop-12 S1-2 실패 말풍선 버튼과 문구", () => {
+  const permanent: [SendFailure, KeepAction][] = [
+    ["notApproved", "approval"],
+    ["notFound", "copy"],
+    ["keyReused", "toComposer"],
+    ["invalid", "toComposer"],
+  ];
+  const transient: (SendFailure | null)[] = [
+    "server",
+    "offline",
+    "session",
+    null,
+  ];
+
+  it.each(
+    permanent.flatMap(([f, keep]) =>
+      [true, false].map((locked) => [f, keep, locked] as const),
+    ),
+  )(
+    "영구 %s → 남기는 버튼 %s, 잠금 %s여도 다시 보내기 없음",
+    (failure, keep, locked) => {
+      expect(canRetrySend(failure, locked)).toBe(false);
+      expect(keepActionOf(failure)).toBe(keep);
+    },
+  );
+
+  it.each(
+    transient.flatMap((f) =>
+      [true, false].map((locked) => [f, locked] as const),
+    ),
+  )(
+    "일시 %s × 잠금 %s → 다시 보내기는 잠금 아닐 때만, 남기는 버튼 없음",
+    (failure, locked) => {
+      expect(canRetrySend(failure, locked)).toBe(!locked);
+      expect(keepActionOf(failure)).toBeNull();
+    },
+  );
+
+  it.each<[SendFailure | null, string]>([
+    ["notApproved", "계정이 승인되면 보낼 수 있어요"],
+    ["notFound", "이 대화방에는 보낼 수 없어요. 글은 복사해 갈 수 있어요"],
+    [
+      "keyReused",
+      "이 글은 그대로 다시 보낼 수 없어요. 입력창으로 옮겨 보낼 수 있어요",
+    ],
+    [
+      "invalid",
+      "서버가 이 글을 받지 않았어요. 입력창으로 옮겨 확인할 수 있어요",
+    ],
+    ["offline", "연결이 끊겨 못 보냈어요"],
+    ["server", "못 보냈어요"],
+    ["session", "못 보냈어요"],
+    [null, "못 보냈어요"],
+  ])("failureText(%s) = %s", (failure, text) => {
+    expect(failureText(failure)).toBe(text);
+  });
+});
+
+describe("loop-12 S1-3 입력 보존과 닫힌 방", () => {
+  it.each<[string, string, string]>([
+    ["", "가", "가"],
+    ["  \n", "가", "가"],
+    ["남길 초안", "가", "남길 초안\n가"],
+    ["남길 초안\n", "가", "남길 초안\n\n가"],
+  ])(
+    "appendToDraft(%j, %j) → %j — 덮지 않고 뒤에 붙인다",
+    (draft, body, expected) => {
+      expect(appendToDraft(draft, body)).toBe(expected);
+    },
+  );
+
+  it("999자 + 10자 → 1,010자 그대로(자르지 않음)", () => {
+    const joined = appendToDraft("가".repeat(999), "나".repeat(10));
+    expect([...joined].length).toBe(1010);
+    expect(checkComposer(joined).over).toBe(true);
+  });
+
+  const failedWith = (failure: SendFailure) =>
+    ({ status: "failed", failure }) as const;
+
+  it("404 말풍선 없음 + 본 적 없음 → 열림", () => {
+    expect(
+      roomClosedOf([failedWith("server"), failedWith("keyReused")], false),
+    ).toBe(false);
+  });
+  it("404 말풍선 있음 → 닫힘", () => {
+    expect(roomClosedOf([failedWith("notFound")], false)).toBe(true);
+  });
+  it("404 말풍선을 지웠어도 본 적 있음 → 닫힘", () => {
+    expect(roomClosedOf([], true)).toBe(true);
+  });
+});
+
+describe("loop-12 12-N1 12-R1 닫힌 방 보내기 잠금 하나 — roomSendLockedOf", () => {
+  const flags = [true, false];
+  it.each(
+    flags.flatMap((sessionLost) =>
+      flags.flatMap((leaving) =>
+        flags.map((closed) => [sessionLost, leaving, closed] as const),
+      ),
+    ),
+  )(
+    "끊김 %s × 로그아웃 중 %s × 닫힌 방 %s → 하나라도 참이면 잠금",
+    (sessionLost, leaving, closed) => {
+      expect(roomSendLockedOf({ sessionLost, leaving, closed })).toBe(
+        sessionLost || leaving || closed,
+      );
+    },
+  );
+
+  /* D69: 기획 §4-2 5.4 "닫힌 방의 일시 실패 다시 보내기는 그대로"를 뒤집었다 */
+  it.each<SendFailure | null>(["server", "offline", "session", null])(
+    "닫힌 방(끊김 0, 로그아웃 0)의 일시 실패 %s → 다시 보내기 없음",
+    (failure) => {
+      const locked = roomSendLockedOf({
+        sessionLost: false,
+        leaving: false,
+        closed: true,
+      });
+      expect(canRetrySend(failure, locked)).toBe(false);
+    },
+  );
+
+  it("404 말풍선을 지운 뒤 같은 계정 재로그인(끊김 풀림) → 본 적 있음이라 여전히 잠금", () => {
+    const closed = roomClosedOf(
+      [{ status: "failed", failure: "server" }],
+      true,
+    );
+    expect(
+      roomSendLockedOf({ sessionLost: false, leaving: false, closed }),
+    ).toBe(true);
+    expect(
+      canRetrySend(
+        "server",
+        roomSendLockedOf({ sessionLost: false, leaving: false, closed }),
+      ),
+    ).toBe(false);
   });
 });
 
