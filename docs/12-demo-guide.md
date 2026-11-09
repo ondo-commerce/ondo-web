@@ -49,7 +49,8 @@
 |---|---|---|---|
 | 소매 | 장바구니, 주문서 | 주문하기 | 새 주문이 생기고 도매 확정 대기가 1 는다 |
 | 소매 | 주문 상세 | 주문 취소 | 누르지 않는다. BE가 목 응답이라 "취소 실패"가 섞여 나오고 상태는 그대로다 |
-| 도매 | 주문 | 주문 확정, 거절 | 확정 대기가 준다. 이번 출고 칸에 적은 수량은 출고 탭 포장 대기로, 나머지는 미송으로 간다 |
+| 도매 | 주문 | 주문 확정 | 확정 대기가 준다. 이번 출고 칸에 적은 수량은 출고 탭 포장 대기로, 나머지는 미송으로 간다 |
+| 도매 | 주문 | 주문 취소 | 신규 주문에서만 된다. 그 주문이 취소로 바뀌고 확정 대기가 준다. 되돌릴 수 없다 |
 | 도매 | 출고 | 출고 처리 | 출고 대기가 줄고 소매 미수와 장끼가 생긴다 |
 | 도매 | 재고 | 입고 | 현재고가 바뀌고 미송 배분이 달라진다 |
 | 도매 | 상품 | 등록, 수정, 삭제 | 소매 홈 상품 목록이 바뀐다. 삭제하면 게시글까지 사라진다 |
@@ -254,15 +255,20 @@ DB와 API 서버, 기본(Docker, 서버 README와 같다). DB 두 대가 선다:
 ```bash
 cd ~/dev/ondo-api
 docker compose -f db/compose.yml up -d
+```
 
-# JDK 21이 기본이 아니면 먼저
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+JDK 21이 기본이 아니면 각 API 터미널에서 `JAVA_HOME`을 먼저 잡는다. 터미널마다 따로라 두 블록 모두에 있다.
 
+```bash
 # 터미널 1: 도매 API, 8081
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 cd ~/dev/ondo-api/wholesale-api
 ./gradlew bootRun --args='--spring.profiles.active=local,dev'
+```
 
+```bash
 # 터미널 2: 소매 API, 8080 (5433 DB를 본다)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 cd ~/dev/ondo-api/retail-api
 ./gradlew bootRun
 ```
@@ -270,16 +276,25 @@ cd ~/dev/ondo-api/retail-api
 Docker가 없을 때: brew PostgreSQL 16 한 대(5432)에 DB 둘을 만든다. 소매만 주소를 5432로 바꿔 띄운다.
 
 ```bash
+brew services start postgresql@16
+export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"   # createuser, psql, createdb를 찾게
+
 createuser -s ondo                 # 역할이 이미 있으면 건너뛴다
 psql -d postgres -c "ALTER ROLE ondo WITH LOGIN PASSWORD 'ondo'"
 createdb -O ondo ondo_wholesale
 createdb -O ondo ondo_retail
+```
 
+```bash
 # 터미널 1: 도매 API, 8081 (위와 같다)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 cd ~/dev/ondo-api/wholesale-api
 ./gradlew bootRun --args='--spring.profiles.active=local,dev'
+```
 
+```bash
 # 터미널 2: 소매 API, 8080
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 cd ~/dev/ondo-api/retail-api
 ./gradlew bootRun --args='--spring.datasource.url=jdbc:postgresql://localhost:5432/ondo_retail'
 ```
