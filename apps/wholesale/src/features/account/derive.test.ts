@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { LOGIN_NOTICE_OTHER_TAB } from "./constants";
 import {
+  loginNoticeFor,
   otherTabActionOf,
   parseSessionBroadcast,
   type OtherTabAction,
 } from "./derive";
+import type { SessionEndReason } from "./types";
+
+/** #410 S1-1 — 세션이 닫힌 이유와 그 순간 주소로 로그인 화면 안내를 정한다(loop-10 기획 §4-2-1) */
+describe("loginNoticeFor (10:S1-1)", () => {
+  it.each<[string, SessionEndReason, string, string | null]>([
+    [
+      "다른 탭 때문에 상품 등록 화면에서 닫힘 → 안내",
+      "otherTab",
+      "/products/new",
+      LOGIN_NOTICE_OTHER_TAB,
+    ],
+    ["이 탭 로그아웃 → 없음", "self", "/products/new", null],
+    ["다른 탭 때문이지만 이미 /login → 없음", "otherTab", "/login", null],
+  ])("%s", (_, reason, pathname, expected) => {
+    expect(loginNoticeFor(reason, pathname)).toBe(expected);
+  });
+});
 
 /** loop-08c 리뷰 R8, Codex 메타 M2 — 다른 탭의 세션 변경을 받은 탭이 할 일 */
 describe("otherTabActionOf (R8, M2)", () => {
