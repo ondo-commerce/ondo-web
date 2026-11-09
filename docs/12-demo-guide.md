@@ -239,21 +239,43 @@ PUBLIC_PW=… pnpm e2e:public     # 로그인 뒤까지
 
 ### 운영 서버가 안 뜰 때: 로컬 실서버로 시연
 
-API 서버 두 개와 웹 두 개를 노트북에서 띄운다. 2026-11-10에 이 구성으로 소매 주문, 도매 확정, 소매 상태 변경까지 확인했다.
+API 서버 두 개와 웹 두 개를 노트북에서 띄운다. 2026-11-10에 아래 "Docker가 없을 때" 갈래로 소매 주문, 도매 확정, 소매 상태 변경까지 확인했다.
 
 준비물:
 
-- PostgreSQL 16이 5432에 떠 있고 `ondo_wholesale`, `ondo_retail` DB에 시드가 들어 있다(2절 계정으로 로그인된다)
+- Docker(기본) 또는 brew PostgreSQL 16(Docker가 없을 때)
 - JDK 21
 - 서버 코드 `~/dev/ondo-api`
 
-API 서버(터미널 둘):
+스키마와 시드는 API 서버가 뜰 때 넣는다. 빈 DB로 시작해도 2절 계정으로 로그인된다. 도매는 시드 계정 때문에 `local,dev` 두 프로필로 띄운다.
+
+DB와 API 서버, 기본(Docker, 서버 README와 같다). DB 두 대가 선다: 도매 5432, 소매 5433, 계정 `ondo`/`ondo`.
 
 ```bash
+cd ~/dev/ondo-api
+docker compose -f db/compose.yml up -d
+
 # JDK 21이 기본이 아니면 먼저
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 
 # 터미널 1: 도매 API, 8081
+cd ~/dev/ondo-api/wholesale-api
+./gradlew bootRun --args='--spring.profiles.active=local,dev'
+
+# 터미널 2: 소매 API, 8080 (5433 DB를 본다)
+cd ~/dev/ondo-api/retail-api
+./gradlew bootRun
+```
+
+Docker가 없을 때: brew PostgreSQL 16 한 대(5432)에 DB 둘을 만든다. 소매만 주소를 5432로 바꿔 띄운다.
+
+```bash
+createuser -s ondo                 # 역할이 이미 있으면 건너뛴다
+psql -d postgres -c "ALTER ROLE ondo WITH LOGIN PASSWORD 'ondo'"
+createdb -O ondo ondo_wholesale
+createdb -O ondo ondo_retail
+
+# 터미널 1: 도매 API, 8081 (위와 같다)
 cd ~/dev/ondo-api/wholesale-api
 ./gradlew bootRun --args='--spring.profiles.active=local,dev'
 
