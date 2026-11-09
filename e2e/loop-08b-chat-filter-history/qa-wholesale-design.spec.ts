@@ -52,16 +52,28 @@ async function styleOf(target: Locator) {
   );
 }
 
-/** 칸 사이 간격: 검색 상자 아래 → 칩 위, 칩 아래 → 첫 행 위 */
+/**
+ * 칸 사이 간격: 검색 상자 아래 → 칩 위, 칩 아래 → 첫 행 위.
+ * 세 상자를 **한 번의 evaluate 안에서** 잰다. `boundingBox()`를 세 번 부르면 그 사이에 글꼴 교체로 위쪽
+ * 레이아웃이 밀릴 때 상자마다 다른 시점의 y를 빼게 된다 — 와이어프레임에서 12가 96, 168로 나온 원인(#412)
+ */
 async function gaps(search: Locator, seg: Locator, firstRow: Locator) {
-  const a = await search.boundingBox();
-  const b = await seg.boundingBox();
-  const c = await firstRow.boundingBox();
+  const a = await search.elementHandle();
+  const b = await seg.elementHandle();
+  const c = await firstRow.elementHandle();
   if (a === null || b === null || c === null) return null;
-  return {
-    searchToSeg: Math.round(b.y - (a.y + a.height)),
-    segToRow: Math.round(c.y - (b.y + b.height)),
-  };
+  return search.page().evaluate(
+    ([sa, sb, sc]) => {
+      const ra = sa.getBoundingClientRect();
+      const rb = sb.getBoundingClientRect();
+      const rc = sc.getBoundingClientRect();
+      return {
+        searchToSeg: Math.round(rb.top - ra.bottom),
+        segToRow: Math.round(rc.top - rb.bottom),
+      };
+    },
+    [a, b, c] as const,
+  );
 }
 
 async function measureApp(page: Page) {
@@ -112,6 +124,11 @@ test("QA-design 필터 줄 토큰 — 구현 = 와이어프레임 #state-filter-
     viewport: { width: 1470, height: 900 },
   });
   await wirePage.goto(`file://${WIRE}`);
+  /* 와이어프레임은 Google Fonts를 `display=swap`으로 받는다. load 뒤에 글꼴이 바뀌며 긴 문서가 다시 흐르므로
+     다 받은 뒤에 잰다(#412) */
+  await wirePage.evaluate(async () => {
+    await document.fonts.ready;
+  });
   const wire = await measureWire(wirePage);
   await wirePage.close();
 
