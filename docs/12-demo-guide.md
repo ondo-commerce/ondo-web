@@ -39,6 +39,8 @@
 
 5분 체험 경로: 소매에서 주문 접수 → 도매 주문 탭에서 확정 → 소매 주문 상세에서 상태가 바뀐 것 확인.
 
+도매에서 확정할 때는 주문을 펼쳐 이번 출고 칸에 수량을 적고 확정한다(비우면 재고가 있어도 전량 미송이 된다).
+
 ## 4. 누르면 공개 데이터가 바뀌는 것
 
 공개 계정은 평가위원 모두가 같은 데이터를 본다. 아래를 누르면 서버 데이터가 바로 바뀌고, 화면에서 되돌리는 버튼은 없다. 5분 체험 경로도 주문 접수와 확정을 쓰므로 한 번 돌면 데이터가 바뀐다.
@@ -47,7 +49,8 @@
 |---|---|---|---|
 | 소매 | 장바구니, 주문서 | 주문하기 | 새 주문이 생기고 도매 확정 대기가 1 는다 |
 | 소매 | 주문 상세 | 주문 취소 | 누르지 않는다. BE가 목 응답이라 "취소 실패"가 섞여 나오고 상태는 그대로다 |
-| 도매 | 주문 | 주문 확정, 거절 | 확정 대기가 줄고, 확정분은 출고 대기와 미송으로 간다 |
+| 도매 | 주문 | 주문 확정 | 확정 대기가 준다. 이번 출고 칸에 적은 수량은 출고 탭 포장 대기로, 나머지는 미송으로 간다 |
+| 도매 | 주문 | 주문 취소 | 신규 주문에서만 된다. 그 주문이 취소로 바뀌고 확정 대기가 준다. 되돌릴 수 없다 |
 | 도매 | 출고 | 출고 처리 | 출고 대기가 줄고 소매 미수와 장끼가 생긴다 |
 | 도매 | 재고 | 입고 | 현재고가 바뀌고 미송 배분이 달라진다 |
 | 도매 | 상품 | 등록, 수정, 삭제 | 소매 홈 상품 목록이 바뀐다. 삭제하면 게시글까지 사라진다 |
@@ -61,12 +64,12 @@
 | 무엇 | 지금 상태 | 왜 |
 |---|---|---|
 | 상품 이미지 업로드 | 업로드 칸이 실패하거나 "준비 중"으로 보인다 | 업로드 API가 BE에 아직 없다 |
-| 채팅 | 공개 배포에 아직 없다. `/chats`를 주소로 열면 404 | BE 연결 전이라 공개 배포에 넣지 않았다 |
+| 채팅 | 공개 주소에서는 아직 못 쓴다 | 서버 구현됨(2026-11-08~09), 배포 대기. 로컬 실서버로 장면 1~3 확인(2026-11-09) |
 | 도매 가입, 재신청 | 폼은 보이지만 제출이 잠겨 있다 | 서류 업로드 API가 없다. 체험은 테스트 계정으로 |
 | 비밀번호 찾기, 문의하기 | 문의 안내 한 줄만 나온다 | 메일 발송 경로가 없다 |
 | 소매 설정 | 상호와 이메일만 보이고 고칠 수 없다 | 설정 수정 API가 없다 |
 | 소매 주문 취소 | 누르지 않는다 | BE가 목 응답이라 상태가 안 바뀐다 |
-| 로그인 | 2026-10-28 기준 dev API가 500을 낸다 | BE 서버 DB 문제(#280). 복구 전에는 로그인 뒤 화면을 볼 수 없다 |
+| 로그인 | 2026-11-09 기준 api, api-dev 주소가 DNS에서 안 풀려 소매 ddmondo.co.kr이 500 | 서버 배포 복구 전에는 로그인 뒤 화면을 볼 수 없다 |
 
 ## 6. 점검 자동화
 
@@ -216,3 +219,108 @@ BE 복귀 뒤 확인(목 모드로는 못 본다):
 - [ ] 도매에서 3019 입고일 저장 → 소매 실서버 종 count +1(주입 없이)
 - [ ] 그 알림 행 본문의 날짜가 "{옛 날짜} → {저장한 날짜}"
 - [ ] 사유만 바꿔 저장하면 알림 0건
+
+## 9. 발표 노트북 점검표
+
+발표 당일 노트북에서 확인할 것. 기본은 운영 주소로 시연한다. 운영 서버가 안 뜨면 아래 "로컬 실서버로 시연"으로 바꾼다.
+
+### 운영 주소로 시연할 때
+
+- [ ] 1절 운영 주소 두 개로 시연한다. 소매 preview 주소(`*.vercel.app`)는 SSO로 잠겨 있어 쓰지 않는다
+- [ ] 로컬로 띄워야 하면 앱마다 `.env.local`의 `NEXT_PUBLIC_API_MOCK`를 먼저 본다. 도매 `.env.development`는 `NEXT_PUBLIC_API_MOCK=1`이라 그대로 띄우면 목으로 뜬다
+- [ ] 브라우저 프로필을 둘 쓴다. 하나는 도매, 하나는 소매. 두 앱의 로그인 세션을 나눈다
+- [ ] 휴대폰 핫스팟을 예비로 켜 둔다. 행사장 와이파이가 막히면 바꾼다
+- [ ] 시작 5분 전에 두 주소를 한 번씩 연다. 오래 쉬던 서버는 첫 요청이 느리다
+- [ ] 11-26 사전 시연 테스트 때 6절 스모크를 한 번 돌린다. 두 스크립트가 `PUBLIC_SMOKE=1`을 붙여 production을 본다
+
+```bash
+pnpm e2e:public:anon            # 로그인 없이
+PUBLIC_PW=… pnpm e2e:public     # 로그인 뒤까지
+```
+
+### 운영 서버가 안 뜰 때: 로컬 실서버로 시연
+
+API 서버 두 개와 웹 두 개를 노트북에서 띄운다. 2026-11-10에 아래 "Docker가 없을 때" 갈래로 소매 주문, 도매 확정, 소매 상태 변경까지 확인했다.
+
+준비물:
+
+- Docker(기본) 또는 brew PostgreSQL 16(Docker가 없을 때)
+- JDK 21
+- 서버 코드 `~/dev/ondo-api`
+
+스키마와 시드는 API 서버가 뜰 때 넣는다. 빈 DB로 시작해도 2절 계정으로 로그인된다. 도매는 시드 계정 때문에 `local,dev` 두 프로필로 띄운다.
+
+DB와 API 서버, 기본(Docker, 서버 README와 같다). DB 두 대가 선다: 도매 5432, 소매 5433, 계정 `ondo`/`ondo`.
+
+```bash
+cd ~/dev/ondo-api
+docker compose -f db/compose.yml up -d
+```
+
+JDK 21이 기본이 아니면 각 API 터미널에서 `JAVA_HOME`을 먼저 잡는다. 터미널마다 따로라 두 블록 모두에 있다.
+
+```bash
+# 터미널 1: 도매 API, 8081
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+cd ~/dev/ondo-api/wholesale-api
+./gradlew bootRun --args='--spring.profiles.active=local,dev'
+```
+
+```bash
+# 터미널 2: 소매 API, 8080 (5433 DB를 본다)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+cd ~/dev/ondo-api/retail-api
+./gradlew bootRun
+```
+
+Docker가 없을 때: brew PostgreSQL 16 한 대(5432)에 DB 둘을 만든다. 소매만 주소를 5432로 바꿔 띄운다.
+
+```bash
+brew services start postgresql@16
+export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"   # createuser, psql, createdb를 찾게
+
+createuser -s ondo                 # 역할이 이미 있으면 건너뛴다
+psql -d postgres -c "ALTER ROLE ondo WITH LOGIN PASSWORD 'ondo'"
+createdb -O ondo ondo_wholesale
+createdb -O ondo ondo_retail
+```
+
+```bash
+# 터미널 1: 도매 API, 8081 (위와 같다)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+cd ~/dev/ondo-api/wholesale-api
+./gradlew bootRun --args='--spring.profiles.active=local,dev'
+```
+
+```bash
+# 터미널 2: 소매 API, 8080
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+cd ~/dev/ondo-api/retail-api
+./gradlew bootRun --args='--spring.datasource.url=jdbc:postgresql://localhost:5432/ondo_retail'
+```
+
+웹을 띄우기 전에 3000, 3001 포트가 다른 프로젝트에 잡혀 있지 않은지 본다. 아무것도 안 나와야 한다.
+
+```bash
+lsof -iTCP:3000 -sTCP:LISTEN
+lsof -iTCP:3001 -sTCP:LISTEN
+```
+
+잡혀 있으면 그 프로젝트를 끄거나 아래 `-p`를 3010, 3011로 바꾼다. 웹 요청은 같은 주소의 프록시로 가서 포트를 바꿔도 된다.
+
+웹(터미널 둘, 레포 루트에서):
+
+```bash
+# 터미널 3: 도매 웹 http://localhost:3000
+cd apps/wholesale && API_ORIGIN=http://localhost:8081 NEXT_PUBLIC_API_MOCK=0 pnpm exec next dev -p 3000
+
+# 터미널 4: 소매 웹 http://localhost:3001
+cd apps/retail && API_ORIGIN=http://localhost:8080 NEXT_PUBLIC_API_MOCK=0 pnpm exec next dev -p 3001
+```
+
+- [ ] 명령줄의 `NEXT_PUBLIC_API_MOCK=0`이 `.env.development`의 `=1`보다 먼저다. 브라우저 개발자 도구 Application 탭에서 service worker가 0개면 목이 꺼진 것이다
+- [ ] 2절 계정으로 두 앱에 로그인한다(프로필 둘)
+- [ ] 시드 상품 사진은 주소가 풀리지 않아 빈칸으로 보인다. 데이터 문제라 그대로 둔다
+- [ ] 로컬 DB라 운영 데이터와 다르다. 시연에서 만든 주문은 로컬에만 남는다
+
+누르지 말 곳은 4절을 본다.

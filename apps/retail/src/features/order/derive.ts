@@ -232,8 +232,33 @@ export function toCheckoutGroups(wire: CheckoutWire): CheckoutGroup[] {
   });
 }
 
+/**
+ * 화면에 미송으로 보일 장수. **도매처가 확정하기 전이면 0이다.**
+ *
+ * 미송은 도매처가 확정할 때 생긴다(화면 사양 RT-59). 그런데 서버 `backorderQty`는
+ * `qty − shipped`라(`RetailGatewayOrderViewQuery.java:152`) 확정 전 주문에도 안 나간
+ * 장수가 전부 온다(side-03 S3-1). 서버 수정은 BE에 요청했고 웹은 확정 전 구간만 막는다.
+ * 확정 뒤에는 서버 값을 그대로 쓴다. 포장만 한 수량이 미송으로 잡히는 건 서버가 고칠 일이다.
+ *
+ * 라인 상태 판정, 미송 장수 노트, 미송 라인 수, 목록의 미송 장수가 전부 이 값을 읽는다.
+ */
+export function shownBackorderQty(
+  backorderQty: number,
+  beforeConfirm: boolean,
+): number {
+  return beforeConfirm ? 0 : backorderQty;
+}
+
 /** `GET /orders` 한 줄 → 목록 한 줄 */
 export function toOrderSummary(wire: OrderSummaryWire): OrderSummary {
+  /*
+   * 요약에는 도매처 건별 상태가 없다. `PENDING_ACCEPT`는 "하나라도 NEW"라, 도매처가
+   * 하나일 때만 그 건이 확정 전이라고 확정할 수 있다. 둘 이상이면 확정된 건의 진짜
+   * 미송까지 지울 수 있어 서버 값을 그대로 둔다.
+   */
+  const beforeConfirm =
+    wire.actionBadge === "PENDING_ACCEPT" && wire.wholesalerCount === 1;
+
   return {
     orderId: wire.orderId,
     orderNo: wire.orderNo,
@@ -242,7 +267,7 @@ export function toOrderSummary(wire: OrderSummaryWire): OrderSummary {
     totalAmount: wire.totalAmount,
     totalQty: wire.totalQty,
     receivedQty: wire.receivedQty ?? 0,
-    backorderQty: wire.backorderQty ?? 0,
+    backorderQty: shownBackorderQty(wire.backorderQty ?? 0, beforeConfirm),
     wholesalerCount: wire.wholesalerCount,
     wholesalerNames: wire.wholesalerNames ?? [],
     status: wire.actionBadge,
@@ -279,7 +304,10 @@ function lineStatusOf(
 ): OrderLineStatus {
   const qty = item.qty ?? 0;
   const received = item.receivedQty ?? 0;
-  const backorder = item.backorderQty ?? 0;
+  const backorder = shownBackorderQty(
+    item.backorderQty ?? 0,
+    legStatusKey === "NEW",
+  );
 
   if (legStatusKey === "CANCELLED") return "CANCELED";
   if (qty > 0 && received >= qty) return "SHIPPED";
@@ -349,7 +377,10 @@ export function toOrderDetail(wire: OrderDetailWire): OrderRecord {
         price: item.unitPrice ?? 0,
         qty: item.qty ?? 0,
         receivedQty: item.receivedQty ?? 0,
-        backorderQty: item.backorderQty ?? 0,
+        backorderQty: shownBackorderQty(
+          item.backorderQty ?? 0,
+          leg.statusKey === "NEW",
+        ),
         expectedInboundDate: item.expectedInboundDate ?? null,
         status: lineStatusOf(item, leg.statusKey, packed),
       });
