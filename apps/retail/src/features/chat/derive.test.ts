@@ -53,6 +53,7 @@ import {
   appendToDraft,
   keepActionOf,
   roomClosedOf,
+  roomSendLockedOf,
 } from "./derive";
 import type {
   ChatMessage,
@@ -1444,6 +1445,53 @@ describe("loop-12 S1-3 입력 보존과 닫힌 방", () => {
   });
   it("404 말풍선을 지웠어도 본 적 있음 → 닫힘", () => {
     expect(roomClosedOf([], true)).toBe(true);
+  });
+});
+
+describe("loop-12 12-N1 12-R1 닫힌 방 보내기 잠금 하나 — roomSendLockedOf", () => {
+  const flags = [true, false];
+  it.each(
+    flags.flatMap((sessionLost) =>
+      flags.flatMap((leaving) =>
+        flags.map((closed) => [sessionLost, leaving, closed] as const),
+      ),
+    ),
+  )(
+    "끊김 %s × 로그아웃 중 %s × 닫힌 방 %s → 하나라도 참이면 잠금",
+    (sessionLost, leaving, closed) => {
+      expect(roomSendLockedOf({ sessionLost, leaving, closed })).toBe(
+        sessionLost || leaving || closed,
+      );
+    },
+  );
+
+  /* D69: 기획 §4-2 5.4 "닫힌 방의 일시 실패 다시 보내기는 그대로"를 뒤집었다 */
+  it.each<SendFailure | null>(["server", "offline", "session", null])(
+    "닫힌 방(끊김 0, 로그아웃 0)의 일시 실패 %s → 다시 보내기 없음",
+    (failure) => {
+      const locked = roomSendLockedOf({
+        sessionLost: false,
+        leaving: false,
+        closed: true,
+      });
+      expect(canRetrySend(failure, locked)).toBe(false);
+    },
+  );
+
+  it("404 말풍선을 지운 뒤 같은 계정 재로그인(끊김 풀림) → 본 적 있음이라 여전히 잠금", () => {
+    const closed = roomClosedOf(
+      [{ status: "failed", failure: "server" }],
+      true,
+    );
+    expect(
+      roomSendLockedOf({ sessionLost: false, leaving: false, closed }),
+    ).toBe(true);
+    expect(
+      canRetrySend(
+        "server",
+        roomSendLockedOf({ sessionLost: false, leaving: false, closed }),
+      ),
+    ).toBe(false);
   });
 });
 

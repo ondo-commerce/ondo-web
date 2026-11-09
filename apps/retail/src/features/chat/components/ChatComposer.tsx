@@ -13,7 +13,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { CHATS_HREF, COMPOSER_TEXT, STOCK_TEXT } from "../constants";
-import { checkComposer } from "../derive";
+import { checkComposer, roomSendLockedOf } from "../derive";
 import { useRoomDraft } from "../useRoomDraft";
 
 /**
@@ -94,7 +94,8 @@ export const ChatComposer = memo(function ChatComposer({
   );
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const locked = sessionLost || leaving || closed;
+  /* 방이 칩, 카드, 다시 보내기에 쓰는 잠금과 같은 함수(12-N1 12-R1) */
+  const locked = roomSendLockedOf({ sessionLost, leaving, closed });
   const canSend = !check.blank && !check.over && !locked;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다

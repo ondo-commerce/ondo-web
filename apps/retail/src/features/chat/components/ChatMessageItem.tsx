@@ -133,6 +133,7 @@ export function PendingItem({
   onApproval,
 }: {
   item: PendingMessage;
+  /** 새 보내기 잠금(`roomSendLockedOf`). 끊김, 로그아웃 중에 더해 닫힌 방도 일시 실패 `다시 보내기`를 뺀다(D69) */
   sessionLost: boolean;
   onRetry: () => void;
   onRemove: () => void;

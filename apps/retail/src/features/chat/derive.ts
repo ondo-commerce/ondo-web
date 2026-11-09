@@ -1016,6 +1016,20 @@ export function canRetrySend(
   return !isPermanentFailure(failure) && !locked;
 }
 
+/**
+ * 이 방에서 새 보내기 요청을 막을까. 입력창, `재고 문의`, 되묻기 칩, 카드 담기, 보류 말풍선 `다시 보내기`가 모두 이
+ * 값 하나를 본다(12-N1 12-R1 — 경로마다 따로 읽으면 하나가 빠진다). 끊김, 로그아웃 중, 보내기 404로 닫힌 방 중 하나면 막는다.
+ * D69: 닫힌 방에선 재시도도 막음(서버가 이 방엔 못 보낸다고 했다). 기획 §4-2 5.4의 "일시 실패 재시도는 그대로"를 뒤집었다.
+ * 읽기(polling, 읽음, 이전 메시지)는 이 값을 보지 않는다 — 닫힌 방도 지난 대화는 보인다
+ */
+export function roomSendLockedOf(state: {
+  sessionLost: boolean;
+  leaving: boolean;
+  closed: boolean;
+}): boolean {
+  return state.sessionLost || state.leaving || state.closed;
+}
+
 /** 영구 실패 말풍선의 글 남기는 버튼(loop-12 §4-2 표). 일시 실패와 null은 없음 */
 export function keepActionOf(failure: SendFailure | null): KeepAction | null {
   switch (failure) {

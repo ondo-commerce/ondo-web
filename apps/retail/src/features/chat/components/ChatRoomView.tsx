@@ -36,6 +36,7 @@ import {
   askListingId,
   backorderChoiceInquiry,
   backorderGuardSequences,
+  canRetrySend,
   choiceInquiry,
   choiceSendFailed,
   confirmedReadOf,
@@ -53,6 +54,7 @@ import {
   replyLinkOf,
   returnLinkOf,
   roomClosedOf,
+  roomSendLockedOf,
   stockAskInquiry,
   toReplyExtra,
   toThreadItems,
@@ -256,6 +258,9 @@ function ChatRoom({
   const [seenNotFound, setSeenNotFound] = useState(false);
   const closed = roomClosedOf(pending, seenNotFound);
   if (closed && !seenNotFound) setSeenNotFound(true);
+  /* 새 보내기 요청 잠금 하나(12-N1 12-R1). 칩, 카드 담기, 다시 보내기가 이것만 본다. 입력창은 같은 함수로 같은 값을 낸다.
+     D69: 닫힌 방에선 재시도도 막음(서버가 이 방엔 못 보낸다고 했다). 읽기 쪽은 `locked`(끊김, 로그아웃 중)만 본다 */
+  const sendLocked = roomSendLockedOf({ sessionLost, leaving, closed });
   /* 영구 실패 말풍선이 입력창에 글을 넘기는 손잡이(loop-12 §4-2 3) */
   const appendRef = useRef<ComposerAppend>(null);
   const router = useRouter();
@@ -395,7 +400,7 @@ function ChatRoom({
                       wholesalerId={room.counterpart.id}
                       pending={shownPending}
                       now={now}
-                      sessionLost={locked}
+                      sessionLost={sendLocked}
                       documentNav={sessionLost}
                       addToCart={addToCart}
                       onChoose={sendChip}
@@ -409,8 +414,11 @@ function ChatRoom({
             <PendingItem
               key={item.clientMessageId}
               item={item}
-              sessionLost={locked}
-              onRetry={() => retry(item)}
+              sessionLost={sendLocked}
+              onRetry={() => {
+                /* 표시와 같은 판정으로 실행도 막는다 — 버튼이 그려진 뒤 잠금이 걸린 틈의 누름(12-R1) */
+                if (canRetrySend(item.failure, sendLocked)) retry(item);
+              }}
               onRemove={() => remove(item.clientMessageId)}
               onToComposer={() => {
                 appendRef.current?.(item.body, false);
@@ -572,7 +580,7 @@ function AutoReplyExtra({
   wholesalerId: number;
   pending: readonly PendingMessage[];
   now: number;
-  /** 새 요청 잠금(끊김 또는 로그아웃 중). 보기와 담기를 잠근다 */
+  /** 새 요청 잠금(끊김, 로그아웃 중, 보내기 404로 닫힌 방 — `roomSendLockedOf`). 보기와 담기를 잠근다 */
   sessionLost: boolean;
   /** 세션 끊김만. 링크를 전체 이동으로 바꾼다 — 방 머리 돌아가기와 같은 값이다 */
   documentNav: boolean;
