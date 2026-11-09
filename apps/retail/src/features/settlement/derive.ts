@@ -125,17 +125,19 @@ export function formatBasis(entry: LedgerEntry): string {
  * 계좌 셋을 한 덩어리로. **셋이 전부 있어야 계좌다** — 하나라도 비면 사장이 엉뚱한
  * 계좌로 보낸다(주문서 `toWholesaler`와 같은 규칙).
  *
- * `bank` 객체와 줄에 평평하게 실린 3필드를 **둘 다** 본다. 실측(2026-09-18)은 셋 다
- * `bank: null`이라 비null 모양이 미확정이고, 도매 스냅샷의 gateway 스키마는 평평한
- * 모양이다 — 어느 쪽이 와도 계좌 줄이 비지 않게 한다.
+ * 서버 모양은 `bank: {bankName, accountNo, holder} | null` 하나다(2026-11-09 실측,
+ * MUL-130, retail-api `PartnerSettlementResponse.Bank`). 예전엔 비null 실측이 없어
+ * 주문서 응답의 `bankAccountNo` 이름을 빌리고 평평한 3필드도 함께 봤는데, 그 이름이
+ * 서버와 달라 계좌가 있는데 "계좌 미등록"이 섰다(wire-01 W1-1). 그래서 평평한 칸은
+ * 더 보지 않는다. 빈 문자열을 걸러 내는 건 남긴다 — DB 칸은 NOT NULL 이지만 빈 값까지
+ * 막지는 않는다.
  */
 export function toBankAccount(wire: PartnerSettlementWire): BankAccount | null {
-  const nested = wire.bank ?? null;
-  const bankName = pickString(nested?.bankName ?? wire.bankName);
-  const accountNo = pickString(nested?.bankAccountNo ?? wire.bankAccountNo);
-  const holder = pickString(
-    nested?.bankAccountHolder ?? wire.bankAccountHolder,
-  );
+  const bank = wire.bank;
+  if (bank === null) return null;
+  const bankName = pickString(bank.bankName);
+  const accountNo = pickString(bank.accountNo);
+  const holder = pickString(bank.holder);
 
   return bankName !== null && accountNo !== null && holder !== null
     ? { bankName, accountNo, holder }
@@ -178,7 +180,7 @@ export function toPartnerSettlements(
     .sort((a, b) => b.balance - a.balance);
 }
 
-/** 원장 한 줄. `allocations`는 옮기지 않는다 — 항목 모양이 미실측이라 화면이 안 읽는다 */
+/** 원장 한 줄. `allocations`는 옮기지 않는다 — 화면 근거 칸은 `orderNo`·`unallocated`·`delta`로 충분하다 */
 export function toLedgerEntry(wire: LedgerEntryWire): LedgerEntry {
   return {
     id: String(wire.id),

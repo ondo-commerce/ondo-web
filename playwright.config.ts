@@ -26,6 +26,8 @@ export default defineConfig({
     {
       name: "wholesale",
       testMatch: /wholesale[/-].*\.spec\.ts/,
+      /* 실서버 spec 은 `playwright.live.config.ts`(`pnpm e2e:live`)만 돈다 — mock 서버로 돌면 실패한다 */
+      testIgnore: /wire-01-live-server\//,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3100",
@@ -38,7 +40,7 @@ export default defineConfig({
       /* 가짜 API가 있어야 도는 폴더는 별도 설정(`playwright.stub.config.ts`,
          `pnpm e2e:stub`)이 맡는다. 여기 넣으면 dev API를 보는 이 서버로 돌아 실패한다 */
       testIgnore:
-        /side-02\/retail\/|loop-05a-retail-chat\/|loop-06b-retail-notify\/|loop-08-chat-polish\/[^/]*retail|loop-08c-chat-history\/[^/]*retail|loop-08d-chat-rest\/[^/]*retail|loop-08e-chat-rest\/[^/]*retail|loop-08f-chat-rest\/[^/]*retail|loop-08g-chat-rest\/[^/]*retail|loop-08i-chat-packing\/[^/]*retail|loop-08j-backorder-packing\/[^/]*retail|loop-09-form-back-guard\/[^/]*retail|loop-10-save-lock-notice\/[^/]*retail|loop-11-other-tab-notice\/[^/]*retail|loop-08k-order-packing-backorder\/|(loop-05b-stock-reply|loop-06-backorder-reply|loop-07-receivable-reply)\/[^/]*retail/,
+        /side-02\/retail\/|loop-05a-retail-chat\/|loop-06b-retail-notify\/|loop-08-chat-polish\/[^/]*retail|loop-08c-chat-history\/[^/]*retail|loop-08d-chat-rest\/[^/]*retail|loop-08e-chat-rest\/[^/]*retail|loop-08f-chat-rest\/[^/]*retail|loop-08g-chat-rest\/[^/]*retail|loop-08i-chat-packing\/[^/]*retail|loop-08j-backorder-packing\/[^/]*retail|loop-09-form-back-guard\/[^/]*retail|loop-10-save-lock-notice\/[^/]*retail|loop-11-other-tab-notice\/[^/]*retail|loop-08k-order-packing-backorder\/|wire-01-live-server\/|(loop-05b-stock-reply|loop-06-backorder-reply|loop-07-receivable-reply)\/[^/]*retail/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3101",

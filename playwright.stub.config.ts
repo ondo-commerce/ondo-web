@@ -37,6 +37,8 @@ export default defineConfig({
          loop-05b, loop-06, loop-07은 소매 spec(이름에 `retail`)만 — 같은 폴더의 도매 spec(#289, #299, #302)은 기본 설정이 돈다 */
       testMatch:
         /(side-02\/retail\/.*|loop-05a-retail-chat\/(retail|qa)-.*|(loop-05b-stock-reply|loop-06-backorder-reply|loop-07-receivable-reply|loop-06b-retail-notify|loop-08-chat-polish|loop-08c-chat-history|loop-08d-chat-rest|loop-08e-chat-rest|loop-08f-chat-rest|loop-08g-chat-rest|loop-08i-chat-packing)\/[^/]*retail[^/]*)\.spec\.ts$/,
+      /* 실서버 spec 은 `playwright.live.config.ts`만 돈다 */
+      testIgnore: /wire-01-live-server\//,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://localhost:3101",
