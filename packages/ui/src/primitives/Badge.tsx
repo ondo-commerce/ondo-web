@@ -11,7 +11,8 @@ const badge = cva(
   {
     variants: {
       tone: {
-        active: "bg-card border-input text-primary",
+        // border-input은 색만 정하고 폭이 없어 테두리가 안 그려졌다. 폭 클래스 border를 같이 둔다(#273)
+        active: "bg-card border border-input text-primary",
         done: "bg-secondary text-muted-foreground",
       },
     },

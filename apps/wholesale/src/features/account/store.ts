@@ -8,7 +8,13 @@ import {
   parseSessionBroadcast,
   otherTabActionOf,
 } from "./derive";
-import type { Account, AccountStatus, BankAccount } from "./types";
+import { noteSessionEnd } from "./loginNotice";
+import type {
+  Account,
+  AccountStatus,
+  BankAccount,
+  SessionEndReason,
+} from "./types";
 
 /**
  * 로그인 세션 흉내. **서버도 쿠키도 없다** — API가 붙으면 이 파일만 갈아 끼운다.
@@ -293,12 +299,17 @@ export function signInWithStatus(
  * 등록한 계좌가 사라지면 사장은 자기가 한 일이 남지 않는 앱이라고 배운다.
  */
 export function signOut(): void {
-  endSession();
+  endSession("self");
   broadcastSession(null);
 }
 
-/** 이 탭의 세션을 닫는다(정리 포함). 다른 탭에 알리지는 않는다 — 다른 탭에서 온 알림을 받아 닫을 때도 쓴다 */
-function endSession(): void {
+/**
+ * 이 탭의 세션을 닫는다(정리 포함). 다른 탭에 알리지는 않는다 — 다른 탭에서 온 알림을 받아 닫을 때도 쓴다.
+ * `reason`은 로그인 화면이 "다른 탭 때문"이라고 말할지 정한다(#410)
+ */
+function endSession(reason: SessionEndReason): void {
+  /* 세션을 지우기 **전에** 적는다. 지우면 가드가 `/login`으로 옮기고, 그 뒤엔 방송 순간의 주소를 잃는다 */
+  noteSessionEnd(reason, window.location.pathname);
   const current = ensureLoaded();
   const next: SessionState = { ...current, loaded: true, email: null };
   /* 세션을 닫기 **전에** 지운다. 닫으면 가드가 ERP 화면을 내리고, 내려가는 입력창이 마지막 글을 저장한다 —
@@ -371,7 +382,7 @@ export function watchOtherTabSessions(onRefresh: () => void): () => void {
     const message = parseSessionBroadcast(event.data);
     if (message === null) return;
     const action = otherTabActionOf(ensureLoaded().email, message.email);
-    if (action === "end") endSession();
+    if (action === "end") endSession("otherTab");
     else if (action === "refresh") onRefresh();
   };
   target.addEventListener("message", onMessage);
