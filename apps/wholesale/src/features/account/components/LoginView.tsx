@@ -1,11 +1,12 @@
 "use client";
 
 import { Button, cn, FormField, Input, Notice } from "@ondo/ui";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, Info } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { announceArrival } from "../arrival";
+import { takeLoginNotice } from "../loginNotice";
 import {
   ACCOUNT_PATH,
   ARRIVAL_MESSAGE,
@@ -48,6 +49,20 @@ export function LoginView() {
   const [errors, setErrors] = useState<FieldErrors<LoginField>>({});
   /* 폼 **위** 한 줄. 어느 칸이 틀렸는지 말하지 않는 실패는 칸에 붙일 수 없다 */
   const [banner, setBanner] = useState<string | null>(null);
+  /* 다른 탭 때문에 이 탭이 여기로 넘어왔다는 한 줄(#410). 첫 렌더는 늘 null — 빈 낭독 영역이 먼저
+     붙어야 글자가 들어갈 때 변화로 읽힌다(`arrival.ts`와 같은 이유) */
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /* 꺼내기는 타이머 안에서 한다. Strict Mode는 effect를 두 번 돌리는데 첫 타이머는 cleanup이 지우고
+     두 번째만 꺼낸다 — 렌더 중이나 effect 본문에서 꺼내면 첫 번째가 가져가고 두 번째는 빈손이다.
+     `requestAnimationFrame`은 안 보이는 탭에서 안 돌아서 쓰지 않는다(`arrival.ts`) */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const taken = takeLoginNotice();
+      if (taken !== null) setNotice(taken);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const setField = (field: LoginField, next: string) => {
     const nextValues = { ...values, [field]: next };
@@ -79,6 +94,9 @@ export function LoginView() {
     } catch (error) {
       /* 실패해도 입력값을 지우지 않는다. 오타 하나 때문에 이메일을 다시 치게
          만들면 그게 곧 다음 실패다 */
+      /* 실패 배너가 뜨면 안내는 내리고 다시 안 띄운다. 같은 자리에 두 줄이면 어느 쪽도 안 읽힌다
+         (`FormMessageLine` 우선순위와 같은 이유). 지금 고칠 건 실패 쪽이다 */
+      setNotice(null);
       setBanner(
         isCredentialFailure(error)
           ? LOGIN_FAILED_MESSAGE
@@ -107,6 +125,21 @@ export function LoginView() {
         {/* noValidate: 브라우저 기본 말풍선이 뜨면 우리 문구가 가려지고 포커스도
             우리가 옮기지 못한다. required 자체는 남겨 화면 낭독기에 전달한다 */}
         <form onSubmit={submit} noValidate>
+          {/* 래퍼는 늘 그린다 — 안내가 없을 때도 빈 낭독 영역으로 먼저 붙어 있어야 글자가 들어갈 때 읽힌다.
+              `Notice`엔 기본 role이 없어 바깥이 `status`를 진다. `10:` 접두어는 기획이 loop-10 문서라서다 */}
+          <div role="status" data-ac="10:S1-2">
+            {notice ? (
+              <AuthSection>
+                <Notice>
+                  <span className="flex items-start gap-2">
+                    <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+                    <span>{notice}</span>
+                  </span>
+                </Notice>
+              </AuthSection>
+            ) : null}
+          </div>
+
           {banner ? (
             <AuthSection>
               <Notice role="alert">
