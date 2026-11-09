@@ -205,6 +205,40 @@ test.describe("S1-8 [403 승인 링크 본문 보존]", () => {
   });
 });
 
+test.describe("12-R2 [승인 상태 보기 한 번]", () => {
+  test("같은 틱 두 번 + 한 프레임 뒤 한 번 더 누름 → 버튼 잠김, 초안엔 거절된 글 한 번 → 승인 화면 다녀와도 그대로", async ({
+    page,
+  }) => {
+    /* 승인 화면 요청은 MSW 서비스 워커를 지나 `page.route`로 붙잡을 수 없다. 대신 이동(네트워크 왕복)이 끝날 수 없는
+       같은 틱과 다음 프레임 안에서 누름 셋을 몰아 "이동이 끝나기 전"을 만든다 */
+    const urls: string[] = [];
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) urls.push(new URL(frame.url()).pathname);
+    });
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    const bubble = await failOnce(page, 403, "두 번 누를 403 말");
+    await composer(page).fill("남길 초안");
+    const target = button(bubble, "승인 상태 보기");
+    /* 같은 틱 두 번 — React가 disabled를 그리기 전 두 번째 누름은 ref만 막는다. 한 프레임 뒤엔 disabled가 그려져 있다 */
+    const seen = await target.evaluate(async (el: HTMLButtonElement) => {
+      el.click();
+      el.click();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const disabled = el.disabled;
+      el.click();
+      return disabled;
+    });
+    expect(seen, "한 프레임 뒤 버튼 잠김").toBe(true);
+    expect(await storedDraft(page, BOMBOM, ROOM_1)).toBe(
+      "남길 초안\n두 번 누를 403 말",
+    );
+    await expect.poll(() => urls).toContain("/approval");
+    await page.goto(`/chats/${ROOM_1}?from=/chats`);
+    await expect(composer(page)).toHaveValue("남길 초안\n두 번 누를 403 말");
+  });
+});
+
 test.describe("S1-9 [404 뒤 방 화면]", () => {
   test("늦은 404 → 읽기 전용, 쓴 글 그대로, 안내 줄 → 복사 → 지워도 닫힌 채 → 대화 목록, 초안 남음, POST 1", async ({
     page,

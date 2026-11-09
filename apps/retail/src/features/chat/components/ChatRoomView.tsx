@@ -264,6 +264,10 @@ function ChatRoom({
   /* 영구 실패 말풍선이 입력창에 글을 넘기는 손잡이(loop-12 §4-2 3) */
   const appendRef = useRef<ComposerAppend>(null);
   const router = useRouter();
+  /* `승인 상태 보기`는 한 번만(12-R2). 이동이 끝나기 전 두 번째 누름이 같은 글을 초안에 또 붙였다. ref가 같은 틱의
+     연속 누름을 막고, state가 버튼을 잠가 누를 수 없다는 것을 보인다. 이 방 화면은 이동으로 내려가 다시 풀 일이 없다 */
+  const approvalFlight = useRef(false);
+  const [toApproval, setToApproval] = useState(false);
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
   /* 이전 메시지(loop-08d S3), 바닥 따라가기, `새 메시지 N개`, 리사이즈 때 바닥 지키기(S4)를 이 훅이 맡는다 */
@@ -424,7 +428,11 @@ function ChatRoom({
                 appendRef.current?.(item.body, false);
                 remove(item.clientMessageId);
               }}
+              approvalBusy={toApproval}
               onApproval={() => {
+                if (approvalFlight.current) return;
+                approvalFlight.current = true;
+                setToApproval(true);
                 /* 저장소에 바로 쓰고 이동한다. 입력창을 거쳐야 언마운트 저장이 붙인 값을 덮지 않는다(§4-1 9).
                    `/approval`은 `(account)` 묶음이라 셸과 이 말풍선은 내려가고 글은 그 방 초안에 남는다 */
                 appendRef.current?.(item.body, true);

@@ -131,6 +131,7 @@ export function PendingItem({
   onRemove,
   onToComposer,
   onApproval,
+  approvalBusy,
 }: {
   item: PendingMessage;
   /** 새 보내기 잠금(`roomSendLockedOf`). 끊김, 로그아웃 중에 더해 닫힌 방도 일시 실패 `다시 보내기`를 뺀다(D69) */
@@ -141,6 +142,8 @@ export function PendingItem({
   onToComposer: () => void;
   /** 403 `승인 상태 보기` — 글을 그 방 초안에 저장한 뒤 승인 화면으로 */
   onApproval: () => void;
+  /** 승인 화면으로 가는 중. 버튼을 잠근다 — 두 번째 누름이 글을 또 붙이지 않게(12-R2) */
+  approvalBusy: boolean;
 }) {
   const sending = item.status === "sending";
   const keep = keepActionOf(item.failure);
@@ -194,6 +197,7 @@ export function PendingItem({
               variant="link"
               size="sm"
               className={FAILED_LINK}
+              disabled={approvalBusy}
               onClick={onApproval}
               data-ac="12:S1-6 12:S1-8"
             >
