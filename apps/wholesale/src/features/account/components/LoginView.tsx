@@ -53,8 +53,11 @@ export function LoginView() {
      붙어야 글자가 들어갈 때 변화로 읽힌다(`arrival.ts`와 같은 이유) */
   const [notice, setNotice] = useState<string | null>(null);
 
-  /* 꺼내기는 타이머 안에서 한다. Strict Mode는 effect를 두 번 돌리는데 첫 타이머는 cleanup이 지우고
-     두 번째만 꺼낸다 — 렌더 중이나 effect 본문에서 꺼내면 첫 번째가 가져가고 두 번째는 빈손이다.
+  /* 꺼내기는 타이머 안에서 한다. 빈 낭독 영역이 붙은 커밋과 글자가 들어가는 커밋 사이에 작업 하나를
+     끼워 넣어, 낭독기가 둘을 한 번의 변화로 묶지 않게 하려는 것이다(`arrival.ts`와 같은 이유).
+     Strict Mode 때문은 아니다 — 가짜 언마운트는 state를 지우지 않아 effect 본문에서 꺼내도 첫 번째
+     `setNotice`가 남고 두 번째는 빈손이라 안내는 1개다(loop-11 변이 m4로 확인). 타이머일 때는
+     첫 타이머를 cleanup이 지우므로 꺼내기도 한 번뿐이다.
      `requestAnimationFrame`은 안 보이는 탭에서 안 돌아서 쓰지 않는다(`arrival.ts`) */
   useEffect(() => {
     const timer = setTimeout(() => {
