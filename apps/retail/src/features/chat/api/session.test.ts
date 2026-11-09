@@ -70,6 +70,27 @@ describe("같은 소매처 갱신(refreshChatSession)을 넘긴 요청(Codex 메
     ).rejects.toBe(serverError);
   });
 
+  it.each<[number, string, string]>([
+    [404, "RESOURCE_NOT_FOUND", "notFound"],
+    [409, "IDEMPOTENCY_KEY_REUSED", "keyReused"],
+  ])(
+    "loop-12 S1-4 늦은 영구 거절 %i %s는 그대로 던지고, 그 오류의 sendOutcomeOf → %s",
+    async (status, code, expected) => {
+      const qc = new QueryClient();
+      const rejected = new ApiError({ status, code, message: "x" });
+      const error: unknown = await guardSession(
+        qc,
+        lateRun(
+          () => refreshChatSession(qc),
+          () => Promise.reject(rejected),
+        ),
+      ).catch((e: unknown) => e);
+      expect(error).toBe(rejected);
+      expect(sendOutcomeOf(error, false)).toBe(expected);
+      expect(isSessionLost(qc)).toBe(false);
+    },
+  );
+
   it("401은 버리고 끊김 칸을 안 켠다 — 새 세션을 잠그지 않는다", async () => {
     const qc = new QueryClient();
     await expect(
@@ -388,13 +409,22 @@ describe("S2-13 보내기 결과 갈래 sendOutcomeOf", () => {
     expect(sendOutcomeOf(new ChatSessionLostError(), false)).toBe("session");
   });
 
-  it("ApiError 500, 403, 404 → server", () => {
+  it("ApiError 500, 403 FORBIDDEN → server, 영구 404 403(loop-12 S1-4) → 영구 종류", () => {
     expect(sendOutcomeOf(serverError(500, "INTERNAL_ERROR"), false)).toBe(
       "server",
     );
     expect(sendOutcomeOf(serverError(403, "FORBIDDEN"), false)).toBe("server");
     expect(sendOutcomeOf(serverError(404, "RESOURCE_NOT_FOUND"), false)).toBe(
-      "server",
+      "notFound",
+    );
+    expect(sendOutcomeOf(serverError(403, "ACCOUNT_NOT_APPROVED"), false)).toBe(
+      "notApproved",
+    );
+  });
+
+  it("loop-12 S1-4 계정 바뀜 + 403 ACCOUNT_NOT_APPROVED → drop(영구여도 다음 소매처 화면에 안 남긴다)", () => {
+    expect(sendOutcomeOf(serverError(403, "ACCOUNT_NOT_APPROVED"), true)).toBe(
+      "drop",
     );
   });
 

@@ -85,8 +85,8 @@ export const LOGIN_PATH = "/login";
 
 /**
  * 계약 409(같은 키에 다른 본문). 소매 `shared/api/errorCodes.ts`에 없는 채팅 전용 코드라 feature에 둔다
- * (01-plan §5-1). 화면 반응은 500과 같다 — 같은 말풍선의 다시 보내기는 늘 같은 본문이라 정상 흐름에선
- * 오지 않고, 오면 서버와 어긋난 것이라 사장이 지우고 다시 쓰는 수밖에 없다.
+ * (01-plan §5-1). 같은 키로 다시 보내도 같은 409라 영구 실패다(loop-12 D68) — `다시 보내기`를 빼고 `입력창으로`가
+ * 글을 새 키로 보낼 수 있게 옮긴다. 08e §4-1 규칙의 영구 실패 예외(loop-12 D68).
  */
 export const IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED";
 
@@ -205,6 +205,9 @@ export const COMPOSER_TEXT = {
   sessionLost: SESSION_LOST_TEXT,
   /** 오류가 아니라 안내라 빨강을 쓰지 않는다(도매 디자인 결정 12) */
   photo: "사진은 아직 보낼 수 없어요",
+  /** 보내기 404로 닫힌 방(loop-12 Q3). 끊김 안내보다 앞선다 — 재로그인해도 그 방엔 못 보낸다 */
+  closed: "이 대화방에는 더 보낼 수 없어요. 다른 대화는 목록에서 열 수 있어요",
+  closedLink: "대화 목록",
 } as const;
 
 /**
@@ -231,6 +234,17 @@ export const PENDING_TEXT = {
   retry: "다시 보내기",
   remove: "지우기",
   srFailed: "보내지 못함",
+  /* 영구 거절 넷(loop-12 Q1 표). 서버 `errors[].message`는 쓰지 않는다 */
+  notApproved: "계정이 승인되면 보낼 수 있어요",
+  notFound: "이 대화방에는 보낼 수 없어요. 글은 복사해 갈 수 있어요",
+  keyReused:
+    "이 글은 그대로 다시 보낼 수 없어요. 입력창으로 옮겨 보낼 수 있어요",
+  invalid: "서버가 이 글을 받지 않았어요. 입력창으로 옮겨 확인할 수 있어요",
+  approval: "승인 상태 보기",
+  copy: "복사하기",
+  copied: "복사했어요",
+  copyFailed: "복사 못 했어요",
+  toComposer: "입력창으로",
 } as const;
 
 /* ------------------------------------------------------------------------

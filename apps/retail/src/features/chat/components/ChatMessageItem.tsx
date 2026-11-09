@@ -158,7 +158,7 @@ export function PendingItem({
           {/* 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
               두 링크는 ≤40rem에서 높이 44 — 소매 다른 터치 대상(문의하기, 방 머리 링크, 칩)과 같은 손가락 기준(08f Q6 ①).
               글자는 12px 그대로, 상자만 키워 가운데 둔다. 넓은 화면은 예전 글자 높이(16) */}
-          {!canRetrySend(sessionLost) ? null : (
+          {!canRetrySend(item.failure, sessionLost) ? null : (
             <Button
               type="button"
               variant="link"
