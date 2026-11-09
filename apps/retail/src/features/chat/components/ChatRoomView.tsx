@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatComposer } from "./ChatComposer";
+import { ChatComposer, type ComposerAppend } from "./ChatComposer";
 import { ChatHistorySlot } from "./ChatHistorySlot";
 import { ChatMessageItem, PendingItem } from "./ChatMessageItem";
 import { BackorderReplyCard } from "./BackorderReplyCard";
@@ -250,6 +250,9 @@ function ChatRoom({
   /* 보류 말풍선은 셸 수명(loop-08e §4-2 7) — 방을 떠났다 와도 남는다. 이 방 몫만 읽는다 */
   const { pending, send, retry, remove } = useRoomOutbox(roomId);
   const shownPending = visiblePending(pending, thread.messages);
+  /* 영구 실패 말풍선이 입력창에 글을 넘기는 손잡이(loop-12 §4-2 3) */
+  const appendRef = useRef<ComposerAppend>(null);
+  const router = useRouter();
   const pendingIds = new Set(pending.map((p) => p.clientMessageId));
 
   /* 이전 메시지(loop-08d S3), 바닥 따라가기, `새 메시지 N개`, 리사이즈 때 바닥 지키기(S4)를 이 훅이 맡는다 */
@@ -403,6 +406,16 @@ function ChatRoom({
               sessionLost={locked}
               onRetry={() => retry(item)}
               onRemove={() => remove(item.clientMessageId)}
+              onToComposer={() => {
+                appendRef.current?.(item.body, false);
+                remove(item.clientMessageId);
+              }}
+              onApproval={() => {
+                /* 저장소에 바로 쓰고 이동한다. 입력창을 거쳐야 언마운트 저장이 붙인 값을 덮지 않는다(§4-1 9).
+                   `/approval`은 `(account)` 묶음이라 셸과 이 말풍선은 내려가고 글은 그 방 초안에 남는다 */
+                appendRef.current?.(item.body, true);
+                router.push(APPROVAL_PATH);
+              }}
             />
           ))}
         </div>
@@ -437,6 +450,7 @@ function ChatRoom({
         onSend={send}
         askBusy={askListing === null ? null : askChipBusy(shownPending)}
         onAsk={onAsk}
+        appendRef={appendRef}
       />
 
       {/* 알림 통로는 이것 하나(도매 디자인 결정 20). log는 off — 내 말, 한 번에 받은 50개까지 읽지 않게.

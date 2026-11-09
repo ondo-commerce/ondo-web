@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DRAFT_SAVE_DELAY_MS } from "./constants";
+import { appendToDraft } from "./derive";
 import { chatDrafts } from "./draftStore";
 
 /**
@@ -53,6 +54,19 @@ export function useRoomDraft(key: string | null) {
     [cancelTimer, flush],
   );
 
+  /**
+   * 영구 실패 글을 입력창 글 뒤에 붙인다(loop-12 §4-2 3, `appendToDraft`). 지금 글은 `latest`에서 읽는다 — 부르는 곳이
+   * 말풍선 버튼이라 입력창 렌더의 클로저보다 새 값이어야 한다. `saveNow`는 붙인 직후 이동하는 갈래(403 승인 링크)용이다.
+   * 300ms를 기다리지 않고 바로 쓴다 — 쓴 뒤 "안 쓴 변경"이 내려가 언마운트 저장이 같은 값을 다시 쓰거나 덮지 않는다
+   */
+  const append = useCallback(
+    (body: string, saveNow: boolean) => {
+      setText(appendToDraft(latest.current, body));
+      if (saveNow) flush();
+    },
+    [flush, setText],
+  );
+
   const discard = useCallback(() => {
     cancelTimer();
     dirty.current = false;
@@ -74,5 +88,5 @@ export function useRoomDraft(key: string | null) {
     };
   }, [flush]);
 
-  return { text, setText, discard };
+  return { text, setText, append, discard };
 }
