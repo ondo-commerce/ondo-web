@@ -43,3 +43,4 @@
 - Confluence(Haiku): 18:22 → 18:27 회차 보고 loop-11 id 3538945, 결정 로그 589825 v20 → v21(D67). 기획 페이지 없음(기획 stage 없음)
 - side #273 끝: 18:18 → 18:24 커밋 493e4ab(`Badge.tsx` active에 `border` 한 클래스 + 왜 주석), 사용처 5곳 브라우저 확인(글자 잘림 0, 줄 높이 변화 0, 소매 outline은 원래 border 있어 변화 0), 기존 spec 영향 0, unit 생략(packages/ui vitest 환경 없음). 4종 통과(서버 끈 뒤). PR #415 CI 2m45s → squash dev f316195. 이슈 #273 닫힘. 위반 자기보고 1(scratchpad 스크립트 `sed -i`)
 - 닫음: 18:25 센티널 삭제, 열린 이슈 8(#376 BE, #280 BE, #279 dev 서버, #270 선택, #212 #196 BE, #208 PM, #173 문안 — **FE 혼자 할 수 있는 것 0**), 열린 PR 0, 작업 트리 clean. 팀 현황·인수인계·진행판 재발행(아래). Confluence 인수인계 3145900엔 #273만 미반영(다음 동기화 때)
+- 하네스 레포 커밋(#416, 증거 보강 계획 1-2): 18:30 → 18:55 브랜치 chore-416-harness-in-repo(fde15e4), PR #417. docs 브랜치 PR은 분류기가 3번 막아 #417 base를 dev로 바꿔 docs 커밋 2개를 같이 실음(squash 뒤 CONFLICTING → origin/dev 합침, playwright.config.ts는 dev 판, 트리 diff는 .claude·.gitignore·CLAUDE.md·README·docs/13만). 홈 ↔ 레포 에이전트 파일 이중화 주의
