@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   installLoginFailure,
+  LOGIN_FAILED,
   loginFailedBanner,
   loginHeading,
   otherTabNotice,
@@ -65,6 +66,8 @@ test("S1-2 S1-5 탭 2 다른 계정 로그인 → 탭 1 로그인 화면 안내 
   await page.getByLabel("비밀번호").fill(WRONG_PASSWORD);
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(loginFailedBanner(page)).toHaveCount(1);
+  // 부분 일치가 아니라 글자 그대로 — 실패 배너에 다른 문장이 붙어도 잡는다
+  await expect(loginFailedBanner(page)).toHaveText(LOGIN_FAILED);
   await expect(otherTabNotice(page)).toHaveCount(0);
   await page.getByLabel("이메일").fill(OTHER);
   await page.clock.runFor(500);
@@ -77,6 +80,28 @@ test("S1-2 S1-5 탭 2 다른 계정 로그인 → 탭 1 로그인 화면 안내 
   await page.clock.runFor(500);
   await expect(otherTabNotice(page)).toHaveCount(0);
   expect(dialogs.count).toBe(0);
+});
+
+test("S1-2 끝 안내 1인 채로 바로 새로고침 → 0", async ({ page }) => {
+  // 위 test의 끝 새로고침은 실패 배너가 이미 안내를 내린 뒤라, 새로고침이 안내를 없애는지는 여기서 따로 본다
+  await page.goto("/login");
+  await signIn(page, ME);
+  await page.goto("/products/new");
+  await nameInput(page).fill("새로고침 안내 니트");
+  await listenSessionBroadcast(page);
+
+  const tab = await openSecondTab(page);
+  await signIn(tab, OTHER);
+  await page.bringToFront();
+  await waitSessionBroadcast(page);
+  await page.waitForURL(/\/login$/);
+  await expect(otherTabNotice(page)).toHaveCount(1);
+
+  await page.reload();
+  await expect(loginHeading(page)).toBeVisible();
+  await page.clock.install({ time: T0 });
+  await page.clock.runFor(500);
+  await expect(otherTabNotice(page)).toHaveCount(0);
 });
 
 test("S1-3 탭 2 같은 계정 로그인 뒤 로그아웃 → 탭 1 로그인 화면 안내 1", async ({
@@ -174,6 +199,49 @@ test("S1-7 이미 로그인 화면인 탭: 계정 없음 + 다른 계정 방송 
         true,
     ),
   ).toBe(true);
+  await page.clock.runFor(500);
+  await expect(otherTabNotice(page)).toHaveCount(0);
+});
+
+test("S1-7 이미 로그인 화면인 탭: 계정 없음 + 로그아웃 방송 0, 옛 계정 + 로그아웃 방송 0과 세션 닫힘, 다시 마운트해도 0", async ({
+  page,
+}) => {
+  // ① 로컬 계정 없음 + 탭 2 로그인 뒤 로그아웃 방송
+  await page.goto("/login");
+  await expect(loginHeading(page)).toBeVisible();
+  await listenSessionBroadcast(page);
+  const tab = await openSecondTab(page);
+  await signIn(tab, OTHER);
+  await signOut(tab);
+  await page.bringToFront();
+  await waitSessionBroadcast(page, 2);
+  await page.clock.install({ time: T0 });
+  await page.clock.runFor(500);
+  await expect(otherTabNotice(page)).toHaveCount(0);
+  expect(await sessionEmail(page)).toBeNull();
+
+  // ③ 옛 계정 ME가 남은 로그인 화면 + 탭 2 로그아웃 방송 → 세션은 닫히지만 안내 0
+  await signIn(page, ME);
+  await page.goto("/login");
+  await expect(loginHeading(page)).toBeVisible();
+  expect(await sessionEmail(page)).toBe(ME);
+  await listenSessionBroadcast(page);
+  await tab.goto("/login");
+  await signIn(tab, ME);
+  await signOut(tab);
+  await page.bringToFront();
+  await waitSessionBroadcast(page, 2);
+  await page.clock.runFor(500);
+  expect(new URL(page.url()).pathname).toBe("/login");
+  expect(await sessionEmail(page)).toBeNull();
+  await expect(otherTabNotice(page)).toHaveCount(0);
+
+  // ③ 뒤: 앱 안 링크로 다시 마운트해도 0(보관에 남은 게 없어야 한다)
+  await page.getByRole("link", { name: "회원가입", exact: true }).click();
+  await page.waitForURL(/\/signup$/);
+  await page.getByRole("link", { name: "로그인", exact: true }).click();
+  await page.waitForURL(/\/login$/);
+  await expect(loginHeading(page)).toBeVisible();
   await page.clock.runFor(500);
   await expect(otherTabNotice(page)).toHaveCount(0);
 });
