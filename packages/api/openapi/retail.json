@@ -42,6 +42,29 @@
         },
         "type": "object"
       },
+      "Allocation": {
+        "description": "입금 하나가 붙은 주문 하나",
+        "properties": {
+          "amount": {
+            "description": "이 주문에 붙은 금액",
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "소매 주문번호. 도매 화면에서 직접 넣은 주문처럼 소매에서 못 찾으면 null(줄은 버리지 않는다)",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "orderNo"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
       "ApiResponseAddCartItemResponse": {
         "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
         "properties": {
@@ -134,6 +157,40 @@
           }
         },
         "type": "object"
+      },
+      "ApiResponseListLedgerEntryResponse": {
+        "description": "성공 응답 봉투. 원장 줄 목록",
+        "properties": {
+          "data": {
+            "description": "오래된 순. 거래한 적 없는 도매처면 빈 배열",
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
+      "ApiResponseListPartnerSettlementResponse": {
+        "description": "성공 응답 봉투. 도매처별 미수 목록",
+        "properties": {
+          "data": {
+            "description": "거래한 적 있는 도매처 전부, 빚이 큰 순",
+            "items": {
+              "$ref": "#/components/schemas/PartnerSettlementResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
       },
       "ApiResponseListingDetailResponse": {
         "description": "성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.\n\n <pre>{ \"data\": { ... } }</pre>",
@@ -278,6 +335,30 @@
         "required": [
           "kind",
           "wholesalerId"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
+      "Bank": {
+        "description": "도매처 입금 계좌(주계좌). 셋 다 도매 bank_account 테이블의 NOT NULL 칸이라 객체가 오면 셋 다 있다. 미등록은 객체 자체가 null 이다(PartnerSettlementResponse.bank)",
+        "properties": {
+          "accountNo": {
+            "description": "계좌번호. 입력 그대로(- 포함)",
+            "type": "string"
+          },
+          "bankName": {
+            "description": "은행 이름",
+            "type": "string"
+          },
+          "holder": {
+            "description": "예금주",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountNo",
+          "bankName",
+          "holder"
         ],
         "type": "object",
         "x-ondo-draft": true
@@ -1519,6 +1600,95 @@
         },
         "type": "object"
       },
+      "LedgerEntryResponse": {
+        "description": "거래 원장 한 줄. 오래된 순으로 내려간다. delta 는 출고 +, 입금 -. 취소된 입금은 안 나온다.\n\n출고 줄은 statementNo, orderNo 가 있고 method, allocations, unallocated 가 null. 입금 줄은 그 반대로 statementNo, orderNo 가 null 이고 allocations 는 빈 배열이라도 배열이다(SettlementService.toResponse). 키는 늘 다 온다(null 로).",
+        "properties": {
+          "allocations": {
+            "description": "입금 줄만. 이 입금이 붙은 주문들(여럿일 수 있다). 출고 줄은 null",
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Allocation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "description": "출고일 또는 입금일",
+            "format": "date",
+            "type": "string"
+          },
+          "delta": {
+            "description": "출고 +, 입금 -",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "description": "도매 원장 줄 id",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "SHIPMENT(출고) 또는 PAYMENT(입금). 서버가 SHIPMENT 가 아닌 줄을 전부 PAYMENT 로 내보내 둘 말고는 안 온다",
+            "enum": [
+              "SHIPMENT",
+              "PAYMENT"
+            ],
+            "type": "string"
+          },
+          "method": {
+            "description": "입금 줄만. CASH 또는 TRANSFER(도매 BANK_TRANSFER 를 서버가 바꿔 준다). 출고 줄은 null",
+            "enum": [
+              "CASH",
+              "TRANSFER",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderNo": {
+            "description": "출고 줄만. 출고된 주문의 소매 주문번호. 소매에서 못 찾으면 null, 입금 줄도 null",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statementNo": {
+            "description": "출고 줄만. 장끼 번호 JG-20260812-004. 입금 줄은 null",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unallocated": {
+            "description": "입금 줄만. 아직 어느 주문에도 안 붙은 돈. 출고 줄은 null",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "allocations",
+          "date",
+          "delta",
+          "id",
+          "kind",
+          "method",
+          "orderNo",
+          "statementNo",
+          "unallocated"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
       "ListingColor": {
         "properties": {
           "groupName": {
@@ -2113,6 +2283,34 @@
         },
         "type": "object"
       },
+      "Overdue": {
+        "description": "연체. 출고마다 기한(출고일 + 외상기간, 당일은 아님)이 지났는데 남은 돈. 연체가 없으면 셋 다 0(객체는 늘 온다)",
+        "properties": {
+          "amount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "count": {
+            "description": "연체가 걸린 주문 수",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxDays": {
+            "description": "가장 오래 밀린 것의 D+n. 없으면 0",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "amount",
+          "count",
+          "maxDays"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
+      },
       "PageResponseBackorderResponse": {
         "description": "목록 응답. data 옆에 meta 가 붙는다.\n\n <pre>{ \"data\": [...], \"meta\": { page, size, totalElements, totalPages, hasNext } }</pre>",
         "properties": {
@@ -2163,6 +2361,63 @@
           }
         },
         "type": "object"
+      },
+      "PartnerSettlementResponse": {
+        "description": "도매처별 미수 한 줄. 잔액, 연체는 전부 도매 원장에서 계산된 값이다. 부호는 플러스 = 갚을 돈, 마이너스 = 선수금. 키는 늘 다 온다(null 로)",
+        "properties": {
+          "balance": {
+            "description": "미수 잔액. 음수면 선수금",
+            "format": "int64",
+            "type": "integer"
+          },
+          "bank": {
+            "description": "입금 계좌. 도매처가 등록 안 했으면 null. 11-09 실측은 bank: {bankName, accountNo, holder} 객체다(평평한 bankAccountNo 칸은 없다)",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Bank"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPaidAt": {
+            "description": "마지막 입금일(날짜만, 서버 LocalDate). 입금 이력이 없으면 null",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "도매처 상호",
+            "type": "string"
+          },
+          "overdue": {
+            "$ref": "#/components/schemas/Overdue"
+          },
+          "paidLast7Days": {
+            "description": "오늘 포함 최근 7일에 보낸 입금 합",
+            "format": "int64",
+            "type": "integer"
+          },
+          "wholesalerId": {
+            "description": "도매처 id. 도매처 홈, 미송 필터가 받는 id 와 같은 값",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "balance",
+          "bank",
+          "lastPaidAt",
+          "name",
+          "overdue",
+          "paidLast7Days",
+          "wholesalerId"
+        ],
+        "type": "object",
+        "x-ondo-draft": true
       },
       "PlaceOrderRequest": {
         "description": "주문 접수.",
@@ -5723,6 +5978,176 @@
         "tags": [
           "주문"
         ]
+      }
+    },
+    "/api/retail/settlements": {
+      "get": {
+        "description": "거래한 적 있는 도매처 전부, 빚이 큰 순. balance 플러스 = 갚을 돈, 마이너스 = 선수금.\n\n연체는 출고마다 기한(출고일 + 외상기간, 당일은 아님)으로 센다. 외상기간은 도매 거래처 설정 전까지 모두 1일이다. paidLast7Days 는 오늘 포함 최근 7일에 보낸 입금 합.\n\n서버(retail-api)는 이미 구현했고 자동 스펙에도 있다. 자동 스펙은 nullable, required 표시가 없어 이 초안이 서버 DTO 코드(settlement/dto/PartnerSettlementResponse.java, SettlementService.toResponse)를 읽고 적은 것이다(wire-01 W1-2). 소매 스펙 동기화가 #419 로 보류 중이라 그 전까지 이 초안이 계약이다.\n\n에러: 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500\n\n공통: 봉투 {data}.",
+        "operationId": "partners",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListPartnerSettlementResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "도매처별 미수",
+        "tags": [
+          "정산"
+        ],
+        "x-ondo-draft": true
+      }
+    },
+    "/api/retail/settlements/{wholesalerId}/ledger": {
+      "get": {
+        "description": "도매처 하나와의 거래 원장. 출고(SHIPMENT, +)와 입금(PAYMENT, -)을 오래된 순으로. 취소된 입금은 안 나온다. 거래한 적 없는 도매처면 404 가 아니라 빈 목록이다.\n\n입금 줄의 allocations 는 그 입금이 붙은 주문들이다(한 입금이 주문 여럿에 붙을 수 있다). unallocated 는 아직 안 붙은 돈.\n\n서버(retail-api)는 이미 구현했다. nullable, enum 은 서버 DTO 코드(settlement/dto/LedgerEntryResponse.java, SettlementService.toResponse)를 읽고 적었다(wire-01 W1-2).\n\n에러: 400 VALIDATION_FAILED(wholesalerId 가 숫자가 아님) / 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500\n\n공통: 봉투 {data}.",
+        "operationId": "ledger",
+        "parameters": [
+          {
+            "description": "도매처 id. 정산 목록 wholesalerId 와 같은 값",
+            "in": "path",
+            "name": "wholesalerId",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListLedgerEntryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "VALIDATION_FAILED",
+                  "errors": [],
+                  "message": "입력한 내용을 다시 확인해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "wholesalerId 가 숫자가 아니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAUTHORIZED",
+                  "errors": [],
+                  "message": "로그인이 필요해요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인이 안 됐거나 세션이 만료됐다"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_NOT_APPROVED",
+                  "errors": [],
+                  "message": "승인 후 이용할 수 있어요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "로그인은 됐지만 아직 승인 전이다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INTERNAL_ERROR",
+                  "errors": [],
+                  "message": "잠시 후 다시 시도해주세요",
+                  "traceId": null
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 문제"
+          }
+        },
+        "summary": "도매처 하나와의 거래 원장",
+        "tags": [
+          "정산"
+        ],
+        "x-ondo-draft": true
       }
     }
   },

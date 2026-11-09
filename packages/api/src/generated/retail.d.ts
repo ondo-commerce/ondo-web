@@ -566,6 +566,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retail/settlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 도매처별 미수
+         * @description 거래한 적 있는 도매처 전부, 빚이 큰 순. balance 플러스 = 갚을 돈, 마이너스 = 선수금.
+         *
+         *     연체는 출고마다 기한(출고일 + 외상기간, 당일은 아님)으로 센다. 외상기간은 도매 거래처 설정 전까지 모두 1일이다. paidLast7Days 는 오늘 포함 최근 7일에 보낸 입금 합.
+         *
+         *     서버(retail-api)는 이미 구현했고 자동 스펙에도 있다. 자동 스펙은 nullable, required 표시가 없어 이 초안이 서버 DTO 코드(settlement/dto/PartnerSettlementResponse.java, SettlementService.toResponse)를 읽고 적은 것이다(wire-01 W1-2). 소매 스펙 동기화가 #419 로 보류 중이라 그 전까지 이 초안이 계약이다.
+         *
+         *     에러: 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500
+         *
+         *     공통: 봉투 {data}.
+         */
+        get: operations["partners"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retail/settlements/{wholesalerId}/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 도매처 하나와의 거래 원장
+         * @description 도매처 하나와의 거래 원장. 출고(SHIPMENT, +)와 입금(PAYMENT, -)을 오래된 순으로. 취소된 입금은 안 나온다. 거래한 적 없는 도매처면 404 가 아니라 빈 목록이다.
+         *
+         *     입금 줄의 allocations 는 그 입금이 붙은 주문들이다(한 입금이 주문 여럿에 붙을 수 있다). unallocated 는 아직 안 붙은 돈.
+         *
+         *     서버(retail-api)는 이미 구현했다. nullable, enum 은 서버 DTO 코드(settlement/dto/LedgerEntryResponse.java, SettlementService.toResponse)를 읽고 적었다(wire-01 W1-2).
+         *
+         *     에러: 400 VALIDATION_FAILED(wholesalerId 가 숫자가 아님) / 401 UNAUTHORIZED / 403 ACCOUNT_NOT_APPROVED / 500
+         *
+         *     공통: 봉투 {data}.
+         */
+        get: operations["ledger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -599,6 +655,16 @@ export interface components {
              * @description 더해진 뒤의 최종 수량
              */
             qty: number;
+        };
+        /** @description 입금 하나가 붙은 주문 하나 */
+        Allocation: {
+            /**
+             * Format: int64
+             * @description 이 주문에 붙은 금액
+             */
+            amount: number;
+            /** @description 소매 주문번호. 도매 화면에서 직접 넣은 주문처럼 소매에서 못 찾으면 null(줄은 버리지 않는다) */
+            orderNo: string | null;
         };
         /**
          * @description 성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.
@@ -680,6 +746,16 @@ export interface components {
         ApiResponseListCategoryResponse: {
             /** @description 실제 내용. 성공은 항상 이 안에 들어온다 */
             data: components["schemas"]["CategoryResponse"][];
+        };
+        /** @description 성공 응답 봉투. 원장 줄 목록 */
+        ApiResponseListLedgerEntryResponse: {
+            /** @description 오래된 순. 거래한 적 없는 도매처면 빈 배열 */
+            data: components["schemas"]["LedgerEntryResponse"][];
+        };
+        /** @description 성공 응답 봉투. 도매처별 미수 목록 */
+        ApiResponseListPartnerSettlementResponse: {
+            /** @description 거래한 적 있는 도매처 전부, 빚이 큰 순 */
+            data: components["schemas"]["PartnerSettlementResponse"][];
         };
         /**
          * @description 성공 응답 봉투. 팀 규약상 성공은 항상 data 로 감싼다.
@@ -797,6 +873,15 @@ export interface components {
              * @description 그 미송 SKU 의 도매처 id
              */
             wholesalerId: number;
+        };
+        /** @description 도매처 입금 계좌(주계좌). 셋 다 도매 bank_account 테이블의 NOT NULL 칸이라 객체가 오면 셋 다 있다. 미등록은 객체 자체가 null 이다(PartnerSettlementResponse.bank) */
+        Bank: {
+            /** @description 계좌번호. 입력 그대로(- 포함) */
+            accountNo: string;
+            /** @description 은행 이름 */
+            bankName: string;
+            /** @description 예금주 */
+            holder: string;
         };
         /**
          * @description 주문 취소.
@@ -1483,6 +1568,49 @@ export interface components {
             /** @description 이미지 주소 */
             url: string;
         };
+        /**
+         * @description 거래 원장 한 줄. 오래된 순으로 내려간다. delta 는 출고 +, 입금 -. 취소된 입금은 안 나온다.
+         *
+         *     출고 줄은 statementNo, orderNo 가 있고 method, allocations, unallocated 가 null. 입금 줄은 그 반대로 statementNo, orderNo 가 null 이고 allocations 는 빈 배열이라도 배열이다(SettlementService.toResponse). 키는 늘 다 온다(null 로).
+         */
+        LedgerEntryResponse: {
+            /** @description 입금 줄만. 이 입금이 붙은 주문들(여럿일 수 있다). 출고 줄은 null */
+            allocations: components["schemas"]["Allocation"][] | null;
+            /**
+             * Format: date
+             * @description 출고일 또는 입금일
+             */
+            date: string;
+            /**
+             * Format: int64
+             * @description 출고 +, 입금 -
+             */
+            delta: number;
+            /**
+             * Format: int64
+             * @description 도매 원장 줄 id
+             */
+            id: number;
+            /**
+             * @description SHIPMENT(출고) 또는 PAYMENT(입금). 서버가 SHIPMENT 가 아닌 줄을 전부 PAYMENT 로 내보내 둘 말고는 안 온다
+             * @enum {string}
+             */
+            kind: "SHIPMENT" | "PAYMENT";
+            /**
+             * @description 입금 줄만. CASH 또는 TRANSFER(도매 BANK_TRANSFER 를 서버가 바꿔 준다). 출고 줄은 null
+             * @enum {string|null}
+             */
+            method: "CASH" | "TRANSFER" | null;
+            /** @description 출고 줄만. 출고된 주문의 소매 주문번호. 소매에서 못 찾으면 null, 입금 줄도 null */
+            orderNo: string | null;
+            /** @description 출고 줄만. 장끼 번호 JG-20260812-004. 입금 줄은 null */
+            statementNo: string | null;
+            /**
+             * Format: int64
+             * @description 입금 줄만. 아직 어느 주문에도 안 붙은 돈. 출고 줄은 null
+             */
+            unallocated: number | null;
+        };
         ListingColor: {
             /** @description 필터의 색상 그룹 이름 */
             groupName: string;
@@ -1866,6 +1994,21 @@ export interface components {
             /** @description 상품명 */
             title: string;
         };
+        /** @description 연체. 출고마다 기한(출고일 + 외상기간, 당일은 아님)이 지났는데 남은 돈. 연체가 없으면 셋 다 0(객체는 늘 온다) */
+        Overdue: {
+            /** Format: int64 */
+            amount: number;
+            /**
+             * Format: int32
+             * @description 연체가 걸린 주문 수
+             */
+            count: number;
+            /**
+             * Format: int32
+             * @description 가장 오래 밀린 것의 D+n. 없으면 0
+             */
+            maxDays: number;
+        };
         /**
          * @description 목록 응답. data 옆에 meta 가 붙는다.
          *
@@ -1898,6 +2041,34 @@ export interface components {
             data: components["schemas"]["OrderSummaryResponse"][];
             /** @description 페이지 정보 */
             meta: components["schemas"]["Meta"];
+        };
+        /** @description 도매처별 미수 한 줄. 잔액, 연체는 전부 도매 원장에서 계산된 값이다. 부호는 플러스 = 갚을 돈, 마이너스 = 선수금. 키는 늘 다 온다(null 로) */
+        PartnerSettlementResponse: {
+            /**
+             * Format: int64
+             * @description 미수 잔액. 음수면 선수금
+             */
+            balance: number;
+            /** @description 입금 계좌. 도매처가 등록 안 했으면 null. 11-09 실측은 bank: {bankName, accountNo, holder} 객체다(평평한 bankAccountNo 칸은 없다) */
+            bank: components["schemas"]["Bank"] | null;
+            /**
+             * Format: date
+             * @description 마지막 입금일(날짜만, 서버 LocalDate). 입금 이력이 없으면 null
+             */
+            lastPaidAt: string | null;
+            /** @description 도매처 상호 */
+            name: string;
+            overdue: components["schemas"]["Overdue"];
+            /**
+             * Format: int64
+             * @description 오늘 포함 최근 7일에 보낸 입금 합
+             */
+            paidLast7Days: number;
+            /**
+             * Format: int64
+             * @description 도매처 id. 도매처 홈, 미송 필터가 받는 id 와 같은 값
+             */
+            wholesalerId: number;
         };
         /** @description 주문 접수. */
         PlaceOrderRequest: {
@@ -4853,6 +5024,168 @@ export interface operations {
                 };
             };
             /** @description 서버 문제. 사용자에게 원인을 알려주지 않는다 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "잠시 후 다시 시도해주세요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    partners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseListPartnerSettlementResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 만료됐다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHORIZED",
+                     *       "errors": [],
+                     *       "message": "로그인이 필요해요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인은 됐지만 아직 승인 전이다 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ACCOUNT_NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 후 이용할 수 있어요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "잠시 후 다시 시도해주세요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ledger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 도매처 id. 정산 목록 wholesalerId 와 같은 값 */
+                wholesalerId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseListLedgerEntryResponse"];
+                };
+            };
+            /** @description wholesalerId 가 숫자가 아니다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력한 내용을 다시 확인해주세요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 만료됐다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHORIZED",
+                     *       "errors": [],
+                     *       "message": "로그인이 필요해요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인은 됐지만 아직 승인 전이다 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ACCOUNT_NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 후 이용할 수 있어요",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
             500: {
                 headers: {
                     [name: string]: unknown;
