@@ -1,10 +1,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { routeAuth } from "../loop-06b-retail-notify/helpers";
 import {
+  askChip,
   assertStubServers,
   chatMock,
+  choice,
+  choiceGroups,
   composer,
   count,
+  exposeQueryClient,
   openRoomById,
   requests,
   SEND_POST,
@@ -15,6 +19,7 @@ import {
   clientGo,
   expectReadOnly,
   expectRetryAndRemove,
+  expectWritable,
   failedBubbles,
   lastSettled,
   lostAlert,
@@ -478,5 +483,153 @@ test.describe("S1-12 [늦은 영구 거절, 방 떠남]", () => {
     await clientGo(page, `/chats/${ROOM_1}?from=/chats`);
     await expectPermanent(bubbleOf(page, "늦게 거절될 말"), 409);
     await expect(serverBubbles(page, "늦게 거절될 말")).toHaveCount(0);
+  });
+});
+
+/** 채팅 끊김 칸(`chatKeys.session()`). 닫힌 방에선 끊김 줄이 안 보여 잠금을 캐시로 본다. `exposeQueryClient` 뒤에 */
+function sessionLostFlag(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const client = (window as unknown as Record<string, unknown>)
+      .__ondoQueryClient as {
+      getQueryData: (key: readonly unknown[]) => unknown;
+    };
+    return client.getQueryData(["chat", "session"]) === true;
+  });
+}
+
+/*
+ * 12-M1 시험 공백 6(codex-meta 1차) + 12-N1 12-R1(D69). 닫힌 방은 보내기 요청을 만드는 길(입력창, 재고 문의, 되묻기 칩,
+ * 카드 담기, 일시 실패 다시 보내기)을 전부 막는다. 카드 담기는 QA Q11이 본다.
+ */
+test.describe("12-M1 [닫힌 방 교차]", () => {
+  test("① 일시 500 + 404 → polling 401 → 닫힌 줄만, 끊김 줄 0 → 같은 계정 재로그인 → 여전히 닫힘, 500 다시 보내기 0", async ({
+    page,
+  }) => {
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    await exposeQueryClient(page);
+    const temp = await failOnce(page, 500, "닫힌 방 일시 말");
+    await failOnce(page, 404, "잠금 전 404 말");
+    await expect(retryOf(temp)).toHaveCount(0);
+
+    await chatMock(page, "fail", {
+      op: "messages",
+      page: "after",
+      status: 401,
+    });
+    await advance(page, POLL * 2);
+    await expect.poll(() => sessionLostFlag(page)).toBe(true);
+    /* 안내 줄은 닫힌 방이 끊김보다 앞선다(§4-4) */
+    await expect(closedNote(page)).toBeVisible();
+    await expect(lostAlert(page)).toHaveCount(0);
+    await expectReadOnly(page);
+
+    const tab = await otherTabLogin(page, "bombom");
+    await expect.poll(() => sessionLostFlag(page)).toBe(false);
+    await expect(closedNote(page)).toBeVisible();
+    await expectReadOnly(page);
+    await expect(sendButton(page)).toBeDisabled();
+    await expect(retryOf(temp)).toHaveCount(0);
+    await expect(removeOf(temp)).toBeVisible();
+    await advance(page, 10_000);
+    expect(await count(page, SEND_POST)).toBe(2);
+    await tab.close();
+  });
+
+  test("② 일시 500 + 늦은 404 → 방 33(열림) → 도착 → 방 1 복귀 즉시 닫힘, 500 다시 보내기 0", async ({
+    page,
+  }) => {
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    const temp = await failOnce(page, 500, "복귀 전 일시 말");
+    await chatMock(page, "fail", { op: "send", status: 404 });
+    await chatMock(page, "delay", { op: "send", ms: LATE });
+    await sendText(page, "떠난 사이 404 말");
+    await expect.poll(() => count(page, SEND_POST)).toBe(2);
+    await clientGo(page, `/chats/${ROOM_33}?from=/chats`);
+    await advance(page, LATE);
+    await waitSendsSettled(page, 2);
+    expect(await lastSettled(page, SEND_POST)).toBe(404);
+    /* 다른 방은 영향 0 */
+    await expectWritable(page);
+    await expect(closedNote(page)).toHaveCount(0);
+
+    await clientGo(page, `/chats/${ROOM_1}?from=/chats`);
+    await expect(closedNote(page)).toBeVisible();
+    await expectReadOnly(page);
+    await expectPermanent(bubbleOf(page, "떠난 사이 404 말"), 404);
+    await expect(retryOf(temp)).toHaveCount(0);
+    await expect(removeOf(temp)).toBeVisible();
+  });
+
+  test("③ 일시 500 R+D → 404 → 500 다시 보내기 0, 지우기 그대로 → 404 지워도 0 → 10초 뒤 POST 2", async ({
+    page,
+  }) => {
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    const temp = await failOnce(page, 500, "가 일시 말");
+    await expectRetryAndRemove(temp);
+    const closer = await failOnce(page, 404, "나 404 말");
+    await expect(retryOf(temp)).toHaveCount(0);
+    await expect(removeOf(temp)).toBeVisible();
+    await expect(temp.getByRole("alert")).toContainText("못 보냈어요");
+
+    await removeOf(closer).click();
+    await expect(closer).toHaveCount(0);
+    await expect(closedNote(page)).toBeVisible();
+    await expect(retryOf(temp)).toHaveCount(0);
+    await advance(page, 10_000);
+    expect(await count(page, SEND_POST)).toBe(2);
+    await expect(serverBubbles(page, "가 일시 말")).toHaveCount(0);
+  });
+
+  test("④ 상품에서 연 방, 되묻기 칩 → 404 → 재고 문의와 되묻기 칩 잠김 → 404 지워도 잠김, POST 그대로", async ({
+    page,
+  }) => {
+    await start(page, `/chats/${ROOM_1}?from=/products/2001`);
+    await expect(askChip(page)).toBeEnabled();
+    await sendText(page, "이 셔츠 몇 장 남았어요?");
+    await expect(choiceGroups(page)).toHaveCount(1);
+    const option = choice(choiceGroups(page).first(), "레드 / M");
+    await expect(option).toBeEnabled();
+
+    const closer = await failOnce(page, 404, "칩 잠글 404 말");
+    await expect(closedNote(page)).toBeVisible();
+    await expect(askChip(page)).toBeDisabled();
+    await expect(option).toBeDisabled();
+    /* 재고 되묻기는 보류 말풍선이 있으면 원래 잠긴다(결정 28). 지운 뒤에도 잠겨야 닫힌 방 잠금이다 */
+    await removeOf(closer).click();
+    await expect(closer).toHaveCount(0);
+    await expect(askChip(page)).toBeDisabled();
+    await expect(option).toBeDisabled();
+    await advance(page, 10_000);
+    expect(await count(page, SEND_POST)).toBe(2);
+  });
+
+  test("⑤⑥ 쓰던 글 995자 + 409 입력창으로 → 1,000자 넘침 안내, 보내기 잠김, 커서는 끝", async ({
+    page,
+  }) => {
+    await start(page, "/");
+    await openRoomById(page, ROOM_1);
+    const bubble = await failOnce(page, 409, "넘칠 409 말");
+    const before = "가".repeat(995);
+    await composer(page).fill(before);
+    /* 커서를 맨 앞에 두고 옮긴다 — 끝으로 가는 게 붙이기의 결과인지 본다 */
+    await composer(page).evaluate((el: HTMLTextAreaElement) =>
+      el.setSelectionRange(0, 0),
+    );
+    await button(bubble, "입력창으로").click();
+    const joined = `${before}\n넘칠 409 말`;
+    await expect(composer(page)).toHaveValue(joined);
+    await expect(page.getByText("1,000자까지 보낼 수 있어요")).toBeVisible();
+    await expect(sendButton(page)).toBeDisabled();
+    await expect(composer(page)).toBeFocused();
+    expect(
+      await composer(page).evaluate((el: HTMLTextAreaElement) => [
+        el.selectionStart,
+        el.selectionEnd,
+      ]),
+    ).toEqual([joined.length, joined.length]);
+    expect(await count(page, SEND_POST)).toBe(1);
   });
 });
