@@ -11,7 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { COMPOSER_TEXT, STOCK_TEXT } from "../constants";
+import Link from "next/link";
+import { CHATS_HREF, COMPOSER_TEXT, STOCK_TEXT } from "../constants";
 import { checkComposer } from "../derive";
 import { useRoomDraft } from "../useRoomDraft";
 
@@ -43,6 +44,7 @@ export const ChatComposer = memo(function ChatComposer({
   askBusy,
   onAsk,
   appendRef,
+  closed,
 }: {
   /** 쓰던 글을 기억할 키(`draftKey`). null이면 기억하지 않는다 */
   draftKey: string | null;
@@ -67,6 +69,11 @@ export const ChatComposer = memo(function ChatComposer({
   onAsk: () => void;
   /** 영구 실패 말풍선 `입력창으로`, `승인 상태 보기`가 부른다(`ComposerAppend`). 같은 ref 객체라 memo를 깨지 않는다 */
   appendRef: Ref<ComposerAppend>;
+  /**
+   * 보내기 404로 닫힌 방(loop-12 Q3, `roomClosedOf`). 잠금 모양은 끊김과 같고(쓴 글은 남는다, D28) 안내 줄은 닫힌 방
+   * 줄이 끊김 줄보다 앞선다 — 재로그인해도 그 방엔 못 보낸다
+   */
+  closed: boolean;
 }) {
   const {
     text: draft,
@@ -87,7 +94,7 @@ export const ChatComposer = memo(function ChatComposer({
   );
   const [photoNote, setPhotoNote] = useState(false);
   const check = checkComposer(draft);
-  const locked = sessionLost || leaving;
+  const locked = sessionLost || leaving || closed;
   const canSend = !check.blank && !check.over && !locked;
 
   // packages/ui Textarea가 ref를 받지 않아 감싼 상자에서 찾는다
@@ -140,7 +147,23 @@ export const ChatComposer = memo(function ChatComposer({
   };
 
   const noteId = useId();
-  const note = sessionLost ? (
+  const note = closed ? (
+    <span
+      role="status"
+      data-ac="12:S1-9 12:S1-10"
+      className="border-border-strong text-secondary-foreground flex flex-1 flex-wrap items-center gap-x-1.5 rounded-control border px-3 py-2 text-sm"
+    >
+      <CircleAlert aria-hidden className="size-4 shrink-0" />
+      {COMPOSER_TEXT.closed}
+      <Link
+        href={CHATS_HREF}
+        data-ac="12:S1-9 12:S1-10"
+        className="text-foreground phone:h-11 inline-flex items-center underline"
+      >
+        {COMPOSER_TEXT.closedLink}
+      </Link>
+    </span>
+  ) : sessionLost ? (
     <span
       role="alert"
       data-ac="S6-5"

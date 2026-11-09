@@ -52,6 +52,7 @@ import {
   readMarkerSequence,
   replyLinkOf,
   returnLinkOf,
+  roomClosedOf,
   stockAskInquiry,
   toReplyExtra,
   toThreadItems,
@@ -250,6 +251,11 @@ function ChatRoom({
   /* 보류 말풍선은 셸 수명(loop-08e §4-2 7) — 방을 떠났다 와도 남는다. 이 방 몫만 읽는다 */
   const { pending, send, retry, remove } = useRoomOutbox(roomId);
   const shownPending = visiblePending(pending, thread.messages);
+  /* 보내기 404로 닫힌 방(loop-12 Q3). 404 말풍선을 지워도 이 화면이 떠 있는 동안은 닫힌 채다 — 본 적을 state로 든다.
+     렌더 중 갱신은 React의 "이전 값에 맞춰 state 고치기" 꼴이라 effect 한 바퀴 동안 입력창이 열려 보이는 틈이 없다 */
+  const [seenNotFound, setSeenNotFound] = useState(false);
+  const closed = roomClosedOf(pending, seenNotFound);
+  if (closed && !seenNotFound) setSeenNotFound(true);
   /* 영구 실패 말풍선이 입력창에 글을 넘기는 손잡이(loop-12 §4-2 3) */
   const appendRef = useRef<ComposerAppend>(null);
   const router = useRouter();
@@ -451,6 +457,7 @@ function ChatRoom({
         askBusy={askListing === null ? null : askChipBusy(shownPending)}
         onAsk={onAsk}
         appendRef={appendRef}
+        closed={closed}
       />
 
       {/* 알림 통로는 이것 하나(도매 디자인 결정 20). log는 off — 내 말, 한 번에 받은 50개까지 읽지 않게.
