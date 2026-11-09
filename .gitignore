@@ -37,12 +37,16 @@ pnpm-debug.log*
 !.vscode/extensions.json
 !.vscode/settings.json
 
-# claude code — 개인 도구. 레포에 올리지 않는다.
-# harness/CONTEXT.md 가 ~/feature-spec, ~/.claude/skills 같은 홈 절대경로를
-# 가리켜서, 클론한 쪽에서는 어차피 동작하지 않는다.
-# 나중에 팀과 공유할 설정이 생기면 아래처럼 예외를 뚫는다:
-#   !.claude/settings.json
-.claude/
+# claude code — 하네스(에이전트, 훅, 스킬, 회차 기록)는 레포에 둔다 (#416).
+# 개인 설정과 작업 중 생기는 파일만 제외한다.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/harness/.active-run
+# 회차 폴더는 기록 3종(findings, 회차 보고, 결정)만 추적. 기획, 개발 보고, QA 스크린샷, 브리프는 제외
+.claude/harness/runs/*/*
+!.claude/harness/runs/*/findings.jsonl
+!.claude/harness/runs/*/00-loop-report.md
+!.claude/harness/runs/*/decisions.md
 
 # playwright
 /test-results/

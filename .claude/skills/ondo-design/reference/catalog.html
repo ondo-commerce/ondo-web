@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>온도 ERP 컴포넌트 카탈로그</title>
+<style>
+/* ondo.css 를 그대로 붙여넣은 것 — 원본은 reference/ondo.css */
+:root{--ink:#191f28;--ink-soft:#4e5968;--muted:#8b95a1;--muted-soft:#b0b8c1;--line:#d1d5db;--fill:#f2f4f6;--panel:#fff;--accent:#3182f6;--accent-soft:#eef4ff;--danger:#f04452;--good:#00875f;--r-panel:16px;--r-lg:10px;--r-md:8px;--r-sm:6px;--r-pill:999px;--shadow-panel:0 .5px 2px rgba(0,0,0,.1);--shadow-raise:0 1px 2px rgba(15,18,23,.12);--h-control:36px;--h-control-sm:28px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fill);color:var(--ink);font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;letter-spacing:-.015em;-webkit-font-smoothing:antialiased}
+.t-logo{font-size:22px;font-weight:700;letter-spacing:-.09em}
+.t-h1{font-size:24px;font-weight:700;letter-spacing:-.015em}
+.t-h2{font-size:20px;font-weight:500;letter-spacing:-.023em}
+.t-h3{font-size:16px;font-weight:500;letter-spacing:-.015em}
+.t-section{font-size:15px;font-weight:500;letter-spacing:-.015em}
+.t-caption{font-size:13px;font-weight:400;letter-spacing:-.015em;color:var(--muted)}
+.t-muted{color:var(--muted)}.t-soft{color:var(--ink-soft)}.t-good{color:var(--good)}.t-danger{color:var(--danger)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.page{display:flex;min-width:1280px}
+.snb{flex:0 0 208px;width:208px;background:var(--panel);border-right:1px solid var(--line)}
+.snb .brand{display:flex;align-items:center;gap:4px;height:56px;padding:0 8px 0 16px}
+.snb .brand .mark{width:24px;height:24px;display:grid;place-items:center;font-size:15px;color:var(--ink)}
+.snb .brand .name{font-size:18px;font-weight:700;letter-spacing:-.03em}
+.snb .menu{display:flex;flex-direction:column;gap:2px;padding:0 8px}
+.snb .menu a{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:var(--r-md);color:var(--muted);text-decoration:none;font-size:14px}
+.snb .menu a .ico{width:18px;text-align:center}
+.snb .menu a.active{background:var(--fill);color:var(--ink);font-weight:500}
+.snb.mini{flex-basis:64px;width:64px}
+.snb.mini .brand{justify-content:center;padding:0}
+.snb.mini .brand .name{display:none}
+.snb.mini .menu a{justify-content:center;padding:0}
+.col{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
+.topbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;height:52px;padding:0 20px}
+.topbar .ico-btn{width:40px;height:40px;display:grid;place-items:center;border-radius:var(--r-md);color:var(--muted)}
+.main{padding:0 16px 16px}
+.body{display:flex;gap:16px;align-items:flex-start}
+.col-main{flex:1 1 auto;min-width:0}.col-side{flex:0 0 512px}
+.col-side>.panel+.panel{margin-top:16px}
+.form-2col{display:flex;gap:16px;align-items:flex-start}
+.form-2col>*{flex:1 1 0;min-width:0}
+.actionbar{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.panel{background:var(--panel);border-radius:var(--r-panel);box-shadow:var(--shadow-panel);padding:30px}
+.panel-title{margin:0 0 24px}
+.panel-title .sub{margin-top:6px;color:var(--muted);font-size:14px}
+.section{margin-top:24px}.section>.t-section{margin-bottom:16px}
+.divider{height:1px;background:var(--line);border:0;margin:20px 0}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:var(--h-control);min-width:60px;padding:0 16px;border:0;border-radius:var(--r-sm);background:var(--accent);color:#fff;font-size:14px;font-weight:500;letter-spacing:-.015em;font-family:inherit;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:var(--fill);color:var(--muted)}
+.btn.line{background:var(--panel);color:var(--ink-soft);border:1px solid var(--line)}
+.btn.sm{height:var(--h-control-sm);padding:0 12px;font-size:13px}
+.btn.lg{height:52px;width:100%;border-radius:var(--r-lg);font-size:18px}
+.btn.disabled{background:var(--fill);color:var(--muted-soft);cursor:default}
+.link-act{color:var(--accent);font-size:14px;text-decoration:none}
+.f-input,.f-select,.f-search{display:flex;align-items:center;height:var(--h-control);padding:0 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--panel);color:var(--ink);font-size:14px}
+.f-input.ph,.f-select.ph,.f-textarea.ph{color:var(--muted)}
+.f-input.sm{height:var(--h-control-sm)}
+.f-input.num{justify-content:flex-end;font-variant-numeric:tabular-nums}
+.f-select{justify-content:space-between;gap:8px;padding-right:12px}
+.f-textarea{min-height:84px;padding:10px 14px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r-md);background:var(--panel);line-height:1.6}
+.f-search{border:0;background:var(--fill);gap:8px;color:var(--muted);width:339px}
+.f-filter{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;height:32px;padding:0 10px 0 16px;background:var(--fill);border-radius:var(--r-md);color:var(--ink);font-size:14px}
+.caret{color:var(--muted-soft);font-size:11px}
+.field{margin-bottom:22px}
+.field-label{display:flex;align-items:center;gap:4px;margin-bottom:8px;font-size:14px;font-weight:500}
+.field-label .req{color:var(--danger)}
+.chip,.label{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;font-size:14px;white-space:nowrap}
+.chip{border-radius:var(--r-pill)}.label{border-radius:var(--r-sm)}
+.chip.on,.label.on{background:var(--accent-soft);color:var(--accent)}
+.chip.sub,.label.sub{background:var(--fill);color:var(--ink-soft)}
+.label.plain{background:transparent;color:var(--muted);font-size:13px;padding:0}
+.size-chip{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:var(--r-pill);border:1px solid var(--muted-soft);background:var(--panel);color:var(--muted);font-size:14px}
+.size-chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.size-chips{display:flex;flex-wrap:wrap;gap:8px}
+.badge{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:var(--r-sm);font-size:13px;background:var(--fill);color:var(--muted)}
+.badge.on{background:var(--panel);border:1px solid var(--accent);color:var(--accent)}
+.f-check{width:24px;height:24px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--panel);display:inline-grid;place-items:center}
+.f-check.on{background:var(--accent);border-color:var(--accent);color:#fff;font-size:14px}
+.f-switch{width:44px;height:24px;border-radius:var(--r-pill);background:var(--line);position:relative}
+.f-switch.on{background:var(--accent)}
+.f-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.f-switch.on::after{left:auto;right:3px}
+.seg{display:inline-flex;padding:4px 5px;background:var(--fill);border-radius:var(--r-md)}
+.seg .opt{height:36px;padding:0 24px;display:grid;place-items:center;border-radius:var(--r-md);font-size:14px;font-weight:700;color:var(--muted)}
+.seg .opt.on{background:var(--panel);color:var(--accent);box-shadow:var(--shadow-raise)}
+.rows{display:flex;flex-direction:column;gap:4px}
+.row{display:flex;align-items:center;gap:6px;padding:12px 16px 12px 20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--panel)}
+.row.open{background:var(--fill)}
+.row .chev{color:var(--muted-soft);font-size:12px;width:14px}
+.row .name{font-size:16px;font-weight:500}
+.row .tail{margin-left:auto;color:var(--muted);font-size:14px}
+.row-body{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r-md) var(--r-md);padding:24px;background:var(--panel)}
+table.otable{width:100%;border-collapse:collapse}
+.otable thead th{background:var(--fill);color:var(--muted);font-size:13px;font-weight:400;padding:10px 12px;text-align:right;white-space:nowrap}
+.otable thead th:first-child,.otable thead th.l{text-align:left}
+.otable thead th.c{text-align:center}
+.otable tbody td{padding:12px;font-size:14px;color:var(--ink);border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.otable tbody td.l{text-align:left;font-variant-numeric:normal}
+.otable tbody td.c{text-align:center;font-variant-numeric:normal}
+.otable tbody tr:last-child td{border-bottom:0}
+.otable tbody tr.sel td{background:var(--accent-soft)}
+.otable tbody td.t-muted{color:var(--muted)}.otable tbody td.t-soft{color:var(--ink-soft)}
+.otable tbody td.t-good{color:var(--good)}.otable tbody td.t-danger{color:var(--danger)}
+.dot{width:16px;height:16px;border-radius:50%;display:inline-block;border:1px solid rgba(25,31,40,.12);vertical-align:-3px}
+.color-cell{display:flex;align-items:center;gap:6px}
+.notice{display:flex;align-items:center;gap:8px;padding:12px 16px;border-radius:var(--r-md);background:var(--accent-soft);color:var(--accent);font-size:14px}
+.notice.line{border:1px solid var(--accent)}
+.slot{width:96px;height:96px;border-radius:var(--r-md);background:var(--fill);display:grid;place-items:center;color:var(--muted-soft);font-size:13px}
+.slot.lg{width:200px;height:200px}
+.slot.add{border:1px dashed var(--line);background:var(--panel)}
+.slots{display:flex;flex-wrap:wrap;gap:8px}
+.spy{width:200px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.spy a{display:block;padding:9px 12px;font-size:13px;color:var(--muted);text-decoration:none}
+.spy a.active{background:var(--fill);color:var(--ink)}
+
+/* 카탈로그 전용 (실제 페이지에는 넣지 않는다) */
+.cat-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.cat-key{width:150px;flex:none;color:var(--muted);font-size:13px}
+.swatch{width:96px;height:56px;border-radius:var(--r-md);border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- 셸 = 좌측 사이드바(.snb) + 우측 열(.col: .topbar + .main). 항목 7개·순서 고정 -->
+  <div class="snb">
+    <span class="brand"><span class="mark">⌘</span><span class="name">온도 ERP</span></span>
+    <nav class="menu">
+      <a href="#"><span class="ico">▦</span>대시보드</a><a href="#"><span class="ico">▤</span>주문</a><a href="#"><span class="ico">▧</span>미송</a><a href="#"><span class="ico">▥</span>출고</a><a href="#" class="active"><span class="ico">▩</span>상품</a><a href="#"><span class="ico">▣</span>재고</a><a href="#"><span class="ico">▨</span>정산</a>
+    </nav>
+  </div>
+
+  <div class="col">
+  <div class="topbar">
+    <span class="ico-btn">🔔</span><span class="ico-btn">👤</span>
+  </div>
+  <div class="main">
+
+  <div class="body">
+    <div class="col-main">
+
+      <div class="panel">
+        <h2 class="t-h2 panel-title">색 — 이 10개가 전부다</h2>
+        <div class="cat-row"><span class="cat-key">--ink #191f28</span><span class="swatch" style="background:#191f28"></span><span class="t-muted">본문·제목</span></div>
+        <div class="cat-row"><span class="cat-key">--ink-soft #4e5968</span><span class="swatch" style="background:#4e5968"></span><span class="t-muted">보조 텍스트, Chip/Sub 글자</span></div>
+        <div class="cat-row"><span class="cat-key">--muted #8b95a1</span><span class="swatch" style="background:#8b95a1"></span><span class="t-muted">라벨·비활성·플레이스홀더</span></div>
+        <div class="cat-row"><span class="cat-key">--muted-soft #b0b8c1</span><span class="swatch" style="background:#b0b8c1"></span><span class="t-muted">아이콘·강한 테두리</span></div>
+        <div class="cat-row"><span class="cat-key">--line #d1d5db</span><span class="swatch" style="background:#d1d5db"></span><span class="t-muted">기본 테두리·구분선</span></div>
+        <div class="cat-row"><span class="cat-key">--fill #f2f4f6</span><span class="swatch" style="background:#f2f4f6"></span><span class="t-muted">페이지 배경·옅은 채움·표 헤더</span></div>
+        <div class="cat-row"><span class="cat-key">--accent #3182f6</span><span class="swatch" style="background:#3182f6"></span><span class="t-muted">강조는 이 하나뿐</span></div>
+        <div class="cat-row"><span class="cat-key">--accent-soft #eef4ff</span><span class="swatch" style="background:#eef4ff"></span><span class="t-muted">강조 배경</span></div>
+        <div class="cat-row"><span class="cat-key">--danger #f04452</span><span class="swatch" style="background:#f04452"></span><span class="t-muted">필수 표시 *, 재고 0</span></div>
+        <div class="cat-row"><span class="cat-key">--good #00875f</span><span class="swatch" style="background:#00875f"></span><span class="t-muted">마진율 상승 등 양수</span></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">타이포 — 6단계</h2>
+        <div class="cat-row"><span class="cat-key">.t-logo 22/700</span><span class="t-logo">온도 ERP</span></div>
+        <div class="cat-row"><span class="cat-key">.t-h1 24/700</span><span class="t-h1">오버핏 코튼 티셔츠</span></div>
+        <div class="cat-row"><span class="cat-key">.t-h2 20/500</span><span class="t-h2">상품 관리</span></div>
+        <div class="cat-row"><span class="cat-key">.t-h3 16/500</span><span class="t-h3">슬림핏 데님 팬츠</span></div>
+        <div class="cat-row"><span class="cat-key">.t-section 15/500</span><span class="t-section">기본 정보</span></div>
+        <div class="cat-row"><span class="cat-key">본문 14/400</span><span>주문 수량과 미할당 수량을 확인하세요</span></div>
+        <div class="cat-row"><span class="cat-key">.t-caption 13/400</span><span class="t-caption">SU-1239</span></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">버튼</h2>
+        <div class="cat-row">
+          <span class="cat-key">.btn</span>
+          <span class="btn">상품 등록</span>
+          <span class="btn ghost">재고 등록 →</span>
+          <span class="btn line">삭제</span>
+          <span class="btn sm">삭제</span>
+          <span class="btn disabled">처리 불가</span>
+          <a class="link-act" href="#">마켓 등록하러 가기 →</a>
+        </div>
+        <div class="cat-row"><span class="cat-key">.btn.lg</span><span style="width:250px"><span class="btn lg">상품 관리</span></span></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">입력 — 전부 div다. input·select는 쓰지 않는다</h2>
+        <div class="cat-row"><span class="cat-key">.f-input</span><span class="f-input" style="width:277px">루즈핏 오버핏 셔츠</span></div>
+        <div class="cat-row"><span class="cat-key">.f-input.ph</span><span class="f-input ph" style="width:277px">예) 누와 블랙</span></div>
+        <div class="cat-row"><span class="cat-key">.f-input.sm.num</span><span class="f-input sm num" style="width:110px">24,000</span></div>
+        <div class="cat-row"><span class="cat-key">.f-select</span><span class="f-select ph" style="width:200px">대분류 선택 <span class="caret">▾</span></span></div>
+        <div class="cat-row"><span class="cat-key">.f-search</span><span class="f-search">⌕ 품번·품명 검색</span></div>
+        <div class="cat-row"><span class="cat-key">.f-filter</span><span class="f-filter">색상 <span class="caret">▾</span></span><span class="f-filter">사이즈 <span class="caret">▾</span></span></div>
+        <div class="cat-row"><span class="cat-key">.f-textarea</span><span class="f-textarea" style="width:470px">넉넉한 오버핏 실루엣의 데일리 셔츠예요.</span></div>
+        <div class="cat-row"><span class="cat-key">.field</span>
+          <span style="width:277px"><span class="field-label">품명 <span class="req">*</span></span><span class="f-input">루즈핏 오버핏 셔츠</span></span>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">칩 · 라벨 · 배지 · 토글</h2>
+        <div class="cat-row"><span class="cat-key">.chip (알약)</span><span class="chip on">옵션 1</span><span class="chip sub">SU-20</span></div>
+        <div class="cat-row"><span class="cat-key">.label (사각)</span><span class="label on">옵션 1</span><span class="label sub">SU-20</span><span class="label plain">SU-17</span></div>
+        <div class="cat-row"><span class="cat-key">.size-chip</span>
+          <span class="size-chips"><span class="size-chip on">Free</span><span class="size-chip">XS</span><span class="size-chip on">S</span><span class="size-chip on">M</span><span class="size-chip">L</span><span class="size-chip on">XL</span></span>
+        </div>
+        <div class="cat-row"><span class="cat-key">.badge</span><span class="badge on">신규 주문</span><span class="badge">정산 대기</span><span class="badge">출고 완료</span></div>
+        <div class="cat-row"><span class="cat-key">.f-check</span><span class="f-check on">✓</span><span class="f-check"></span></div>
+        <div class="cat-row"><span class="cat-key">.f-switch</span><span class="f-switch on"></span><span class="f-switch"></span></div>
+        <div class="cat-row"><span class="cat-key">.seg</span><span class="seg"><span class="opt on">판매중</span><span class="opt">시즌종료</span></span></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">목록 행 (아코디언)</h2>
+        <div class="rows">
+          <div class="row"><span class="chev">›</span><span class="name">린넨 셔츠</span><span class="label plain">SU-17</span><span class="tail">남성 &gt; 의류 &gt; 상의</span></div>
+          <div>
+            <div class="row open" style="border-radius:8px 8px 0 0"><span class="chev">⌄</span><span class="name">슬림핏 데님 팬츠</span><span class="label plain">SU-20</span><span class="tail">남성 &gt; 의류 &gt; 하의</span></div>
+            <div class="row-body">
+              <div class="notice">ⓘ 아직 온도마켓에 등록되지 않은 상품입니다 &nbsp;<a class="link-act" href="#">마켓 등록하러 가기 →</a></div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px"><span class="f-filter">색상 <span class="caret">▾</span></span><span class="f-filter">사이즈 <span class="caret">▾</span></span></div>
+              <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+                <div class="color-cell"><span class="dot" style="background:#191f28"></span>블랙 - 시카고 블랙</div>
+                <div class="size-chips" style="margin-top:12px"><span class="size-chip">XS</span><span class="size-chip">S</span><span class="size-chip">M</span><span class="size-chip">L</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="row"><span class="chev">›</span><span class="name">캐시미어 니트</span><span class="tail">여성 &gt; 의류 &gt; 상의</span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">표</h2>
+        <table class="otable">
+          <thead><tr><th class="l">색상</th><th class="c">사이즈</th><th class="c">SKU</th><th>평균 원가</th><th>현재고</th><th>마진율(%)</th><th>판매가(원)</th></tr></thead>
+          <tbody>
+            <tr><td class="l"><span class="color-cell"><span class="dot" style="background:#191f28"></span>블랙</span></td><td class="c">XS</td><td class="c"><span class="label sub">SU-1239</span></td><td>15,200</td><td>40</td><td class="t-good">+36.6%</td><td><span class="f-input sm num" style="width:110px;margin-left:auto">24,000</span></td></tr>
+            <tr><td class="l"></td><td class="c">S</td><td class="c"><span class="label sub">SU-1240</span></td><td>15,200</td><td>26</td><td class="t-good">+36.6%</td><td><span class="f-input sm num" style="width:110px;margin-left:auto">24,000</span></td></tr>
+            <tr><td class="l"></td><td class="c">M</td><td class="c"><span class="label sub">SU-1241</span></td><td>13,800</td><td class="t-danger">0</td><td class="t-good">+42.5%</td><td><span class="f-input sm num" style="width:110px;margin-left:auto">24,000</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 class="t-h2 panel-title">이미지 슬롯 · 안내 배너</h2>
+        <div class="cat-row"><span class="cat-key">.slot</span><span class="slots"><span class="slot">IMG</span><span class="slot">IMG</span><span class="slot add">+</span></span></div>
+        <div class="cat-row"><span class="cat-key">.slot.lg</span><span class="slot lg">IMG</span></div>
+        <div class="cat-row" style="display:block"><span class="cat-key">.notice.line</span>
+          <div class="notice line" style="margin-top:8px"><span class="f-check on">✓</span><span><b>등록하면서 온도 마켓에도 바로 게시하기</b><br><span class="t-caption">체크하면 상품 등록 시 게시글도 함께 등록됩니다.</span></span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="col-side">
+      <div class="panel">
+        <div style="display:flex;align-items:flex-end;gap:10px;padding-bottom:16px">
+          <span class="t-h1">오버핏 코튼 티셔츠</span><span class="chip sub">SU-20</span>
+        </div>
+        <div class="section" style="margin-top:0">
+          <div class="t-section">기본 정보</div>
+          <div style="display:flex;flex-direction:column;gap:10px;padding:0 6px">
+            <div style="display:flex;gap:16px"><span class="t-muted" style="width:72px">품명</span><span>오버핏 코튼 티셔츠</span></div>
+            <div style="display:flex;gap:16px"><span class="t-muted" style="width:72px">카테고리</span><span>남성 <span class="caret">›</span> 의류 <span class="caret">›</span> 상의</span></div>
+          </div>
+        </div>
+        <hr class="divider">
+        <div class="section" style="margin-top:0">
+          <div class="t-section">게시글 이미지</div>
+          <div class="slots"><span class="slot">IMG</span><span class="slot">IMG</span><span class="slot">IMG</span><span class="slot add">+</span></div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:24px">
+          <span style="flex:1"><span class="btn lg ghost">재고 등록 →</span></span>
+          <span style="flex:1"><span class="btn lg">상품 관리</span></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="t-section" style="margin-bottom:12px">스크롤 스파이 — <span class="t-danger">폐기</span></div>
+        <p class="t-caption" style="margin:0 0 12px">
+          화면 전체 스크롤을 없애면서 목차가 가리킬 대상이 사라졌다. 등록 폼은 세로 1단 + 스파이가 아니라
+          <b>좌우 1:1 2단(.form-2col) + 하단 액션바(.actionbar)</b>로 그린다. 새 화면에 쓰지 않는다.
+        </p>
+        <div class="spy" style="opacity:.4">
+          <a href="#">품명</a><a href="#">카테고리 분류</a><a href="#" class="active">게시글 이용</a><a href="#">옵션</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /.main -->
+  </div><!-- /.col -->
+</div>
+</body>
+</html>
