@@ -231,8 +231,12 @@ test("S2-6 반쯤 저장(PATCH 200 → 시즌 종료 401) → 반쯤 저장 잠�
   await waitSessionBroadcast(page);
   await expect(restoredStatus(page)).toHaveCount(1);
   const before = (await requests(page, { path: /./ })).length;
+  // 10-F2: 시즌 종료 200 뒤 이동 전까지도 상세 GET 0. 수정 화면에 있는 동안만 건다 — 이동한 목록의 상세 GET은 그대로
+  await armGetFault(page, /\/products\/1001$/, /\/edit$/);
   await saveButton(page).click();
   await page.waitForURL(/\/products\?productId=1001$/);
+  expect(await getFaultHits(page)).toBe(0);
+  await disarmGetFault(page);
   const after = (await requests(page, { path: /./ })).slice(before);
   const saveRound = after.filter((r) =>
     /\/products\/1001$|season-end$/.test(r.url),
@@ -247,6 +251,32 @@ test("S2-6 반쯤 저장(PATCH 200 → 시즌 종료 401) → 반쯤 저장 잠�
   expect(final.listing.status).toBe("SEASON_ENDED");
   expect(final.listing.title).toContain(HOOK);
   expect(final.name).toBe(renamed);
+});
+
+/*
+ * 10-F1(QA 변이 V4): 반쯤 저장 잠금이 풀린 뒤 업로드 401로 다시 잠기면 문구는 일반 잠금이다.
+ * 반쯤 저장 불이 남으면 저장과 무관한 업로드 잠금에 "일부만 저장됐다"는 문구가 붙는다.
+ */
+test("10-F1 반쯤 저장 잠금 → 풀림 → 판매중으로 되돌려 사진 추가 → 업로드 401 → 일반 잠금 문구, 반쯤 저장 문구 0", async ({
+  page,
+}) => {
+  const dialogs = countDialogs(page);
+  await lockPartially(page, dialogs);
+  await listenSessionBroadcast(page);
+  await reloginInSecondTab(page);
+  await waitSessionBroadcast(page);
+  await expect(restoredStatus(page)).toHaveCount(1);
+
+  // 시즌 종료를 고른 폼은 격자도 잠그므로(fieldset) 판매중으로 되돌린 뒤 올린다
+  await statusRadio(page, "판매중").click();
+  await expect(addSlot(page)).toBeEnabled();
+  await chooseFiles(page, [jpg("auth401.jpg")]);
+
+  await expect(formLine(page)).toHaveText(SESSION_LOST);
+  await expect(page.getByText(SESSION_LOST_PARTIAL)).toHaveCount(0);
+  await expect(reloginLink(page)).toHaveCount(1);
+  await expect(saveButton(page)).toBeDisabled();
+  expect(new URL(page.url()).pathname).toBe("/products/1001/edit");
 });
 
 test("S2-7 늦은 401(재로그인 전에 떠난 등록 POST) → 잠금 0, 늦은 401 문구, 저장 켜짐 → 다시 저장 201 → 목록", async ({

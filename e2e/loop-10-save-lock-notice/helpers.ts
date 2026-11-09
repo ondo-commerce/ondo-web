@@ -91,6 +91,8 @@ export async function waitSessionBroadcast(
 
 interface GetFault {
   source: string | null;
+  /** 이 화면(pathname)에 있을 때만 건다. null이면 어느 화면이든. 이동 뒤 다음 화면의 GET은 안 막는다 */
+  page: string | null;
   hits: number;
 }
 
@@ -101,7 +103,7 @@ interface GetFault {
  */
 export async function installGetFault(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const fault: GetFault = { source: null, hits: 0 };
+    const fault: GetFault = { source: null, page: null, hits: 0 };
     (window as unknown as { __getFault: GetFault }).__getFault = fault;
     const original = window.fetch.bind(window);
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -115,7 +117,9 @@ export async function installGetFault(page: Page): Promise<void> {
       if (
         fault.source !== null &&
         method === "GET" &&
-        new RegExp(fault.source).test(url)
+        new RegExp(fault.source).test(url) &&
+        (fault.page === null ||
+          new RegExp(fault.page).test(window.location.pathname))
       ) {
         fault.hits += 1;
         return new Response(
@@ -133,10 +137,19 @@ export async function installGetFault(page: Page): Promise<void> {
   });
 }
 
-export async function armGetFault(page: Page, path: RegExp): Promise<void> {
-  await page.evaluate((source) => {
-    (window as unknown as { __getFault: GetFault }).__getFault.source = source;
-  }, path.source);
+export async function armGetFault(
+  page: Page,
+  path: RegExp,
+  onPage?: RegExp,
+): Promise<void> {
+  await page.evaluate(
+    ([source, at]) => {
+      const fault = (window as unknown as { __getFault: GetFault }).__getFault;
+      fault.source = source;
+      fault.page = at;
+    },
+    [path.source, onPage?.source ?? null] as const,
+  );
 }
 
 export async function disarmGetFault(page: Page): Promise<void> {
