@@ -118,7 +118,14 @@ const FILLER_WHOLESALER_BASE = 1001;
 /** 가짜 방 마지막 메시지 시각의 시작. 시드 방 1, 33(10/28 아침)보다 이르게 둬 둘이 맨 위에 남는다 */
 const FILLER_BASE_MS = Date.parse("2026-10-27T12:00:00+09:00");
 
-const failPlan = new Map<FailKey, { status: number; times: number }>();
+/**
+ * `code`가 있으면 응답 code를 그 값으로 덮는다(loop-12 S1-5). 화면이 status가 아니라 code로 영구 거절을 가르는지
+ * 보려면 "403인데 FORBIDDEN"처럼 상태별 기본 code와 다른 짝이 필요하다
+ */
+const failPlan = new Map<
+  FailKey,
+  { status: number; times: number; code?: string }
+>();
 const delayPlan = new Map<DelayKey, { ms: number; times: number }>();
 const failedOnceKeys = new Set<string>();
 
@@ -257,10 +264,11 @@ const MESSAGE_BY_STATUS: Record<number, string> = {
 function fail(
   status: number,
   errors: { field: string; code: string; message: string }[] = [],
+  code?: string,
 ) {
   return HttpResponse.json(
     {
-      code: CODE_BY_STATUS[status] ?? "INTERNAL_ERROR",
+      code: code ?? CODE_BY_STATUS[status] ?? "INTERNAL_ERROR",
       message: MESSAGE_BY_STATUS[status] ?? "서버 오류가 발생했습니다.",
       errors,
       traceId: null,
@@ -313,7 +321,7 @@ async function plannedFailure(op: FailOp, page?: ChatMessagesPage) {
     delayMs,
     epoch,
   });
-  return fail(plan.status);
+  return fail(plan.status, [], plan.code);
 }
 
 function isDelayOp(op: string): op is DelayOp {
@@ -726,7 +734,9 @@ export const retailChatHandlers = [
 
   /**
    * 다음 n회 실패. `{op, page?, status = 500, times = 1}`. `page`(latest | before | after)는 op messages에만 —
-   * 그 종류의 요청만 실패한다(loop-08d S1-1, 도매 목과 같은 규칙). 모르는 값이나 다른 op에 붙이면 400
+   * 그 종류의 요청만 실패한다(loop-08d S1-1, 도매 목과 같은 규칙). 모르는 값이나 다른 op에 붙이면 400.
+   * `code`(선택, loop-12 S1-5)는 응답 code를 덮는다. 빈 문자열이나 문자열 아님은 400. receivable은 `failPlan`을
+   * 안 쓰고 횟수만 세서 code를 실어 보낼 길이 없다 — 같이 오면 조용히 버리지 않고 400
    */
   http.post("*/__mock/chat/fail", async ({ request }) => {
     const input = (await request.json().catch(() => ({}))) as {
@@ -734,6 +744,7 @@ export const retailChatHandlers = [
       page?: unknown;
       status?: number;
       times?: number;
+      code?: unknown;
     };
     const op = RETAIL_CHAT_FAIL_OPS.find((o) => o === input.op);
     if (op === undefined)
@@ -744,6 +755,16 @@ export const retailChatHandlers = [
       );
     const page = chatStore.knobPage(op, input.page);
     if (page === null) return knobPageInvalid();
+    const code = typeof input.code === "string" ? input.code : undefined;
+    if (
+      input.code !== undefined &&
+      (code === undefined || code === "" || op === "receivable")
+    )
+      return invalid(
+        "code",
+        "INVALID",
+        "code는 빈칸 아닌 문자열이고 receivable 밖의 op에만 붙는다",
+      );
     if (op === "receivable") {
       chatStore.failReceivable(input.times ?? 1);
       return HttpResponse.json({ data: { op } });
@@ -752,6 +773,7 @@ export const retailChatHandlers = [
     failPlan.set(key, {
       status: input.status ?? 500,
       times: input.times ?? 1,
+      ...(code === undefined ? {} : { code }),
     });
     return HttpResponse.json({ data: { op, page, ...failPlan.get(key) } });
   }),

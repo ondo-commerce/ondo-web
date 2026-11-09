@@ -381,3 +381,65 @@ describe("loop-08e S1-3 /__mock/chat/allocation-cancel", () => {
     expect((await cancel(theirLine?.id)).status).toBe(200);
   });
 });
+
+/**
+ * loop-12 S1-5 `/__mock/chat/fail`의 `code` 인자. 화면은 영구 거절을 status가 아니라 code로 가른다 — 목이 건
+ * code를 안 실으면 "403인데 FORBIDDEN은 다시 보낼 수 있다" 같은 반대 장면 e2e가 기본 code로 통과해 버린다
+ */
+describe("loop-12 S1-5 fail {op: send, code}", () => {
+  let seq = 0;
+  const sendOnce = async () => {
+    seq += 1;
+    const res = await fetch(`${API}/rooms/1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": `00000000-0000-4000-9120-${String(seq).padStart(12, "0")}`,
+      },
+      body: JSON.stringify({ body: `영구 거절 ${seq}`, inquiry: null }),
+    });
+    return { status: res.status, body: (await res.json()) as ErrorBody };
+  };
+
+  it("code를 건 값 그대로 싣는다: 403 FORBIDDEN, 명시한 영구 code 넷", async () => {
+    const pairs: [number, string][] = [
+      [403, "FORBIDDEN"],
+      [403, "ACCOUNT_NOT_APPROVED"],
+      [404, "RESOURCE_NOT_FOUND"],
+      [409, "IDEMPOTENCY_KEY_REUSED"],
+      [400, "VALIDATION_FAILED"],
+    ];
+    for (const [status, code] of pairs) {
+      expect((await knob("/fail", { op: "send", status, code })).status).toBe(
+        200,
+      );
+      const res = await sendOnce();
+      expect(res.status, code).toBe(status);
+      expect(res.body.code, code).toBe(code);
+    }
+    /* 계획은 1회 — 다음 보내기는 201 */
+    expect((await sendOnce()).status).toBe(201);
+  });
+
+  it("code 없음 → 상태별 기본 code 그대로(404 RESOURCE_NOT_FOUND, 500 INTERNAL_ERROR)", async () => {
+    await knob("/fail", { op: "send", status: 404 });
+    expect((await sendOnce()).body.code).toBe("RESOURCE_NOT_FOUND");
+    await knob("/fail", { op: "send" });
+    const server = await sendOnce();
+    expect(server.status).toBe(500);
+    expect(server.body.code).toBe("INTERNAL_ERROR");
+  });
+
+  it('code "" 또는 1 → 손잡이 400(code), receivable + code → 400, 어느 쪽도 계획을 남기지 않는다', async () => {
+    for (const body of [
+      { op: "send", status: 403, code: "" },
+      { op: "send", status: 403, code: 1 },
+      { op: "receivable", code: "X" },
+    ]) {
+      const res = await knob("/fail", body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(res.body.errors[0]?.field).toBe("code");
+    }
+    expect((await sendOnce()).status).toBe(201);
+  });
+});
