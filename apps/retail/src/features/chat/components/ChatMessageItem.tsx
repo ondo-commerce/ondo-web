@@ -167,7 +167,8 @@ export function PendingItem({
       ) : (
         <span
           role="alert"
-          className="text-destructive-strong flex items-center gap-1.5 text-xs leading-4"
+          /* 줄바꿈 허용(loop-12 S1-10): 영구 문구는 길어 390에서 문구와 버튼 둘이 한 줄에 안 든다. 넘치면 버튼이 다음 줄로 */
+          className="text-destructive-strong flex flex-wrap items-center justify-end gap-x-1.5 text-xs leading-4"
         >
           {failureText(item.failure)}
           {/* 일시 실패는 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
