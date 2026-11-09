@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@ondo/api";
 import { PRODUCT_PATH } from "./queries";
+import { withListing } from "../derive";
 import type {
   Listing,
   ListingImageUpload,
@@ -19,7 +20,21 @@ import {
 /**
  * 쓰기는 전부 여기. 성공하면 `keys.ts`의 팩토리로 무효화한다 — 목록과 상세가 같은
  * 리소스를 보고 있어서, 한쪽만 갱신하면 배지는 판매중인데 상세는 시즌종료가 된다.
+ *
+ * 저장 셋(등록, 수정, 상태 변경)은 응답으로 캐시를 고치고 무효화는 `refetchType: "none"`(#404).
+ * 저장 도중 상세를 다시 받으면 그 GET이 401일 때 QueryCache 전역 이동이 폼을 날린다 — 수정은
+ * PATCH 뒤 상태 변경까지 이어지는 한 번의 저장이라 그 사이에 GET이 끼면 안 된다. 다시 받기는
+ * 저장이 끝나 화면을 옮긴 뒤 새로 마운트되는 목록, 상세 패널이 stale을 보고 한 번 한다.
  */
+const SAVE_INVALIDATE = { refetchType: "none" } as const;
+
+/**
+ * 저장 401을 화면이 받는다(#404). 전역 `MutationCache.onError`가 `/login`으로 보내면 쓰던 폼이
+ * 날아간다 — 업로드처럼 화면이 잠그고 다른 탭 재로그인으로 이어서 저장한다. 문자열은
+ * `app/sessionLoss.ts`의 `SESSION_LOSS_INLINE`과 같아야 한다(feature는 app을 import 못 한다).
+ * 401만 이 표시를 본다 — 403, 500, 네트워크 오류는 원래도 전역 이동이 없다. 삭제는 그대로 이동한다.
+ */
+const INLINE_SESSION_LOSS = { sessionLoss: "inline" } as const;
 
 /**
  * 응답을 wire 그대로 돌려준다. 상세 쿼리의 캐시에 **wire를** 넣어야 해서다 —
@@ -36,11 +51,15 @@ function createProduct(body: ProductCreateRequest): Promise<ProductDetail> {
 export function useCreateProductMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: createProduct,
     onSuccess: (created) => {
       // 응답이 곧 상세다 — 등록 직후 우측 패널이 한 번 더 부르지 않게 미리 넣는다
       queryClient.setQueryData(productKeys.detail(created.id), created);
-      return queryClient.invalidateQueries({ queryKey: productKeys.lists() });
+      return queryClient.invalidateQueries({
+        queryKey: productKeys.lists(),
+        ...SAVE_INVALIDATE,
+      });
     },
   });
 }
@@ -48,18 +67,26 @@ export function useCreateProductMutation() {
 export function useUpdateProductMutation(productId: number) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: (body: ProductUpdateRequest) =>
       apiFetch<ProductDetail>(PRODUCT_READ_PATH.product(productId), {
         method: "PATCH",
         body,
       }),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: productKeys.lists() }),
+    onSuccess: (updated) => {
+      // 응답이 곧 상세다(목에서 같은 `productDetail`). 실서버가 다르면 다음 화면의 GET이 고친다
+      queryClient.setQueryData(productKeys.detail(productId), updated);
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: productKeys.lists(),
+          ...SAVE_INVALIDATE,
+        }),
         queryClient.invalidateQueries({
           queryKey: productKeys.detail(productId),
+          ...SAVE_INVALIDATE,
         }),
-      ]),
+      ]);
+    },
   });
 }
 
@@ -118,6 +145,7 @@ export function useUploadListingImageMutation() {
 export function useListingStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: INLINE_SESSION_LOSS,
     mutationFn: (input: {
       listingId: number;
       productId: number;
@@ -129,12 +157,25 @@ export function useListingStatusMutation() {
           : PRODUCT_PATH.reopen(input.listingId),
         { method: "POST" },
       ),
-    onSuccess: (_, input) =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: productKeys.lists() }),
+    onSuccess: (listing, input) => {
+      /*
+       * 응답은 게시글 하나라 상세의 `listing` 칸만 바꾼다. 이걸 빼면 저장 직후 다시 연 수정 화면이
+       * 옛 캐시(판매 중)로 폼을 연다 — 폼 초기값은 첫 렌더의 상세다(loop-01 시즌 종료 시험)
+       */
+      queryClient.setQueryData<ProductDetail>(
+        productKeys.detail(input.productId),
+        (detail) => withListing(detail, listing),
+      );
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: productKeys.lists(),
+          ...SAVE_INVALIDATE,
+        }),
         queryClient.invalidateQueries({
           queryKey: productKeys.detail(input.productId),
+          ...SAVE_INVALIDATE,
         }),
-      ]),
+      ]);
+    },
   });
 }

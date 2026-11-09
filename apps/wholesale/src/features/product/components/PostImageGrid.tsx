@@ -504,7 +504,8 @@ export function PostImageGrid({
                 slot={slot}
                 index={shown.length + i + 1}
                 disabled={disabled}
-                retryDisabled={authStopped}
+                /* 저장 401 잠금(#404)은 격자 큐를 멈추지 않는다 — 화면 잠금(`addDisabled`)도 같이 본다 */
+                retryDisabled={authStopped || addDisabled}
                 onRetry={() => retry(slot.slotId)}
                 onRemove={() => remove(slot.slotId)}
               />

@@ -10,6 +10,7 @@ import { ProductFormPanel } from "./ProductFormPanel";
 import { useCreateProductMutation } from "../api/mutations";
 import {
   IDLE_UPLOAD_STATE,
+  SAVE_AUTH_LATE_MESSAGE,
   SESSION_LOST_MESSAGE,
   LIST_PARAM,
 } from "../constants";
@@ -24,11 +25,14 @@ import {
   isProductFormDirty,
   isSessionLostError,
   isUploadLocked,
+  saveAuthOutcome,
+  saveLineTag,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
   validateProductForm,
 } from "../derive";
+import type { SaveLock } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
 import type { PostFormValue, ProductFormValue, UploadState } from "../types";
@@ -73,9 +77,13 @@ export function ProductCreateView() {
   const restored = lostAt !== null && !sessionLost;
   const formAlertId = useId();
   const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  /* 잠금이 저장 401에서 왔나(#404). 문구는 같고 표식(`data-ac`)만 가른다 */
+  const [saveLock, setSaveLock] = useState<SaveLock>(null);
+  const formTag = saveLineTag(sessionLost, saveLock, formMessage);
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
       setLostAt(productSessionEpoch());
+      setSaveLock(null);
       // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
       setErrors(clearFormError);
       return;
@@ -151,6 +159,7 @@ export function ProductCreateView() {
    */
   const submit = () => {
     setLostAt(null);
+    setSaveLock(null);
     const postToSend = publishToMarket ? post : null;
     const found = validateProductForm(product, postToSend, {
       requireImages: publishToMarket,
@@ -165,6 +174,8 @@ export function ProductCreateView() {
      * 화면을 떠난 뒤 끝난 저장은 이동하지 않는다(#255 ⑬). 따로 막지 않아도 되는 이유:
      * TanStack은 `mutate`에 넘긴 콜백을 관찰자 구독자가 있을 때만 부른다(언마운트 = 구독 끝).
      */
+    // 401이 왔을 때 "그 사이 재로그인했나"를 가르려고 보내기 직전 세대를 쥔다(#404)
+    const startedAt = productSessionEpoch();
     create.mutate(toCreateRequest(product, postToSend), {
       onSuccess: (created) => {
         setLeaving(true);
@@ -172,6 +183,26 @@ export function ProductCreateView() {
       },
       onError: (error) => {
         savingRef.current = false;
+        /*
+         * 저장 401(#404). 지금 세션이면 업로드 401과 같은 잠금 — 폼은 남고 다른 탭 재로그인으로
+         * 풀린다. 재로그인 전에 떠난 요청이면 새 세션을 잠그지 않고 다시 저장하라고만 한다.
+         * 자동으로 다시 보내지 않는다 — 등록엔 멱등 키가 없어 상품이 둘 생길 수 있다.
+         */
+        const outcome = saveAuthOutcome(
+          error,
+          startedAt,
+          productSessionEpoch(),
+        );
+        if (outcome === "lock") {
+          setLostAt(productSessionEpoch());
+          setSaveLock("save");
+          setErrors(clearFormError);
+          return;
+        }
+        if (outcome === "late") {
+          setErrors({ _form: SAVE_AUTH_LATE_MESSAGE });
+          return;
+        }
         const mapped = toProductFormErrors(error, product);
         if (mapped) {
           showErrors(mapped);
@@ -266,6 +297,7 @@ export function ProductCreateView() {
             message={formMessage}
             sessionLost={sessionLost}
             restored={restored}
+            tag={formTag}
           />
           {/* 저장이 왜 잠겼는지 / 뭐가 안 실리는지. 버튼이 `aria-describedby`로 가리킨다(DD10) */}
           {note ? (
@@ -314,7 +346,7 @@ export function ProductCreateView() {
             onClick={submit}
             disabled={create.isPending || uploadState.uploading || sessionLost}
             aria-describedby={saveDescribedBy}
-            data-ac="S2-3 S2-4"
+            data-ac="S2-3 S2-4 10:S2-4"
           >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
           </Button>

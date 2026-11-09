@@ -13,6 +13,8 @@ import {
   PRICE_INPUT_MAX,
   PRICE_INPUT_MAX_DIGITS,
   PRODUCT_FIELD_ORDER,
+  SAVE_AUTH_LATE_MESSAGE,
+  SAVE_AUTH_LATE_PARTIAL_MESSAGE,
   type PostFilterValue,
 } from "./constants";
 import type {
@@ -20,6 +22,7 @@ import type {
   ColorGroup,
   ColorItem,
   ImageRejectReason,
+  Listing,
   ListingUpsertRequest,
   PostFormValue,
   PostStatus,
@@ -394,6 +397,58 @@ export function isUploadLocked(lostAt: number | null, epoch: number): boolean {
  */
 export function shouldLockOnAuth(startedAt: number, epoch: number): boolean {
   return startedAt === epoch;
+}
+
+/** 저장 실패를 화면이 어느 길로 받나(#404). `other`는 지금 코드 경로(칸 오류 또는 `_form`) 그대로 */
+export type SaveAuthOutcome = "lock" | "late" | "other";
+
+/**
+ * 저장(등록 POST, 수정 PATCH, 상태 변경) 실패의 401 판정(#404). 업로드 잠금과 같은 세대 규칙이다 —
+ * 요청을 띄운 세대가 지금 세대면 지금 세션이 끊긴 것이라 잠그고, 그 사이 재로그인했으면 옛 쿠키의
+ * 답이라 잠그지 않고 다시 저장하라고만 한다. 403과 네트워크 오류는 세션 문제가 아니라 건드리지 않는다.
+ */
+export function saveAuthOutcome(
+  error: unknown,
+  startedAt: number,
+  epoch: number,
+): SaveAuthOutcome {
+  if (!isSessionLostError(error)) return "other";
+  return shouldLockOnAuth(startedAt, epoch) ? "lock" : "late";
+}
+
+/** 지금 잠금이 저장 401에서 왔나(#404). `partial`은 PATCH 200 뒤 상태 변경 401. 업로드 401 잠금은 null */
+export type SaveLock = "save" | "partial" | null;
+
+/**
+ * 하단 한 줄(`FormMessageLine`)에 붙일 loop-10 `data-ac`(#404 §5-7 3). 업로드 잠금과 다른 오류엔 없다 —
+ * 업로드 잠금 줄의 `S4-3 S4-7`은 loop-03 e2e가 정확 비교해서 그대로 둔다.
+ */
+export function saveLineTag(
+  sessionLost: boolean,
+  saveLock: SaveLock,
+  message: string | undefined,
+): string | undefined {
+  if (sessionLost) {
+    if (saveLock === "partial") return "10:S2-6";
+    return saveLock === "save" ? "10:S2-3" : undefined;
+  }
+  return message === SAVE_AUTH_LATE_MESSAGE ||
+    message === SAVE_AUTH_LATE_PARTIAL_MESSAGE
+    ? "10:S2-7"
+    : undefined;
+}
+
+/**
+ * 상태 변경 응답(`ListingResponse`)을 상세 캐시에 넣는다(#404). 저장 도중 상세를 다시 받으면 그 GET이
+ * 401일 때 전역 이동이 폼을 날린다 — 그래서 응답으로 캐시를 고친다. 나머지 칸은 참조를 지켜
+ * 구독자가 쓸데없이 다시 그리지 않게 한다. 캐시가 없으면 만들지 않는다(상세를 본 적 없는 상품).
+ */
+export function withListing(
+  detail: ProductDetail | undefined,
+  listing: Listing,
+): ProductDetail | undefined {
+  if (detail === undefined) return undefined;
+  return { ...detail, listing };
 }
 
 /**

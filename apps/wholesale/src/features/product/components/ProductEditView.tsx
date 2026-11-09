@@ -16,7 +16,10 @@ import {
 import { useProductDetailQuery } from "../api/queries";
 import {
   IDLE_UPLOAD_STATE,
+  SAVE_AUTH_LATE_MESSAGE,
+  SAVE_AUTH_LATE_PARTIAL_MESSAGE,
   SESSION_LOST_MESSAGE,
+  SESSION_LOST_PARTIAL_MESSAGE,
   LIST_PARAM,
 } from "../constants";
 import {
@@ -29,6 +32,8 @@ import {
   isSessionLostError,
   isUploadLocked,
   LISTING_IMAGES_REQUIRED_MESSAGE,
+  saveAuthOutcome,
+  saveLineTag,
   shouldSendListing,
   toPostForm,
   toProductForm,
@@ -39,6 +44,7 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
+import type { SaveLock } from "../derive";
 import type { PostStatus, ProductView, UploadState } from "../types";
 import { useBackLeaveGuard } from "../useBackLeaveGuard";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
@@ -142,11 +148,23 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const [lostAt, setLostAt] = useState<number | null>(null);
   const sessionLost = isUploadLocked(lostAt, epoch);
   const restored = lostAt !== null && !sessionLost;
+  /*
+   * 이번 잠금이 저장에서, 그중 반쯤 저장(PATCH 200 뒤 상태 변경 401)에서 왔나(#404). 잠금은 하나지만
+   * 반쯤 저장은 문구가 달라야 한다 — 상품 정보는 이미 저장됐고 판매 상태만 확인 못 했다는 걸 사장이
+   * 알아야 탭을 닫지 않는다. 업로드 401로 잠그거나 저장을 다시 누르면 null.
+   */
+  const [saveLock, setSaveLock] = useState<SaveLock>(null);
   const formAlertId = useId();
-  const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  const formMessage = sessionLost
+    ? saveLock === "partial"
+      ? SESSION_LOST_PARTIAL_MESSAGE
+      : SESSION_LOST_MESSAGE
+    : errors._form;
+  const formTag = saveLineTag(sessionLost, saveLock, formMessage);
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
       setLostAt(productSessionEpoch());
+      setSaveLock(null);
       // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
       setErrors(clearFormError);
       return;
@@ -253,6 +271,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
    */
   const submit = async () => {
     setLostAt(null);
+    setSaveLock(null);
     const sendListing = shouldSendListing(product, productForm, postForm);
     const found = validateProductForm(
       productForm,
@@ -277,9 +296,17 @@ function ProductEditForm({ product }: { product: ProductView }) {
     savingRef.current = true;
     // 변경 없이 저장을 눌러도 저장 중 뒤로가기는 머문다 — 이 폼은 아직 보초가 없을 수 있다
     armSaving();
+    /*
+     * 요청마다 보내기 직전 세대를 쥔다(#404). PATCH와 상태 변경 사이에 재로그인이 있었으면 상태
+     * 변경은 새 쿠키로 나간 것이라 그 401은 지금 세션의 401이다. `patched`는 반쯤 저장을 가른다.
+     */
+    let startedAt = productSessionEpoch();
+    let patched = false;
     try {
       await update.mutateAsync(toUpdateRequest(productForm, postForm, product));
+      patched = true;
       if (product.post && status !== product.post.status) {
+        startedAt = productSessionEpoch();
         await listingStatus.mutateAsync({
           listingId: product.post.id,
           productId: product.id,
@@ -292,6 +319,26 @@ function ProductEditForm({ product }: { product: ProductView }) {
       router.push(detailPath);
     } catch (error) {
       savingRef.current = false;
+      /*
+       * 저장 401(#404). 지금 세션이면 업로드 401과 같은 잠금, 옛 세션의 늦은 401이면 잠그지 않고
+       * 다시 저장하라고만 한다. 다시 보내는 건 사장이 `저장`을 누를 때뿐이다 — 그때 `submit`이
+       * PATCH 전체와 (서버와 다르면) 상태 변경을 처음부터 보낸다(§7 Q2 ①).
+       */
+      const outcome = saveAuthOutcome(error, startedAt, productSessionEpoch());
+      if (outcome === "lock") {
+        setLostAt(productSessionEpoch());
+        setSaveLock(patched ? "partial" : "save");
+        setErrors(clearFormError);
+        return;
+      }
+      if (outcome === "late") {
+        setErrors({
+          _form: patched
+            ? SAVE_AUTH_LATE_PARTIAL_MESSAGE
+            : SAVE_AUTH_LATE_MESSAGE,
+        });
+        return;
+      }
       const mapped = toProductFormErrors(error, productForm);
       if (mapped) {
         showErrors(mapped);
@@ -372,6 +419,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
             message={formMessage}
             sessionLost={sessionLost}
             restored={restored}
+            tag={formTag}
           />
           {note ? (
             <p
@@ -421,7 +469,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
             onClick={submit}
             disabled={saving}
             aria-describedby={saveDescribedBy}
-            data-ac="S2-3 S2-4"
+            data-ac="S2-3 S2-4 10:S2-5"
           >
             저장하기
           </Button>
