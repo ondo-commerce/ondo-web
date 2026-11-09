@@ -68,6 +68,21 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 - tsconfig가 `strict` + `noUncheckedIndexedAccess` + `verbatimModuleSyntax`다.
   `arr[0]`은 `T | undefined`이고 타입은 `import type`으로 가져와야 한다
 
+## 우선순위 — 정합성 > 성능 > 유지보수성
+
+코드를 짜거나 리뷰할 때 충돌하면 이 순서로 고른다 (2026-11-08 멘토링에서 가져옴. 바꾸려면 `docs/adr/`에 기록).
+
+| 순위 | 뜻 | FE에서 실제로 보는 것 |
+|---|---|---|
+| 1 정합성 | 사용자가 본 값과 서버 값이 어긋나지 않는다 | 중복 제출 방지, 저장 실패 시 잠금과 복구, 409 멱등 처리, 변이 후 캐시 무효화 범위가 정확한가, 낙관적 업데이트 롤백 |
+| 2 성능 | 요청 뒤 화면이 얼마나 빨리 반응하나 | 목록 캐싱과 재조회 조건, 불필요한 리렌더, 소매 첫 화면 로딩(Server Component fetch) |
+| 3 유지보수성 | 다음 사람이 고칠 수 있나 | `features/product` 선례, derive 순수 함수, import 방향 |
+
+- **도매(`wholesale`)는 재고·주문·정산이라 항상 정합성이 먼저다.** 빠른데 틀린 화면보다 느린데 맞는 화면.
+- **소매(`retail`)는 탐색 화면은 성능이 먼저**(첫 화면, 검색, 상품 상세), **주문·재고가 걸리는 화면은 정합성이 먼저**(장바구니 수량, 주문 생성, 품절).
+- 가용성(장애, 배포)은 인프라 몫이라 여기서 따지지 않는다. CPU·메모리 수치도 쓰지 않는다.
+- AI가 둘 중 하나를 포기해야 하면 **묻는다.** 혼자 고르지 않는다. 답은 회차 `decisions.md`에 남긴다(`docs/13-ai-harness.md`).
+
 ## 두 앱의 결정적 차이
 
 | | 도매 `wholesale` | 소매 `retail` |
@@ -87,7 +102,8 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ## 더 볼 것
 
 `docs/03-git.md` 브랜치·커밋·PR · `docs/04-component-strategy.md` 승격 규칙 ·
-`docs/02-folder-structure.md` 폴더·네이밍 · `docs/08-tech-debt-rules.md` 부채 규칙 · `docs/adr/` 결정 기록
+`docs/02-folder-structure.md` 폴더·네이밍 · `docs/08-tech-debt-rules.md` 부채 규칙 · `docs/adr/` 결정 기록 ·
+`docs/13-ai-harness.md` AI 개발 하네스(에이전트 역할, findings, decisions)
 
 ⚠️ **`docs/`는 계획이고 코드는 그보다 얇다.** `packages/api`·MSW·TanStack Query·Zustand는
 ADR엔 있으나 **아직 없다.** 데이터는 전부 `fixtures.ts` 정적 더미다. 문서를 근거로 없는 걸 있다고 쓰지 않는다.
