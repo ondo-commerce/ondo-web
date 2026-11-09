@@ -322,7 +322,7 @@ test("(f) 검색어 + 상태 필터 + 정산 필터 + 다른 주문 펼침 상�
 }) => {
   await start(page, "/orders");
   await notify(page, "incoming", { type: "NEW_ORDER" });
-  const search = page.getByLabel("거래처·품명 검색", { exact: true });
+  const search = page.getByLabel("주문번호·거래처·품명 검색", { exact: true });
   await search.fill("라온");
   await page
     .getByRole("radiogroup", { name: "주문 상태 필터", exact: true })
