@@ -26,11 +26,13 @@ import {
   isSessionLostError,
   isUploadLocked,
   saveAuthOutcome,
+  saveLineTag,
   toCreateRequest,
   toProductFormErrors,
   uploadNote,
   validateProductForm,
 } from "../derive";
+import type { SaveLock } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
 import type { PostFormValue, ProductFormValue, UploadState } from "../types";
@@ -75,9 +77,13 @@ export function ProductCreateView() {
   const restored = lostAt !== null && !sessionLost;
   const formAlertId = useId();
   const formMessage = sessionLost ? SESSION_LOST_MESSAGE : errors._form;
+  /* 잠금이 저장 401에서 왔나(#404). 문구는 같고 표식(`data-ac`)만 가른다 */
+  const [saveLock, setSaveLock] = useState<SaveLock>(null);
+  const formTag = saveLineTag(sessionLost, saveLock, formMessage);
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
       setLostAt(productSessionEpoch());
+      setSaveLock(null);
       // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
       setErrors(clearFormError);
       return;
@@ -153,6 +159,7 @@ export function ProductCreateView() {
    */
   const submit = () => {
     setLostAt(null);
+    setSaveLock(null);
     const postToSend = publishToMarket ? post : null;
     const found = validateProductForm(product, postToSend, {
       requireImages: publishToMarket,
@@ -188,6 +195,7 @@ export function ProductCreateView() {
         );
         if (outcome === "lock") {
           setLostAt(productSessionEpoch());
+          setSaveLock("save");
           setErrors(clearFormError);
           return;
         }
@@ -289,6 +297,7 @@ export function ProductCreateView() {
             message={formMessage}
             sessionLost={sessionLost}
             restored={restored}
+            tag={formTag}
           />
           {/* 저장이 왜 잠겼는지 / 뭐가 안 실리는지. 버튼이 `aria-describedby`로 가리킨다(DD10) */}
           {note ? (
@@ -337,7 +346,7 @@ export function ProductCreateView() {
             onClick={submit}
             disabled={create.isPending || uploadState.uploading || sessionLost}
             aria-describedby={saveDescribedBy}
-            data-ac="S2-3 S2-4 10:S2-3 10:S2-4 10:S2-7"
+            data-ac="S2-3 S2-4 10:S2-4"
           >
             {publishToMarket ? "상품 & 게시글 등록" : "상품 등록"}
           </Button>

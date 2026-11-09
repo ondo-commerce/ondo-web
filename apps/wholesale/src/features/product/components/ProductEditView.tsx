@@ -33,6 +33,7 @@ import {
   isUploadLocked,
   LISTING_IMAGES_REQUIRED_MESSAGE,
   saveAuthOutcome,
+  saveLineTag,
   shouldSendListing,
   toPostForm,
   toProductForm,
@@ -43,6 +44,7 @@ import {
 } from "../derive";
 import { priceRowsFromOptions } from "../priceRows";
 import { productSessionEpoch, useProductSessionEpoch } from "../sessionRefresh";
+import type { SaveLock } from "../derive";
 import type { PostStatus, ProductView, UploadState } from "../types";
 import { useBackLeaveGuard } from "../useBackLeaveGuard";
 import { useBeforeUnloadGuard } from "../useBeforeUnloadGuard";
@@ -147,21 +149,22 @@ function ProductEditForm({ product }: { product: ProductView }) {
   const sessionLost = isUploadLocked(lostAt, epoch);
   const restored = lostAt !== null && !sessionLost;
   /*
-   * 이번 잠금이 반쯤 저장(PATCH 200 뒤 상태 변경 401)인가(#404). 잠금은 하나지만 문구가 달라야 한다 —
-   * 상품 정보는 이미 저장됐고 판매 상태만 확인 못 했다는 걸 사장이 알아야 탭을 닫지 않는다.
-   * 업로드 401로 잠그거나 저장을 다시 누르면 끈다.
+   * 이번 잠금이 저장에서, 그중 반쯤 저장(PATCH 200 뒤 상태 변경 401)에서 왔나(#404). 잠금은 하나지만
+   * 반쯤 저장은 문구가 달라야 한다 — 상품 정보는 이미 저장됐고 판매 상태만 확인 못 했다는 걸 사장이
+   * 알아야 탭을 닫지 않는다. 업로드 401로 잠그거나 저장을 다시 누르면 null.
    */
-  const [lockedPartial, setLockedPartial] = useState(false);
+  const [saveLock, setSaveLock] = useState<SaveLock>(null);
   const formAlertId = useId();
   const formMessage = sessionLost
-    ? lockedPartial
+    ? saveLock === "partial"
       ? SESSION_LOST_PARTIAL_MESSAGE
       : SESSION_LOST_MESSAGE
     : errors._form;
+  const formTag = saveLineTag(sessionLost, saveLock, formMessage);
   const handleUploadAuthFailure = (error: unknown) => {
     if (isSessionLostError(error)) {
       setLostAt(productSessionEpoch());
-      setLockedPartial(false);
+      setSaveLock(null);
       // 옛 서버 오류 줄은 잠금 문구가 가리고, 풀리면 풀림 문구가 대신한다(D64 ①)
       setErrors(clearFormError);
       return;
@@ -268,7 +271,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
    */
   const submit = async () => {
     setLostAt(null);
-    setLockedPartial(false);
+    setSaveLock(null);
     const sendListing = shouldSendListing(product, productForm, postForm);
     const found = validateProductForm(
       productForm,
@@ -324,7 +327,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
       const outcome = saveAuthOutcome(error, startedAt, productSessionEpoch());
       if (outcome === "lock") {
         setLostAt(productSessionEpoch());
-        setLockedPartial(patched);
+        setSaveLock(patched ? "partial" : "save");
         setErrors(clearFormError);
         return;
       }
@@ -416,6 +419,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
             message={formMessage}
             sessionLost={sessionLost}
             restored={restored}
+            tag={formTag}
           />
           {note ? (
             <p
@@ -465,7 +469,7 @@ function ProductEditForm({ product }: { product: ProductView }) {
             onClick={submit}
             disabled={saving}
             aria-describedby={saveDescribedBy}
-            data-ac="S2-3 S2-4 10:S2-5 10:S2-6"
+            data-ac="S2-3 S2-4 10:S2-5"
           >
             저장하기
           </Button>

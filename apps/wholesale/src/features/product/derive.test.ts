@@ -4,6 +4,8 @@ import {
   IMAGE_MAX_BYTES,
   MAX_IMAGE_COUNT,
   PRICE_INPUT_MAX_DIGITS,
+  SAVE_AUTH_LATE_MESSAGE,
+  SAVE_AUTH_LATE_PARTIAL_MESSAGE,
 } from "./constants";
 import {
   backGuardAction,
@@ -28,6 +30,7 @@ import {
   remainingImageSlots,
   requeueForRetry,
   saveAuthOutcome,
+  saveLineTag,
   shouldLockOnAuth,
   shouldPushGuard,
   uploadFailure,
@@ -482,6 +485,22 @@ describe("saveAuthOutcome — 10:S2-2: 저장 401만 세대로 가르고 나머�
     expect(saveAuthOutcome(new TypeError("Failed to fetch"), 3, 3)).toBe(
       "other",
     );
+  });
+});
+
+describe("saveLineTag — 10-M2: 저장 401 줄에만 loop-10 표식", () => {
+  it("저장 잠금 → 10:S2-3, 반쯤 저장 잠금 → 10:S2-6, 업로드 잠금 → 없음", () => {
+    expect(saveLineTag(true, "save", undefined)).toBe("10:S2-3");
+    expect(saveLineTag(true, "partial", undefined)).toBe("10:S2-6");
+    expect(saveLineTag(true, null, undefined)).toBeUndefined();
+  });
+
+  it("잠금 아님: 늦은 401 문구 둘 → 10:S2-7, 다른 오류 → 없음", () => {
+    expect(saveLineTag(false, null, SAVE_AUTH_LATE_MESSAGE)).toBe("10:S2-7");
+    expect(saveLineTag(false, null, SAVE_AUTH_LATE_PARTIAL_MESSAGE)).toBe(
+      "10:S2-7",
+    );
+    expect(saveLineTag(false, null, "서버 오류")).toBeUndefined();
   });
 });
 

@@ -13,6 +13,8 @@ import {
   PRICE_INPUT_MAX,
   PRICE_INPUT_MAX_DIGITS,
   PRODUCT_FIELD_ORDER,
+  SAVE_AUTH_LATE_MESSAGE,
+  SAVE_AUTH_LATE_PARTIAL_MESSAGE,
   type PostFilterValue,
 } from "./constants";
 import type {
@@ -412,6 +414,28 @@ export function saveAuthOutcome(
 ): SaveAuthOutcome {
   if (!isSessionLostError(error)) return "other";
   return shouldLockOnAuth(startedAt, epoch) ? "lock" : "late";
+}
+
+/** 지금 잠금이 저장 401에서 왔나(#404). `partial`은 PATCH 200 뒤 상태 변경 401. 업로드 401 잠금은 null */
+export type SaveLock = "save" | "partial" | null;
+
+/**
+ * 하단 한 줄(`FormMessageLine`)에 붙일 loop-10 `data-ac`(#404 §5-7 3). 업로드 잠금과 다른 오류엔 없다 —
+ * 업로드 잠금 줄의 `S4-3 S4-7`은 loop-03 e2e가 정확 비교해서 그대로 둔다.
+ */
+export function saveLineTag(
+  sessionLost: boolean,
+  saveLock: SaveLock,
+  message: string | undefined,
+): string | undefined {
+  if (sessionLost) {
+    if (saveLock === "partial") return "10:S2-6";
+    return saveLock === "save" ? "10:S2-3" : undefined;
+  }
+  return message === SAVE_AUTH_LATE_MESSAGE ||
+    message === SAVE_AUTH_LATE_PARTIAL_MESSAGE
+    ? "10:S2-7"
+    : undefined;
 }
 
 /**

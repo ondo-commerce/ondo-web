@@ -14,6 +14,7 @@ export function FormMessageLine({
   message,
   sessionLost,
   restored,
+  tag,
 }: {
   /** 저장 버튼 `aria-describedby`가 가리키는 id */
   id: string;
@@ -22,14 +23,20 @@ export function FormMessageLine({
   sessionLost: boolean;
   /** 잠겼다가 같은 계정 재로그인으로 풀렸고 아직 저장을 안 눌렀다 */
   restored: boolean;
+  /** 저장 401 줄의 loop-10 표식(`saveLineTag`). 기존 값 뒤에 붙는다 */
+  tag?: string;
 }) {
+  const ac =
+    [sessionLost ? "S4-3 S4-7" : null, tag ?? null]
+      .filter((v) => v !== null)
+      .join(" ") || undefined;
   if (message)
     return (
       <div className="mr-auto flex items-center gap-3">
         <p
           id={id}
           role="alert"
-          data-ac={sessionLost ? "S4-3 S4-7" : undefined}
+          data-ac={ac}
           className="text-destructive-strong text-sm"
         >
           {message}
