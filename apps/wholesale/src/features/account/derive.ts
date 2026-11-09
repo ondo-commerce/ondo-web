@@ -1,6 +1,7 @@
 import {
   ACCOUNT_PATH,
   APPROVAL_STEP_LABELS,
+  LOGIN_NOTICE_OTHER_TAB,
   MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   VALIDATION_MESSAGE,
@@ -15,6 +16,7 @@ import type {
   DocumentField,
   FieldErrors,
   LoginField,
+  SessionEndReason,
   SignupField,
 } from "./types";
 
@@ -48,6 +50,22 @@ export function otherTabActionOf(
 ): OtherTabAction {
   if (mine === null) return "none";
   return theirs === mine ? "refresh" : "end";
+}
+
+/**
+ * 세션이 닫힌 순간 로그인 화면에 남길 한 줄(#410, loop-10 기획 §4-2, §4-2-1). 남길 게 없으면 null.
+ * - `self`: 이 탭이 스스로 로그아웃했다. 이유를 이미 안다
+ * - `otherTab`인데 그 순간 이미 `/login`: 이 탭엔 지킬 폼이 없었다. "저장하지 않은 입력은 남지 않아요"가
+ *   거짓이고, 막 로그인하려던 사장을 헷갈리게 한다. 남겨 두면 나중에 로그인 화면에 들어갈 때 엉뚱하게
+ *   뜨기도 한다(Codex 2-2) — 그래서 쓰는 순간에 버린다
+ */
+export function loginNoticeFor(
+  reason: SessionEndReason,
+  pathname: string,
+): string | null {
+  if (reason === "self") return null;
+  if (pathname === ACCOUNT_PATH.login) return null;
+  return LOGIN_NOTICE_OTHER_TAB;
 }
 
 /** 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다 */

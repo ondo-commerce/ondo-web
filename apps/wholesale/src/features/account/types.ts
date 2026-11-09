@@ -10,6 +10,12 @@ import type { WholesaleSchema } from "@ondo/api";
 export type AccountStatus = WholesaleSchema<"LoginResponse">["approvalStatus"];
 
 /**
+ * 이 탭의 세션이 왜 닫혔나(#410). `self` = 이 탭 계정 메뉴 로그아웃, `otherTab` = 다른 탭의 로그아웃이나
+ * 다른 계정 로그인 방송. 로그인 화면이 "다른 탭 때문"이라고 말할지가 이 값으로 갈린다
+ */
+export type SessionEndReason = "self" | "otherTab";
+
+/**
  * 정산 계좌 한 건. **소매가 읽는 모양과 필드 이름·개수를 맞춘다** —
  * `apps/retail/src/features/settlement/types.ts`의 `BankAccount`가 같은 3필드다.
  * 앱끼리 직접 import가 금지라(`CLAUDE.md`) 타입을 여기 다시 적는다.
