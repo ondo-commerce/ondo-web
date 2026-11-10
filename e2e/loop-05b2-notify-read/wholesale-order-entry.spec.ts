@@ -17,7 +17,7 @@ const NEW_ID = 1026;
 const NEW_ORDER = 7006;
 
 function search(page: Page) {
-  return page.getByLabel("거래처·품명 검색");
+  return page.getByLabel("주문번호·거래처·품명 검색");
 }
 
 function chip(

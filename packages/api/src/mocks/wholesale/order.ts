@@ -531,12 +531,34 @@ function fail(status: number, code: string, message: string, field?: string) {
   );
 }
 
+/** Java `int` 최댓값. 서버 `orderNumber`가 int라 이보다 큰 숫자는 주문번호가 될 수 없다 */
+const INT_MAX = 2_147_483_647;
+
+/**
+ * 검색어가 주문번호로 읽히면 그 번호, 아니면 null. 서버 `OrderSpecs.asOrderNumber`와 같은 규칙이다:
+ * 앞뒤 공백을 떼고 숫자로만 되어 있으며 int 범위 안이어야 한다. 넘치면 숫자가 아닌 검색어처럼 글자로만 찾는다
+ * (`Integer.parseInt`가 던지는 것을 서버가 null로 받는다). 앞자리 0은 parseInt처럼 무시된다
+ */
+function asOrderNumber(q: string): number | null {
+  const trimmed = q.trim();
+  if (!/^[0-9]+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return n <= INT_MAX ? n : null;
+}
+
+/**
+ * 거래처명과 상품명 부분 일치(대소문자 무시)에, 숫자 검색어면 주문번호 일치를 OR로 더한다.
+ * 서버 규칙(ondo-api `docs/decisions/web-handoff-2026-11.md` 5절, MUL-150): 이름 검색도 같이 돌아서
+ * `q=77`은 77번 주문과 "77상회"를 함께 낸다. 포장 회차 검색은 서버가 보류라 여기도 없다
+ */
 function matchesQuery(order: MockOrder, q: string | null): boolean {
   if (!q) return true;
   const lower = q.toLowerCase();
+  const orderNumber = asOrderNumber(q);
   return (
     order.retailerName.toLowerCase().includes(lower) ||
-    order.items.some((l) => l.productName.toLowerCase().includes(lower))
+    order.items.some((l) => l.productName.toLowerCase().includes(lower)) ||
+    (orderNumber !== null && order.orderNumber === orderNumber)
   );
 }
 
