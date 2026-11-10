@@ -700,6 +700,7 @@ export function toFactsView(
   const value = (text: string): FactPart => ({ text, strong: true });
   const label = (text: string): FactPart => ({ text, strong: false });
   if (stock !== null) {
+    // 서버 자동 답 facts 값 그대로 — 서버가 이미 미송대기까지 빼서 셌다(MUL-157). 다시 세지 않는다(#212)
     const available = [
       label("판매가능 "),
       value(`${formatNumber(stock.availableQty)}장`),

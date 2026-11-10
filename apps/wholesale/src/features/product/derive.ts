@@ -2,6 +2,7 @@ import { isApiError } from "@ondo/api";
 import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
 import { toFieldErrors, type FormErrors } from "@/shared/api/fieldErrors";
 import type { ProductListQuery } from "@/shared/api/product";
+import { sellableQtyOf } from "@/shared/lib/sellableQty";
 import {
   IMAGE_ACCEPT,
   IMAGE_MAX_BYTES,
@@ -110,7 +111,8 @@ export function toProductView(detail: ProductDetail): ProductView {
         stock: v.stockQty,
         reservedQty: v.allocatedQty,
         backorderQty: v.backorderQty,
-        availableQty: v.availableQty,
+        // 서버 `availableQty`(재고 − 예약)가 아니라 공식으로 다시 센다 — 재고 탭과 같은 함수(#212)
+        sellableQty: sellableQtyOf(v.stockQty, v.allocatedQty, v.backorderQty),
         // 게시글이 없으면 서버가 null을 준다(스펙엔 nullable이 없다). `listing`과 같은 사정
         orderLimit: v.orderLimit ?? null,
         avgCost: v.avgCost,

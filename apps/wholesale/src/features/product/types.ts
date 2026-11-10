@@ -77,15 +77,18 @@ export interface SkuView {
   /**
    * 현재고(stockQty) — 창고에 실제로 있는 수량. 0이면 빨강으로 표시한다.
    *
-   * ⚠️ 팔 수 있는 수량이 아니다. 마켓에 노출되는 값은 `availableQty`이고 서버가 준다.
+   * ⚠️ 팔 수 있는 수량이 아니다. 팔 수 있는 수량은 `sellableQty`다.
    */
   stock: number;
   /** 주문처리중(allocatedQty) — 주문이 잡혀 빠져나갈 예정이라 이미 묶인 수량 */
   reservedQty: number;
   /** 미송대기(backorderQty) — 팔았지만 아직 못 보낸 수량. 현재고보다 클 수 있다 */
   backorderQty: number;
-  /** 판매가능 = 현재고 − 주문처리중 − 미송대기. 서버가 계산한 값을 그대로 */
-  availableQty: number;
+  /**
+   * 판매가능 = 현재고 − 주문처리중 − 미송대기. 화면이 `sellableQtyOf`로 센다(#212) —
+   * 서버 `availableQty`는 미송대기를 안 빼서 이름을 일부러 다르게 둔다.
+   */
+  sellableQty: number;
   /**
    * 주문 제한 (게시글에 붙는 값). 0 = 무제한.
    *

@@ -116,7 +116,7 @@ export function InventoryStockTable({
                     <Table.Td>{formatNumber(totals.stock)}</Table.Td>
                     <Table.Td>{formatNumber(totals.reservedQty)}</Table.Td>
                     <Table.Td>{formatNumber(totals.backorderQty)}</Table.Td>
-                    <AvailableQtyCell value={totals.availableQty} />
+                    <AvailableQtyCell value={totals.sellableQty} />
                   </Table.Row>
                 );
               }
@@ -150,7 +150,7 @@ export function InventoryStockTable({
                   <Table.Td>{formatNumber(s.stock)}</Table.Td>
                   <Table.Td>{formatNumber(s.reservedQty)}</Table.Td>
                   <Table.Td>{formatNumber(s.backorderQty)}</Table.Td>
-                  <AvailableQtyCell value={s.availableQty} />
+                  <AvailableQtyCell value={s.sellableQty} />
                 </Table.Row>
               ));
             })}
