@@ -11,12 +11,25 @@ import { defineConfig, devices } from "@playwright/test";
  * 결과만으로 알 수 없다. 포트도 따로(3200/3201) — `reuseExistingServer: false`라 같은 포트에 다른
  * `API_ORIGIN`으로 뜬 서버(dev API를 보는 3000/3001 등)를 실수로 재사용하지 않는다. 포트가 차 있으면 시작 단계에서 실패한다.
  *
- * spec 은 `LIVE_W`·`LIVE_R`로 웹 주소를 받는다. 비어 있으면 여기서 채운다(설정 파일은 워커에서도 읽혀 값이 전달된다).
+ * spec 은 `LIVE_W`, `LIVE_R`로 웹 주소를 받는다. 여기서 채운다(설정 파일은 워커에서도 읽혀 값이 전달된다).
+ * 셸에 다른 값이 남아 있으면 시작 전에 멈춘다(#422) — 받아들이면 3200/3201을 띄워 놓고 다른 주소(3000/3001,
+ * dev API를 보는 웹)를 검사해 실서버를 봤다고 거짓 통과한다. 조용히 덮어쓰지 않는 건 그 값을 넣은 사람이 다른
+ * 주소를 보는 줄 알고 결과를 읽기 때문이다.
  */
 const WHOLESALE_PORT = 3200;
 const RETAIL_PORT = 3201;
-process.env.LIVE_W ??= `http://localhost:${WHOLESALE_PORT}`;
-process.env.LIVE_R ??= `http://localhost:${RETAIL_PORT}`;
+const LIVE_ADDRESSES = {
+  LIVE_W: `http://localhost:${WHOLESALE_PORT}`,
+  LIVE_R: `http://localhost:${RETAIL_PORT}`,
+} as const;
+for (const [name, address] of Object.entries(LIVE_ADDRESSES)) {
+  const given = process.env[name];
+  if (given !== undefined && given !== address)
+    throw new Error(
+      `${name} 값은 ${address}이어야 한다(이 설정이 그 주소에 웹을 띄운다). 지금 값: ${given}. 셸에서 지우고 다시 돌린다`,
+    );
+  process.env[name] = address;
+}
 
 export default defineConfig({
   testDir: "./e2e",
