@@ -87,13 +87,25 @@ P0, P1이 있으면 `ondo-dev --from review-fix`로 고치고 Codex를 한 번 �
 
 | 역할 | 모델 | 호출 방법 |
 |---|---|---|
-| ondo-plan, ondo-design(방향안·와이어프레임), ondo-dev, ondo-qa | Opus | 에이전트 파일 `model: opus` (기본) |
+| ondo-plan, ondo-design(방향안·와이어프레임), ondo-dev, ondo-qa, ondo-verify, ondo-wire, ondo-fe, ondo-pm | Opus | 에이전트 파일 `model: opus` 고정(2026-11-10 #437 — 고정 없던 넷이 세션 모델을 상속해 회차 보고와 실제가 달랐다) |
 | 디자인 2단계 레퍼런스 수집(크롬 열고 캡처, 표 작성) | Haiku | ondo-design을 `model: haiku`로 따로 한 번 호출해 `design/references.md`와 캡처만 만들게 하고, 그 결과를 Opus 호출에 넘긴다 |
-| 회차 보고 집계, Confluence 올리기, 이슈 생성 스크립트, 브리프 추출 | Haiku | general-purpose를 `model: haiku`로 |
-| 코드 리뷰, 기획·디자인 비판, 메타 리뷰 | Codex | `codex_ask` |
-| 오케스트레이터 | Opus (이 세션 `/model`) | — |
+| 회차 보고 문장, Confluence 올리기, HTML 문서 갱신 | Haiku | general-purpose를 `model: haiku`로. **숫자(PR 수, 테스트 수, findings 개수)는 Haiku가 세지 않는다** — 오케스트레이터가 명령으로 실측해 브리프에 적고 Haiku는 옮기기만(11-09~10 숫자 오기 세 번) |
+| 그 밖의 general-purpose(서버 응답 대조 등 판단이 걸린 일) | Opus | **`model` 인자를 반드시 준다.** 안 주면 세션 모델을 상속한다 |
+| 기획·디자인 비판, 메타 리뷰 | Codex | `codex_ask`. 매 회차 |
+| 코드 리뷰 | Codex | `codex_ask`. **앱 코드가 바뀐 회차만.** 시험이나 문서만 바뀐 회차는 생략 |
+| 오케스트레이터 | Opus | 프로젝트 `.claude/settings.json` `"model": "opus"`가 기본. 하네스 설계와 회고 세션만 `/model`로 Fable |
 
-**승급 규칙**: Opus 에이전트가 같은 이슈에서 4종 검증이나 e2e를 두 번 못 넘기거나 "막힘"을 보고하면, 그 이슈만 `model: fable`로 다시 부른다. 회차 보고에 승급 횟수를 적는다.
+**회차 보고의 모델 칸**은 짐작으로 쓰지 않는다. 에이전트 완료 알림과 에이전트 파일의 `model:`을 보고 실제 값을 적는다.
+
+**Codex 호출 머리말**(모든 `codex_ask` 프롬프트 첫 줄들에 그대로 넣는다, 11-09~10 중국어 답 1회, "실행 금지"를 읽기 금지로 알아들은 헛돌기 1회):
+```
+한국어로 답하라.
+읽기 명령(git diff, git show, cat, grep, sed)은 써도 된다. 테스트, 서버, 빌드 실행과 파일 수정만 하지 마라.
+문서는 git 밖 경로일 수 있다. 파일 시스템에서 직접 읽어라.
+우선순위(지적마다 P0~P3): 1 화면이 서버와 어긋나지 않는다(무효화, 롤백, 중복 제출, 늦은 응답, 409) → 2 사용자가 한 일을 잃지 않고 실패를 숨기지 않는다 → 3 빠르게 느껴진다 → 4 다음 사람이 고칠 수 있다. 1순위 위반 P0 또는 P1, 2순위 P1, 속도 P2, 구조·스타일 P3.
+```
+
+(삭제, 2026-11-10 #437) 승급 규칙(Opus가 두 번 막히면 같은 이슈를 Fable로 재호출)은 loop-01 이후 한 번도 쓰이지 않았다. 막히면 오케스트레이터가 사람에게 묻는 지금 규칙으로 충분하다.
 
 **토큰 다이어트(모델과 무관)**: stage마다 오케스트레이터가 `runs/<slug>/brief-<stage>.md`(그 stage의 AC와 건드릴 파일만)를 만들어 넘긴다. 에이전트는 findings 전체 대신 `findings-summary`(유형별 개수 + 최근 3회차)만 읽는다. 개발은 관련 spec만 돌리고 전체 e2e는 마지막 한 번. `02-dev.md` 150줄 상한.
 

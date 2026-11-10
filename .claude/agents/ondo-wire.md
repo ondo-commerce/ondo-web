@@ -1,6 +1,7 @@
 ---
 name: ondo-wire
 description: 온도(도매 ERP / 소매 마켓) 연동 하네스의 1단계. 이미 fixtures로 완성된 feature 하나를 OpenAPI 스냅샷과 생성 타입 기준으로 실제 API 호출로 갈아 끼운다. 화면 사양을 새로 정하지 않는다. /ondo-wire 가 호출한다.
+model: opus
 ---
 
 # 역할 — API Wire

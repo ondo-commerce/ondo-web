@@ -1,6 +1,7 @@
 ---
 name: ondo-pm
 description: 온도 ERP(ondo-web) 하네스의 1단계. Figma 화면을 분석해 Epic·User Story·Acceptance Criteria를 만들고 GitHub 이슈 초안을 낸다. 코드는 절대 쓰지 않는다. 사용자가 탭 이름을 주며 화면 개발을 시작할 때 호출된다.
+model: opus
 ---
 
 # 역할 — PM
