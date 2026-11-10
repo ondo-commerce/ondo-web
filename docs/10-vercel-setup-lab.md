@@ -203,6 +203,8 @@ Running "npx turbo-ignore --fallback=HEAD^"
 **여기서 얻는 것**: 빌드 스킵은 Vercel이 아니라 **Turborepo가 의존성 그래프로 판단**한다. `--filter="...[origin/main]"`으로 CI를 최적화하는 것과 같은 원리다.
 </details>
 
+> **2026-11-10 지금 설정: main만 배포한다 (#435).** 무료 플랜 하루 배포 한도에 걸려 PR 미리보기가 "Deployment rate limited — retry in 24 hours"로 실패했다. 한도는 운영 배포에도 같이 걸리므로, 두 앱의 `vercel.json`에 `git.deploymentEnabled`로 `dev`와 작업 브랜치 접두어(`feat-*` `fix-*` `refactor-*` `style-*` `design-*` `docs-*` `test-*` `chore-*` `perf-*`)를 끈다. 지정 안 한 브랜치는 기본으로 켜져 있어 `main`만 배포된다. 위 turbo-ignore는 그대로 둬서 `main`에서도 바뀐 앱만 빌드한다. 품질 검증은 Vercel이 아니라 GitHub Actions `ci`(4종)가 맡고, 화면 확인은 로컬 e2e와 로컬 실서버로 한다. 새 브랜치 접두어를 만들면 여기에도 더한다.
+
 ---
 
 ## Step 7. Preview 배포 흐름
