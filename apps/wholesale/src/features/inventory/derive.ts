@@ -24,6 +24,7 @@ import type {
 } from "./types";
 import { describeError } from "@/shared/api/describeError";
 import type { ProductListQuery } from "@/shared/api/product";
+import { sellableQtyOf } from "@/shared/lib/sellableQty";
 
 /*
  * 재고 탭의 파생값은 전부 여기 있다. 컴포넌트 JSX 안에서 계산하지 않는다 —
@@ -91,7 +92,8 @@ export function toProductView(detail: ProductDetail): InventoryProductView {
         stock: v.stockQty,
         reservedQty: v.allocatedQty,
         backorderQty: v.backorderQty,
-        availableQty: v.availableQty,
+        // 서버 `availableQty`(재고 − 예약)가 아니라 공식으로 다시 센다(#212, `sellableQtyOf` 주석)
+        sellableQty: sellableQtyOf(v.stockQty, v.allocatedQty, v.backorderQty),
         avgCost: v.avgCost,
       })),
     ),
@@ -204,8 +206,9 @@ export function filterSkus(
  * ------------------------------------------------------------------------ */
 
 /**
- * 색상 그룹 접힘 행·상품 행의 수량 4열. 판매가능도 **서버 값끼리 더한다** —
- * `Σ현재고 − Σ주문처리중 − Σ미송대기`와 같은 값이지만 공식을 화면이 다시 들지 않는다.
+ * 색상 그룹 접힘 행·상품 행의 수량 4열. 판매가능은 **SKU마다 공식으로 센 값끼리 더한다** —
+ * 빼기가 선형이라 `Σ현재고 − Σ주문처리중 − Σ미송대기`와 같다. 합계 행에서 공식을 따로 들지 않아
+ * 펼친 표의 합과 접힌 행이 갈리지 않는다(#212).
  */
 export function sumQuantities(
   list: readonly StockQuantities[],
@@ -215,9 +218,9 @@ export function sumQuantities(
       stock: acc.stock + q.stock,
       reservedQty: acc.reservedQty + q.reservedQty,
       backorderQty: acc.backorderQty + q.backorderQty,
-      availableQty: acc.availableQty + q.availableQty,
+      sellableQty: acc.sellableQty + q.sellableQty,
     }),
-    { stock: 0, reservedQty: 0, backorderQty: 0, availableQty: 0 },
+    { stock: 0, reservedQty: 0, backorderQty: 0, sellableQty: 0 },
   );
 }
 

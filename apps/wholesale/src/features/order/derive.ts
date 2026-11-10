@@ -272,6 +272,8 @@ export function isOrderNotFound(error: unknown): boolean {
  * 가용재고. 서버가 SKU 스코프로 내려준다(`variantAvailableQty` = 재고 − 예약).
  * 더미 시절엔 `현재고 − 주문처리중`을 화면이 계산했고 그 정의가 glossary와 충돌해
  * 보류(게이트 G-1)됐는데, 서버 계약이 값을 직접 주는 것으로 닫혔다.
+ * 재고 탭 `판매가능`처럼 미송대기를 빼서 다시 세지 않는다(#212) — 서버가 출고 수량을 이 값으로
+ * 검사하니(`INSUFFICIENT_STOCK`), 화면이 더 작은 숫자를 들면 서버가 받는 수량을 화면이 막는다.
  */
 export function assignableQty(line: OrderLineView): number {
   return line.availableQty;

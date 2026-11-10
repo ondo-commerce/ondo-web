@@ -34,9 +34,9 @@ export type StockMovementType = StockMovement["type"];
  * 수량 4종 묶음. 색상 그룹 접힘 행·상품 행은 SKU 하나가 아니라 합계라서
  * `InventorySkuView`를 그대로 쓰지 못한다 — 합계 함수가 둘 다 받게 하려고 이 모양으로 좁힌다.
  *
- * `availableQty`는 **서버 값**이다(`VariantResponse.availableQty`). fixtures 시절엔
- * 화면이 `현재고 − 주문처리중 − 미송대기`로 계산했지만 이제 마켓에 노출되는 값을 서버가 준다.
- * 합계 행은 서버 값끼리 더한다 — 같은 공식이면 같은 결과다.
+ * `sellableQty`는 **화면이 센 값**이다(`현재고 − 주문처리중 − 미송대기`, #212). 서버
+ * `VariantResponse.availableQty`는 미송대기를 안 빼서 같은 줄의 세 칸과 어긋난다. 이름을 서버 필드와
+ * 다르게 둔 건 누가 `v.availableQty`로 되돌려 놓지 않게 하려는 것이다.
  */
 export interface StockQuantities {
   /** 현재고(stockQty) */
@@ -46,7 +46,7 @@ export interface StockQuantities {
   /** 미송대기(backorderQty) */
   backorderQty: number;
   /** 판매가능. 음수일 수 있다 — 0으로 감추지 않는다(§7 Q4) */
-  availableQty: number;
+  sellableQty: number;
 }
 
 /** SKU = 색상 × 사이즈. 무늬 축은 없다 */
