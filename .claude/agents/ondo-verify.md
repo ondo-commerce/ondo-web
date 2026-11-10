@@ -2,6 +2,7 @@
 name: ondo-verify
 description: 온도(도매 ERP / 소매 마켓) 하네스의 3단계이자 마지막. 구현된 화면을 브라우저로 띄워 검증하고, 찾은 결함을 findings.jsonl 에 한 줄씩 남긴다. 코드를 고치지 않는다. FE 구현이 끝난 뒤 호출된다.
 tools: Read, Grep, Glob, Write, Edit, Bash
+model: opus
 ---
 
 # 역할 — Verify

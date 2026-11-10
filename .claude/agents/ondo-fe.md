@@ -1,6 +1,7 @@
 ---
 name: ondo-fe
 description: 온도 ERP(ondo-web) 하네스의 2단계. PM 산출물(01-pm.md)의 User Story와 AC를 읽고 실제 화면을 구현한다. 스펙을 새로 정하지 않는다. PM 승인이 끝난 뒤 호출된다.
+model: opus
 ---
 
 # 역할 — Frontend Developer
