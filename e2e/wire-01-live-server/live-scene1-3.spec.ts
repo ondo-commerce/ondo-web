@@ -253,17 +253,13 @@ test("장면 1 — 소매 재고 문의 → 자동 답 → 장바구니 → 주�
   expect(fresh, "이번 주문의 도매 알림").toHaveLength(1);
   const thisAlert = fresh[0]!;
 
-  /* 서버: 최근 알림 id가 주문 전 값과 다르고, 주문 전 첫 장에 없던 id이며, 주문 뒤 첫 장에 있다(밀려난 옛 id를
-     최신으로 답하면 여기서 걸린다, S4-1). id는 계약상 순서 뜻이 없어 크기로 비교하지 않는다. 목록을 다시 읽어
-     unread-count 뒤의 목록과 맞춘다 */
+  /* 서버: 최근 알림 id가 이번 주문 알림 행의 id다(S4-1, S4-9). 격리된 로컬 DB라 주문 뒤 이 도매처에 다른 알림이
+     끼지 않는다는 전제다. 이번 행을 찾은 직후에 읽어 아래 배지 대기 동안 값이 바뀌는 것과 섞이지 않게 한다.
+     id는 계약상 순서 뜻이 없어 크기로 비교하지 않는다 */
   const latestAfter = (await getData<UnreadCount>(w, W_UNREAD))
     .latestNotificationId;
-  const idsAfter = await notificationIds(w, W_LIST);
-  expect(latestAfter, "주문 뒤 최근 알림 id").toEqual(expect.any(Number));
-  expect(latestAfter).not.toBe(countBefore.latestNotificationId);
-  expect(idsBefore.has(latestAfter!)).toBe(false);
-  expect(idsAfter.has(latestAfter!), "최근 알림 id가 주문 뒤 목록에 있다").toBe(
-    true,
+  expect(latestAfter, "주문 뒤 최근 알림 id = 이번 주문 알림").toBe(
+    thisAlert.id,
   );
 
   /* 화면: 도매 헤더 배지 polling 30초 — 실측 28초 */
@@ -320,22 +316,19 @@ function nextEta(saved: string): Date {
 
 /**
  * 알림 본문의 날짜 글자에서 요일 앞까지(`M/D(`, 해가 다르면 `YYYY/M/D(`). 서버 `BackorderDateChangeText.etaLabel`
- * 규칙이다. 요일 글자는 정규식이 `[^)]+`로 받는다
+ * 규칙이다. 요일 글자는 정규식이 `[^)]+`로 받는다. `baseYear`는 서버가 본문을 쓴 때의 서울 연도다(S4-10)
  */
-function etaLabelHead(d: Date): string {
-  const head =
-    d.getUTCFullYear() === seoulToday().getUTCFullYear()
-      ? ""
-      : `${d.getUTCFullYear()}/`;
+function etaLabelHead(d: Date, baseYear: number): string {
+  const head = d.getUTCFullYear() === baseYear ? "" : `${d.getUTCFullYear()}/`;
   return `${head}${d.getUTCMonth() + 1}/${d.getUTCDate()}(`;
 }
 
 /** 입력칸 값(`YYYY.MM.DD` 또는 빈칸)을 본문 옛 날짜 정규식 조각으로. 빈칸이면 서버가 `입고일 미정`을 쓴다 */
-function oldEtaPattern(saved: string): string {
+function oldEtaPattern(saved: string, baseYear: number): string {
   const m = saved.trim().match(/^(\d{4})\.(\d{2})\.(\d{2})$/);
   if (!m) return "입고일 미정";
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return `${escapeRe(etaLabelHead(d))}[^)]+\\)`;
+  return `${escapeRe(etaLabelHead(d, baseYear))}[^)]+\\)`;
 }
 
 function escapeRe(s: string): string {
@@ -394,6 +387,9 @@ test("입고일 — 도매 미송 입고일 변경 → 소매 알림과 미송 �
   );
   await w.getByRole("button", { name: "저장", exact: true }).click();
   expect((await put).status(), "입고일 저장 응답").toBe(200);
+  /* 본문 날짜 글자의 기준 연도. 서버는 알림을 저장과 같은 트랜잭션에서 쓰니 단정 시점이 아니라 응답 직후에 잡는다.
+     서울 연말 자정을 넘겨 단정해도 정상 본문을 거부하지 않는다(S4-10) */
+  const baseYear = seoulToday().getUTCFullYear();
   await expect(
     w.getByRole("status").filter({ hasText: "저장했어요" }),
   ).toBeVisible();
@@ -415,9 +411,9 @@ test("입고일 — 도매 미송 입고일 변경 → 소매 알림과 미송 �
     .toBe(true);
   /* 이번 알림 행: 저장 전에 없던 id + BACKORDER_DATE_CHANGED + 무드온(101) 미송 + 본문이 이 SKU(상품, 옵션)의
      옛 날짜 → 새 날짜. 같은 도매처 다른 SKU 알림으로 통과하지 않게 본문을 통째로 본다(S4-2) */
-  const newHead = etaLabelHead(next);
+  const newHead = etaLabelHead(next, baseYear);
   const bodyRe = new RegExp(
-    `^빈티지 플라워 셔츠 레드/L 남은 \\d+장, ${oldEtaPattern(saved)} → ${escapeRe(newHead)}`,
+    `^빈티지 플라워 셔츠 레드/L 남은 \\d+장, ${oldEtaPattern(saved, baseYear)} → ${escapeRe(newHead)}`,
   );
   const fresh = await pollFresh(
     r,
