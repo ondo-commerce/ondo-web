@@ -86,6 +86,54 @@ function replyBubble(page: Page, sent: SendResult): Locator {
   );
 }
 
+/** 알림 목록·안 읽은 수 응답(도매, 소매 공통) 중 이 시험이 읽는 칸만 */
+type NotificationRow = {
+  id: number;
+  type: string;
+  title: string;
+  body: string | null;
+  target: { kind: string; id?: number; wholesalerId?: number };
+};
+type UnreadCount = {
+  notifications: number;
+  latestNotificationId?: number | null;
+};
+
+/**
+ * 서버 응답을 웹 프록시(`${base}/api/...`)로 받는다. 그 컨텍스트의 세션 쿠키가 실린다. 화면 라벨이 아니라
+ * 서버 값을 기준으로 삼아야 로그인 직후 아직 안 실린 라벨(#439 전 장면 1)을 기준값으로 잡지 않는다.
+ */
+async function getData<T>(page: Page, url: string): Promise<T> {
+  const res = await page.request.get(url);
+  expect(res.ok(), `${url} 응답 ${res.status()}`).toBe(true);
+  return ((await res.json()) as { data: T }).data;
+}
+
+/** 첫 장 100개(서버 상한)의 id. 새 알림은 첫 장 앞에 붙으므로 이 집합에 없는 id가 이번 실행 뒤에 생긴 것이다 */
+async function notificationIds(page: Page, url: string): Promise<Set<number>> {
+  const rows = await getData<NotificationRow[]>(page, `${url}?size=100`);
+  return new Set(rows.map((n) => n.id));
+}
+
+/** 헤더 종 라벨(`알림, 안 읽음 N개` / `알림`)의 안 읽은 수 */
+async function bellCount(page: Page): Promise<number> {
+  const label = await page
+    .getByRole("banner")
+    .getByRole("button", { name: /^알림/ })
+    .getAttribute("aria-label");
+  const m = (label ?? "").match(/(\d+)/);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * 화면 종이 서버 값을 실은 뒤의 수. 로그인 직후엔 아직 첫 응답 전이라 라벨에 수가 없을 수 있다 — 서버 값과
+ * 같아질 때까지 기다린 값을 화면 기준으로 쓴다
+ */
+async function settledBellCount(page: Page, server: number): Promise<number> {
+  await expect.poll(() => bellCount(page), { timeout: 45_000 }).toBe(server);
+  return server;
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("장면 1 — 소매 재고 문의 → 자동 답 → 장바구니 → 주문 → 도매 종 배지", async ({
@@ -108,9 +156,6 @@ test("장면 1 — 소매 재고 문의 → 자동 답 → 장바구니 → 주�
   });
 
   await loginWholesale(w);
-  const bellBefore = await w
-    .getByRole("button", { name: /알림/ })
-    .getAttribute("aria-label");
 
   await loginRetail(r);
   await r.goto(`${R}/products/2001`);
@@ -138,24 +183,73 @@ test("장면 1 — 소매 재고 문의 → 자동 답 → 장바구니 → 주�
   await r.goto(`${R}/cart`);
   await r.getByRole("link", { name: "주문하기" }).click();
   await r.waitForURL(/\/checkout/);
+
+  /* 기준값은 주문 직전 서버 응답에서 읽는다. 앞 실행의 알림이 남은 DB라 "라벨이 바뀌었다", "봄봄상회 새 주문이
+     하나라도 있다"로는 이번 주문 알림이 안 와도 통과한다(#439) */
+  const W_UNREAD = `${W}/api/wholesale/notifications/unread-count`;
+  const W_LIST = `${W}/api/wholesale/notifications`;
+  const countBefore = await getData<UnreadCount>(w, W_UNREAD);
+  const idsBefore = await notificationIds(w, W_LIST);
+  const bellBefore = await settledBellCount(w, countBefore.notifications);
+
+  const placed = r.waitForResponse(
+    (res) =>
+      res.request().method() === "POST" &&
+      new URL(res.url()).pathname === "/api/retail/orders",
+  );
   await r.getByRole("button", { name: "주문 접수하기" }).click();
+  const placedRes = await placed;
+  expect(placedRes.status(), "주문 접수 응답").toBe(201);
+  const order = (
+    (await placedRes.json()) as {
+      data: {
+        results: {
+          wholesalerId: number;
+          isAccepted: boolean;
+          wholesaleOrderId: number | null;
+        }[];
+      };
+    }
+  ).data;
+  /* 이번 주문 = 이 응답의 무드온(101) 도매 주문 id. 도매 알림 target.id가 이 값이다 */
+  const wholesaleOrderId = order.results.find(
+    (x) => x.wholesalerId === 101 && x.isAccepted,
+  )?.wholesaleOrderId;
+  expect(wholesaleOrderId, "무드온 도매 주문 id").toEqual(expect.any(Number));
   await r.waitForURL(/\/checkout\/complete/);
 
-  /* 도매 헤더 배지 polling 30초 — 실측 28초 */
+  /* 서버: 최근 알림 id가 바뀌어 주문 전에 없던 id가 됐다. id는 계약상 순서 의미가 없어 크기로 비교하지 않는다 */
   await expect
     .poll(
-      async () =>
-        w.getByRole("button", { name: /알림/ }).getAttribute("aria-label"),
-      { timeout: 45_000 },
+      async () => {
+        const latest = (await getData<UnreadCount>(w, W_UNREAD))
+          .latestNotificationId;
+        return typeof latest === "number" && !idsBefore.has(latest);
+      },
+      { timeout: 30_000 },
     )
-    .not.toBe(bellBefore);
-  await w.getByRole("button", { name: /알림/ }).click();
-  await expect(
-    w
-      .getByRole("dialog", { name: "알림" })
-      .getByRole("link", { name: /봄봄상회 새 주문/ })
-      .first(),
-  ).toBeVisible();
+    .toBe(true);
+  /* 이번 주문의 알림 행: 주문 전에 없던 id + NEW_ORDER + 대상 도매 주문이 이번 주문 */
+  const fresh = (await getData<NotificationRow[]>(w, `${W_LIST}?size=100`))
+    .filter((n) => !idsBefore.has(n.id))
+    .filter((n) => n.type === "NEW_ORDER" && n.target.id === wholesaleOrderId);
+  expect(fresh, "이번 주문의 도매 알림").toHaveLength(1);
+  const thisAlert = fresh[0]!;
+
+  /* 화면: 도매 헤더 배지 polling 30초 — 실측 28초 */
+  await expect
+    .poll(() => bellCount(w), { timeout: 45_000 })
+    .toBeGreaterThan(bellBefore);
+  await w.getByRole("banner").getByRole("button", { name: /^알림/ }).click();
+  const row = w
+    .getByRole("dialog", { name: "알림" })
+    .locator(`[data-id="${thisAlert.id}"]`);
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("봄봄상회 새 주문");
+  await expect(row).toHaveAttribute(
+    "href",
+    `/orders?order=${wholesaleOrderId}`,
+  );
 
   expect(apiRequests.every((url) => url.startsWith(`${R}/api/`))).toBe(true);
   await retail.close();
@@ -277,5 +371,140 @@ test("정산 — 소매 정산 화면 입금 계좌가 서버 주계좌와 같�
     r.getByRole("button", { name: "김무드 입금 계좌 복사" }),
   ).toBeVisible();
   await expect(r.getByText("계좌 미등록")).toHaveCount(0);
+  await retail.close();
+});
+
+/** `YYYY.MM.DD`(도매 입력칸 형식) 하루 뒤. 비었으면 오늘(서울) 하루 뒤. UTC 날짜 계산이라 달, 해 넘김을 Date가 맡는다 */
+function nextEta(saved: string): { input: string; month: number; day: number } {
+  const m = saved.trim().match(/^(\d{4})\.(\d{2})\.(\d{2})$/);
+  const base = m
+    ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+    : new Date(Date.now() + 9 * 3600_000);
+  const next = new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + 1),
+  );
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const month = next.getUTCMonth() + 1;
+  const day = next.getUTCDate();
+  return {
+    input: `${next.getUTCFullYear()}.${pad(month)}.${pad(day)}`,
+    month,
+    day,
+  };
+}
+
+/**
+ * #439 — 도매가 미송 입고일을 바꾸면 그 SKU에 열린 미송이 있는 소매처(봄봄상회)에 알림이 가고 소매 미송 화면 날짜가 바뀐다.
+ * 시드: 옵션 3003 = 상품 1 SKU 1-3 = 빈티지 플라워 셔츠 레드 L, 열린 미송 소매처 2곳. 같은 날짜를 다시 저장하면 알림이
+ * 안 생기므로 지금 저장된 값의 하루 뒤로 바꾼다(반복 실행마다 달라진다). 서버 입고일을 되돌리지 않는다.
+ */
+test("입고일 — 도매 미송 입고일 변경 → 소매 알림과 미송 화면 날짜", async ({
+  browser,
+}) => {
+  test.skip(PW === "", "LIVE_PW(시드 비밀번호)가 없다");
+  const wholesale = await browser.newContext({
+    viewport: { width: 1470, height: 900 },
+    locale: "ko-KR",
+  });
+  const retail = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    locale: "ko-KR",
+  });
+  const w = await wholesale.newPage();
+  const r = await retail.newPage();
+
+  await loginWholesale(w);
+  await w.getByRole("link", { name: "미송", exact: true }).click();
+  await w.waitForURL(/\/backorders/);
+  await w.getByRole("button", { name: "SKU 1-3 펼치기" }).click();
+  const eta = w.getByRole("textbox", { name: "예상 입고일" });
+  await expect(eta).toBeVisible();
+
+  await loginRetail(r);
+  await r.goto(`${R}/`);
+  await expectNoMock(r);
+
+  const R_UNREAD = `${R}/api/retail/notifications/unread-count`;
+  const R_LIST = `${R}/api/retail/notifications`;
+  const countBefore = await getData<UnreadCount>(r, R_UNREAD);
+  const idsBefore = await notificationIds(r, R_LIST);
+  const bellBefore = await settledBellCount(r, countBefore.notifications);
+
+  const next = nextEta(await eta.inputValue());
+  await eta.fill(next.input);
+  const put = w.waitForResponse(
+    (res) =>
+      res.request().method() === "PUT" &&
+      new URL(res.url()).pathname ===
+        "/api/wholesale/variants/3003/expected-inbound",
+  );
+  await w.getByRole("button", { name: "저장", exact: true }).click();
+  expect((await put).status(), "입고일 저장 응답").toBe(200);
+  await expect(
+    w.getByRole("status").filter({ hasText: "저장했어요" }),
+  ).toBeVisible();
+
+  /* 서버: 안 읽은 수 +1, 최근 알림 id가 저장 전에 없던 id */
+  await expect
+    .poll(
+      async () => {
+        const now = await getData<UnreadCount>(r, R_UNREAD);
+        return (
+          now.notifications === countBefore.notifications + 1 &&
+          typeof now.latestNotificationId === "number" &&
+          !idsBefore.has(now.latestNotificationId)
+        );
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  /* 이번 알림 행: 저장 전에 없던 id + BACKORDER_DATE_CHANGED + 무드온(101) 미송 + 본문 새 날짜(`→ 12/2(`) */
+  const newDate = `→ ${next.month}/${next.day}(`;
+  const fresh = (await getData<NotificationRow[]>(r, `${R_LIST}?size=100`))
+    .filter((n) => !idsBefore.has(n.id))
+    .filter(
+      (n) =>
+        n.type === "BACKORDER_DATE_CHANGED" &&
+        n.target.kind === "BACKORDERS" &&
+        n.target.wholesalerId === 101,
+    );
+  expect(fresh, "이번 입고일 변경 알림").toHaveLength(1);
+  const thisAlert = fresh[0]!;
+  expect(thisAlert.body ?? "").toContain(newDate);
+
+  /* 화면: 소매 헤더 배지 polling 30초 */
+  await expect
+    .poll(() => bellCount(r), { timeout: 45_000 })
+    .toBe(bellBefore + 1);
+  await r.getByRole("banner").getByRole("button", { name: /^알림/ }).click();
+  const row = r
+    .getByRole("dialog", { name: "알림" })
+    .locator(`[data-id="${thisAlert.id}"]`);
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("무드온 미송 입고일 변경");
+  await expect(row).toContainText(newDate);
+  expect(
+    (await r.locator("body").innerText()).match(/Invalid Date|NaN/),
+  ).toBeNull();
+  await r.keyboard.press("Escape");
+
+  /* 소매 미송 화면: 무드온 빈티지 플라워 셔츠 레드 · L 줄이 전부 새 날짜 */
+  await r.goto(`${R}/backorders?wholesaler=101`);
+  const lines = r
+    .getByRole("table", { name: "미송 대기 목록" })
+    .getByRole("row")
+    .filter({ hasText: "빈티지 플라워 셔츠" })
+    .filter({ hasText: "무드온" })
+    .filter({ hasText: "레드 · L" });
+  await expect(lines.first()).toBeVisible();
+  const lineCount = await lines.count();
+  for (let i = 0; i < lineCount; i++)
+    await expect(lines.nth(i)).toContainText(next.input);
+  expect(
+    (await r.locator("body").innerText()).match(/Invalid Date|NaN/),
+  ).toBeNull();
+  await expectNoMock(r);
+
+  await wholesale.close();
   await retail.close();
 });
