@@ -1,9 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  cardLines,
   count,
+  detailRows,
+  expectCard,
   knob,
+  openDetail,
   settled,
+  SHOWN,
   startAt,
   STATS_GET,
   T_1159,
@@ -12,6 +15,7 @@ import {
 
 /**
  * loop-08f #371 S1-5 전부 꺼짐 때 의도 분류가 대시보드 문의 카드 4줄에 보인다(01-plan §4-5, §6 S1-5). 1280.
+ * 2026-11-18 디자인에서 4줄은 접힌 `오늘 문의 상세`의 `판정된 문의 유형` 묶음이 됐다.
  *
  * stats-v1(10/29 11:59:30) 손 계산 값은 08 S2-1과 같다: 12건, 넘김 2, 재고 4, 미분류 2.
  * 자동 답을 전부 끄고 방 1(문맥 2001)에 "레드 M 몇 장 있어요?" → OFF 넘김 줄 하나, intent STOCK.
@@ -50,13 +54,18 @@ test("S1-5 stats-v1 11:59:30, 자동 답 전부 끔 + 방 1 재고 질문 → 4�
   await expect.poll(() => count(page, STATS_GET)).toBeGreaterThan(0);
   await settled(page, STATS_GET);
   await page.clock.setSystemTime(T_1159);
-  await expect(cardLines(page)).toHaveText([
-    "오늘 소매 메시지 13건",
-    "자동 답 5, 답+확인 1, 넘김 3, 되묻기 3, 결과 없음 1",
-    "자동으로 끝남 56% (5/판정 9)",
-    "판정한 것 중 재고 5, 미송 1, 미수 1, 기타 0, 미분류 2",
-    "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
-  ]);
+  await expectCard(page, {
+    today: "오늘 13건 56% 판정 9건 중 5건",
+    outcomes: [
+      "자동 답 5건",
+      "답+확인 1건",
+      "넘김 3건",
+      "되묻기 3건",
+      "결과 없음 1건",
+    ],
+    intents: ["재고 5건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
+  });
   await settled(page, STATS_GET);
 });
 
@@ -66,8 +75,10 @@ test("S1-5 원래 절차(주입 → 다음 polling 뒤 재고 +1). 11:59:30 + 30
   // 실측(11-05): polling 뒤 4줄 "재고 0, 미송 0, 미수 0, 기타 0, 미분류 0" — 10/29 영업일을 센다
   test.fail();
   await startAt(page, T_1159, { seed: STATS_V1 });
-  await expect(cardLines(page).nth(3)).toHaveText(
-    "판정한 것 중 재고 4, 미송 1, 미수 1, 기타 0, 미분류 2",
+  await openDetail(page);
+  await expect(detailRows(page, "판정된 문의 유형")).toHaveText(
+    ["재고 4건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    SHOWN,
   );
   await settled(page, STATS_GET);
   await offAndAsk(page);
@@ -75,8 +86,8 @@ test("S1-5 원래 절차(주입 → 다음 polling 뒤 재고 +1). 11:59:30 + 30
   await page.clock.fastForward(30_000);
   await waitCount(page, STATS_GET, before + 1);
   await settled(page, STATS_GET);
-  await expect(cardLines(page).nth(3)).toHaveText(
-    "판정한 것 중 재고 5, 미송 1, 미수 1, 기타 0, 미분류 2",
-    { timeout: 3_000 },
+  await expect(detailRows(page, "판정된 문의 유형")).toHaveText(
+    ["재고 5건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    { ...SHOWN, timeout: 3_000 },
   );
 });

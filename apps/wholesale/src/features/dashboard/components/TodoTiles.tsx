@@ -2,16 +2,18 @@
 
 import { cn, Panel } from "@ondo/ui";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useDashboardSummaryQuery } from "../api/queries";
-import type { RatioSegment, TodoTileView } from "../types";
+import type { TodoTileView } from "../types";
 import { QuerySkeleton } from "@/shared/api/QueryBoundary";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
  * 할 일 타일 4장 — 확정 → 포장 → 출고 → 미송. 타일 하나가 통째로 그 탭으로 가는 링크다.
  *
- * `Panel.Title`을 안 쓴다 — 아래 여백이 24px라 타일 높이의 절반을 먹는다. 제목·큰 숫자·둘째 줄·링크
- * 네 줄이 고정이라 여기서 직접 줄을 세운다.
+ * 타일은 제목과 큰 숫자 두 줄뿐이다(2026-11-18 사용자 지시). 둘째 줄 설명, 옆 숫자, 비율 막대, "○○ 탭 →"
+ * 글자를 뺐다 — 자세한 건 눌러서 간 탭이 말한다. 남긴 글자는 하나, 묵은 봉투 경고(`subEmphasized`)뿐이다.
+ * 처리 안 하면 사고가 나는 신호라 숫자 왼쪽에 빨간 글자로 둔다.
  */
 export function TodoTiles() {
   const { data } = useDashboardSummaryQuery();
@@ -37,7 +39,7 @@ export function TodoTilesSkeleton() {
   );
 }
 
-function TileGrid({ children }: { children: React.ReactNode }) {
+function TileGrid({ children }: { children: ReactNode }) {
   return <div className="grid shrink-0 grid-cols-4 gap-2">{children}</div>;
 }
 
@@ -47,63 +49,64 @@ function TodoTile({ tile }: { tile: TodoTileView }) {
       href={tile.href}
       className="focus-visible:ring-ring min-w-0 rounded-panel focus-visible:ring-2 focus-visible:outline-hidden"
     >
-      <Panel className="hover:bg-accent h-full gap-2 transition-colors">
-        <p className="text-muted-foreground text-sm">{tile.title}</p>
-        <p className="flex flex-wrap items-baseline gap-x-1.5">
-          <span className="text-3xl font-semibold tabular-nums">
-            {formatNumber(tile.value)}
-          </span>
-          <span className="text-sm">{tile.unit}</span>
-          {tile.valueTail !== null ? (
-            <span className="text-muted-foreground text-sm tabular-nums">
-              · {tile.valueTail}
-            </span>
-          ) : null}
-        </p>
-        <p
-          className={cn(
-            "text-sm",
-            tile.subEmphasized
-              ? "text-destructive-strong font-medium"
-              : "text-muted-foreground",
-          )}
-        >
-          {tile.sub}
-        </p>
-        {tile.ratio !== null ? <RatioBar segments={tile.ratio} /> : null}
-        {/* 링크 표시는 글자 색 하나로 — 타일 전체가 링크라 버튼 상자를 또 그리지 않는다 */}
-        <p className="text-primary mt-auto pt-1 text-sm">{tile.linkLabel}</p>
-      </Panel>
+      {/* hover는 테두리 색으로. 타일이 회색 바탕 위라 연한 파랑 면을 깔지 않는다 */}
+      <StatTile
+        className="hover:border-primary transition-colors"
+        title={tile.title}
+        value={tile.value}
+        unit={tile.unit}
+        note={tile.subEmphasized ? tile.sub : null}
+        noteEmphasized
+      />
     </Link>
   );
 }
 
 /**
- * 구간 색. 두 번째 강조색을 만들지 않는 규칙이라 지남만 빨강이고 나머지는 회색 두 단계다 —
- * 미등록은 "챙길 것"이라 진한 회색, 정상은 배경에 가까운 옅은 회색.
+ * 숫자 타일 한 장 — 윗줄 제목(오른쪽에 작은 곁글), 아랫줄 오른쪽 끝에 큰 숫자.
+ * 할 일 타일과 우측 `오늘` 타일이 같이 써서 대시보드 윗줄이 한 모양으로 읽힌다.
  */
-const SEGMENT_CLASS: Record<RatioSegment["key"], string> = {
-  overdue: "bg-destructive",
-  noDate: "bg-border-strong",
-  onTrack: "bg-secondary-strong",
-};
-
-/** 미송 구성 비율 막대. 읽기 전용 표식이라 숫자는 둘째 줄이 말하고 여기선 비율만 보인다 */
-function RatioBar({ segments }: { segments: readonly RatioSegment[] }) {
+export function StatTile({
+  title,
+  meta = null,
+  value,
+  unit,
+  note = null,
+  noteEmphasized = false,
+  className,
+}: {
+  title: string;
+  /** 제목 줄 오른쪽 끝의 작은 글자(`최근 갱신 16:52`) */
+  meta?: ReactNode;
+  value: number;
+  unit: string;
+  /** 숫자 왼쪽의 한 줄. 없으면 숫자만 오른쪽에 선다 */
+  note?: ReactNode;
+  noteEmphasized?: boolean;
+  className?: string;
+}) {
   return (
-    <div
-      aria-hidden
-      className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"
-    >
-      {segments.map((segment) =>
-        segment.percent > 0 ? (
-          <div
-            key={segment.key}
-            className={cn("h-full rounded-full", SEGMENT_CLASS[segment.key])}
-            style={{ width: `${segment.percent}%` }}
-          />
-        ) : null,
-      )}
-    </div>
+    <Panel className={cn("h-full gap-3", className)}>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-muted-foreground text-sm">{title}</p>
+        {meta}
+      </div>
+      <div className="mt-auto flex items-baseline justify-between gap-3">
+        <p
+          className={cn(
+            "min-w-0 truncate text-sm tabular-nums",
+            noteEmphasized
+              ? "text-destructive-strong font-medium"
+              : "text-muted-foreground",
+          )}
+        >
+          {note}
+        </p>
+        <p className="flex shrink-0 items-baseline gap-1 tabular-nums">
+          <span className="text-3xl font-semibold">{formatNumber(value)}</span>
+          <span className="text-sm">{unit}</span>
+        </p>
+      </div>
+    </Panel>
   );
 }

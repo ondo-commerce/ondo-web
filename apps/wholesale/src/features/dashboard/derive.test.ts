@@ -72,16 +72,31 @@ describe("S2-1 카드 글자 (stats-v1, 10/28 영업일, asOf 11:59:30)", () => 
   it("네 줄과 기준 줄이 기획 §4-2 2 글자 그대로", () => {
     expect(toInquiryView(STATS_V1_1028)).toEqual({
       retailMessages: 12,
+      outcomes: [
+        { label: "자동 답", count: 5 },
+        { label: "답+확인", count: 1 },
+        { label: "넘김", count: 2 },
+        { label: "되묻기", count: 3 },
+        { label: "결과 없음", count: 1 },
+      ],
+      intents: [
+        { label: "재고", count: 4 },
+        { label: "미송", count: 1 },
+        { label: "미수", count: 1 },
+        { label: "기타", count: 0 },
+        { label: "미분류", count: 2 },
+      ],
+      ratePercent: 63,
       outcomeLine: "자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1",
       rateLabel: "63%",
-      rateDetail: "(5/판정 8)",
+      rateDetail: "판정 8건 중 5건",
       intentLine: "재고 4, 미송 1, 미수 1, 기타 0, 미분류 2",
       basisLine: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
       businessDay: "2026-10-28",
     });
   });
 
-  it("S2-3 0건 → 비율 -, (0/판정 0)", () => {
+  it("S2-3 0건 → 비율 -, 판정 0건 중 0건", () => {
     const zero: InquiryStats = {
       ...STATS_V1_1028,
       asOf: "2026-10-29T12:00:00+09:00",
@@ -103,7 +118,7 @@ describe("S2-1 카드 글자 (stats-v1, 10/28 영업일, asOf 11:59:30)", () => 
     };
     const view = toInquiryView(zero);
     expect(view.rateLabel).toBe("-");
-    expect(view.rateDetail).toBe("(0/판정 0)");
+    expect(view.rateDetail).toBe("판정 0건 중 0건");
     expect(view.basisLine.endsWith("12:00 기준")).toBe(true);
   });
 });
@@ -154,18 +169,22 @@ describe("08f S3-1 최근 7일 줄", () => {
   });
 
   it("stats-v1 7일 → 기획 §4-4 2 글자 그대로", () => {
-    expect(toWeekLine(STATS_V1_WEEK)).toBe(
-      "최근 7일(10/22~10/28) 소매 메시지 13건, 자동으로 끝남 67% (6/판정 9)",
-    );
+    expect(toWeekLine(STATS_V1_WEEK)).toEqual({
+      kind: "line",
+      fromTo: "10/22~10/28",
+      retailMessages: "13",
+      rateLabel: "67%",
+      rateDetail: "판정 9건 중 6건",
+    });
   });
 
   it("달 경계 기간 글자 10/28~11/03", () => {
     expect(
       toWeekLine({ ...STATS_V1_WEEK, from: "2026-10-28", to: "2026-11-03" }),
-    ).toMatch(/^최근 7일\(10\/28~11\/03\) /);
+    ).toHaveProperty("fromTo", "10/28~11/03");
   });
 
-  it("판정 0 → 자동으로 끝남 - (0/판정 0)", () => {
+  it("판정 0 → 자동으로 끝남 - 판정 0건 중 0건", () => {
     const zero = {
       ...STATS_V1_WEEK.total,
       retailMessages: 4,
@@ -175,12 +194,14 @@ describe("08f S3-1 최근 7일 줄", () => {
       clarified: 3,
       noResult: 1,
     };
-    expect(toWeekLine({ ...STATS_V1_WEEK, total: zero })).toBe(
-      "최근 7일(10/22~10/28) 소매 메시지 4건, 자동으로 끝남 - (0/판정 0)",
-    );
+    expect(toWeekLine({ ...STATS_V1_WEEK, total: zero })).toMatchObject({
+      retailMessages: "4",
+      rateLabel: "-",
+      rateDetail: "판정 0건 중 0건",
+    });
   });
 
-  it("천 단위 쉼표 1,234건, (1,000/판정 1,100)", () => {
+  it("천 단위 쉼표 1,234건, 판정 1,100건 중 1,000건", () => {
     const big = {
       ...STATS_V1_WEEK.total,
       retailMessages: 1234,
@@ -190,16 +211,21 @@ describe("08f S3-1 최근 7일 줄", () => {
       clarified: 100,
       noResult: 34,
     };
-    expect(toWeekLine({ ...STATS_V1_WEEK, total: big })).toBe(
-      "최근 7일(10/22~10/28) 소매 메시지 1,234건, 자동으로 끝남 91% (1,000/판정 1,100)",
-    );
+    expect(toWeekLine({ ...STATS_V1_WEEK, total: big })).toMatchObject({
+      retailMessages: "1,234",
+      rateLabel: "91%",
+      rateDetail: "판정 1,100건 중 1,000건",
+    });
   });
 });
 
 describe("08f S3-1 7일 줄 자리 = 기획 §4-4 4 표 8행", () => {
   const LINE = {
     kind: "line",
-    text: "최근 7일(10/22~10/28) 소매 메시지 13건, 자동으로 끝남 67% (6/판정 9)",
+    fromTo: "10/22~10/28",
+    retailMessages: "13",
+    rateLabel: "67%",
+    rateDetail: "판정 9건 중 6건",
   } as const;
   /** 12시를 넘겨 기준 영업일이 10/29가 된 뒤. 키가 바뀌어 새 기간 값이 아직 없다 */
   const NEXT_DAY = "2026-10-29";

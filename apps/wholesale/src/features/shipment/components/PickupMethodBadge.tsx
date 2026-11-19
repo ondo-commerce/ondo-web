@@ -9,7 +9,7 @@ import type { ReceiveBy } from "../types";
  */
 export function PickupMethodBadge({ receiveBy }: { receiveBy: ReceiveBy }) {
   return (
-    <Badge tone={receiveBy === "RETAILER" ? "active" : "done"}>
+    <Badge tone={receiveBy === "RETAILER" ? "active" : "muted"}>
       {RECEIVE_BY_LABEL[receiveBy]}
     </Badge>
   );

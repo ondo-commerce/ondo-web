@@ -47,7 +47,7 @@ export function SettlementBadge({ status }: { status: SettlementBadgeStatus }) {
  */
 export function LedgerBadge({ entryType }: { entryType: LedgerEntryType }) {
   return (
-    <Badge tone="done">
+    <Badge tone="muted">
       {ledgerArrow(entryType)}
       {ledgerLabel(entryType)}
     </Badge>

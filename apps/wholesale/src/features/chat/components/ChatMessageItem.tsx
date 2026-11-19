@@ -96,7 +96,7 @@ export function ChatMessageItem({
       data-client-id={message.clientMessageId ?? undefined}
       data-ac={ac}
       className={cn(
-        "flex max-w-7/10 min-w-0 flex-col gap-1",
+        "flex max-w-xl min-w-0 flex-col gap-1",
         mine ? "items-end self-end" : "items-start self-start",
       )}
     >
@@ -159,7 +159,7 @@ export function PendingItem({
       /* 08b 와이어프레임 #state-draft-keep 값(loop-08b F3). loop-04의 S4-1, S4-5는 08b에서 목록 필터 AC로
          다시 쓰여 같은 값이 두 회차를 가리켰다. 안쪽 버튼은 와이어프레임도 loop-04 값 그대로다 */
       data-ac={sending ? "S3-12" : "S3-10 S3-11"}
-      className="flex max-w-7/10 min-w-0 flex-col items-end gap-1 self-end"
+      className="flex max-w-xl min-w-0 flex-col items-end gap-1 self-end"
     >
       <span className="sr-only">{`${ROOM_TEXT.me}, ${sending ? PENDING_TEXT.srSending : PENDING_TEXT.srFailed}: `}</span>
       <Bubble tone={sending ? "me" : "failed"}>{item.body}</Bubble>

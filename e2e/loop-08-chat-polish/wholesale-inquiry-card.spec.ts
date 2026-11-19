@@ -1,9 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  cardLines,
+  basisLine,
   count,
+  expectCard,
   inquiryCard,
   knob,
+  openDetail,
   ORDERS_GET,
   readCard,
   requests,
@@ -11,6 +13,8 @@ import {
   startAt,
   STATS_GET,
   SUMMARY_GET,
+  todayRow,
+  todayTotal,
   waitCount,
 } from "./helpers";
 
@@ -18,7 +22,8 @@ import {
  * loop-08 #312 S2 도매 대시보드 `문의` 카드(01-plan §4-2, §6 S2, 와이어프레임 21, 디자인 결정 49~53).
  *
  * 숫자는 **AC에 적힌 손 계산 값**과 비교한다(op 응답과 비교하지 않는다, §0 3). S2-4만 "화면에서 읽은 값 + 1"이다.
- * 4줄은 앞말 "판정한 것 중"까지 정확히 비교한다 — 디자인 결정 51이 앞말을 붙였고 G1이 거부권으로 채택했다.
+ * 2026-11-18 디자인에서 카드가 표(`오늘`, `최근 7일` 줄)와 접힌 `오늘 문의 상세`로 바뀌었다. 옛 2줄(결과)과
+ * 4줄(판정한 것 중)은 상세의 `처리 결과`, `판정된 문의 유형` 묶음이 같은 숫자를 칸마다 나눠 보여 준다.
  */
 
 /** 서울 10/29(목) 11:59:30 — 영업일은 아직 10/28. `stats-v1` 시드의 10/28 영업일 = F1~F12 */
@@ -42,22 +47,25 @@ test("S2-1 stats-v1, 10/29 11:59:30 → 12건, 5/1/2/3/1, 63% (5/판정 8), 재�
   page,
 }) => {
   await startAt(page, T_1159, { seed: STATS_V1 });
-  await expect(cardLines(page)).toHaveText([
-    "오늘 소매 메시지 12건",
-    "자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1",
-    "자동으로 끝남 63% (5/판정 8)",
-    "판정한 것 중 재고 4, 미송 1, 미수 1, 기타 0, 미분류 2",
-    "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
-  ]);
-  /* 1줄 숫자만 크게, 3줄 퍼센트만 500(디자인 결정 49) */
-  const big = cardLines(page).nth(0).locator("span");
+  await expectCard(page, {
+    today: "오늘 12건 63% 판정 8건 중 5건",
+    outcomes: [
+      "자동 답 5건",
+      "답+확인 1건",
+      "넘김 2건",
+      "되묻기 3건",
+      "결과 없음 1건",
+    ],
+    intents: ["재고 4건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
+  });
+  /* 오늘 숫자만 크게, 처리율 퍼센트만 500(디자인 결정 49) */
+  const big = todayTotal(page).locator("span").first();
   await expect(big).toHaveText("12");
   await expect(big).toHaveCSS("font-size", "24px");
-  await expect(cardLines(page).nth(2).locator("span")).toHaveText("63%");
-  await expect(cardLines(page).nth(2).locator("span")).toHaveCSS(
-    "font-weight",
-    "500",
-  );
+  const rate = todayRow(page).locator('td[data-ac~="S2-2"] > span').first();
+  await expect(rate).toHaveText("63%");
+  await expect(rate).toHaveCSS("font-weight", "500");
   /* 카드는 인자 없이 부른다 — 오늘 영업일은 서버가 정한다 */
   const [first] = await requests(page, STATS_GET);
   expect(new URL(first?.url ?? "http://x/?missing", page.url()).search).toBe(
@@ -69,13 +77,18 @@ test("S2-3 같은 시드, 10/29 12:00 → 오늘 = 10/29 영업일, 0건, 비율
   page,
 }) => {
   await startAt(page, T_1200, { seed: STATS_V1 });
-  await expect(cardLines(page)).toHaveText([
-    "오늘 소매 메시지 0건",
-    "자동 답 0, 답+확인 0, 넘김 0, 되묻기 0, 결과 없음 0",
-    "자동으로 끝남 - (0/판정 0)",
-    "판정한 것 중 재고 0, 미송 0, 미수 0, 기타 0, 미분류 0",
-    "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 12:00 기준",
-  ]);
+  await expectCard(page, {
+    today: "오늘 0건 - 판정 0건 중 0건",
+    outcomes: [
+      "자동 답 0건",
+      "답+확인 0건",
+      "넘김 0건",
+      "되묻기 0건",
+      "결과 없음 0건",
+    ],
+    intents: ["재고 0건", "미송 0건", "미수 0건", "기타 0건", "미분류 0건"],
+    basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 12:00 기준",
+  });
   /* 빈 상태 문구를 따로 두지 않는다(디자인 결정 52) */
   await expect(inquiryCard(page).getByRole("alert")).toHaveCount(0);
 });
@@ -84,7 +97,7 @@ test("S2-4 기본 시드, 10/29 15:00: 재고 질문 1건 → 30초 뒤 소매 �
   page,
 }) => {
   await startAt(page, T_1500);
-  await expect(cardLines(page)).toHaveCount(5);
+  await expect(todayRow(page)).toHaveCount(1);
   await settled(page, STATS_GET);
   const before = await readCard(page);
 
@@ -94,14 +107,10 @@ test("S2-4 기본 시드, 10/29 15:00: 재고 질문 1건 → 30초 뒤 소매 �
     autoReply: true,
   });
   /* 주입만으로는 카드가 안 바뀐다 — 다음 polling까지 그대로 */
-  await expect(cardLines(page).nth(0)).toHaveText(
-    `오늘 소매 메시지 ${before.total}건`,
-  );
+  await expect(todayTotal(page)).toHaveText(`${before.total}건`);
   await nextPoll(page);
 
-  await expect(cardLines(page).nth(0)).toHaveText(
-    `오늘 소매 메시지 ${before.total + 1}건`,
-  );
+  await expect(todayTotal(page)).toHaveText(`${before.total + 1}건`);
   const after = await readCard(page);
   expect(after.outcome).toEqual({
     ...before.outcome,
@@ -137,7 +146,7 @@ for (const status of [500, 404] as const) {
     await expect(
       card.getByRole("link", { name: "채팅 열기", exact: true }),
     ).toBeVisible();
-    /* 오류는 화면에 이것 하나. 타일, 큐, 오늘은 그대로 그려져 있다 */
+    /* 오류는 화면에 이것 하나. 타일, 큐, 미송 확인은 그대로 그려져 있다 */
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(1);
     await expect(
       page.getByRole("link", { name: /^확정 기다리는 주문/ }),
@@ -145,12 +154,13 @@ for (const status of [500, 404] as const) {
     await expect(
       page.getByRole("heading", { name: "확정 기다리는 주문", exact: true }),
     ).toBeVisible();
-    /* 큐 행(시드 NEW 주문)마다 `주문 보기` 링크 */
+    /* 큐 행(시드 NEW 주문)마다 소매처 이름 링크, 이름은 `봄봄상회 주문 보기` */
     await expect(
-      page.getByRole("link", { name: "주문 보기", exact: true }).first(),
+      page.getByRole("link", { name: / 주문 보기$/ }).first(),
     ).toBeVisible();
+    /* 오른쪽 열에서 `오늘` 패널이 빠졌다(2026-11-18) — 같은 열의 미송 확인 패널로 본다 */
     await expect(
-      page.getByRole("heading", { name: "오늘", exact: true }),
+      page.getByRole("heading", { name: "미송 확인", exact: true }),
     ).toBeVisible();
 
     await settled(page, STATS_GET);
@@ -158,7 +168,7 @@ for (const status of [500, 404] as const) {
     const summary = await count(page, SUMMARY_GET);
     const orders = await count(page, ORDERS_GET);
     await retry.click();
-    await expect(cardLines(page).nth(0)).toHaveText("오늘 소매 메시지 12건");
+    await expect(todayTotal(page)).toHaveText("12건");
     expect(await count(page, STATS_GET)).toBe(stats + 1);
     /* 카드의 다시 시도는 다른 칸을 다시 부르지 않는다(디자인 결정 50) */
     expect(await count(page, SUMMARY_GET)).toBe(summary);
@@ -177,16 +187,19 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await startAt(page, T_1159, { seed: STATS_V1 });
     const card = inquiryCard(page);
-    await expect(cardLines(page).nth(4)).toHaveText(
+    /* 기준 줄은 접힌 상세 안이다. 펼친 상태가 카드가 가장 긴 때라 그대로 잰다 */
+    await openDetail(page);
+    await expect(basisLine(page)).toHaveText(
       "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
     );
 
     const fit = await card.evaluate((el) => {
       const box = el.getBoundingClientRect();
       const column = el.parentElement?.getBoundingClientRect();
-      const lines = [...el.querySelectorAll("p")].map((p) => ({
+      /* 한 줄짜리 글: 기준 줄과 상세 칸(dt, dd). 표 칸은 처리율 아래 판정 내역이 일부러 둘째 줄이라 뺀다 */
+      const lines = [...el.querySelectorAll("p, dt, dd")].map((p) => ({
         overflow: p.scrollWidth > p.clientWidth,
-        /* 줄바꿈 0: 줄 높이(line-height) 하나 안에 든다. 1줄은 24px 숫자라 32 */
+        /* 줄바꿈 0: 줄 높이(line-height) 하나 안에 든다 */
         height: p.getBoundingClientRect().height,
         lineHeight: Number.parseFloat(getComputedStyle(p).lineHeight),
       }));
@@ -215,10 +228,13 @@ for (const viewport of [
     expect(fit.pageScroll).toBe(false);
     for (const line of fit.lines) {
       expect(line.overflow).toBe(false);
-      expect(line.height).toBeLessThanOrEqual(Math.max(line.lineHeight, 32));
+      expect(line.height).toBeLessThanOrEqual(line.lineHeight);
     }
     /* 높이가 모자라면 주의만 줄어든다 — 카드 아래 주의 패널이 카드와 겹치지 않는다 */
-    const attention = page.getByRole("heading", { name: "주의", exact: true });
+    const attention = page.getByRole("heading", {
+      name: "미송 확인",
+      exact: true,
+    });
     const attentionTop = (await attention.boundingBox())?.y ?? -1;
     expect(attentionTop).toBeGreaterThan(fit.bottom);
 

@@ -1,98 +1,125 @@
 "use client";
 
 import { cn, Panel } from "@ondo/ui";
-import Link from "next/link";
 import { useAttentionQuery } from "../api/queries";
-import { ATTENTION_TEXT, TAB_HREF } from "../constants";
 import type { AttentionSkuView } from "../types";
 import { formatNumber } from "@/shared/lib/format";
 
-/**
- * 주의 — 입고일 지난 미송 상위 3 · 입고일 안 적은 미송 상위 2.
- *
- * 이 SKU들은 소매처가 "언제 들어오느냐"고 묻는 대상이다. 입고일을 안 적으면 소매 화면에
- * "입고일 안내 예정"으로만 보이므로 며칠째 비어 있는지를 같이 보인다.
- * 두 묶음 다 미송 탭으로 간다 — 미송 탭의 펼침·필터는 화면 state라 SKU를 URL로 못 연다.
- */
 export function AttentionPanel({ now }: { now: string }) {
   const { data } = useAttentionQuery(now);
 
   return (
-    <Panel.Body className="flex flex-col gap-6">
-      <AttentionSection
-        title={ATTENTION_TEXT.overdueTitle}
-        count={data.overdueCount}
-        items={data.overdue}
-        emptyText={ATTENTION_TEXT.overdueEmpty}
-        emphasized
-      />
-      <AttentionSection
-        title={ATTENTION_TEXT.noDateTitle}
-        count={data.noDateCount}
-        items={data.noDate}
-        emptyText={ATTENTION_TEXT.noDateEmpty}
-      />
+    <Panel.Body>
+      <dl className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-body tabular-nums">
+        <div className="flex items-baseline gap-1">
+          <dt className="text-muted-foreground">입고 지연</dt>
+          <dd
+            className={cn(
+              "font-medium",
+              data.overdueCount > 0 && "text-destructive-strong",
+            )}
+          >
+            옵션 {formatNumber(data.overdueCount)}개
+          </dd>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <dt className="text-muted-foreground">
+            <span aria-hidden className="mr-2">
+              ·
+            </span>
+            입고일 미정
+          </dt>
+          <dd className="font-medium">
+            옵션 {formatNumber(data.noDateCount)}개
+          </dd>
+        </div>
+      </dl>
+
+      {data.overdue.length + data.noDate.length === 0 ? (
+        <p className="text-muted-foreground py-8 text-center text-sm">
+          확인할 미송이 없어요
+        </p>
+      ) : (
+        <table className="mt-3 w-full table-fixed text-left text-sm">
+          <caption className="sr-only">
+            입고일이 지난 미송과 입고일이 정해지지 않은 미송
+          </caption>
+          <thead className="text-muted-foreground text-body">
+            <tr>
+              <th
+                scope="col"
+                className="border-border w-24 border-b pb-2 font-normal"
+              >
+                경과
+              </th>
+              <th
+                scope="col"
+                className="border-border border-b pb-2 font-normal"
+              >
+                상품 · 옵션
+              </th>
+              <th
+                scope="col"
+                className="border-border w-20 border-b pb-2 text-right font-normal"
+              >
+                남은 수량
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-border divide-y">
+            {data.overdue.map((item) => (
+              <AttentionRow key={item.variantId} item={item} overdue />
+            ))}
+            {data.noDate.map((item) => (
+              <AttentionRow key={item.variantId} item={item} />
+            ))}
+          </tbody>
+        </table>
+      )}
+      {data.overdueCount > data.overdue.length ||
+      data.noDateCount > data.noDate.length ? (
+        <p className="text-muted-foreground mt-3 text-xs tabular-nums">
+          {formatNumber(data.overdueCount + data.noDateCount)}개 중{" "}
+          {formatNumber(data.overdue.length + data.noDate.length)}개 표시
+        </p>
+      ) : null}
     </Panel.Body>
   );
 }
 
-function AttentionSection({
-  title,
-  count,
-  items,
-  emptyText,
-  emphasized = false,
+function AttentionRow({
+  item,
+  overdue = false,
 }: {
-  title: string;
-  count: number;
-  items: readonly AttentionSkuView[];
-  emptyText: string;
-  /** 경과 표기를 빨간 글자로. 입고일이 **지난** 것만 — 안 적은 것은 늦은 게 아니라 비어 있는 것이다 */
-  emphasized?: boolean;
+  item: AttentionSkuView;
+  overdue?: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium">
-          {title}{" "}
-          <span className="text-muted-foreground font-normal tabular-nums">
-            {formatNumber(count)} SKU
-          </span>
-        </h3>
-        <Link
-          href={TAB_HREF.backorders}
-          className="text-primary shrink-0 text-sm hover:underline"
+    <tr>
+      <td className="py-3 pr-2 align-top">
+        <p
+          className={cn(
+            "text-base tabular-nums",
+            overdue ? "text-destructive-strong font-medium" : "text-foreground",
+          )}
         >
-          {ATTENTION_TEXT.link}
-        </Link>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{emptyText}</p>
-      ) : (
-        <ul className="flex flex-col">
-          {items.map((item) => (
-            <li
-              key={item.variantId}
-              className="border-border flex items-center gap-2 border-b py-2 text-sm last:border-b-0"
-            >
-              <span className="min-w-0 flex-1 truncate">
-                {item.productName}
-              </span>
-              <span className="bg-secondary text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs whitespace-nowrap">
-                {item.optionLabel}
-              </span>
-              <span
-                className={cn(
-                  "shrink-0 tabular-nums",
-                  emphasized ? "text-destructive-strong" : "text-foreground",
-                )}
-              >
-                {item.agingLabel} · {formatNumber(item.qty)}장
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+          {overdue
+            ? item.agingLabel.replace(/^D\+(\d+)$/, "$1일 지남")
+            : item.agingLabel}
+        </p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {overdue ? "입고 지연" : "입고일 미정"}
+        </p>
+      </td>
+      <td className="py-3 pr-3 align-top">
+        <p className="break-words font-medium">{item.productName}</p>
+        <p className="text-muted-foreground mt-1 break-words text-body">
+          {item.optionLabel}
+        </p>
+      </td>
+      <td className="py-3 text-right align-top whitespace-nowrap tabular-nums">
+        {formatNumber(item.qty)}장
+      </td>
+    </tr>
   );
 }

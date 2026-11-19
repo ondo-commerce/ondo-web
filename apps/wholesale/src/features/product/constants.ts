@@ -60,9 +60,9 @@ export const POST_STATUS_LABEL: Record<PostStatusKey, string> = {
  * `미등록`과 `시즌종료`가 같은 회색이 되는 건 의도된 결과다. 둘의 구분은 배지 글자가 맡는다.
  */
 export const POST_STATUS_TONE: Record<PostStatusKey, BadgeTone> = {
-  NONE: "done",
+  NONE: "muted",
   ON_SALE: "active",
-  SEASON_ENDED: "done",
+  SEASON_ENDED: "muted",
 };
 
 /**

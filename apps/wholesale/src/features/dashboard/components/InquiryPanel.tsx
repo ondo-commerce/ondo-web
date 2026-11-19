@@ -1,6 +1,7 @@
 "use client";
 
-import { Panel } from "@ondo/ui";
+import { Button, Panel } from "@ondo/ui";
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useInquiryStatsQuery, useInquiryWeekQuery } from "../api/queries";
 import { INQUIRY_TEXT, TAB_HREF } from "../constants";
@@ -39,14 +40,11 @@ export function InquiryPanel() {
         className="mb-4"
         data-ac="S2-6"
         action={
-          <Link
-            href={TAB_HREF.chats}
-            className="text-primary text-sm hover:underline"
-            data-ac="S2-6"
-          >
-            {INQUIRY_TEXT.openChats}
-            <span aria-hidden> →</span>
-          </Link>
+          <Button asChild variant="line" size="sm">
+            <Link href={TAB_HREF.chats} data-ac="S2-6">
+              {INQUIRY_TEXT.openChats}
+            </Link>
+          </Button>
         }
       >
         {INQUIRY_TEXT.title}
@@ -81,75 +79,142 @@ function InquiryBody() {
     failed: week.isError,
   });
   return (
-    /* S2-4: polling으로 숫자가 바뀌는 줄(와이어프레임 21 `#state-inquiry-poll`, QA F3) */
-    <div className="grid gap-2 text-sm tabular-nums" data-ac="S2-1 S2-4">
-      {/* flex로 띄우지 않는다 — 낭독과 복사가 "오늘 소매 메시지 12건" 그대로 나와야 한다. 숫자 앞은 공백,
-          뒤는 글자를 안 넣고 `mr-1`(4px, 와이어프레임 `.tot` gap)로 띄운다(QA F2) */}
-      <p data-ac="S2-1 S2-3 S2-4">
-        {INQUIRY_TEXT.totalPrefix}{" "}
-        <span className="mr-1 text-2xl font-semibold">
-          {formatNumber(data.retailMessages)}
-        </span>
-        {INQUIRY_TEXT.totalUnit}
-      </p>
-      <p data-ac="S2-1 S2-4">{data.outcomeLine}</p>
-      <p data-ac="S2-1 S2-2 S2-4">
-        {INQUIRY_TEXT.ratePrefix}{" "}
-        <span className="font-medium">{data.rateLabel}</span> {data.rateDetail}
-      </p>
-      <p data-ac="S2-1 S2-4">
-        <span className="text-muted-foreground">
-          {INQUIRY_TEXT.intentPrefix}{" "}
-        </span>
-        {data.intentLine}
-      </p>
-      <InquiryWeekLine state={weekLine} />
-      <p
-        className="text-muted-foreground mt-1 text-xs leading-4"
-        data-ac="S2-6"
-      >
-        {data.basisLine}
-      </p>
+    <div className="grid gap-3 text-sm tabular-nums" data-ac="S2-1 S2-4">
+      <table className="w-full table-fixed text-right tabular-nums">
+        <caption className="sr-only">기간별 문의 현황</caption>
+        <thead className="text-xs text-muted-foreground">
+          <tr>
+            <th scope="col" className="pb-2 text-left font-normal">
+              기간
+            </th>
+            <th scope="col" className="pb-2 font-normal">
+              소매 메시지
+            </th>
+            <th scope="col" className="pb-2 font-normal">
+              자동 처리율
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-border border-b">
+            <th scope="row" className="pb-3 text-left font-medium">
+              오늘
+            </th>
+            <td className="pb-3" data-ac="S2-1 S2-3 S2-4">
+              <span className="text-2xl font-medium">
+                {formatNumber(data.retailMessages)}
+              </span>
+              <span className="text-body text-muted-foreground ml-1">
+                {INQUIRY_TEXT.totalUnit}
+              </span>
+            </td>
+            <td className="pb-3" data-ac="S2-1 S2-2 S2-4">
+              <span className="text-base font-medium">{data.rateLabel}</span>
+              <span className="text-muted-foreground block text-xs">
+                {data.rateDetail}
+              </span>
+            </td>
+          </tr>
+          <InquiryWeekLine state={weekLine} />
+        </tbody>
+      </table>
+      <details className="group">
+        <summary className="text-secondary-foreground hover:text-foreground flex w-fit cursor-pointer list-none items-center gap-1 text-sm [&::-webkit-details-marker]:hidden">
+          오늘 문의 상세
+          <ChevronDown aria-hidden className="size-4 group-open:rotate-180" />
+        </summary>
+        <div className="mt-3 grid grid-cols-2 gap-4">
+          <CountList title={INQUIRY_TEXT.outcomeTitle} rows={data.outcomes} />
+          <CountList title="판정된 문의 유형" rows={data.intents} />
+        </div>
+        <p className="text-muted-foreground mt-3 text-xs">{data.basisLine}</p>
+      </details>
     </div>
   );
 }
 
-/**
- * 7일 줄(loop-08f S3, 기획 §4-4). 4줄과 같은 `<p>` 모양 — 새 모양 0. 막대는 줄 높이(text-sm 20px)와 같게 둬서
- * 숫자가 도착할 때 아래 기준 줄이 안 움직인다. 실패 줄은 alert가 아니다 — 버튼도 없고 다음 polling이 다시 부른다
- */
-function InquiryWeekLine({ state }: { state: InquiryWeekLineState }) {
-  switch (state.kind) {
-    case "none":
-      return null;
-    case "loading":
-      return (
-        <div
-          role="status"
-          aria-label={INQUIRY_TEXT.weekLoading}
-          className="bg-muted h-5 w-3/4 animate-pulse rounded-control"
-          data-ac="08f:S3-3"
-        />
-      );
-    case "failed":
-      return (
-        <p className="text-muted-foreground" data-ac="08f:S3-3">
-          {INQUIRY_TEXT.weekFailed}
-        </p>
-      );
-    case "line":
-      return <p data-ac="08f:S3-2">{state.text}</p>;
-  }
+/** 결과 수와 판정된 문의 종류 수는 분모가 달라 따로 읽는다. */
+function CountList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: readonly { label: string; count: number }[];
+}) {
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-medium">{title}</h3>
+      <dl className="grid gap-1">
+        {rows.map(({ label, count }) => (
+          <div
+            key={label}
+            className="flex items-baseline justify-between gap-2"
+          >
+            <dt className="text-body text-muted-foreground">{label}</dt>
+            <dd>{formatNumber(count)}건</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
-/** 숫자 자리만 막대 4줄(와이어프레임 `#state-loading`). 첫 줄이 큰 숫자라 높다 — 도착할 때 아래 주의가 덜 튄다 */
+/** 주간 조회가 실패하거나 지연돼도 오늘 집계는 그대로 읽을 수 있다. */
+function InquiryWeekLine({ state }: { state: InquiryWeekLineState }) {
+  if (state.kind === "none") return null;
+  return (
+    <tr className="text-sm">
+      <th scope="row" className="pt-3 text-left font-normal">
+        {INQUIRY_TEXT.weekPrefix}
+        {state.kind === "line" && (
+          <span className="text-muted-foreground block text-xs">
+            {state.fromTo}
+          </span>
+        )}
+      </th>
+      {state.kind === "line" ? (
+        <>
+          <td className="pt-3" data-ac="08f:S3-2">
+            {state.retailMessages}건
+          </td>
+          <td className="pt-3">
+            {state.rateLabel}
+            <span className="text-muted-foreground block text-xs">
+              {state.rateDetail}
+            </span>
+          </td>
+        </>
+      ) : (
+        <td
+          colSpan={2}
+          className="pt-3 text-body text-muted-foreground"
+          data-ac="08f:S3-3"
+        >
+          {state.kind === "failed" ? (
+            INQUIRY_TEXT.weekFailed
+          ) : (
+            <span
+              role="status"
+              aria-label={INQUIRY_TEXT.weekLoading}
+              className="bg-muted ml-auto block h-4 w-3/4 animate-pulse rounded-control"
+            />
+          )}
+        </td>
+      )}
+    </tr>
+  );
+}
+
+/** 첫 응답 전에도 수치 두 칸과 주간 비교, 상세 버튼의 공간을 남긴다. */
 function InquirySkeleton() {
   return (
-    <div role="status" aria-label="불러오는 중" className="grid gap-2">
-      <div className="bg-muted h-7 w-9/20 animate-pulse rounded-control" />
-      <div className="bg-muted h-4 w-17/20 animate-pulse rounded-control" />
-      <div className="bg-muted h-4 w-11/20 animate-pulse rounded-control" />
-      <div className="bg-muted h-4 w-3/4 animate-pulse rounded-control" />
+    <div role="status" aria-label="불러오는 중" className="grid gap-3">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-muted h-12 animate-pulse rounded-control" />
+        <div className="bg-muted h-12 animate-pulse rounded-control" />
+      </div>
+      <div className="bg-muted h-5 w-3/4 animate-pulse rounded-control" />
+      <div className="bg-muted h-5 w-16 animate-pulse rounded-control" />
     </div>
   );
 }

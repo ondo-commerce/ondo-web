@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   armChatGate,
+  CHAT_LIST_WIDTH,
   chatRows,
   composer,
   enterChats,
@@ -266,7 +267,7 @@ test.describe("rooms-70", () => {
     await expect(search(page)).toHaveValue("소매처 7");
   });
 
-  test("S4-8 maxLength 50(60자 → 50), 1280 1470에서 칩과 검색칸이 360 안, 가로 넘침 0", async ({
+  test("S4-8 maxLength 50(60자 → 50), 1280 1470에서 칩과 검색칸이 목록 폭 안, 가로 넘침 0", async ({
     page,
   }) => {
     await expect(search(page)).toHaveAttribute("maxlength", "50");
@@ -284,7 +285,7 @@ test.describe("rooms-70", () => {
       const group = await page
         .getByRole("radiogroup", { name: "대화 필터" })
         .boundingBox();
-      expect(panel?.width).toBe(360);
+      expect(panel?.width).toBe(CHAT_LIST_WIDTH);
       for (const inner of [box, group]) {
         expect(inner).not.toBeNull();
         if (inner === null || panel === null) continue;

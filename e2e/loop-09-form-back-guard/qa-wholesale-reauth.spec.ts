@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { armFetchGate, installFetchGate, openFetchGate, T0 } from "./helpers";
 import {
   addSlot,
@@ -104,7 +105,7 @@ test.describe("1280x800", () => {
     await expect(reloginLink(page)).toHaveAttribute("href", "/login");
     await expect(reloginLink(page)).toHaveAttribute("target", "_blank");
     await expect(reloginLink(page)).toHaveAttribute("rel", "noopener");
-    // 디자인 실측: 링크는 본문 글자색(text-foreground)과 알림과 같은 14px, 한 줄 안에 같이 선다
+    // 디자인 실측: 링크는 본문 글자색(text-foreground)과 알림과 같은 text-sm, 한 줄 안에 같이 선다
     const look = await page.evaluate(() => {
       const link = [...document.querySelectorAll("a")].find(
         (a) => a.textContent === "새 탭에서 로그인",
@@ -135,10 +136,11 @@ test.describe("1280x800", () => {
       type: "S2-5 실측",
       description: JSON.stringify(look),
     });
+    const textSm = (await chatTypeScale(page)).body;
     expect(look).toMatchObject({
       linkColor: true,
-      linkSize: "14px",
-      alertSize: "14px",
+      linkSize: textSm,
+      alertSize: textSm,
       underline: "underline",
       sameRow: true,
       gap: 12,

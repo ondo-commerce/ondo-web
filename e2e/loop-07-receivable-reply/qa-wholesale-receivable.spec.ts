@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   installClock,
   log,
@@ -265,7 +266,7 @@ test("QA-W8 같은 이유 반복(H21): 협상 두 번 → 넘김 줄 1, 사장 �
   await expect(linesAfter(page, two.source)).resolves.toEqual([]);
 });
 
-test("QA-W9 디자인 실측: 이유 줄 13px secondary 가운데, 알약 border-strong 둥근 모서리, 묶음 note 1개, 1470 스크린샷", async ({
+test("QA-W9 디자인 실측: 이유 줄 text-body secondary 가운데, 알약 border-strong 둥근 모서리, 묶음 note 1개, 1470 스크린샷", async ({
   page,
 }) => {
   await inject(page, 1, "조금 깎아 주세요");
@@ -300,7 +301,7 @@ test("QA-W9 디자인 실측: 이유 줄 13px secondary 가운데, 알약 border
         roles: note.querySelectorAll("[role]").length,
       };
     });
-  expect(m.whySize).toBe("13px");
+  expect(m.whySize).toBe((await chatTypeScale(page)).muted);
   expect(m.whyColor).toBe(m.tokenSecondary);
   expect(m.whyAlign).toBe("center");
   expect(m.whyAc).toBe("S3-1");

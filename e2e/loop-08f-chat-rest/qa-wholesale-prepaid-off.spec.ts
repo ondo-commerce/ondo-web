@@ -1,14 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   ALLOCATIONS_POST,
-  cardLines,
   collectPageErrors,
   count,
   depositViaFetch,
+  detailRows,
   inquiryCard,
   knob,
+  openDetail,
   requests,
   settled,
+  SHOWN,
   startAt,
   STATS_GET,
   T_1159,
@@ -113,8 +115,10 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport);
     await startAt(page, T_1159, { seed: "stats-v1", before: offAndAsk });
-    await expect(cardLines(page).nth(3)).toHaveText(
-      "판정한 것 중 재고 5, 미송 1, 미수 1, 기타 0, 미분류 2",
+    await openDetail(page);
+    await expect(detailRows(page, "판정된 문의 유형")).toHaveText(
+      ["재고 5건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+      SHOWN,
     );
     await settled(page, STATS_GET);
     await inquiryCard(page).screenshot({
@@ -127,8 +131,10 @@ test("QA 08f-1 1470 S1-5 원래 절차가 실패하는 이유: 30초 polling 뒤
   page,
 }) => {
   await startAt(page, T_1159, { seed: "stats-v1" });
-  await expect(cardLines(page).nth(3)).toHaveText(
-    "판정한 것 중 재고 4, 미송 1, 미수 1, 기타 0, 미분류 2",
+  await openDetail(page);
+  await expect(detailRows(page, "판정된 문의 유형")).toHaveText(
+    ["재고 4건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    SHOWN,
   );
   await settled(page, STATS_GET);
   await offAndAsk(page);
@@ -142,14 +148,15 @@ test("QA 08f-1 1470 S1-5 원래 절차가 실패하는 이유: 30초 polling 뒤
     const json = (await res.json()) as { data: { from: string; asOf: string } };
     return { from: json.data.from, asOf: json.data.asOf };
   });
-  const line4 = await cardLines(page).nth(3).textContent();
+  const line4 = await detailRows(page, "판정된 문의 유형").allInnerTexts();
   test.info().annotations.push({
     type: "S1-5 원래 절차 실측",
     description: JSON.stringify({ now, line4 }),
   });
   expect(now.from).toBe("2026-10-29");
-  await expect(cardLines(page).nth(3)).toHaveText(
-    "판정한 것 중 재고 0, 미송 0, 미수 0, 기타 0, 미분류 0",
+  await expect(detailRows(page, "판정된 문의 유형")).toHaveText(
+    ["재고 0건", "미송 0건", "미수 0건", "기타 0건", "미분류 0건"],
+    SHOWN,
   );
 });
 

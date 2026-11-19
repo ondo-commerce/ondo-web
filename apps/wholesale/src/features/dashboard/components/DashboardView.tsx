@@ -6,7 +6,6 @@ import { useEffect } from "react";
 import { AttentionPanel } from "./AttentionPanel";
 import { InquiryPanel } from "./InquiryPanel";
 import { NewOrderQueue } from "./NewOrderQueue";
-import { TodayPanel } from "./TodayPanel";
 import { TodoTiles, TodoTilesSkeleton } from "./TodoTiles";
 import { dashboardKeys } from "../api/keys";
 import { useDashboardSummaryPeek } from "../api/queries";
@@ -15,8 +14,9 @@ import {
   DASHBOARD_TITLE,
   QUEUE_TEXT,
   TAB_HREF,
+  TODAY_TEXT,
 } from "../constants";
-import { documentTitle } from "../derive";
+import { documentTitle, formatClock } from "../derive";
 /** Next의 늦은 제목 덮어쓰기는 스트리밍 직후 한 프레임 안에 온다 — 1초면 넉넉히 뒤다 */
 const TITLE_REASSERT_MS = 1_000;
 import {
@@ -25,7 +25,6 @@ import {
   QueryErrorView,
 } from "@/shared/api/QueryBoundary";
 import { useInvalidateOnMount } from "@/shared/api/useInvalidateOnMount";
-import { formatNumber } from "@/shared/lib/format";
 import { ListDetailLayout } from "@/shared/components/ListDetailLayout";
 
 /**
@@ -53,7 +52,7 @@ export function DashboardView() {
     <QueryBoundaryGroup>
       <ListDetailLayout
         list={
-          <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
             {/* 실패해도 타일 자리는 남는다 — 에러 블록이 큐 위에 맨바닥으로 그려지지 않게 Panel로 감싼다 */}
             <QueryBoundary
               fallback={<TodoTilesSkeleton />}
@@ -73,14 +72,12 @@ export function DashboardView() {
             <Panel className="flex-1">
               <Panel.Title
                 className="mb-4"
-                sub={QUEUE_TEXT.sub}
                 action={
-                  <Link
-                    href={TAB_HREF.orders}
-                    className="text-primary text-sm hover:underline"
-                  >
-                    {QUEUE_TEXT.seeAll}
-                  </Link>
+                  peek !== undefined ? (
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      {TODAY_TEXT.lastPrefix} {formatClock(peek.now)}
+                    </span>
+                  ) : null
                 }
               >
                 {QUEUE_TEXT.title}
@@ -88,29 +85,27 @@ export function DashboardView() {
               <QueryBoundary>
                 <NewOrderQueue now={now} />
               </QueryBoundary>
-              {/* summary를 못 받았으면 줄 자체를 안 그린다 — 0건으로 지어내지 않는다 */}
-              {peek !== undefined ? (
-                <p className="text-muted-foreground mt-3 shrink-0 text-sm tabular-nums">
-                  <span className="text-foreground font-medium">
-                    {QUEUE_TEXT.cancelledPrefix}
-                  </span>{" "}
-                  {formatNumber(peek.cancelledToday)}건
-                </p>
-              ) : null}
             </Panel>
           </div>
         }
         detail={
           <>
-            <Panel className="shrink-0">
-              <QueryBoundary>
-                <TodayPanel />
-              </QueryBoundary>
-            </Panel>
             {/* 오늘과 같이 shrink-0 — 높이가 모자라면 주의만 줄고 그 안(Panel.Body)이 스크롤한다(디자인 결정 49) */}
             <InquiryPanel />
-            <Panel className="flex-1">
-              <Panel.Title className="mb-4">{ATTENTION_TEXT.title}</Panel.Title>
+            <Panel className="min-h-40">
+              <Panel.Title
+                className="mb-4"
+                action={
+                  <Link
+                    href={TAB_HREF.backorders}
+                    className="text-primary text-sm hover:underline"
+                  >
+                    {ATTENTION_TEXT.link}
+                  </Link>
+                }
+              >
+                미송 확인
+              </Panel.Title>
               <QueryBoundary>
                 <AttentionPanel now={now} />
               </QueryBoundary>

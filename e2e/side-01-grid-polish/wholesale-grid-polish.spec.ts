@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   addSlot,
   chooseFiles,
@@ -268,7 +269,7 @@ test("S1-7 등록 칸 × — Tab 포커스 링이 S1-5 와 같다", async ({ pag
   await expectRing(remove);
 });
 
-test("S1-8 올리는 중 문구 — foreground(gray-900), 흰 바탕 대비 4.5 이상, 14px", async ({
+test("S1-8 올리는 중 문구 — foreground(gray-900), 흰 바탕 대비 4.5 이상, text-sm", async ({
   page,
 }) => {
   await openCreateWithPost(page);
@@ -278,7 +279,9 @@ test("S1-8 올리는 중 문구 — foreground(gray-900), 흰 바탕 대비 4.5 
   const color = await computedColor(note, "color");
   expect(near(color, GRAY_900), `문구 색 ${color.raw}`).toBe(true);
   expect(contrast(color, WHITE)).toBeGreaterThanOrEqual(4.5);
-  expect((await styles(note, ["font-size"]))["font-size"]).toBe("14px");
+  expect((await styles(note, ["font-size"]))["font-size"]).toBe(
+    (await chatTypeScale(page)).body,
+  );
 });
 
 test("S1-9 실패 1, 진행 0 — 문구는 destructive-strong 그대로", async ({

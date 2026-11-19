@@ -53,7 +53,7 @@ export function ShippedTable({
             }}
           >
             <Table.Td align="left">
-              <Badge tone="done">
+              <Badge tone={row.shippedAt === null ? "wait" : "done"}>
                 {row.shippedAt === null ? "출고 전" : "출고 완료"}
               </Badge>
             </Table.Td>

@@ -191,16 +191,29 @@ export function chipCount(
  * 배지 색. **파랑·회색 2색뿐이다** — 상태가 5종이어도 색을 늘리지 않는다.
  * 목록 행과 우측 카드가 같은 규칙을 쓰도록 여기 한 곳에서만 정한다.
  */
-export function orderStatusTone(status: OrderStatus): "active" | "done" {
-  return ACTIVE_ORDER_STATUSES.includes(status) ? "active" : "done";
+export function orderStatusTone(status: OrderStatus): BadgeTone {
+  return ORDER_TONE[status] ?? "muted";
 }
 
-/** 정산 배지도 같은 2색 규칙 — 받을 돈이 남았으면 파랑 */
-export function settlementStatusTone(
-  status: SettlementStatus,
-): "active" | "done" {
-  return ACTIVE_SETTLEMENT_STATUSES.includes(status) ? "active" : "done";
+/** 정산 배지 — 안 받은 돈은 노랑, 받는 중은 파랑, 다 받으면 초록 */
+export function settlementStatusTone(status: SettlementStatus): BadgeTone {
+  return SETTLEMENT_TONE[status] ?? "muted";
 }
+
+type BadgeTone = "wait" | "active" | "done" | "muted";
+/** 확정을 기다리는 새 주문만 노랑이다. 확정 뒤 출고 전까지가 파랑, 다 나가면 초록, 취소는 회색 */
+const ORDER_TONE: Partial<Record<OrderStatus, BadgeTone>> = {
+  NEW: "wait",
+  CONFIRMED: "active",
+  PARTIALLY_SHIPPED: "active",
+  SHIPPED: "done",
+  CANCELLED: "muted",
+};
+const SETTLEMENT_TONE: Partial<Record<SettlementStatus, BadgeTone>> = {
+  UNPAID: "wait",
+  PARTIALLY_SETTLED: "active",
+  SETTLED: "done",
+};
 
 /* ------------------------------------------------------------------------
  * 목록 쿼리
