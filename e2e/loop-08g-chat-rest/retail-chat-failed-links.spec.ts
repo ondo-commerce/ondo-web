@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Locator } from "@playwright/test";
 import {
   assertStubServers,
@@ -59,12 +60,12 @@ function fontSize(target: Locator): Promise<string> {
 
 for (const { width, height, minHeight, maxHeight } of [
   { width: 390, height: 844, minHeight: 44, maxHeight: Infinity },
-  { width: 1280, height: 800, minHeight: 16, maxHeight: 16 },
+  { width: 1280, height: 800, minHeight: 18, maxHeight: 18 },
 ]) {
   test.describe(`S5-4 ${width}`, () => {
     test.use({ viewport: { width, height } });
 
-    test(`실패 말풍선 두 링크 높이 ${width === 390 ? "≥ 44" : "16 그대로"}, 글자 12px, 문구와 링크 겹침 0`, async ({
+    test(`실패 말풍선 두 링크 높이 ${width === 390 ? "≥ 44" : "18"}, 작은 글, 문구와 링크 겹침 0`, async ({
       page,
     }) => {
       await start(page, "/");
@@ -93,8 +94,8 @@ for (const { width, height, minHeight, maxHeight } of [
           width,
         );
       }
-      expect(await fontSize(retry)).toBe("12px");
-      expect(await fontSize(remove)).toBe("12px");
+      expect(await fontSize(retry)).toBe((await chatTypeScale(page)).small);
+      expect(await fontSize(remove)).toBe((await chatTypeScale(page)).small);
       expect(overlapArea(r, d), "두 링크").toBe(0);
       expect(overlapArea(text, r), "문구와 다시 보내기").toBe(0);
       expect(overlapArea(text, d), "문구와 지우기").toBe(0);

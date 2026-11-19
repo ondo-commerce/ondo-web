@@ -195,7 +195,7 @@ export const ChatComposer = memo(function ChatComposer({
   return (
     <div
       data-ac="S5-9"
-      className="border-border grid shrink-0 gap-1.5 border-t pt-3"
+      className="mx-auto grid w-full max-w-3xl shrink-0 gap-2 pt-3"
     >
       {askBusy === null ? null : (
         <div data-ac="S8-1 S8-11" className="flex">

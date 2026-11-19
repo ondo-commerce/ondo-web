@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Page, type Request } from "@playwright/test";
 import {
   AFTER_GET,
@@ -502,12 +503,15 @@ for (const viewport of [
       }));
     }
 
-    test("새 메시지 버튼 bottom ≤ 입력창 top, 좌우 log 안. 새 메시지, 이전 메시지 보기, 불러오는 중, 다시 시도 높이 44/28 글자 14/12", async ({
+    test("새 메시지 버튼 bottom ≤ 입력창 top, 좌우 log 안. 새 메시지, 이전 메시지 보기, 불러오는 중, 다시 시도 높이 44/28 버튼 글자", async ({
       page,
     }) => {
       const phone = viewport.width === 390;
-      const expected = phone ? { h: 44, f: "14px" } : { h: 28, f: "12px" };
       await openHistoryRoom(page);
+      const type = await chatTypeScale(page);
+      const expected = phone
+        ? { h: 44, f: type.body }
+        : { h: 28, f: type.small };
       await readAbove(page);
       await incoming(page, 1, "새 답");
       await waitSequence(page, 121);

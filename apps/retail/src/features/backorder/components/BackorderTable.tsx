@@ -1,5 +1,8 @@
-import { Button, Table } from "@ondo/ui";
+"use client";
+
+import { Table } from "@ondo/ui";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { TABLE_CAPTION, TABLE_HEADERS, TOTAL_ROW_LABEL } from "../constants";
 import {
   formatDate,
@@ -33,6 +36,7 @@ export function BackorderTable({
   /** `summarize`가 이 목록에서 뽑은 값. 표가 다시 더하지 않는다 */
   totalQty: number;
 }) {
+  const router = useRouter();
   return (
     <Table aria-label={TABLE_CAPTION}>
       <Table.Head>
@@ -43,10 +47,6 @@ export function BackorderTable({
           <Table.Th>{TABLE_HEADERS.qty}</Table.Th>
           <Table.Th align="center">{TABLE_HEADERS.orderedAt}</Table.Th>
           <Table.Th align="center">{TABLE_HEADERS.eta}</Table.Th>
-          {/* 버튼 열도 이름이 있어야 보조기술이 `주문 보기`가 어느 열인지 말한다 */}
-          <Table.Th align="center">
-            <span className="sr-only">{TABLE_HEADERS.action}</span>
-          </Table.Th>
         </Table.Row>
       </Table.Head>
 
@@ -54,19 +54,22 @@ export function BackorderTable({
           (`_base.css` `.tbl tbody tr:last-child td{border-bottom:0}`) */}
       <Table.Body className="[&>tr:last-child>td]:border-b-0">
         {lines.map((line) => (
-          /*
-            생짜 `<tr>`다. `Table.Row`를 쓰면 hover에서 행 전체에 회색 면이 깔리는데
-            (`hover:[&>td]:before:bg-secondary`), **이 행은 누를 수 없다** — onClick도
-            링크도 없고 실제로 눌리는 것은 오른쪽 끝 `주문 보기` 하나다. 누를 수 있는 것처럼
-            보이는 면을 깔아 두면 사장이 행을 누르고 아무 일도 안 일어나는 걸 보고서야 안다
-            (inventory Q-06 · retail-market F11이 같은 뿌리로 이미 두 번 났다).
-            아래 tfoot도 같은 이유로 생짜 `<tr>`이다.
-          */
-          <tr key={line.id}>
-            {/* 상품명은 **텍스트다.** 같은 줄에 같은 목적지 링크를 둘 두면
-                키보드로 두 번 지나야 하고 둘 중 무엇이 다른지도 알 수 없다
-                (retail-market F9). 이 줄의 링크는 `주문 보기` 하나다 */}
-            <Table.Td align="left">{line.productName}</Table.Td>
+          /* 줄 전체가 그 주문으로 가는 이동이다(2026-11-18 사용자 지시: 펼치는 표가 아니면 버튼 열 대신 줄 클릭).
+             키보드와 낭독기는 상품명의 링크 하나로 간다. 아래 tfoot은 못 누르는 줄이라 생짜 `<tr>`이다 */
+          <Table.Row
+            key={line.id}
+            className="cursor-pointer"
+            onClick={() => router.push(orderHref(line))}
+          >
+            <Table.Td align="left">
+              <Link
+                href={orderHref(line)}
+                aria-label={orderLinkLabel(line)}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {line.productName}
+              </Link>
+            </Table.Td>
             <Table.Td align="left">{line.wholesalerName}</Table.Td>
             <Table.Td align="left">{optionLabel(line)}</Table.Td>
             <Table.Td>{qtyLabel(line.qty)}</Table.Td>
@@ -76,16 +79,7 @@ export function BackorderTable({
             <Table.Td align="center" numeric={false}>
               <EtaCell line={line} today={today} />
             </Table.Td>
-            <Table.Td align="center">
-              {/* 눌러도 아무 일이 없는 버튼을 두지 않는다(retail-market F2).
-                  목적지 `/orders/{통합주문번호}`가 아직 준비 중 화면인 것은 이번 범위 밖이다 */}
-              <Button asChild variant="line" size="sm">
-                <Link href={orderHref(line)} aria-label={orderLinkLabel(line)}>
-                  주문 보기
-                </Link>
-              </Button>
-            </Table.Td>
-          </tr>
+          </Table.Row>
         ))}
       </Table.Body>
 
@@ -102,7 +96,7 @@ export function BackorderTable({
             {qtyLabel(totalQty)}
           </Table.Td>
           <Table.Td
-            colSpan={3}
+            colSpan={2}
             className="border-border border-t border-b-0 pt-3"
           />
         </tr>

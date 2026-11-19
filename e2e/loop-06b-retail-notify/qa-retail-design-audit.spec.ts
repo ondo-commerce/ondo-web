@@ -166,13 +166,14 @@ test("1470 결정 47 50 52 57 59: 종 32, 배지 = 장바구니 카운터, 패�
   expect(m2.shadow.endsWith(m2.dropdown)).toBe(true);
   expect(m2.shadow.endsWith(m2.float)).toBe(false);
   expect(m2.openBellBg).toBe(m2.secondary);
-  expect(m2.title).toEqual({ size: "16px", weight: "500" });
-  /* 점 8 primary, 제목 14 500(안 읽음)/400(읽음), 시각 12, 본문 두 줄 */
+  /* 큰 본문은 17px다(2026-11-18 글자 단계를 한 단계씩 키움, theme.css `--text-base`) */
+  expect(m2.title).toEqual({ size: "17px", weight: "500" });
+  /* 점 8 primary, 제목 15 500(안 읽음)/400(읽음), 시각 13, 본문 두 줄. 글자는 2026-11-18에 한 단계씩 키운 값이다 */
   const [dot, t, time, body] = m2.unread;
   expect(dot?.w).toBe(8);
   expect(dot?.bg).toBe(m2.primary);
-  expect([t?.size, t?.weight]).toEqual(["14px", "500"]);
-  expect(time?.size).toBe("12px");
+  expect([t?.size, t?.weight]).toEqual(["15px", "500"]);
+  expect(time?.size).toBe("13px");
   expect(body?.clamp).toBe("2");
   expect(m2.read[1]?.weight).toBe("400");
 });

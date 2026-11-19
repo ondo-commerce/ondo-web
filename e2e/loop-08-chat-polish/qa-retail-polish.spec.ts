@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test } from "@playwright/test";
 import {
   assertStubServers,
@@ -37,7 +38,7 @@ assertStubServers();
 
 const QA_DIR = ".claude/harness/runs/loop-08-chat-polish/qa";
 
-test("QA-c1 390 폭: 더 보기 높이 44 글자 14, 갱신 중 잠김은 글자 그대로", async ({
+test("QA-c1 390 폭: 더 보기 높이 44 본문 글자, 갱신 중 잠김은 글자 그대로", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -50,7 +51,7 @@ test("QA-c1 390 폭: 더 보기 높이 44 글자 14, 갱신 중 잠김은 글자
     return { h: r.height, w: r.width, font: s.fontSize };
   });
   expect(idle.h).toBe(44);
-  expect(idle.font).toBe("14px");
+  expect(idle.font).toBe((await chatTypeScale(page)).body);
   await page.screenshot({ path: `${QA_DIR}/qa-r-more-390.png` });
 
   const first0 = await pauseOnList(page);

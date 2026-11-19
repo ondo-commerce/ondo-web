@@ -24,7 +24,7 @@ const shot = (name: string) => ({ path: test.info().outputPath(name) });
 
 for (const { width, height, h } of [
   { width: 390, height: 844, h: 44 },
-  { width: 1280, height: 800, h: 16 },
+  { width: 1280, height: 800, h: 18 },
 ]) {
   test(`S5-4 ${width} 실패 말풍선 두 링크 계산값과 화면`, async ({ page }) => {
     await page.setViewportSize({ width, height });

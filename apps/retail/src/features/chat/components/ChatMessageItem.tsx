@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Chip, cn } from "@ondo/ui";
+import { Button, cn } from "@ondo/ui";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { PENDING_TEXT, ROOM_TEXT } from "../constants";
@@ -17,11 +17,8 @@ import {
 } from "../derive";
 import type { ChatMessage, PendingMessage } from "../types";
 
-/**
- * 말풍선 최대폭. 1470은 도매와 같은 70%, ≤40rem은 85%(디자인 결정 9) — 390에서 70%면 한 줄에
- * 열 글자 남짓이라 짧은 답도 여러 줄로 꺾인다.
- */
-const BUBBLE_WIDTH = "max-w-7/10 phone:max-w-17/20";
+/** 휴대폰에서는 보낸 쪽과 받은 쪽이 같은 폭을 채우지 않도록 여백을 남긴다. */
+const BUBBLE_WIDTH = "max-w-xl phone:max-w-17/20";
 
 /**
  * 메시지 한 줄 — 소매 시점. 나 오른쪽, 도매와 자동 답 왼쪽(`bubbleKindOf`). 도매 `ChatMessageItem`과 짝이다.
@@ -61,7 +58,7 @@ export function ChatMessageItem({
         role="note"
         data-kind={message.kind}
         data-ac={ac}
-        className="border-border-strong text-secondary-foreground text-body flex items-center gap-2 self-center rounded-full border px-3 py-1"
+        className="text-muted-foreground flex max-w-full flex-wrap items-center justify-center gap-2 self-center text-center text-xs wrap-anywhere"
       >
         <span className="sr-only">{`${who}, ${time}: `}</span>
         {systemLineText(message)}
@@ -116,7 +113,7 @@ export function ChatMessageItem({
   );
 }
 
-/** 실패 말풍선 링크 모양. ≤40rem 높이 44(08f Q6 ①), 넓은 화면은 글자 높이 16 */
+/** 실패 말풍선 링크 모양. ≤40rem에서는 터치 높이 44, 넓은 화면에서는 글자 높이 */
 const FAILED_LINK = "phone:h-11 text-xs underline";
 
 /**
@@ -171,62 +168,64 @@ export function PendingItem({
       ) : (
         <span
           role="alert"
-          /* 줄바꿈 허용(loop-12 S1-10): 영구 문구는 길어 390에서 문구와 버튼 둘이 한 줄에 안 든다. 넘치면 버튼이 다음 줄로 */
-          className="text-destructive-strong flex flex-wrap items-center justify-end gap-x-1.5 text-xs leading-4"
+          /* 긴 실패 문구와 복구 버튼의 터치 영역이 겹치지 않게 각각 한 줄로 둔다. */
+          className="text-destructive-strong text-body flex max-w-full flex-col items-end gap-1 text-right"
         >
           {failureText(item.failure)}
-          {/* 일시 실패는 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            {/* 일시 실패는 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
               08e §4-1 규칙의 영구 실패 예외(loop-12 D68): 영구 넷은 잠금과 무관하게 늘 뺀다.
               링크는 ≤40rem에서 높이 44 — 소매 다른 터치 대상(문의하기, 방 머리 링크, 칩)과 같은 손가락 기준(08f Q6 ①).
-              글자는 12px 그대로, 상자만 키워 가운데 둔다. 넓은 화면은 예전 글자 높이(16) */}
-          {!canRetrySend(item.failure, sessionLost) ? null : (
+              넓은 화면에서는 글자 높이에 맞춘다. */}
+            {!canRetrySend(item.failure, sessionLost) ? null : (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                onClick={onRetry}
+                data-ac="S6-4 S6-6"
+              >
+                {PENDING_TEXT.retry}
+              </Button>
+            )}
+            {keep === "approval" ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                disabled={approvalBusy}
+                onClick={onApproval}
+                data-ac="12:S1-6 12:S1-8"
+              >
+                {PENDING_TEXT.approval}
+              </Button>
+            ) : keep === "copy" ? (
+              <CopyBodyButton body={item.body} />
+            ) : keep === "toComposer" ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                onClick={onToComposer}
+                data-ac="12:S1-6 12:S1-7"
+              >
+                {PENDING_TEXT.toComposer}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="link"
               size="sm"
               className={FAILED_LINK}
-              onClick={onRetry}
-              data-ac="S6-4 S6-6"
+              onClick={onRemove}
+              data-ac={keep === null ? "S6-4" : "S6-4 12:S1-6"}
             >
-              {PENDING_TEXT.retry}
+              {PENDING_TEXT.remove}
             </Button>
-          )}
-          {keep === "approval" ? (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className={FAILED_LINK}
-              disabled={approvalBusy}
-              onClick={onApproval}
-              data-ac="12:S1-6 12:S1-8"
-            >
-              {PENDING_TEXT.approval}
-            </Button>
-          ) : keep === "copy" ? (
-            <CopyBodyButton body={item.body} />
-          ) : keep === "toComposer" ? (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className={FAILED_LINK}
-              onClick={onToComposer}
-              data-ac="12:S1-6 12:S1-7"
-            >
-              {PENDING_TEXT.toComposer}
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className={FAILED_LINK}
-            onClick={onRemove}
-            data-ac={keep === null ? "S6-4" : "S6-4 12:S1-6"}
-          >
-            {PENDING_TEXT.remove}
-          </Button>
+          </span>
         </span>
       )}
     </div>
@@ -267,7 +266,7 @@ function CopyBodyButton({ body }: { body: string }) {
 }
 
 /**
- * 말풍선 면. 내 것은 primary(지금은 임시 회색 — memory "primary 회색은 임시다"), 도매는 secondary.
+ * 말풍선 면. 내 것은 primary, 도매는 secondary.
  * `wrap-anywhere`: 공백 없는 1000자도 블록 폭을 넘지 않게(S5-9). 줄바꿈은 보낸 그대로.
  */
 function Bubble({
@@ -282,7 +281,7 @@ function Bubble({
   return (
     <div
       className={cn(
-        "max-w-full rounded-control px-3 py-2 text-sm leading-5 whitespace-pre-wrap wrap-anywhere",
+        "max-w-full rounded-control px-3 py-2 text-sm whitespace-pre-wrap wrap-anywhere",
         tone === "me" && "bg-primary text-primary-foreground",
         tone === "them" && "bg-secondary text-foreground",
         tone === "plain" && "bg-card text-foreground border-border border",
@@ -297,7 +296,7 @@ function Bubble({
 }
 
 /**
- * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 칩 + 본문 + (칩 줄 또는 카드) +
+ * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 글자 + 본문 + (칩 줄 또는 카드) +
  * `HH:mm 조회`(05a 디자인 결정 7, 05b 결정 18). 소매 응답엔 정확 수량이 없다(D31②). 모든 자동 답에 조회
  * 시각을 단다(F12, S7-13). 오늘이 아닌 답은 `10/28 14:20 조회`(07 결정 45).
  */
@@ -314,10 +313,8 @@ function AutoReplyBubble({
   const receivable = message.autoReply?.intent === "RECEIVABLE";
   return (
     <Bubble tone="plain" className="grid gap-2">
-      <span className="flex items-center">
-        <Chip shape="square" className="h-5 px-2 text-xs">
-          {ROOM_TEXT.autoReply}
-        </Chip>
+      <span className="text-muted-foreground text-xs">
+        {ROOM_TEXT.autoReply}
       </span>
       <span data-body="">{message.body}</span>
       {children}
