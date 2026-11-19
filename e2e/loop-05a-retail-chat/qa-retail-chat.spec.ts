@@ -175,10 +175,14 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
     await openRoom(page, "/chats/1?from=/products/11");
     const m = await page.evaluate(() => {
       const probe = document.createElement("div");
-      document.body.append(probe);
+      document.querySelector('[role="log"]')!.append(probe);
       const token = (name: string) => {
         probe.style.color = `var(${name})`;
         return getComputedStyle(probe).color;
+      };
+      const sizeToken = (name: string) => {
+        probe.style.fontSize = `var(${name})`;
+        return getComputedStyle(probe).fontSize;
       };
       const s = (sel: string) => getComputedStyle(document.querySelector(sel)!);
       const me = s('[data-sender="RETAILER"] > div');
@@ -191,8 +195,7 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
           me.color === token("--color-primary-foreground"),
           me.borderTopLeftRadius,
           me.padding,
-          me.fontSize,
-          me.lineHeight,
+          me.fontSize === sizeToken("--text-sm"),
         ],
         them: [
           them.backgroundColor === token("--color-secondary"),
@@ -203,19 +206,23 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
           auto.borderTopColor === token("--color-border"),
           auto.borderTopWidth,
         ],
-        seen: [seen.color === token("--color-muted-foreground"), seen.fontSize],
+        seen: [
+          seen.color === token("--color-muted-foreground"),
+          seen.fontSize === sizeToken("--text-xs"),
+        ],
         wrapMax: s('[data-sender="RETAILER"]').maxWidth,
         logGap: s('[role="log"]').rowGap,
+        contentWidths: [s('[role="log"]').width, s('[data-ac="S5-9"]').width],
         h1: [s("h1").fontSize, s("h1").lineHeight],
         headMb: s('[data-ac="S5-5 S5-13 S5-15"]').marginBottom,
         back: [
-          s('[data-ac="S5-13"]').fontSize,
+          s('[data-ac="S5-13"]').fontSize === sizeToken("--text-body"),
           s('[data-ac="S5-13"]').color === token("--color-muted-foreground"),
         ],
         taMin: s("textarea").minHeight,
         composerTop: [
           s('[data-ac="S5-9"]').paddingTop,
-          s('[data-ac="S5-9"]').borderTopColor === token("--color-border"),
+          s('[data-ac="S5-9"]').borderTopWidth,
         ],
         header: s("header").position,
         block: document
@@ -225,17 +232,18 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
       };
     });
     expect(m).toEqual({
-      me: [true, true, "8px", "8px 12px", "14px", "20px"],
+      me: [true, true, "8px", "8px 12px", true],
       them: [true, true],
       auto: [true, true, "1px"],
-      seen: [true, "12px"],
-      wrapMax: "70%",
-      logGap: "12px",
+      seen: [true, true],
+      wrapMax: "576px",
+      logGap: "8px",
+      contentWidths: ["768px", "768px"],
       h1: ["20px", "28px"],
       headMb: "16px",
-      back: ["13px", true],
+      back: [true, true],
       taMin: "84px",
-      composerTop: ["12px", true],
+      composerTop: ["12px", "0px"],
       header: "sticky",
       block: m.vh - 73,
       vh: 900,
@@ -259,18 +267,24 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
     expect(m).toEqual({ wrap: "85%", ta: "66px" });
   });
 
-  test("F5 입구 실패 한 줄 13px(디자인 결정 3, 와이어프레임 .err = --text-body)", async ({
-    page,
-  }) => {
+  test("F5 입구 실패 한 줄에 오류 글자 토큰을 적용한다", async ({ page }) => {
     await openProduct(page, 11);
     await mock(page, "fail", { op: "create", status: 500 });
     await inquiryButton(page).click();
     const err = page.locator('p[data-ac="S5-4"]');
     await expect(err).toHaveText("대화방을 열지 못했어요. 다시 눌러 주세요");
     await page.screenshot({ path: `${QA}/F5-entry-error.png` });
-    expect(await err.evaluate((el) => getComputedStyle(el).fontSize)).toBe(
-      "13px",
-    );
+    expect(
+      await err.evaluate((el) => {
+        const probe = document.createElement("span");
+        el.append(probe);
+        probe.style.fontSize = "var(--text-body)";
+        const matches =
+          getComputedStyle(el).fontSize === getComputedStyle(probe).fontSize;
+        probe.remove();
+        return matches;
+      }),
+    ).toBe(true);
   });
 });
 

@@ -152,10 +152,11 @@ for (const viewport of [
       await page.screenshot({
         path: `${SHOTS}/s2-pending-${viewport.width}.png`,
       });
-      /* 실패 말풍선은 log 안, 실패 줄은 한 줄, 색은 destructive-strong 토큰 */
+      /* 실패 말풍선은 log 안, 색은 destructive-strong 토큰. 실패 줄은 글 한 줄(20px)과 버튼 줄 하나다 —
+         긴 문구와 버튼의 터치 영역이 겹치지 않게 줄을 나눴다(2026-11-18). 사이 틈은 4px */
       expect(failedBox.right).toBeLessThanOrEqual(logBox.right + 0.5);
       expect(failedBox.left).toBeGreaterThanOrEqual(logBox.left - 0.5);
-      expect(alertLine.h).toBeLessThanOrEqual(retry.h + 4);
+      expect(alertLine.h).toBeLessThanOrEqual(retry.h + 20 + 4 + 0.5);
       expect(alertLine.color).toBe(
         await tokenValue(page, "text-destructive-strong", "color"),
       );

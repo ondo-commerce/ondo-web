@@ -25,11 +25,7 @@ export function EtaCell({
 
   if (state === "CHECKING") {
     /* 날짜를 아직 못 받았다. `-`나 오늘 날짜로 채우면 없는 약속이 생긴다 */
-    return (
-      <Badge className="bg-card border-input text-muted-foreground border">
-        {ETA_BADGE_LABEL.CHECKING}
-      </Badge>
-    );
+    return <Badge tone="wait">{ETA_BADGE_LABEL.CHECKING}</Badge>;
   }
 
   if (state === "DELAYED") {
@@ -41,9 +37,7 @@ export function EtaCell({
           선으로는 3:1을 넘어 괜찮다. 확정 와이어프레임 `_base.css`의 대비 수정 2번이
           같은 처방이다.
         */}
-        <Badge className="bg-card border-destructive text-destructive-strong border">
-          {ETA_BADGE_LABEL.DELAYED}
-        </Badge>
+        <Badge tone="warn">{ETA_BADGE_LABEL.DELAYED}</Badge>
         {/* 사장이 **다음에 무엇을 기다리면 되는지**를 화면이 말한다.
             원래 예상일과 변동 사유는 쓰지 않는다(§5-2 — 소매 화면에 자리가 없다) */}
         <span className="text-muted-foreground mt-1 block text-xs">

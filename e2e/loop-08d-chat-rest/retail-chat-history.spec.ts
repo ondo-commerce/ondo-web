@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Page } from "@playwright/test";
 import {
   ANY_CHAT,
@@ -353,7 +354,7 @@ for (const viewport of [
       ).toBe(true);
     }
 
-    test("불러오는 중과 실패 줄 자리 top ≥ 방 머리 bottom, 가로 넘침 0. 390 은 버튼 높이 44, 글자 14", async ({
+    test("불러오는 중과 실패 줄 자리 top ≥ 방 머리 bottom, 가로 넘침 0. 390은 버튼 높이 44와 본문 글자", async ({
       page,
     }) => {
       const phone = viewport.width === 390;
@@ -370,9 +371,10 @@ for (const viewport of [
         h: el.getBoundingClientRect().height,
         f: getComputedStyle(el).fontSize,
       }));
-      expect(loading).toEqual(
-        phone ? { h: 44, f: "14px" } : { h: 28, f: "12px" },
-      );
+      expect(loading).toEqual({
+        h: phone ? 44 : 28,
+        f: (await chatTypeScale(page))[phone ? "body" : "small"],
+      });
       await waitBubbles(page, 100);
 
       await chatMock(page, "fail", {

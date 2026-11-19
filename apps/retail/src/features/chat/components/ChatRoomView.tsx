@@ -106,14 +106,7 @@ export function ChatRoomView({
 }) {
   useResetChatSessionOnLeave(roomId);
   return (
-    <div className="mx-auto max-w-wrap">
-      <ChatBlock
-        key={roomId}
-        roomId={roomId}
-        from={from}
-        addToCart={addToCart}
-      />
-    </div>
+    <ChatBlock key={roomId} roomId={roomId} from={from} addToCart={addToCart} />
   );
 }
 
@@ -357,7 +350,7 @@ function ChatRoom({
 
       {/* log를 relative 상자로 한 번 감싼다 — 새 메시지 버튼이 그 위에 뜬다(디자인 결정 67). log 안에 넣으면 같이
           스크롤되고, 흐름 안에 넣으면 버튼이 생길 때 log가 줄어 읽던 자리가 밀린다. DOM 순서 log → 버튼 → 입력창 → live */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
         {/* 첫 자식의 mt-auto가 짧은 대화를 아래로 붙이고, 넘치면 0이 되어 위로 스크롤된다
           (도매 디자인 결정 17 — `justify-content:flex-end`는 위쪽이 잘려 쓰지 않는다) */}
         <div
@@ -373,7 +366,7 @@ function ChatRoom({
           {...logHandlers}
           /* `relative`가 있어야 말풍선 앞 숨긴 발신자(`sr-only`, position:absolute)의 기준 상자가 이 영역이 된다.
            없으면 기준이 문서라 스크롤에 안 잘리고 문서 높이를 늘려 페이지가 스크롤했다(QA F3) */
-          className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-3"
+          className="scroll-slim relative flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-1 pb-3 [&>.self-end+.self-start]:mt-2 [&>.self-start+.self-end]:mt-2"
         >
           <div aria-hidden className="mt-auto shrink-0" />
           {/* 맨 위 자리. mt-auto 뒤라 짧은 방에선 첫 말풍선 바로 위에 붙는다(디자인 결정 67) */}
@@ -720,7 +713,7 @@ function RoomSkeleton() {
     <div
       role="status"
       aria-label={ROOM_TEXT.loading}
-      className="mt-auto grid w-full gap-3 pb-3"
+      className="mt-auto mx-auto grid w-full max-w-3xl gap-2 pb-3"
     >
       <div className="bg-muted h-9 w-9/20 animate-pulse rounded-control" />
       <div className="bg-muted h-9 w-7/20 animate-pulse justify-self-end rounded-control" />

@@ -314,7 +314,9 @@ test.describe("S5-5 S5-6 방 화면", () => {
     for (const a of await autos.all()) {
       await expect(a.getByText("자동 답변", { exact: true })).toBeVisible();
       const b = await box(a);
-      expect(b.x + b.width).toBeLessThan(area.x + area.width / 2 + 1);
+      /* 왼쪽에 붙어 있다 = 왼쪽 틈이 오른쪽 틈보다 좁다. 예전에는 "가운데를 안 넘는다"로 봤는데,
+         대화 열을 좁혀 가운데로 모은 뒤(2026-11-18)에는 카드가 열의 절반보다 넓다 */
+      expect(b.x - area.x).toBeLessThan(area.x + area.width - (b.x + b.width));
     }
     await expect(autos.nth(0).getByText(/^\d\d:\d\d 조회$/)).toHaveText(
       "09:20 조회",

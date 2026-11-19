@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   alignTop,
@@ -152,7 +153,9 @@ for (const viewport of [
       expect(slot.top).toBeGreaterThanOrEqual(head.y + head.height);
       expect(jump.h).toBe(phone ? 44 : 28);
       expect(slot.h).toBe(phone ? 44 : 28);
-      expect(jump.font).toBe(phone ? "14px" : "12px");
+      expect(jump.font).toBe(
+        (await chatTypeScale(page))[phone ? "body" : "small"],
+      );
       expect(jump.borderColor).toBe(border);
       expect(slot.borderColor).toBe(border);
       expect(jump.shadow).toBe(shadow);
@@ -196,7 +199,9 @@ for (const viewport of [
       });
       expect(text).toBe(danger);
       expect(retry.h).toBe(phone ? 44 : 28);
-      expect(retry.font).toBe(phone ? "14px" : "12px");
+      expect(retry.font).toBe(
+        (await chatTypeScale(page))[phone ? "body" : "small"],
+      );
       expect(row.top).toBeGreaterThanOrEqual(head.y + head.height);
       /* 글과 버튼이 한 줄: 행 높이 = 버튼 높이 + 위 여백(pt-1, 4px) 안 */
       expect(row.h).toBeLessThanOrEqual(retry.h + 4 + 1);

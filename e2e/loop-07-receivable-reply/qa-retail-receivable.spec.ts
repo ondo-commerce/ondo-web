@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Page } from "@playwright/test";
 import {
   ASK_DISCOUNT,
@@ -312,7 +313,7 @@ async function measureCard(page: Page, sequence: number) {
 }
 
 for (const width of [1470, 390] as const)
-  test(`QA-R7 디자인 실측 ${width}: 카드 위 선 = border, 줄 = secondary 13px, 굵게 = foreground 500, 조회 = muted 12px, 링크 ${width === 390 ? "44" : "28"}px 한 줄, 빨강 0, 가로 넘침 0`, async ({
+  test(`QA-R7 디자인 실측 ${width}: 카드 위 선 = border, 줄 = 조용한 글, 굵게 = foreground 500, 조회 = 작은 글, 링크 ${width === 390 ? "44" : "28"}px 한 줄, 빨강 0, 가로 넘침 0`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
@@ -328,10 +329,10 @@ for (const width of [1470, 390] as const)
     expect(m.cardBorderTop).toBe(m.tokenBorder);
     expect(m.cardBorderWidth).toBe("1px");
     expect(m.lineColor).toBe(m.tokenSecondary);
-    expect(m.lineSize).toBe("13px");
+    expect(m.lineSize).toBe((await chatTypeScale(page)).muted);
     expect(m.strongColor).toBe(m.tokenForeground);
     expect(m.strongWeight).toBe("500");
-    expect(m.seenSize).toBe("12px");
+    expect(m.seenSize).toBe((await chatTypeScale(page)).small);
     expect(m.seenColor).toBe(m.tokenMuted);
     expect(m.linkHeight).toBe(width === 390 ? 44 : 28);
     expect(m.linkWhiteSpaceWraps).toBe(false);

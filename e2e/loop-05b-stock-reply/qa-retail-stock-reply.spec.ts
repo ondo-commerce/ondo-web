@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Page } from "@playwright/test";
 import {
   addButton,
@@ -493,18 +494,18 @@ test.describe("390 넘친 방과 디자인 실측", () => {
     return m;
   }
 
-  test("토큰 실측 1470: 옵션 칩 28, 칩 간격 6, 카드 위 선 1, 카드 위 여백 8, 담기 32", async ({
+  test("토큰 실측 1470: 옵션 칩 28, 보기 간격 8, 카드 위 선 1, 카드 위 여백 8, 담기 32", async ({
     page,
   }) => {
     const m = await measureCard(page);
     expect(m.chipH).toBe(28);
-    expect(m.gap).toBe("6px");
+    expect(m.gap).toBe("8px");
     expect(m.cardBorder).toBe("1px");
     expect(m.cardPad).toBe("8px");
     expect(m.btnH).toBe(32);
   });
 
-  test("토큰 실측 1470: 카드 한 줄 13px(--text-body), 굵게 500, 결과 줄 13px — 와이어프레임 .scard .fl .res", async ({
+  test("토큰 실측 1470: 카드와 결과 줄은 조용한 글, 값은 500 — 와이어프레임 .scard .fl .res", async ({
     page,
   }) => {
     const m = await measureCard(page);
@@ -513,9 +514,9 @@ test.describe("390 넘친 방과 디자인 실측", () => {
       strong: m.strongWeight,
       status: m.statusSize,
     }).toEqual({
-      line: "13px",
+      line: (await chatTypeScale(page)).muted,
       strong: "500",
-      status: "13px",
+      status: (await chatTypeScale(page)).muted,
     });
   });
 });

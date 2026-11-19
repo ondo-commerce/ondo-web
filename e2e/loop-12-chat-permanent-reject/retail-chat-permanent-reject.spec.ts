@@ -1,3 +1,4 @@
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { routeAuth } from "../loop-06b-retail-notify/helpers";
 import {
@@ -331,7 +332,7 @@ function fontSize(target: Locator): Promise<string> {
 }
 
 test.describe("S1-10 [크기]", () => {
-  test("390: 새 버튼과 지우기, 대화 목록 높이 ≥ 44, 12px, 겹침 0, 넘침 0 → 1280: 말풍선 버튼 높이 16", async ({
+  test("390: 새 버튼과 지우기, 대화 목록 높이 ≥ 44, 작은 글, 겹침 0, 넘침 0 → 1280: 말풍선 버튼 높이 18", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -362,8 +363,8 @@ test.describe("S1-10 [크기]", () => {
           390,
         );
       }
-      expect(await fontSize(keep)).toBe("12px");
-      expect(await fontSize(remove)).toBe("12px");
+      expect(await fontSize(keep)).toBe((await chatTypeScale(page)).small);
+      expect(await fontSize(remove)).toBe((await chatTypeScale(page)).small);
       expect(overlapArea(k, d), `${status} 두 버튼`).toBe(0);
       expect(overlapArea(text, k), `${status} 문구와 남기는 버튼`).toBe(0);
       expect(overlapArea(text, d), `${status} 문구와 지우기`).toBe(0);
@@ -387,7 +388,7 @@ test.describe("S1-10 [크기]", () => {
         removeOf(bubble),
       ]) {
         const box = await rectOf(target);
-        expect(box.bottom - box.top, `${status} 1280 높이`).toBe(16);
+        expect(box.bottom - box.top, `${status} 1280 높이`).toBe(18);
       }
     }
 

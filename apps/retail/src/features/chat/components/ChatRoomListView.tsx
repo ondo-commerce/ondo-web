@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Panel } from "@ondo/ui";
+import { Button, Panel, cn } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
@@ -196,7 +196,7 @@ function Spinner() {
 }
 
 /**
- * 행 — `<a>` 하나에 두 줄(loop-04 디자인 결정 3 그대로). 1줄 도매처명(500, 말줄임) + 시각,
+ * 행 — `<a>` 하나에 두 줄(loop-04 디자인 결정 3 그대로). 1줄 도매처명(안 읽은 방만 강조) + 시각,
  * 2줄 마지막 한 줄(muted, 말줄임) + 안 읽은 수 알약(primary). 알약 글자는 숨기고 수는 이름 끝에 붙인다.
  */
 function RoomRow({ row }: { row: ChatRoomRowView }) {
@@ -205,9 +205,12 @@ function RoomRow({ row }: { row: ChatRoomRowView }) {
       href={row.href}
       data-room-id={row.roomId}
       data-ac="S2-4"
-      className="hover:bg-accent focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-control px-3 py-2.5 focus-visible:ring-2 focus-visible:outline-hidden"
+      className="hover:bg-secondary focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 rounded-control px-4 py-4 focus-visible:ring-2 focus-visible:outline-hidden"
     >
-      <span title={row.name} className="truncate font-medium">
+      <span
+        title={row.name}
+        className={cn("truncate text-sm", row.unreadCount > 0 && "font-medium")}
+      >
         {row.name}
       </span>
       <span className="text-muted-foreground text-right text-xs tabular-nums">
@@ -240,9 +243,9 @@ function ListSkeleton() {
   return (
     <div role="status" aria-label={LIST_TEXT.loading} className="grid gap-1">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="grid gap-2 px-3 py-2.5">
-          <div className="bg-muted h-4 w-3/10 animate-pulse rounded-control" />
-          <div className="bg-muted h-4 w-7/10 animate-pulse rounded-control" />
+        <div key={i} className="grid gap-1 px-4 py-4">
+          <div className="bg-muted h-5 w-3/10 animate-pulse rounded-control" />
+          <div className="bg-muted h-5 w-7/10 animate-pulse rounded-control" />
         </div>
       ))}
     </div>

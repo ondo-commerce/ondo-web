@@ -508,12 +508,30 @@ test("장면 2·3 — 미송 되묻기 칩(소매 주문 번호) · 미수 답 �
   await r.waitForURL(/\/backorders\?wholesaler=101/);
 
   await r.goto(`${R}/chats/1`);
+  /* 무드온 미수는 앞 실행과 다른 작업이 남긴 출고로 바뀐다(11-19 로컬 DB 135,000원). 기대 답을 시드 값(0원)으로
+     박지 않고, 묻기 직전 서버의 지금 잔액으로 고른다. 문구 꼴은 서버 자동 답과 같다(목 `receivable.ts`가 따라 쓴다) */
+  const settlements = (await (
+    await r.request.get(`${R}/api/retail/settlements`)
+  ).json()) as {
+    data: {
+      wholesalerId: number;
+      balance: number;
+      overdue: { count: number };
+    }[];
+  };
+  const moodon = settlements.data.find((row) => row.wholesalerId === 101);
+  const expectedReceivable =
+    moodon === undefined || moodon.balance === 0
+      ? "지금 갚을 돈은 없어요"
+      : `갚을 돈은 ${moodon.balance.toLocaleString("ko-KR")}원이에요`;
   await box.fill("지금 미수 얼마예요?");
   const receivable = replyBubble(
     r,
     await sendAndWait(r, () => r.keyboard.press("Enter")),
   );
-  await expect(receivable.getByText("지금 갚을 돈은 없어요")).toBeVisible({
+  await expect(
+    receivable.getByText(expectedReceivable, { exact: false }),
+  ).toBeVisible({
     timeout: 10_000,
   });
   await expect(
