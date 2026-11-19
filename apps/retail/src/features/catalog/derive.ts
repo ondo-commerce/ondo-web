@@ -46,6 +46,7 @@ export function toCatalogProduct(wire: ListingSummaryWire): CatalogProduct {
     colorCount: wire.colorCount,
     sizeCount: wire.sizeCount,
     priceMin: wire.minSalePrice,
+    isSinglePieceAllowed: wire.isSinglePieceAllowed,
   };
 }
 
@@ -71,6 +72,7 @@ export function toCatalogProductFromDetail(
     colorCount: wire.colorOptions.length,
     sizeCount: sizes.size,
     priceMin: wire.minSalePrice,
+    isSinglePieceAllowed: wire.isSinglePieceAllowed,
   };
 }
 
@@ -184,13 +186,12 @@ export function resolveFilter(
  * (`categoryId` · `colorIds` · `sizes` · `priceFrom` · `priceTo` · `page` · `size`).
  * 화면은 축마다 하나만 고르므로 배열 파라미터에도 값 하나만 실린다.
  *
- * `page`는 늘 0이다 — 화면의 `더 보기`는 장을 넘기는 게 아니라 **첫 장을 더 크게**
- * 받는다(`shown` → `size`). 그래야 8장 보다가 16장으로 펼친 뒤 뒤로 가기를 해도
- * 주소 하나로 같은 화면이 나온다.
+ * 주소의 페이지는 1부터, API의 페이지는 0부터 시작한다.
  */
 export function toListingParams(
   filter: CatalogFilter,
-  size: number,
+  page: number,
+  size = PAGE_SIZE,
 ): SearchParams {
   const band = PRICE_BANDS.find((b) => b.value === filter.price);
 
@@ -201,7 +202,7 @@ export function toListingParams(
     sizes: filter.size === FILTER_ALL ? undefined : filter.size,
     priceFrom: band?.min,
     priceTo: band?.max ?? undefined,
-    page: 0,
+    page: page - 1,
     size,
   };
 }
@@ -220,13 +221,13 @@ export function isFilterEmpty(filter: CatalogFilter): boolean {
  * 지금 주소 위에 한 축만 바꾼 주소를 만든다.
  *
  * 기본값(`전체`)인 축은 **주소에서 빼 버린다** — 그래야 `초기화`가 그냥 기본
- * 경로가 되고, 아무것도 안 고른 화면의 주소가 공유했을 때도 짧다. 펼침(`shown`)은
- * 싣지 않는다 — 필터를 바꾸면 펼침이 저절로 접혀야 건수와 카드 수가 맞는다.
+ * 경로가 된다. 필터가 달라질 때는 첫 페이지부터 보여 준다.
  */
 export function catalogHref(
   basePath: string,
   current: CatalogFilter,
   patch: Partial<CatalogFilter>,
+  page = 1,
 ): string {
   const next = { ...current, ...patch };
   const params = new URLSearchParams();
@@ -234,53 +235,45 @@ export function catalogHref(
     if (next[key] !== FILTER_ALL) params.set(LIST_PARAM[key], next[key]);
   }
 
+  if (page > 1) params.set(LIST_PARAM.page, String(page));
+
   const query = params.toString();
   return query ? `${basePath}?${query}` : basePath;
 }
 
-/* ────────────────────────────────────────────────────────────────────────
-   `상품 더 보기` — 펼친 정도도 주소가 갖는다.
+/** 예전 공유 링크는 마지막으로 펼쳤던 상품이 있는 페이지로 연결한다. */
+export function resolveCatalogPage(
+  params: Record<string, string | string[] | undefined>,
+): number {
+  const raw = one(params, LIST_PARAM.page);
+  if (raw === undefined) {
+    const shown = one(params, "shown");
+    return shown && /^\d+$/.test(shown)
+      ? Math.max(
+          1,
+          Math.ceil(Math.min(Number(shown), MAX_PAGE_SIZE) / PAGE_SIZE),
+        )
+      : 1;
+  }
 
-   화면 안의 `useState`로 두면 카드 하나를 열어 보고 뒤로 왔을 때 다시 8장으로
-   접힌다. 필터가 이미 주소에 있는 것과 같은 이유다 — 화면을 떠났다 오는 것이
-   이 화면의 기본 동선이다. 서버는 `size=shown`으로 첫 장을 그만큼 크게 준다.
-   ──────────────────────────────────────────────────────────────────────── */
-
-/**
- * 주소 → 펼친 장수. 못 읽는 값(`abc`·`-8`·`1e3`·소수)은 **접힌 상태로 떨어뜨린다** —
- * 링크를 손으로 고쳐 넣은 값 때문에 화면이 비거나 통째로 펼쳐지지 않게.
- * 서버 상한(`MAX_PAGE_SIZE`)을 넘는 값은 상한으로 — 넘겨 보내면 400이다.
- */
-export function resolveShown(raw: string | string[] | undefined): number {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value === undefined || !/^\d+$/.test(value)) return PAGE_SIZE;
-
-  return Math.min(Math.max(Number(value), PAGE_SIZE), MAX_PAGE_SIZE);
+  const page = Number(raw);
+  // API가 받는 page는 int32다. 음수, 지수 표기, 범위 밖 숫자는 첫 페이지로 돌린다.
+  return /^\d+$/.test(raw) && page >= 1 && page <= 2_147_483_647 ? page : 1;
 }
 
-/**
- * `상품 더 보기`가 갈 주소. **지금 주소 위에 `shown`만 얹는다** —
- * 필터를 바꾸면 `catalogHref`가 이 값을 안 싣기 때문에 펼침이 저절로 접힌다.
- */
-export function moreHref(currentHref: string, shown: number): string {
-  const [path, query] = currentHref.split("?");
-  const params = new URLSearchParams(query);
-  params.set(LIST_PARAM.shown, String(shown));
-
-  return `${path}?${params.toString()}`;
+export function toCatalogPaging(page: number, total: number): CatalogPaging {
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  return { page: Math.min(page, Math.max(1, totalPages)), totalPages, total };
 }
 
-/** 서버 `meta.totalElements`와 실제로 그린 카드 수. 건수 표기와 `더 보기`가 같은 값을 본다 */
-export function toCatalogPaging(shown: number, total: number): CatalogPaging {
-  return { shown, total };
-}
-
-/**
- * 더 펼칠 수 있는가. 전체가 더 남았고 **서버 상한에 아직 안 닿았을 때**만이다 —
- * 상한에서 `더 보기`를 그대로 두면 눌러도 같은 화면이 온다.
- */
-export function canShowMore(paging: CatalogPaging): boolean {
-  return paging.shown < paging.total && paging.shown < MAX_PAGE_SIZE;
+/** 좁은 화면에서도 한 줄로 이동하도록 현재 페이지 근처의 번호 다섯 개를 제공한다. */
+export function catalogPageNumbers({
+  page,
+  totalPages,
+}: CatalogPaging): number[] {
+  const count = Math.min(5, totalPages);
+  const first = Math.max(1, Math.min(page - 2, totalPages - count + 1));
+  return Array.from({ length: count }, (_, index) => first + index);
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -290,7 +283,7 @@ export function canShowMore(paging: CatalogPaging): boolean {
 /**
  * 받은 목록에서 이 도매처 것만. **서버가 도매처로 못 거른다** — `GET /listings`에
  * `wholesalerId` 파라미터가 없고 도매처를 id로 찾는 path도 없다(`04-wire.md` §3).
- * 그래서 도매처 홈은 첫 장을 상한까지 받아 여기서 거른다.
+ * 그래서 도매처 홈은 마켓의 각 장을 받을 때마다 도매처 id를 대조한다.
  */
 export function productsOfWholesaler(
   products: readonly CatalogProduct[],
@@ -302,8 +295,7 @@ export function productsOfWholesaler(
 /**
  * 도매처 홈 머리. 상호는 그 도매처 게시글의 `wholesaler.name`에서 온다 —
  * 게시글이 하나도 없으면 상호를 알 길이 없어 null이고 화면은 `notFound()`로 간다.
- * **필터를 안 건 목록으로 부른다** — 필터로 0건이 된 목록에서 찾으면 그 도매처가
- * 안 파는 축을 고른 것만으로 없는 도매처가 된다(F1).
+ * 필터 조회가 0건이면 호출부가 필터를 해제하고 첫 일치 상품으로 상호를 확인한다.
  */
 export function wholesalerOf(
   products: readonly CatalogProduct[],

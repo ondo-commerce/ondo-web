@@ -1,17 +1,12 @@
 "use client";
 
 import { Button } from "@ondo/ui";
-import { ChevronDown, RotateCcw, SearchX } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown";
 import { ProductGrid } from "./ProductGrid";
-import {
-  FILTER_ALL,
-  FILTER_ALL_LABEL,
-  PAGE_SIZE,
-  PRICE_BANDS,
-} from "../constants";
-import { canShowMore, catalogHref, isFilterEmpty, moreHref } from "../derive";
+import { FILTER_ALL, FILTER_ALL_LABEL, PRICE_BANDS } from "../constants";
+import { catalogPageNumbers, catalogHref, isFilterEmpty } from "../derive";
 import type {
   CatalogFilter,
   CatalogOptions,
@@ -19,21 +14,7 @@ import type {
   CatalogProduct,
 } from "../types";
 
-/**
- * 필터 툴바 + 구분선 + 카드 격자 + `상품 더 보기`. 홈과 도매처 홈의 `전체 상품`이
- * 같은 것을 쓴다 — 두 화면에서 필터가 갈리면 같은 상품이 다르게 걸린다.
- *
- * **거르는 것은 서버다.** 이 컴포넌트는 받은 카드를 그리고, 필터 링크는 주소만
- * 바꾼다 — 그러면 `page.tsx`가 새 파라미터로 `GET /listings`를 다시 부른다.
- *
- * **건수 표기가 화면에 실제로 그려진 카드 수와 같다.** 아직 `더 보기`로 펼치지
- * 않은 상품은 이 숫자에 남지 않는다 — 도매 5회차에서 네 번 재발한 "가려진 대상이
- * 집계에 남는" 결함을 여기서 끊는다. 나머지가 있으면 `· 전체 N개`(서버의
- * `totalElements`)를 덧붙여 더 있다는 사실만 따로 말한다.
- *
- * 정렬 드롭다운이 없다 — `GET /listings`에 정렬 파라미터가 없어 서버 순서 그대로다
- * (`04-wire.md` §3).
- */
+/** 홈과 도매처 판매 페이지의 필터 및 상품 목록. 필터와 페이지는 주소에서 읽는다. */
 export function CatalogSection({
   basePath,
   products,
@@ -43,7 +24,6 @@ export function CatalogSection({
   showPriceFilter = true,
   favorites,
   onToggleFavorite,
-  columns = 5,
   noun = "상품",
 }: {
   basePath: string;
@@ -57,7 +37,6 @@ export function CatalogSection({
   showPriceFilter?: boolean;
   favorites: ReadonlySet<string>;
   onToggleFavorite: (productId: string) => void;
-  columns?: 4 | 5;
   noun?: string;
 }) {
   const href = (patch: Partial<CatalogFilter>) =>
@@ -121,9 +100,11 @@ export function CatalogSection({
 
   return (
     <>
-      {/* flex-wrap: 390px에서 필터 4개가 한 줄에 못 선다. 원본도 ≤40rem에서
-          `.toolbar{flex-wrap:wrap}`으로 접고 건수 묶음을 아래 줄로 내린다 */}
-      <div className="flex flex-wrap items-center gap-2 pb-3">
+      {/* 좁은 화면에서는 조건과 건수를 자연스럽게 다음 줄로 보낸다. */}
+      <div
+        id="catalog-results"
+        className="scroll-mt-32 flex flex-wrap items-center gap-3 phone:gap-2"
+      >
         <FilterDropdown
           label="카테고리"
           options={categoryOptions}
@@ -156,20 +137,12 @@ export function CatalogSection({
             `aria-disabled`만 걸면 보조기술에는 못 누른다고 말해 놓고 실제로는
             포커스도 되고 눌리면 이동한다 */}
         {clean ? (
-          <Button
-            variant="ghost"
-            className="text-body h-8 gap-1.5 px-2"
-            disabled
-          >
+          <Button variant="ghost" size="sm" disabled>
             <RotateCcw aria-hidden className="size-3.5" />
             초기화
           </Button>
         ) : (
-          <Button
-            asChild
-            variant="ghost"
-            className="text-body h-8 gap-1.5 px-2"
-          >
+          <Button asChild variant="ghost" size="sm">
             <Link href={resetHref}>
               <RotateCcw aria-hidden className="size-3.5" />
               초기화
@@ -177,7 +150,7 @@ export function CatalogSection({
           </Button>
         )}
 
-        <div className="ml-auto flex items-center gap-3 phone:ml-0 phone:w-full phone:justify-between">
+        <div className="ml-auto">
           <ResultCount
             noun={noun}
             visible={products.length}
@@ -190,32 +163,96 @@ export function CatalogSection({
         <CatalogEmpty resetHref={resetHref} filtered={!clean} />
       ) : (
         <>
-          {/* 패널 안쪽 여백을 지나 좌우 끝까지 긋는다 (`_base.css` `.hr{margin:0 -16px}`) */}
-          <div className="bg-border -mx-4 h-px" />
-
           <ProductGrid
             products={products}
             favorites={favorites}
             onToggleFavorite={onToggleFavorite}
-            columns={columns}
           />
 
-          {canShowMore(paging) ? (
-            /* 버튼이 아니라 링크다 — 펼친 정도가 주소에 남아야 뒤로 가기에서
-               살아남는다. `scroll={false}`: 다음 8장은 화면 아래에 붙는데
-               맨 위로 튀면 방금 어디를 보고 있었는지 잃는다 */
-            <Link
-              href={moreHref(href({}), paging.shown + PAGE_SIZE)}
-              scroll={false}
-              className="border-border text-secondary-foreground hover:bg-secondary text-body -mx-4 -mb-4 flex h-10 items-center justify-center gap-1 rounded-b-panel border-t font-medium"
-            >
-              {noun} 더 보기
-              <ChevronDown aria-hidden className="text-border-strong size-3" />
-            </Link>
-          ) : null}
+          <CatalogPagination
+            paging={paging}
+            hrefFor={(page) =>
+              `${catalogHref(basePath, filter, {}, page)}#catalog-results`
+            }
+          />
         </>
       )}
     </>
+  );
+}
+
+function CatalogPagination({
+  paging,
+  hrefFor,
+}: {
+  paging: CatalogPaging;
+  hrefFor: (page: number) => string;
+}) {
+  const { page, totalPages } = paging;
+  if (totalPages < 2) return null;
+
+  const controlClass =
+    "min-w-8 px-2 tabular-nums focus-visible:outline-2 focus-visible:outline-ring";
+  return (
+    <nav
+      aria-label="상품 목록 페이지"
+      className="mt-3 flex flex-wrap items-center justify-end gap-2 phone:justify-center"
+    >
+      <Button
+        asChild={page > 1}
+        disabled={page === 1}
+        aria-label="이전 페이지"
+        variant="line"
+        size="sm"
+        className={controlClass}
+      >
+        {page > 1 ? (
+          <Link href={hrefFor(page - 1)} prefetch={false}>
+            <ChevronLeft aria-hidden className="size-4" />
+          </Link>
+        ) : (
+          <ChevronLeft aria-hidden className="size-4" />
+        )}
+      </Button>
+      {catalogPageNumbers(paging).map((number) => (
+        <Button
+          key={number}
+          asChild
+          variant="line"
+          size="sm"
+          className={
+            number === page
+              ? `${controlClass} bg-secondary text-foreground`
+              : controlClass
+          }
+        >
+          <Link
+            href={hrefFor(number)}
+            prefetch={false}
+            aria-label={`${number}페이지`}
+            aria-current={number === page ? "page" : undefined}
+          >
+            {number}
+          </Link>
+        </Button>
+      ))}
+      <Button
+        asChild={page < totalPages}
+        disabled={page === totalPages}
+        aria-label="다음 페이지"
+        variant="line"
+        size="sm"
+        className={controlClass}
+      >
+        {page < totalPages ? (
+          <Link href={hrefFor(page + 1)} prefetch={false}>
+            <ChevronRight aria-hidden className="size-4" />
+          </Link>
+        ) : (
+          <ChevronRight aria-hidden className="size-4" />
+        )}
+      </Button>
+    </nav>
   );
 }
 
@@ -230,19 +267,14 @@ export function ResultCount({
   total: number;
 }) {
   return (
-    <p className="text-muted-foreground text-body tabular-nums">
+    <p className="text-muted-foreground text-xs tabular-nums">
       {noun} <span className="text-foreground font-medium">{visible}</span>개
       {visible < total ? <span> · 전체 {total}개</span> : null}
     </p>
   );
 }
 
-/**
- * 결과 0건. 문구는 게이트 Q6 확정본이다.
- *
- * 필터가 걸려 있을 때만 `초기화`를 준다 — 아무 조건도 안 걸었는데 0건이면
- * 초기화해도 그대로라, 눌러도 아무 일이 없는 버튼을 주는 셈이 된다.
- */
+/** 조건을 해제하면 목록이 달라지는 경우만 초기화 링크를 제공한다. */
 export function CatalogEmpty({
   resetHref,
   filtered,
@@ -251,25 +283,15 @@ export function CatalogEmpty({
   filtered: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 px-5 py-16 text-center">
-      <span className="bg-secondary text-border-strong mb-1.5 grid size-11 place-items-center rounded-full">
-        <SearchX aria-hidden className="size-5" />
-      </span>
-      <h3 className="text-base font-medium">
+    <div className="py-8 text-center">
+      <p className="text-muted-foreground text-sm">
         {filtered ? "조건에 맞는 상품이 없어요." : "아직 올라온 상품이 없어요."}
-      </h3>
-      <p className="text-muted-foreground text-body">
-        {filtered
-          ? "필터를 지우면 전체를 볼 수 있어요."
-          : "도매처가 상품을 올리면 여기에 보여요."}
       </p>
-      {filtered ? (
-        <div className="mt-3.5">
-          <Button asChild variant="line">
-            <Link href={resetHref}>초기화</Link>
-          </Button>
-        </div>
-      ) : null}
+      {filtered && (
+        <Button asChild variant="line" size="sm" className="mt-3">
+          <Link href={resetHref}>초기화</Link>
+        </Button>
+      )}
     </div>
   );
 }

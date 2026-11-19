@@ -55,12 +55,13 @@ export const RETAILERS = {
 export type RetailerKey = keyof typeof RETAILERS;
 
 export const WHOLESALER = { id: 101, name: "무드온" } as const;
+export const LATE_WHOLESALER = { id: 104, name: "늦봄상회" } as const;
 export const ORDER_ID = 7001;
 
 /**
  * 채팅 e2e(loop-05a)용 도매처 둘. 이름은 소매 채팅 목(`packages/api/src/mocks/retail/chat.ts`
  * `CHAT_WHOLESALERS`)과 같다. 102는 거래 이력 없음(정산 줄 없음), 103은 30자 상호.
- * 도매처 홈은 "첫 장에 게시글이 있는 도매처"만 서므로 상품을 하나씩 둔다.
+ * 도매처 홈은 게시글에서 상호를 읽으므로 상품을 하나씩 둔다.
  */
 export const CHAT_WHOLESALERS = {
   raon: { id: 102, name: "라온" },
@@ -470,6 +471,92 @@ function addToCart(
   };
 }
 
+/**
+ * `GET /checkout?cartItemIds=` — `CheckoutResponse`. 담긴 줄 가운데 **주소로 넘어온 id만** 돌려준다.
+ * 상품 상세 `바로 주문하기`가 방금 담은 줄만 들고 오는지 보려는 것이다
+ */
+function checkoutResponse(key: string, rawIds: string) {
+  const ids = new Set(rawIds.split(",").map(Number));
+  const items = [...cartOf(key).values()]
+    .filter((line) => ids.has(line.cartItemId))
+    .map((line) => {
+      const v = stockVariant(line.variantId);
+      return {
+        cartItemId: line.cartItemId,
+        variantId: line.variantId,
+        title: STOCK_LISTING.title,
+        colorName: v?.color ?? "",
+        size: v?.size ?? "",
+        qty: line.qty,
+        salePrice: STOCK_LISTING.salePrice,
+        lineAmount: line.qty * STOCK_LISTING.salePrice,
+      };
+    });
+  const total = items.reduce((sum, item) => sum + item.lineAmount, 0);
+  return {
+    groups:
+      items.length === 0
+        ? []
+        : [
+            {
+              wholesaler: {
+                ...WHOLESALER,
+                storeBuilding: "디오트",
+                storeUnit: "2층 214호",
+                bankName: "국민은행",
+                bankAccountNo: "101-0101-0001",
+                bankAccountHolder: "김무드",
+              },
+              items,
+              subtotal: total,
+            },
+          ],
+    totalAmount: total,
+    totalQty: items.reduce((sum, item) => sum + item.qty, 0),
+  };
+}
+
+/** `PATCH /cart-items/{id}` — 수량을 이 값으로 바꾼다(더하지 않는다). 상품 상세 `바로 주문하기`가 쓴다 */
+function changeCartQty(
+  key: string,
+  cartItemId: number,
+  raw: string,
+): { status: number; body: unknown } {
+  const line = [...cartOf(key).values()].find(
+    (l) => l.cartItemId === cartItemId,
+  );
+  if (line === undefined)
+    return {
+      status: 404,
+      body: { code: "NOT_FOUND", message: "장바구니에 없는 항목입니다." },
+    };
+  let qty: unknown;
+  try {
+    qty = (JSON.parse(raw) as { qty?: unknown }).qty;
+  } catch {
+    qty = undefined;
+  }
+  if (typeof qty !== "number" || !Number.isInteger(qty) || qty < 1)
+    return {
+      status: 400,
+      body: {
+        code: "VALIDATION_FAILED",
+        message: "입력값이 올바르지 않습니다.",
+      },
+    };
+  line.qty = qty;
+  return {
+    status: 200,
+    body: {
+      data: {
+        cartItemId,
+        qty,
+        lineAmount: qty * STOCK_LISTING.salePrice,
+      },
+    },
+  };
+}
+
 /** `GET /cart-items` — `CartResponse`. 담긴 것은 전부 무드온 것이라 묶음 하나 */
 function cartResponse(key: string) {
   const lines = [...cartOf(key).values()];
@@ -613,6 +700,9 @@ function route(
   const cartKey = cookieOf(cookie, "stub_cart") ?? "default";
   if (method === "POST" && path === "/api/retail/cart-items")
     return addToCart(cartKey, rawBody);
+  const qtyPath = /^\/api\/retail\/cart-items\/(\d+)$/.exec(path);
+  if (method === "PATCH" && qtyPath)
+    return changeCartQty(cartKey, Number(qtyPath[1]), rawBody);
 
   if (method !== "GET") {
     return { status: 405, body: { code: "STUB", message: "읽기만 흉내 낸다" } };
@@ -656,6 +746,8 @@ function route(
   if (path === "/api/retail/cart-items/count")
     return ok({ count: cartOf(cartKey).size });
   if (path === "/api/retail/cart-items") return ok(cartResponse(cartKey));
+  if (path === "/api/retail/checkout")
+    return ok(checkoutResponse(cartKey, query.get("cartItemIds") ?? ""));
   if (path === "/api/retail/categories") return ok([{ id: 1, name: "상의" }]);
   if (path === "/api/retail/filter-options") {
     return ok({
@@ -666,10 +758,40 @@ function route(
   }
 
   if (path === "/api/retail/listings") {
+    // 페이지 시험용 상품은 해당 쿠키에서만 추가한다.
+    const scenario = cookieOf(cookie, "stub_catalog");
+    let listings: readonly {
+      listingId: number;
+      title: string;
+      wholesaler: { id: number; name: string };
+    }[] = LISTINGS;
+    if (scenario === "paged") {
+      listings = [
+        ...LISTINGS,
+        /* 한 쪽 24개(`PAGE_SIZE`)에서 3 + 48 = 51개가 24, 24, 3으로 나뉜다 */
+        ...Array.from({ length: 48 }, (_, i) => ({
+          listingId: 1000 + i,
+          title: `페이지 상품 ${i + 1}`,
+          wholesaler: WHOLESALER,
+        })),
+      ];
+    }
+    if (scenario === "large") {
+      /* 100번째 뒤에만 나오는 도매처가 25개라 그 도매처 목록도 24, 1로 두 쪽이 된다 */
+      listings = Array.from({ length: 125 }, (_, i) => ({
+        listingId: 3000 + i,
+        title: `마켓 상품 ${i + 1}`,
+        wholesaler: i < 100 ? WHOLESALER : LATE_WHOLESALER,
+      }));
+      if (query.get("categoryId") === "1") listings = listings.slice(0, 100);
+    }
+    const page = Number(query.get("page") ?? 0);
+    const size = Number(query.get("size") ?? 20);
+    const totalPages = Math.ceil(listings.length / size);
     return {
       status: 200,
       body: {
-        data: LISTINGS.map((listing) => ({
+        data: listings.slice(page * size, (page + 1) * size).map((listing) => ({
           listingId: listing.listingId,
           title: listing.title,
           thumbnailUrl: null,
@@ -680,11 +802,11 @@ function route(
           wholesaler: listing.wholesaler,
         })),
         meta: {
-          page: 0,
-          size: 100,
-          totalElements: LISTINGS.length,
-          totalPages: 1,
-          hasNext: false,
+          page,
+          size,
+          totalElements: listings.length,
+          totalPages,
+          hasNext: page + 1 < totalPages,
         },
       },
     };

@@ -40,6 +40,7 @@ export interface CatalogProduct {
   sizeCount: number;
   /** 옵션 중 제일 싼 값. 카드는 스펙대로 `12,500원~`으로 그린다 — 최고가는 안 온다 */
   priceMin: number;
+  isSinglePieceAllowed: boolean;
 }
 
 /** 카테고리 바·필터 드롭다운에 세우는 항목. `GET /categories`의 최상위 한 단 */
@@ -83,11 +84,10 @@ export interface CatalogFilter {
  */
 export type FilterAxes = Record<keyof CatalogFilter, boolean>;
 
-/** 서버가 잘라 준 목록의 크기. `상품 N개 · 전체 M개`와 `더 보기`가 이걸 읽는다 */
+/** 주소와 페이지 링크에서 사용하는 1부터 시작하는 페이지 번호 */
 export interface CatalogPaging {
-  /** 지금 화면에 실제로 그려진 카드 수 */
-  shown: number;
-  /** 조건에 맞는 전체 개수(`meta.totalElements`) */
+  page: number;
+  totalPages: number;
   total: number;
 }
 

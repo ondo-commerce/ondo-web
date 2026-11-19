@@ -1,38 +1,27 @@
 "use client";
 
-import { cn } from "@ondo/ui";
 import { ProductCard } from "./ProductCard";
 import type { CatalogProduct } from "../types";
 
 /**
- * 카드 격자. 열 수는 확정 와이어프레임 `_base.css` `.grid` 실측 그대로다 —
- * 5 → 4(≤75rem) → 3(≤60rem) → 2(≤40rem). `신상`처럼 4열로 시작하는 자리는
- * `columns={4}`를 준다(`.grid.g4`는 75rem 단계가 없다).
+ * 카드 격자. 6 → 4(≤60rem) → 2(≤40rem)칸이다.
  *
- * 열 수를 prop으로 받되 **클래스는 두 벌을 통째로 적는다.** 문자열을 조립하면
- * Tailwind가 빌드 때 그 클래스를 못 찾아 열이 하나도 안 잡힌다.
+ * 4칸일 때는 카드가 커서 첫 화면에 상품이 4개만 보였다(2026-11-18 사용자 지시:
+ * 6개쯤 보이게). 한 쪽 상품 수(`PAGE_SIZE` 24)가 6, 4, 2 어느 것으로도 나눠떨어져
+ * 어느 폭에서도 마지막 줄이 비지 않는다 — 칸 수를 바꾸면 그 값도 같이 본다.
  */
 export function ProductGrid({
   products,
   favorites,
   onToggleFavorite,
-  columns = 5,
 }: {
   products: readonly CatalogProduct[];
   /** 지금 찜한 상품 id들. 카드가 아니라 목록이 들고 있다 */
   favorites: ReadonlySet<string>;
   onToggleFavorite: (productId: string) => void;
-  columns?: 4 | 5;
 }) {
   return (
-    <div
-      className={cn(
-        "grid gap-x-4 gap-y-7 py-5 phone:gap-x-3 phone:gap-y-5",
-        columns === 5
-          ? "grid-cols-5 laptop:grid-cols-4 tablet:grid-cols-3 phone:grid-cols-2"
-          : "grid-cols-4 tablet:grid-cols-3 phone:grid-cols-2",
-      )}
-    >
+    <div className="mt-4 grid grid-cols-6 gap-4 tablet:grid-cols-4 phone:grid-cols-2 phone:gap-2">
       {products.map((product) => (
         <ProductCard
           key={product.id}

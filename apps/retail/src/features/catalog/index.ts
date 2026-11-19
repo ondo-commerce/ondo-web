@@ -14,16 +14,19 @@ export { WishlistView } from "./components/WishlistView";
  */
 export { LISTING_PATH } from "./api/paths";
 export {
+  FILTER_ALL,
   MAX_PAGE_SIZE,
+  PAGE_SIZE,
   WHOLESALER_HOME_AXES,
   WISHLIST_SORTS,
 } from "./constants";
 export {
+  catalogHref,
   isFilterEmpty,
   productsOfWholesaler,
   resolveFilter,
   resolveSeller,
-  resolveShown,
+  resolveCatalogPage,
   resolveSort,
   toCatalogOptions,
   toCatalogPaging,

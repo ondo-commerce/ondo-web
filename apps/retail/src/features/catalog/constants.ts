@@ -74,19 +74,12 @@ export const WISHLIST_SORTS: readonly CatalogSort[] = [
 ];
 
 /**
- * `상품 더 보기` 한 번에 늘어나는 카드 수.
- *
- * 확정 와이어프레임의 홈이 8장 + `상품 더 보기` 한 줄이라 그 수에 맞춘다.
- * 무한 스크롤로 바꾸지 않는다 — 원본이 버튼이고, 버튼이어야 지금 몇 장을 보고
- * 있는지 화면이 말할 수 있다(아래 건수 표기와 짝이다).
+ * 마켓 목록 한 페이지의 상품 수. 격자가 6, 4, 2칸(`ProductGrid`)이라 셋으로 다
+ * 나눠떨어지는 값이어야 마지막 줄이 비지 않는다
  */
-export const PAGE_SIZE = 8;
+export const PAGE_SIZE = 24;
 
-/**
- * 서버가 한 번에 주는 최대 개수. **실측값이다** — `size=101`은 400
- * `VALIDATION_FAILED`, 스펙에는 상한이 적혀 있지 않다(`04-wire.md` §3).
- * `더 보기`가 이 수를 넘기면 그 자리에서 멈춘다.
- */
+/** 도매처 필터를 제공하지 않는 목록 API의 한 요청 최대 크기 */
 export const MAX_PAGE_SIZE = 100;
 
 /** 주소에 실리는 이름. 화면·링크가 같은 문자열을 보게 한 곳에 둔다 */
@@ -95,8 +88,7 @@ export const LIST_PARAM = {
   color: "color",
   size: "size",
   price: "price",
-  /** 몇 장까지 펼쳤는지 */
-  shown: "shown",
+  page: "page",
   /** 찜 목록의 도매처 칩 */
   seller: "seller",
   sort: "sort",
