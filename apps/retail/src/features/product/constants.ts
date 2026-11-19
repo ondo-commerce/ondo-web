@@ -61,6 +61,9 @@ export const BULK_OVER_LIMIT_HINT = `SKU 하나당 한 번에 ${SKU_ORDER_LIMIT}
 /** 재고 소진이지만 미송으로 주문은 되는 조합. **수치는 주지 않는다**(게이트 Q1) */
 export const SOLD_OUT_BADGE = "재고 소진 · 미송 가능";
 
+/** `바로 주문하기`를 눌러 담기가 끝나고 주문서가 열리기를 기다리는 동안 버튼 아래에 뜬다 */
+export const ORDER_NOW_LEAVING = "장바구니에 담고 주문서로 가요.";
+
 /** 담기가 실패했는데 서버가 문구를 안 줬을 때. 서버 문구가 있으면 그것을 쓴다 */
 export const ADD_TO_CART_FAILED =
   "장바구니에 담지 못했어요. 잠시 뒤 다시 시도해 주세요.";

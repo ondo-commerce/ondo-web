@@ -56,12 +56,20 @@ export function addCartItem(
   });
 }
 
-export function useChangeQtyMutation() {
+/**
+ * 수량을 이 값으로 바꾼다(더하지 않는다). `refresh: false`는 상품 상세 `바로 주문하기`가
+ * 쓴다 — 담기와 수량 맞추기가 다 끝난 뒤 조립부가 한 번만 refresh 한다.
+ */
+export function useChangeQtyMutation({
+  refresh = true,
+}: { refresh?: boolean } = {}) {
   const router = useRouter();
   return useMutation({
     mutationKey: cartKeys.qty(),
     mutationFn: changeQty,
-    onSuccess: () => router.refresh(),
+    onSuccess: () => {
+      if (refresh) router.refresh();
+    },
   });
 }
 

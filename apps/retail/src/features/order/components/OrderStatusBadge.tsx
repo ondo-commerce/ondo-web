@@ -1,4 +1,4 @@
-import { Badge, cn } from "@ondo/ui";
+import { Badge } from "@ondo/ui";
 import { ACCEPT_LABEL, LINE_STATUS_LABEL } from "../constants";
 import { orderStatusLabel } from "../derive";
 import type { OrderLineStatus, OrderStatus } from "../types";
@@ -10,7 +10,7 @@ import type { OrderLineStatus, OrderStatus } from "../types";
  * - `fill` 사장이 지금 할 일이 없는 것 (`출고 완료`)
  * - `warn` 안 된 것 (`접수 안 됨`)
  */
-export type BadgeShape = "outline" | "fill" | "warn";
+export type BadgeShape = "wait" | "active" | "done" | "muted" | "warn";
 
 /**
  * 대비를 여기 한 곳에서 지킨다.
@@ -33,15 +33,7 @@ export function StatusBadge({
   className?: string;
 }) {
   return (
-    <Badge
-      tone={shape === "fill" ? "done" : "active"}
-      className={cn(
-        shape === "outline" && "border",
-        shape === "fill" && "text-secondary-foreground",
-        shape === "warn" && "border-destructive text-destructive-strong border",
-        className,
-      )}
-    >
+    <Badge tone={shape} className={className}>
       {children}
     </Badge>
   );
@@ -53,7 +45,7 @@ export function StatusBadge({
  */
 export function AcceptStatusBadge({ accepted }: { accepted: boolean }) {
   return accepted ? (
-    <StatusBadge shape="outline">{ACCEPT_LABEL.accepted}</StatusBadge>
+    <StatusBadge shape="active">{ACCEPT_LABEL.accepted}</StatusBadge>
   ) : (
     <StatusBadge shape="warn">{ACCEPT_LABEL.rejected}</StatusBadge>
   );
@@ -67,16 +59,16 @@ export function AcceptStatusBadge({ accepted }: { accepted: boolean }) {
  * 말한다(게이트 D1: 강조색을 쓰지 않는다).
  */
 const ORDER_SHAPE: Record<OrderStatus, BadgeShape> = {
-  PENDING_ACCEPT: "outline",
-  WAITING_SHIPMENT: "outline",
-  READY_TO_PICK_UP: "outline",
-  DONE: "fill",
-  CANCELLED: "outline",
+  PENDING_ACCEPT: "wait",
+  WAITING_SHIPMENT: "active",
+  READY_TO_PICK_UP: "active",
+  DONE: "done",
+  CANCELLED: "muted",
 };
 
 /** 모르는 값은 윤곽 — 끝났다고 단정할 근거가 없다. 표기는 `derive.orderStatusLabel` */
 function orderShape(status: OrderStatus): BadgeShape {
-  return status in ORDER_SHAPE ? ORDER_SHAPE[status] : "outline";
+  return status in ORDER_SHAPE ? ORDER_SHAPE[status] : "muted";
 }
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
@@ -91,6 +83,13 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
  * 도매처 건의 상태 배지. **표기는 도매가 준 `label` 그대로**다(스펙 `Status`) —
  * 같은 주문을 두 화면이 다르게 부르면 안 된다. 모양만 `key`로 정한다.
  */
+/** 도매처별 주문 상태(서버 key). 모르는 값은 진행으로 본다 */
+const LEG_SHAPE: Record<string, BadgeShape> = {
+  NEW: "wait",
+  SHIPPED: "done",
+  CANCELLED: "muted",
+};
+
 export function LegStatusBadge({
   statusKey,
   label,
@@ -99,20 +98,18 @@ export function LegStatusBadge({
   label: string;
 }) {
   return (
-    <StatusBadge shape={statusKey === "SHIPPED" ? "fill" : "outline"}>
-      {label}
-    </StatusBadge>
+    <StatusBadge shape={LEG_SHAPE[statusKey] ?? "active"}>{label}</StatusBadge>
   );
 }
 
 const LINE_SHAPE: Record<OrderLineStatus, BadgeShape> = {
-  SHIPPED: "fill",
-  READY: "outline",
-  BACKORDER: "outline",
-  PARTIAL: "outline",
-  PENDING: "outline",
-  PREPARING: "outline",
-  CANCELED: "outline",
+  SHIPPED: "done",
+  READY: "active",
+  BACKORDER: "wait",
+  PARTIAL: "active",
+  PENDING: "wait",
+  PREPARING: "active",
+  CANCELED: "muted",
 };
 
 export function LineStatusBadge({ status }: { status: OrderLineStatus }) {

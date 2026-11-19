@@ -60,3 +60,11 @@
    이 폭에서만 검색칸을 돋보기 버튼으로 접는다(loop-06b 디자인 결정 49). 경계 360은 접지 않는 쪽이라 `<`다
    (360에서 검색칸 58px, S2-8 하한). 위 셋보다 좁아 마지막에 둔다 */
 @custom-variant narrow (@media (width < 22.5rem));
+
+/* 화면 바닥에 붙는 합계 줄(상품 상세 `SummaryBar`의 `data-sticky-summary`)이 있으면
+   스크롤 아래쪽에 그 높이만큼 여백을 둔다. 안 두면 Tab으로 내려간 수량 칸이 화면 안에
+   있다는 이유로 스크롤되지 않아, 합계 줄 뒤에 가린 채 포커스를 받는다. 7rem은 안내 글이
+   한 줄 붙었을 때의 합계 줄 높이다 */
+html:has([data-sticky-summary]) {
+  scroll-padding-bottom: 7rem;
+}

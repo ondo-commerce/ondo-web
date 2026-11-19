@@ -88,6 +88,13 @@ export interface ProductDetail {
 export type CartItemDraft = AddCartItemRequest;
 
 /**
+ * 담는 방법. `add`는 장바구니 담기(이미 있으면 서버가 더한다). `set`은 바로 주문하기다 —
+ * 담은 뒤 수량을 지금 고른 값으로 맞춘다. 같은 옵션이 미리 담겨 있어도, 주문서에서
+ * 뒤로 와 다시 눌러도 주문서에는 고른 수량이 나온다(2026-11-19 사용자 결정)
+ */
+export type AddToCartMode = "add" | "set";
+
+/**
  * 조합 여럿을 하나씩 보낸 결과. **부분 성공은 실패가 아니라 결과다** — 하나가
  * 죽었다고 전체를 reject하면 이미 담긴 조합을 화면이 모르고, 다시 누르면 같은
  * SKU가 또 들어간다(서버는 합산). 장바구니 회차의 `BatchResult`와 같은 계약이다.
@@ -95,6 +102,11 @@ export type CartItemDraft = AddCartItemRequest;
 export interface AddToCartResult {
   /** 서버가 받아 준 것. 보낸 순서다 */
   done: readonly CartItemDraft[];
+  /**
+   * 받아 준 것이 들어간 장바구니 줄의 id. `done`과 같은 순서다. `바로 주문하기`가
+   * 이 줄들만 들고 주문서로 간다. 이미 담겨 있던 옵션이면 서버가 수량을 더한 그 줄의 id다
+   */
+  cartItemIds: readonly number[];
   /** 거절됐거나 못 닿은 것과 그 이유. 보낸 순서다 */
   failed: readonly { input: CartItemDraft; error: unknown }[];
 }

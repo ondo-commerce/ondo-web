@@ -140,7 +140,7 @@ export function OrderListView({
                     <Table.Th align="left">{LIST_HEADERS.wholesaler}</Table.Th>
                     <Table.Th>{LIST_HEADERS.sheets}</Table.Th>
                     <Table.Th>{LIST_HEADERS.amount}</Table.Th>
-                    <Table.Th align="center">{LIST_HEADERS.status}</Table.Th>
+                    <Table.Th align="left">{LIST_HEADERS.status}</Table.Th>
                     {/* 열 이름이 무엇을 세는지 말한다 — `3장 / 12장`은 장수다(F8) */}
                     <Table.Th align="center">{LIST_HEADERS.shipment}</Table.Th>
                   </Table.Row>
@@ -186,7 +186,7 @@ export function OrderListView({
                         <Table.Td>{formatSheets(order.totalQty)}</Table.Td>
                         <Table.Td>{formatWon(order.totalAmount)}</Table.Td>
 
-                        <Table.Td align="center">
+                        <Table.Td align="left">
                           <OrderStatusBadge status={order.status} />
                         </Table.Td>
 

@@ -2,12 +2,11 @@
 
 import { Button, cn } from "@ondo/ui";
 import { Heart } from "lucide-react";
-import Link from "next/link";
 import { QTY_UNIT } from "../constants";
 import { formatWon, type OrderTotals } from "../derive";
 
 /**
- * 패널 바닥의 합계 바 — `선택한 수량` · `합계` · 액션 3개.
+ * 패널 바닥의 합계 바 — `선택한 수량` · `합계` · 액션 3개. 스크롤해도 화면 바닥에 남는다.
  *
  * 숫자는 전부 `orderTotals` 한 함수에서 온다. 장수와 금액을 각자 세면 한쪽만
  * 안 따라오는 화면이 된다.
@@ -15,10 +14,11 @@ import { formatWon, type OrderTotals } from "../derive";
  * **비활성 버튼 옆에 이유를 글자로 둔다.** `disabled`만 걸면 왜 못 누르는지
  * 화면에 아무 말도 없어서, 사장이 버튼을 반복해서 누르다 만다.
  *
- * `바로 주문하기`는 **주문서로 가는 링크다.** onClick도 href도 없이 눌리기만
- * 하던 자리라 사장이 누르고 또 눌러도 주소·화면·문구 어느 것도 안 바뀌었다.
- * 확정 와이어프레임도 `06_checkout.html`로 간다. 담은 수량을 주문서가 받는 것은
- * 주문 연동(#166) 몫이고, 그 전이라도 **눌린 결과는 보여야 한다.**
+ * `바로 주문하기`는 **고른 수량을 담고 그 줄만 들고 주문서로 간다**(부르는 쪽
+ * `orderNow`). 링크가 아니라 버튼이다 — 담기(POST)가 끝나야 갈 주소가 생긴다.
+ * 예전에는 `/checkout`으로 가는 링크라 고른 수량이 안 넘어가 빈 주문서가 떴다.
+ * 담는 중과 넘어가는 중(`leaving`)에는 두 버튼(장바구니 담기, 바로 주문하기)이
+ * 잠긴다 — 또 눌리면 같은 옵션이 한 번 더 담긴다. 찜은 담기와 상관없어 그대로 둔다.
  */
 export function SummaryBar({
   totals,
@@ -26,6 +26,8 @@ export function SummaryBar({
   favorited,
   onToggleFavorite,
   onAddToCart,
+  onOrderNow,
+  leaving,
   adding,
   addedNotice,
   failed,
@@ -37,6 +39,10 @@ export function SummaryBar({
   favorited: boolean;
   onToggleFavorite: () => void;
   onAddToCart: () => void;
+  /** `바로 주문하기`. 담고 주문서로 가는 것은 부르는 쪽 몫이다 */
+  onOrderNow: () => void;
+  /** 담기가 끝나 주문서로 넘어가는 중 */
+  leaving: boolean;
   /** 요청이 나가 있는 동안. 두 번 눌리면 같은 조합이 두 번 더해진다(스펙) */
   adding: boolean;
   /** 담은 결과 또는 실패 이유. 무엇이 몇 장 들어갔는지 */
@@ -49,23 +55,30 @@ export function SummaryBar({
   const blocked = disabledReason !== null;
 
   return (
-    <div className="border-border bg-accent -mx-4 -mb-4 mt-4 rounded-b-panel border-t px-4 py-3.5">
-      <div className="flex flex-wrap items-center gap-x-9 gap-y-3">
+    /* 화면 바닥에 붙는다(sticky). 색상이 많은 상품은 옵션 줄이 길어서 합계와
+       `장바구니 담기`가 화면 밖으로 밀렸다. 디자인 규칙 4절 "바닥 합계 띠" */
+    <div
+      /* 이 표식이 있는 화면은 `globals.css`가 스크롤 아래 여백을 준다 — Tab으로 내려간
+         수량 칸이 이 줄 뒤에 가린 채 포커스를 받지 않게 */
+      data-sticky-summary
+      className="border-border bg-card sticky bottom-0 z-10 mt-6 border-t py-4"
+    >
+      <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3 phone:justify-start">
         <div>
           <p className="text-muted-foreground text-body">선택한 수량</p>
-          <p className="text-xl font-medium tabular-nums">
+          <p className="mt-1 text-base font-medium tabular-nums">
             총 {totals.sheets}
             {QTY_UNIT}
           </p>
         </div>
         <div>
           <p className="text-muted-foreground text-body">합계</p>
-          <p className="text-xl font-medium tabular-nums">
+          <p className="mt-1 text-base font-medium tabular-nums">
             {formatWon(totals.amount)}
           </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-2 phone:ml-0 phone:w-full">
+        <div className="flex flex-wrap items-center justify-end gap-2 phone:w-full">
           <Button
             variant="line"
             aria-pressed={favorited}
@@ -81,7 +94,7 @@ export function SummaryBar({
           </Button>
           <Button
             variant="line"
-            disabled={blocked || alreadyAdded || adding}
+            disabled={blocked || alreadyAdded || adding || leaving}
             onClick={onAddToCart}
           >
             {adding
@@ -90,17 +103,9 @@ export function SummaryBar({
                 ? "장바구니에 담김"
                 : "장바구니 담기"}
           </Button>
-          {/* 못 누를 때는 진짜 disabled 버튼이다 — asChild + Link 로 두면
-              `disabled`가 <a>에 아무 효력이 없어 잠긴 상품에서도 이동한다.
-              담는 중에도 잠근다 — 응답을 기다리다 누르면 `담았어요` 신호를 못
-              보고 주문서로 넘어가는데, 주문서는 아직 refresh 전 장바구니를 읽는다 */}
-          {blocked || adding ? (
-            <Button disabled>바로 주문하기</Button>
-          ) : (
-            <Button asChild>
-              <Link href="/checkout">바로 주문하기</Link>
-            </Button>
-          )}
+          <Button disabled={blocked || adding || leaving} onClick={onOrderNow}>
+            바로 주문하기
+          </Button>
         </div>
       </div>
 
@@ -109,12 +114,10 @@ export function SummaryBar({
       <p
         role="status"
         className={cn(
-          "text-body mt-2.5",
-          failed
-            ? "text-destructive"
-            : blocked
-              ? "text-muted-foreground"
-              : "text-secondary-foreground",
+          "text-body mt-2 text-right empty:mt-0",
+          /* 못 누르는 이유는 안내라 회색이다. 화면을 열자마자 보이는 글이 빨가면
+             오류가 난 것처럼 읽힌다. 빨강은 담기가 실패했을 때뿐이다 */
+          failed ? "text-destructive-strong" : "text-muted-foreground",
         )}
       >
         {disabledReason ?? addedNotice ?? ""}
