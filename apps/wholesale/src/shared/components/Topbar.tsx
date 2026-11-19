@@ -1,14 +1,13 @@
 "use client";
 
-import { cn, IconButton } from "@ondo/ui";
-import { Bell } from "lucide-react";
+import { cn } from "@ondo/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { NAV_ITEMS } from "@/shared/config/nav";
 
 /**
- * 상단 헤더 — 로고 + 주 메뉴 7탭 + 알림·계정.
+ * 상단 헤더 — 로고 + 주 메뉴 7탭 + 채팅·알림·계정.
  *
  * **좌측 사이드바를 대체한다.** 원래는 사이드바가 네비를 전부 맡고 이 바에는 계정·알림만
  * 있었는데, 라인 표가 가로로 넘쳐서 목록 폭을 벌기 위해 네비를 위로 올렸다
@@ -25,8 +24,11 @@ export function Topbar({
   /** 계정 드롭다운. 세션을 읽는 물건이라 `features/account`에 있고, `shared`는
       그쪽을 볼 수 없다 — `app/(erp)/layout.tsx`가 조립해 넘긴다 */
   accountMenu,
+  /** 채팅 링크 + 알림 종. 헤더 count를 읽는 물건이라 `features/notification`에 있고 layout이 넘긴다 */
+  inbox,
 }: {
   accountMenu: ReactNode;
+  inbox: ReactNode;
 }) {
   const pathname = usePathname();
 
@@ -75,12 +77,8 @@ export function Topbar({
         </ul>
       </nav>
 
-      <IconButton variant="ghost" aria-label="알림" title="알림">
-        <Bell aria-hidden />
-
-        {/* TODO: 안 읽은 알림이 있을 때만 점을 띄운다.
-            <span className="bg-destructive absolute top-1.5 right-1.5 size-1.5 rounded-full" /> */}
-      </IconButton>
+      {/* 채팅 링크 + 알림 종(#295). 배지 둘이 count 응답 하나에서 나와 `features/notification`이 같이 그린다 */}
+      {inbox}
 
       {accountMenu}
     </header>

@@ -52,7 +52,12 @@ export function AccountMenu({
             검색창에 넘긴다 — 소매에서 검색은 헤더의 주 조작이고 상호는 확인용이다.
             아이니셜 사각형은 남아서 "내 계정" 자리가 사라지지는 않는다 */}
         <span className="phone:hidden">{storeName}</span>
-        <ChevronDown aria-hidden className="text-border-strong size-3" />
+        {/* 화살표도 ≤40rem에서 접는다. 와이어프레임 `.acct`는 화살표가 없어 휴대폰에서 칩이 36px(이니셜만)이고,
+            디자인 결정 33의 검색칸 폭(390 95px)이 그 36으로 잰 값이다. 화살표를 두면 18px가 검색칸에서 빠진다 */}
+        <ChevronDown
+          aria-hidden
+          className="text-border-strong size-3 phone:hidden"
+        />
       </Popover.Trigger>
 
       {/* Popover 기본 그림자는 --shadow-float(0 12px 40px/10%)다. 모달처럼 크게 뜬

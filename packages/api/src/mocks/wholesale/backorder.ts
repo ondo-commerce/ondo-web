@@ -1,5 +1,20 @@
 import { http, HttpResponse } from "msw";
 import type { WholesaleSchema } from "../../wholesale";
+import {
+  addDays,
+  seoulDate,
+  type InquiryBackorder,
+} from "../chat/backorderCandidates";
+import {
+  addAllocationPacking,
+  allocationPackingError,
+  mockOrders,
+  onMockOrderPackingCreated,
+  onMockPackingCancelled,
+  type MockOrder,
+  type MockOrderLine,
+  type MockPacking,
+} from "./order";
 
 /**
  * 미송 목 — BE `V900__seed_dev.sql`(MUL-97)의 `backorder`·`order_item`·`variant` 행을 그대로 옮겼다.
@@ -14,7 +29,20 @@ import type { WholesaleSchema } from "../../wholesale";
  *     보면 SKU가 하나(3003)뿐이라 배분을 볼 수 없다(재고 0).
  *  2. 시드의 시각은 `now() - interval`이라 절대값이 없다. 주문 목과 같은 기준일 2026-09-07(KST)로 박았다.
  *     `elapsedDays`는 그 기준일과 미송 발생일의 차다.
- *  3. 주문 목과 상태를 **공유하지 않는다.** 여기서 배분해도 주문 탭의 포장 대기열엔 안 생긴다.
+ *  3. 주문 목과 저장소는 따로다(SKU 재고도 각자 든다). (loop-08j) 다만 배분은 대응되는 주문 목 줄이 있으면
+ *     주문 목에 READY 포장을 만들고, 그 포장 삭제는 여기 미송을 되살린다(`orderLineOf`, `allocationRecords`).
+ *     대응이 없는 미송(9006, 801)은 지금처럼 이 목 번호로 응답만 낸다.
+ *     (loop-08k) 거꾸로 주문 탭 길 포장도 대응되는 미송을 줄이고 같은 기록을 남긴다(`consumeByOrderPacking`).
+ *
+ *  4. (loop-06) 입고 예정일은 **reset 시각(서울)의 상대값**이다: 3003 = 오늘 −3일, 3019 = +7일, 3011 미정.
+ *     미송 자동 답이 "예정 / 지남 / 미정"을 가르는데 고정 날짜면 날이 갈수록 답이 바뀐다. e2e는 reset 전에
+ *     `page.clock`을 2026-10-29 14:20(서울)에 고정한다. 주문 시각(9/4~9/7)은 칩 글자에 나와 고정 그대로 둔다.
+ *  5. (loop-06) 시드에 없던 행 셋을 지었다. 9004(봄봄상회, 해소됨 — 칩에 남의 것과 같이 "없는 미송"을 시험),
+ *     9006(봄봄상회, 3003, 원래 4장 중 2장 배분 → 남은 2장 — 답이 원래 수량을 쓰면 틀린다), 801(도매처 102,
+ *     코튼 셔츠 블랙 / L 20장 — 소매 방 33의 미송). 9006의 주문 7006은 이 목 안의 번호다(알림 목 incoming이
+ *     주문 목에 만드는 7006과 저장소가 달라 안 섞인다).
+ *  6. (loop-06) 소유: 미송 탭의 "나"는 도매처 101이다. 3011, 3019도 101 것이다(loop-06b에 상품 목을 이쪽에
+ *     맞췄다, `./product` 머리 주석 6). 102의 SKU(3801)는 탭에 안 나온다.
  *
  * 응답 모양은 스펙(`WholesaleSchema`)이 지킨다. 배분 뒤 잔여·가용재고가 줄고 다 받은 미송이 빠지는 건
  * 스펙 설명("부분 성공 없음", "`resolvedBackorderIds`로 해소된 미송을 알려준다")을 따라 여기서 흉내 낸다.
@@ -26,6 +54,8 @@ type Size = WholesaleSchema<"BackorderSkuResponse">["size"];
 /** `wholesale.variant` + `product` + `color_option`. 미송이 걸린 3개만. `stockQty`는 시드 `stock_qty` */
 interface MockVariant {
   id: number;
+  /** SKU의 도매처. 미송 탭은 101 것만 본다 */
+  wholesalerId: number;
   productId: number;
   productNumber: number;
   variantNumber: number;
@@ -56,13 +86,21 @@ interface MockBackorder {
   status: "OPEN" | "RESOLVED";
 }
 
-/** 기준일. 시드의 `now()`를 이 날로 고정했다(주문 목과 같다) */
+/** 기준일. 시드의 `now()`를 이 날로 고정했다(주문 목과 같다). 경과일(`elapsedDays`)만 이 값으로 잰다 */
 const TODAY = "2026-09-07";
 
-function seedVariants(): MockVariant[] {
+/** 미송 탭의 "나". 채팅 목의 `CHAT_ME_WHOLESALER_ID`와 같다 */
+export const BACKORDER_ME_WHOLESALER_ID = 101;
+
+/** 입고 예정일 시드. reset 시각의 서울 날짜 기준 상대값(머리 주석 4). 골든셋 `backorders` 표와 같아야 한다 */
+export const BACKORDER_SEED_ETA_DAYS = { 3003: -3, 3019: 7, 3801: 5 } as const;
+
+function seedVariants(now: number): MockVariant[] {
+  const today = seoulDate(now);
   return [
     {
       id: 3003,
+      wholesalerId: BACKORDER_ME_WHOLESALER_ID,
       productId: 1001,
       productNumber: 1,
       variantNumber: 3,
@@ -72,11 +110,13 @@ function seedVariants(): MockVariant[] {
       // 재고 0 — 배분할 실물이 없는 표본. 입력칸이 전부 0으로 잠긴다
       stockQty: 0,
       reservedQty: 0,
-      expectedInboundDate: "2026-09-09",
+      // 지난 예정일 — 자동 답 "등록된 입고 예정일이 지났어요" + 넘김(Q2)
+      expectedInboundDate: addDays(today, BACKORDER_SEED_ETA_DAYS[3003]),
       expectedInboundReason: "공장 재입고 예정",
     },
     {
       id: 3011,
+      wholesalerId: BACKORDER_ME_WHOLESALER_ID,
       productId: 1003,
       productNumber: 1,
       variantNumber: 4,
@@ -92,6 +132,7 @@ function seedVariants(): MockVariant[] {
     },
     {
       id: 3019,
+      wholesalerId: BACKORDER_ME_WHOLESALER_ID,
       productId: 1005,
       productNumber: 1,
       variantNumber: 2,
@@ -100,13 +141,44 @@ function seedVariants(): MockVariant[] {
       size: "L",
       stockQty: 4,
       reservedQty: 0,
-      expectedInboundDate: "2026-09-12",
+      // 시연 장면 2의 답 "11월 5일 도매 입고 예정이에요(원단 수급 지연)"(T0 기준 +7일)
+      expectedInboundDate: addDays(today, BACKORDER_SEED_ETA_DAYS[3019]),
       expectedInboundReason: "원단 수급 지연",
+    },
+    {
+      // 해소된 9004의 SKU. 열린 미송이 없어 탭에는 안 나온다
+      id: 3002,
+      wholesalerId: BACKORDER_ME_WHOLESALER_ID,
+      productId: 1001,
+      productNumber: 1,
+      variantNumber: 2,
+      productName: "빈티지 플라워 셔츠",
+      color: "레드",
+      size: "M",
+      stockQty: 0,
+      reservedQty: 0,
+      expectedInboundDate: null,
+      expectedInboundReason: null,
+    },
+    {
+      // 도매처 102의 SKU. 소매 방 33(라온)의 미송. 101의 미송 탭에는 안 나온다
+      id: 3801,
+      wholesalerId: 102,
+      productId: 1801,
+      productNumber: 1,
+      variantNumber: 1,
+      productName: "코튼 셔츠",
+      color: "블랙",
+      size: "L",
+      stockQty: 0,
+      reservedQty: 0,
+      expectedInboundDate: addDays(today, BACKORDER_SEED_ETA_DAYS[3801]),
+      expectedInboundReason: null,
     },
   ];
 }
 
-/** OPEN 미송 4건. 9004(RESOLVED)는 목록에 안 나와야 해서 안 옮겼다 */
+/** 미송 7건. OPEN 6 + RESOLVED 1(9004). 탭 목록은 OPEN만, 자동 답 후보는 남은 수량 > 0만 쓴다 */
 function seedBackorders(): MockBackorder[] {
   return [
     {
@@ -169,16 +241,72 @@ function seedBackorders(): MockBackorder[] {
       unitPrice: 13500,
       status: "OPEN",
     },
+    {
+      id: 9004,
+      variantId: 3002,
+      orderId: 7004,
+      orderNumber: 2,
+      orderItemId: 8004,
+      orderedAt: "2026-09-05T15:00:00+09:00",
+      createdAt: "2026-09-05T15:00:00+09:00",
+      retailerId: 1,
+      retailerName: "봄봄상회",
+      qty: 1,
+      remainingQty: 0,
+      unitPrice: 12500,
+      status: "RESOLVED",
+    },
+    {
+      id: 9006,
+      variantId: 3003,
+      orderId: 7006,
+      orderNumber: 4,
+      orderItemId: 8006,
+      orderedAt: "2026-09-06T15:00:00+09:00",
+      createdAt: "2026-09-06T15:00:00+09:00",
+      retailerId: 1,
+      retailerName: "봄봄상회",
+      // 원래 4장 중 2장은 이미 배분돼 나갔다
+      qty: 4,
+      remainingQty: 2,
+      unitPrice: 13500,
+      status: "OPEN",
+    },
+    {
+      id: 801,
+      variantId: 3801,
+      orderId: 7801,
+      orderNumber: 1,
+      orderItemId: 8801,
+      orderedAt: "2026-10-24T11:00:00+09:00",
+      createdAt: "2026-10-24T11:00:00+09:00",
+      retailerId: 1,
+      retailerName: "봄봄상회",
+      qty: 20,
+      remainingQty: 20,
+      unitPrice: 9000,
+      status: "OPEN",
+    },
   ];
 }
 
 /* --- 상태 --------------------------------------------------------------- */
 
-let variants = seedVariants();
+let variants = seedVariants(Date.now());
 let backorders = seedBackorders();
 let nextBatchId = 4401;
 let nextPackingId = 7710;
 let nextPackingItemId = 91101;
+/**
+ * 배분 기록: 주문 목 포장 id → 그 포장이 해소한 [미송 id, 수량]. 포장 삭제가 이걸 보고 미송을 되살린다.
+ * 이 목에 둔다 — 되살릴 대상(미송 잔량, `reservedQty`)이 여기 있고, 주문 목은 이 목을 모른다(순환 import 0).
+ * 포장마다 따로 남는다: 같은 미송에 1장씩 두 번 배분하면 기록도 둘(미송 id 키로 덮어쓰지 않는다, Codex 6).
+ * reset에서 비운다 — 주문 목 포장 id가 reset 뒤 9101부터 다시 쓰여서 지난 기록이 새 포장에 붙으면 안 된다(Codex 7)
+ */
+let allocationRecords = new Map<
+  number,
+  { backorderId: number; qty: number }[]
+>();
 
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
 
@@ -188,6 +316,40 @@ const DAY_MS = 86_400_000;
 function elapsedDays(createdAt: string): number {
   const day = createdAt.slice(0, 10);
   return Math.round((Date.parse(TODAY) - Date.parse(day)) / DAY_MS);
+}
+
+/** 미송 탭이 보는 SKU. 남의 도매처 SKU는 없는 것과 같다(404) */
+function myVariants(): MockVariant[] {
+  return variants.filter((v) => v.wholesalerId === BACKORDER_ME_WHOLESALER_ID);
+}
+
+function myBackorder(id: number): MockBackorder | undefined {
+  const b = backorders.find((x) => x.id === id);
+  return b !== undefined && myVariants().some((v) => v.id === b.variantId)
+    ? b
+    : undefined;
+}
+
+/**
+ * 미송 → 주문 목 줄(loop-08j §5-2 5). 주문 id, 줄 id, variant id, 소매처 id 넷이 다 같을 때만 그 줄, 아니면 null.
+ * 주문 상태는 안 본다(취소 주문 배분 거절은 따로, `allocationPackingError`).
+ * 넷 비교는 알림 목 `incoming`이 주문 목에 만드는 7006(줄 8006, variant 3002)과 이 목 9006(주문 7006, 줄 8006,
+ * variant 3003)의 번호 겹침을 막는 장치다. 같은 주문임을 일반적으로 증명하지는 않는다(Codex 8, S1-1 ⑥)
+ */
+export function orderLineOf(
+  b: Pick<
+    MockBackorder,
+    "orderId" | "orderItemId" | "variantId" | "retailerId"
+  >,
+  orders: readonly MockOrder[],
+): MockOrderLine | null {
+  const order = orders.find(
+    (o) => o.id === b.orderId && o.retailerId === b.retailerId,
+  );
+  const line = order?.items.find(
+    (l) => l.id === b.orderItemId && l.variantId === b.variantId,
+  );
+  return line ?? null;
 }
 
 function openOf(variantId: number): MockBackorder[] {
@@ -296,7 +458,7 @@ function fail(status: number, code: string, message: string, field?: string) {
 
 function findVariant(raw: string | readonly string[] | undefined) {
   const id = Number(raw);
-  return variants.find((v) => v.id === id) ?? null;
+  return myVariants().find((v) => v.id === id) ?? null;
 }
 
 function matchesQuery(v: MockVariant, q: string | null): boolean {
@@ -312,6 +474,132 @@ function matchesQuery(v: MockVariant, q: string | null): boolean {
 function isWireDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
+
+/* --- 배분과 주문 목 포장 (loop-08j §5-2) ---------------------------------- */
+
+type AllocationEntry = { b: MockBackorder; v: MockVariant; qty: number };
+
+function packingItemOf(
+  e: AllocationEntry,
+  id: number,
+  qty: number,
+): WholesaleSchema<"AllocationPackingResponse">["items"][number] {
+  return {
+    id,
+    orderItemId: e.b.orderItemId,
+    variantId: e.v.id,
+    variantNumber: e.v.variantNumber,
+    productNumber: e.v.productNumber,
+    productName: e.v.productName,
+    color: e.v.color,
+    size: e.v.size,
+    qty,
+  };
+}
+
+/**
+ * 대응되는 주문 하나의 몫 → 주문 목에 READY 포장을 만들고 그 포장으로 응답한다(id, 줄 id 둘 다 주문 목 번호).
+ * 그래서 주문 탭 포장 카드, 출고 탭 포장 대기, 채팅 포장 원본이 같은 포장을 읽는다. 배분 기록을 포장마다 남긴다
+ */
+function orderPacking(
+  entries: readonly AllocationEntry[],
+): WholesaleSchema<"AllocationPackingResponse"> {
+  const first = entries[0];
+  if (first === undefined) throw new Error("mock: 빈 배분 묶음");
+  const packing = addAllocationPacking(
+    first.b.orderId,
+    entries.map((e) => ({ orderItemId: e.b.orderItemId, qty: e.qty })),
+  );
+  allocationRecords.set(
+    packing.id,
+    entries.map((e) => ({ backorderId: e.b.id, qty: e.qty })),
+  );
+  return {
+    id: packing.id,
+    orderId: first.b.orderId,
+    orderNumber: first.b.orderNumber,
+    status: "READY",
+    outboundId: null as unknown as number,
+    isCancellable: true,
+    createdAt: packing.createdAt,
+    items: packing.items.map((i) => {
+      const e = entries.find((x) => x.b.orderItemId === i.orderItemId);
+      if (e === undefined) throw new Error(`mock: 포장 줄 ${i.orderItemId}`);
+      return packingItemOf(e, i.id, i.qty);
+    }),
+  };
+}
+
+/** 대응 없는 몫(9006, 801) → 지금처럼 이 목 번호로 응답만. 주문 목, 출고 탭, 채팅엔 안 보인다 */
+function ownPacking(
+  entries: readonly AllocationEntry[],
+  createdAt: string,
+): WholesaleSchema<"AllocationPackingResponse"> {
+  const first = entries[0];
+  if (first === undefined) throw new Error("mock: 빈 배분 묶음");
+  return {
+    id: nextPackingId++,
+    orderId: first.b.orderId,
+    orderNumber: first.b.orderNumber,
+    status: "READY",
+    outboundId: null as unknown as number,
+    isCancellable: true,
+    createdAt,
+    items: entries.map((e) => packingItemOf(e, nextPackingItemId++, e.qty)),
+  };
+}
+
+/**
+ * 주문 목 포장 삭제(204) 뒤 불린다. 배분 기록이 있으면 미송마다 남은 수량 += 수량, OPEN, `reservedQty` −= 수량,
+ * 기록을 지운다. 기록은 누가 만든 포장인지 안 가린다 — 주문 탭 길 포장도 대응 미송을 줄였으면 기록이 있다(loop-08k).
+ * 기록 없는 포장(대응 미송 없음)이면 아무것도 안 한다
+ */
+function reviveAllocation(packingId: number): void {
+  const record = allocationRecords.get(packingId);
+  if (record === undefined) return;
+  allocationRecords.delete(packingId);
+  for (const { backorderId, qty } of record) {
+    const b = backorders.find((x) => x.id === backorderId);
+    const v = b ? variants.find((x) => x.id === b.variantId) : undefined;
+    if (!b || !v) continue;
+    b.remainingQty += qty;
+    b.status = "OPEN";
+    v.reservedQty -= qty;
+  }
+}
+
+onMockPackingCancelled(reviveAllocation);
+
+/**
+ * 주문 탭 길 포장(포장 준비, 확정 이번 출고, reset `readyPackings`)이 생긴 뒤 불린다(loop-08k §5-2 2). 포장 줄마다
+ * 대응되는 OPEN 미송(08j `orderLineOf` 넷 비교를 거꾸로: 그 주문 하나만 넘겨 줄이 이 포장 줄인 것)을 찾아
+ * n = min(포장 수량, 남은 수량)만큼 남은 −=, 0이면 RESOLVED, SKU `reservedQty` += n(Q1-2 ①, 미송 탭 배분과 같은 쪽).
+ * 줄인 몫은 그 포장 id로 배분 기록에 남겨 삭제가 `reviveAllocation`으로 되살린다. 대응 없는 줄(알림 incoming 7006 등)은
+ * 아무것도 안 한다. 미송 탭 배분 길은 여기를 안 지난다(그쪽은 배분 핸들러가 먼저 줄이고 기록한다)
+ */
+function consumeByOrderPacking(packing: MockPacking, order: MockOrder): void {
+  const record: { backorderId: number; qty: number }[] = [];
+  for (const item of packing.items) {
+    let left = item.qty;
+    for (const b of backorders) {
+      if (left <= 0) break;
+      if (b.status !== "OPEN") continue;
+      if (orderLineOf(b, [order])?.id !== item.orderItemId) continue;
+      const v = variants.find((x) => x.id === b.variantId);
+      if (v === undefined) continue;
+      const n = Math.min(left, b.remainingQty);
+      if (n <= 0) continue;
+      left -= n;
+      b.remainingQty -= n;
+      if (b.remainingQty === 0) b.status = "RESOLVED";
+      v.reservedQty += n;
+      record.push({ backorderId: b.id, qty: n });
+    }
+  }
+  if (record.length > 0) allocationRecords.set(packing.id, record);
+}
+
+onMockOrderPackingCreated(consumeByOrderPacking);
 
 /* --- 핸들러 ------------------------------------------------------------- */
 
@@ -333,7 +621,7 @@ export const backorderHandlers = [
       );
 
     // 미송이 남은 SKU만, 많이 밀린 순(`backorderQty,desc`)
-    const rows = variants
+    const rows = myVariants()
       .map(skuResponse)
       .filter((s) => s.backorderQty > 0)
       .filter((s) => {
@@ -401,7 +689,7 @@ export const backorderHandlers = [
           "배분 수량은 1 이상이어야 합니다.",
           "items",
         );
-      const b = backorders.find((x) => x.id === item.backorderId);
+      const b = myBackorder(item.backorderId);
       if (!b)
         return fail(
           404,
@@ -431,13 +719,37 @@ export const backorderHandlers = [
           "items",
         );
     }
+    // 주문 목 쪽 검사(loop-08j §5-2 1). 재고 검사 뒤, 적용 전. 대응되는 몫만 본다 — 걸리면 아무것도 안 바뀐다
+    const orderError = allocationPackingError(
+      items.flatMap((item) => {
+        const b = backorders.find((x) => x.id === item.backorderId);
+        return b === undefined || orderLineOf(b, mockOrders()) === null
+          ? []
+          : [
+              {
+                orderId: b.orderId,
+                orderItemId: b.orderItemId,
+                qty: item.allocateQty,
+              },
+            ];
+      }),
+    );
+    if (orderError === "BACKORDER_NOT_OPEN")
+      return fail(409, "BACKORDER_NOT_OPEN", "취소된 주문의 미송입니다.");
+    if (orderError === "ALLOCATION_EXCEEDS_ORDER")
+      return fail(
+        409,
+        "ALLOCATION_EXCEEDS_ORDER",
+        "배분 수량이 주문 잔량을 넘었습니다.",
+      );
 
     // 적용 — 주문마다 포장 카드 한 장
     const createdAt = new Date().toISOString();
     const resolved: number[] = [];
-    const byOrder = new Map<
-      number,
-      WholesaleSchema<"AllocationPackingResponse">
+    // 주문마다 모은다. 주문 목 줄에 대응되는 몫(`order:`)과 대응 없는 몫(`own:`)을 따로. 응답은 요청에 처음 나온 순
+    const groups = new Map<
+      string,
+      { b: MockBackorder; v: MockVariant; qty: number }[]
     >();
     for (const item of items) {
       const b = backorders.find((x) => x.id === item.backorderId);
@@ -449,37 +761,23 @@ export const backorderHandlers = [
         b.status = "RESOLVED";
         resolved.push(b.id);
       }
-      let packing = byOrder.get(b.orderId);
-      if (!packing) {
-        packing = {
-          id: nextPackingId++,
-          orderId: b.orderId,
-          orderNumber: b.orderNumber,
-          status: "READY",
-          outboundId: null as unknown as number,
-          isCancellable: true,
-          createdAt,
-          items: [],
-        };
-        byOrder.set(b.orderId, packing);
-      }
-      packing.items.push({
-        id: nextPackingItemId++,
-        orderItemId: b.orderItemId,
-        variantId: v.id,
-        variantNumber: v.variantNumber,
-        productNumber: v.productNumber,
-        productName: v.productName,
-        color: v.color,
-        size: v.size,
-        qty: item.allocateQty,
-      });
+      const kind = orderLineOf(b, mockOrders()) === null ? "own" : "order";
+      const key = `${kind}:${b.orderId}`;
+      groups.set(key, [
+        ...(groups.get(key) ?? []),
+        { b, v, qty: item.allocateQty },
+      ]);
     }
+    const packings = [...groups.entries()].map(([key, entries]) =>
+      key.startsWith("order:")
+        ? orderPacking(entries)
+        : ownPacking(entries, createdAt),
+    );
 
     const data: WholesaleSchema<"AllocationBatchResponse"> = {
       allocationBatchId: nextBatchId++,
       createdAt,
-      packings: [...byOrder.values()],
+      packings,
       resolvedBackorderIds: resolved,
     };
     return HttpResponse.json({ data }, { status: 201 });
@@ -516,10 +814,11 @@ export const backorderHandlers = [
           "expectedInboundReason",
         );
 
-      // 전체 대체 — 날짜를 지우면 사유도 같이 비운다(스펙: "`null` = 해제(사유도 함께 null)")
-      v.expectedInboundDate = date;
-      v.expectedInboundReason =
-        date === null ? null : ((reason as string | undefined) ?? null);
+      replaceExpectedInbound(
+        v.id,
+        date,
+        (reason as string | undefined) ?? null,
+      );
 
       const data: WholesaleSchema<"ExpectedInboundResponse"> = {
         variantId: v.id,
@@ -533,11 +832,163 @@ export const backorderHandlers = [
   ),
 ];
 
-/** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다 */
-export function resetBackorderMock() {
-  variants = seedVariants();
-  backorders = seedBackorders();
+/** reset 칸 `backorderIds` 실패 code. field는 늘 `backorderIds` */
+export type BackorderIdsCode =
+  "INVALID" | "DUPLICATE" | "NOT_FOUND" | "CONFLICT";
+
+/**
+ * reset 칸 `backorderIds`(loop-08j §5-4) 값이 틀렸으면 그 이유, 맞으면 null. reset **전에** 부른다 — 틀린 값으로
+ * 반쪽만 reset되는 일이 없게(08i `readyPackingsError`와 같은 꼴). 칸 없음(undefined)은 시드 전부라 null.
+ *
+ * 순서: 배열 아님, 빈 배열, 정수 아님, 0 이하 → INVALID. 중복 → DUPLICATE. 시드 7행에 없음 → NOT_FOUND.
+ * `noBackorders: true`와 같이 줌 → CONFLICT(`false`는 성공). 빈 배열을 "다 비움"으로 받지 않는다 — 그 뜻은
+ * `noBackorders`가 맡는다. 두 칸이 같은 일을 하면 시험이 어느 쪽을 봤는지 흐려진다
+ */
+export function backorderIdsError(
+  value: unknown,
+  noBackorders: unknown,
+): { code: BackorderIdsCode; message: string } | null {
+  if (value === undefined) return null;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((v) => typeof v === "number" && Number.isInteger(v) && v > 0)
+  )
+    return {
+      code: "INVALID",
+      message: "backorderIds는 1 이상 정수 미송 id의 빈 배열 아닌 배열입니다.",
+    };
+  const ids = value as number[];
+  if (new Set(ids).size !== ids.length)
+    return { code: "DUPLICATE", message: "같은 미송이 두 번 들어왔습니다." };
+  const seed = new Set(seedBackorders().map((b) => b.id));
+  const missing = ids.find((id) => !seed.has(id));
+  if (missing !== undefined)
+    return {
+      code: "NOT_FOUND",
+      message: `기본 시드에 없는 미송입니다(${missing}).`,
+    };
+  if (noBackorders === true)
+    return {
+      code: "CONFLICT",
+      message: "noBackorders: true와 backorderIds는 같이 쓸 수 없습니다.",
+    };
+  return null;
+}
+
+/**
+ * 시드로 되돌린다. 입고 예정일은 이 시각 기준이라 채팅 목 reset(`/__mock/chat/reset`)이 같이 부른다.
+ * `empty`면 미송을 다 비운다(소매 "후보 0개" 시험, loop-06 S3-4). `ids`면 그 미송만 남긴다(loop-08j §5-4,
+ * 기본 시드는 3003 재고 0이라 방 1의 열린 미송을 미송 탭만으로 0으로 만들 수 없다). variants는 늘 시드 그대로.
+ * 앱은 부르지 않는다
+ */
+export function resetBackorderMock(
+  options: { empty?: boolean; ids?: readonly number[] } = {},
+) {
+  const error = backorderIdsError(options.ids, options.empty);
+  if (error !== null) throw new Error(`mock: backorderIds ${error.code}`);
+  variants = seedVariants(Date.now());
+  const ids = options.ids === undefined ? null : new Set(options.ids);
+  backorders =
+    options.empty === true
+      ? []
+      : seedBackorders().filter((b) => ids === null || ids.has(b.id));
   nextBatchId = 4401;
   nextPackingId = 7710;
   nextPackingItemId = 91101;
+  allocationRecords = new Map();
+}
+
+/**
+ * 입고 예정일 쓰기. 도매 PUT과 소매 알림 목 `incoming`(`../retail/notification.ts`)이 **같은 함수**를 부른다 —
+ * 시연 장면 2에서 소매 탭 주입 뒤 채팅 미송 답이 도매 저장과 같은 값을 보게(loop-06b §5-4 3, Codex 14).
+ *
+ * 전체 대체다. 사유를 안 주면 null, 날짜를 지우면 사유도 같이 비운다(스펙: "`null` = 해제(사유도 함께 null)").
+ * 소유를 보지 않는다 — 도매 PUT은 부르기 전에 `findVariant`로 101 것인지 본다. 없는 SKU면 null
+ */
+export function replaceExpectedInbound(
+  variantId: number,
+  date: string | null,
+  reason: string | null,
+): { before: string | null; after: string | null } | null {
+  const v = variants.find((x) => x.id === variantId);
+  if (v === undefined) return null;
+  const before = v.expectedInboundDate;
+  v.expectedInboundDate = date;
+  v.expectedInboundReason = date === null ? null : reason;
+  return { before, after: v.expectedInboundDate };
+}
+
+export type { MockBackorder };
+
+/**
+ * 미송 행 전부(상태, 주문 줄 id 포함). 시험만 읽는다 — 배분 대응(주문, 줄, variant, 소매처)과 "아무것도 안 바뀜"
+ * 스냅샷을 행 값으로 보려고. `let` 재할당(reset) 뒤에도 지금 배열을 주게 함수로 꺼낸다
+ */
+export function mockBackorders(): readonly MockBackorder[] {
+  return backorders;
+}
+
+/** 소매 알림 목이 읽는 SKU 하나와 그 미송 전부(상태 포함). 이름은 상품명, 색상, 사이즈만 싣는다 */
+export interface BackorderSkuSnapshot {
+  variantId: number;
+  wholesalerId: number;
+  productName: string;
+  color: string;
+  size: Size;
+  expectedInboundDate: string | null;
+  backorders: {
+    retailerId: number;
+    remainingQty: number;
+    status: "OPEN" | "RESOLVED";
+  }[];
+}
+
+export function backorderSku(variantId: number): BackorderSkuSnapshot | null {
+  const v = variants.find((x) => x.id === variantId);
+  if (v === undefined) return null;
+  return {
+    variantId: v.id,
+    wholesalerId: v.wholesalerId,
+    productName: v.productName,
+    color: v.color,
+    size: v.size,
+    expectedInboundDate: v.expectedInboundDate,
+    backorders: backorders
+      .filter((b) => b.variantId === v.id)
+      .map((b) => ({
+        retailerId: b.retailerId,
+        remainingQty: b.remainingQty,
+        status: b.status,
+      })),
+  };
+}
+
+/**
+ * 미송 자동 답의 후보 원본(`../chat/backorderCandidates.ts` `InquiryBackorderSource`). **거르지 않고 전부**
+ * 준다 — 이 도매처, 이 소매처 것을 고르는 건 판정이 한다. 칸을 골라 새 객체를 만든다: 원래 수량(`qty`),
+ * 판매가능, 소매처 이름은 싣지 않는다(§4-2 8). 남은 수량은 배분이 줄인 `remainingQty` 그대로라
+ * 미송 탭에서 배분하거나 입고일을 바꾸면 다음 답에 바로 쓰인다(S4-3, S4-4).
+ */
+export function inquiryBackorders(): InquiryBackorder[] {
+  return backorders.flatMap((b) => {
+    const v = variants.find((x) => x.id === b.variantId);
+    if (v === undefined) return [];
+    return [
+      {
+        backorderId: b.id,
+        orderId: b.orderId,
+        wholesalerId: v.wholesalerId,
+        retailerId: b.retailerId,
+        variantId: v.id,
+        title: v.productName,
+        color: v.color,
+        size: v.size,
+        remainingQty: b.remainingQty,
+        orderedAt: b.orderedAt,
+        expectedInboundDate: v.expectedInboundDate,
+        expectedInboundReason: v.expectedInboundReason,
+      },
+    ];
+  });
 }

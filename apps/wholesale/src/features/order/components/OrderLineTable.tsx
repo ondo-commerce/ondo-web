@@ -84,6 +84,7 @@ export function OrderLineTable({
         size="sm"
         className="w-20"
         aria-label={`${line.productName} ${line.color} ${line.size} SKU ${line.sku} 이번 출고`}
+        data-ac="S11-7"
         disabled={blocked}
         value={inputs[line.id] ?? ""}
         onChange={(e) => onInputChange(line.id, e.target.value)}
@@ -129,7 +130,8 @@ export function OrderLineTable({
               const n = shipQty(inputs, line);
               const unallocated = unallocatedQty(line);
               return (
-                <Table.Row key={line.id}>
+                /* 누르는 줄이 아니다. `Table.Row`는 hover에 회색 면을 깔아 누를 수 있는 것처럼 보이고 칸 안 회색 조각도 가린다 — 생짜 `<tr>`로 둔다 */
+                <tr key={line.id}>
                   <Table.Td align="left">
                     {/* w-44는 상한(max-w)이 아니라 **고정 폭**이다. 상한만 걸면 품명이
                         짧은 주문에서 열이 좁아져 주문마다 폭이 달라진다 — 목록을 오갈 때
@@ -141,17 +143,8 @@ export function OrderLineTable({
                       {line.productName}
                     </span>
                   </Table.Td>
-                  <Table.Td align="left">
-                    {/* Chip이 inline-flex라 안쪽 span에 min-w-0이 있어야 truncate가 먹는다
-                        (flex 아이템 기본 min-width:auto가 내용보다 줄어드는 걸 막는다) */}
-                    <Chip
-                      tone="sub"
-                      shape="square"
-                      className="w-28 text-body"
-                      title={line.sku}
-                    >
-                      <span className="min-w-0 truncate">{line.sku}</span>
-                    </Chip>
+                  <Table.Td align="center" tone="muted" title={line.sku}>
+                    {line.sku}
                   </Table.Td>
                   <Table.Td align="left">{line.color}</Table.Td>
                   <Table.Td align="center">{line.size}</Table.Td>
@@ -189,7 +182,7 @@ export function OrderLineTable({
                     </span>
                   </Table.Td>
                   <Table.Td align="center">{shipCell(line)}</Table.Td>
-                </Table.Row>
+                </tr>
               );
             })}
           </Table.Body>

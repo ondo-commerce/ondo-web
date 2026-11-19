@@ -1,0 +1,7 @@
+{
+  // 루트 e2e는 turbo workspace 밖이라 따로 둔다. page.evaluate 안은 브라우저, 밖은 Node라 둘 다 연다 (#401)
+  "extends": "@ondo/config/typescript/playwright.json",
+  // stub-server.ts는 Node 24 타입 제거로 그대로 돌아서 `.ts`를 붙여 import한다
+  "compilerOptions": { "allowImportingTsExtensions": true },
+  "include": ["**/*.ts"]
+}

@@ -5,6 +5,7 @@ import {
   useQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { apiFetch, apiFetchPage } from "@ondo/api";
 import { dashboardKeys } from "./keys";
 import {
@@ -16,15 +17,18 @@ import {
 } from "../constants";
 import {
   toAttentionView,
+  toInquiryView,
   toNewOrderRows,
   toSummaryPeek,
   toSummaryView,
+  weekRangeOf,
 } from "../derive";
 import type {
   AttentionView,
   BackorderSku,
   DashboardSummary,
   DashboardSummaryPeek,
+  InquiryStats,
   NewOrderRowView,
   NewOrderSummary,
 } from "../types";
@@ -37,10 +41,12 @@ export const DASHBOARD_PATH = {
   summary: "/api/wholesale/dashboard/summary",
   orders: "/api/wholesale/orders",
   backorderSkus: "/api/wholesale/backorders/variants",
+  /** 초안 op(`x-ondo-draft`, #311). 실서버엔 아직 없어 404가 온다 — 카드 안 오류로 그린다(디자인 결정 50) */
+  inquiryStats: "/api/wholesale/chat/inquiry-stats",
 } as const;
 
 /**
- * 세 쿼리가 같이 쓰는 폴링 옵션. 백그라운드 탭에선 멈추고, 창으로 돌아오면 즉시 한 번 받는다.
+ * 네 쿼리(summary, 큐, 주의, 문의)가 같이 쓰는 폴링 옵션. 백그라운드 탭에선 멈추고, 창으로 돌아오면 즉시 한 번 받는다.
  * 앱 기본은 창 포커스 재조회가 꺼져 있다(providers — 어드민이 창을 옮길 때마다 전부 다시 부르면
  * 시끄럽다). 이 화면은 "돌아왔을 때 새 주문이 보여야 하는" 화면이라 여기만 켠다.
  */
@@ -107,6 +113,71 @@ export function useNewOrderQueueQuery(now: string) {
     ...POLLING,
     select: (page): NewOrderRowView[] => toNewOrderRows(page.items, now),
   });
+}
+
+/**
+ * 문의 카드 — 오늘 영업일 1일치(인자 없음 = 서버가 정한 오늘, 낮 12시 경계). 다른 세 쿼리와 같은 30초 polling.
+ * 영업일을 FE가 정하지 않는다 — 사장 PC 시계가 틀리면 어제 숫자를 오늘로 부른다.
+ */
+export function useInquiryStatsQuery() {
+  return useSuspenseQuery({
+    queryKey: dashboardKeys.inquiryStats(),
+    queryFn: () => apiFetch<InquiryStats>(DASHBOARD_PATH.inquiryStats),
+    ...POLLING,
+    select: toInquiryView,
+  });
+}
+
+/**
+ * 문의 카드 7일 줄(loop-08f S3) — 오늘 쿼리의 기준 영업일에서 6일 앞까지. 오늘 숫자가 있어야 부른다(이 훅은
+ * 오늘 경계 안에서만 그려진다 — 오늘 최초 실패면 요청 0).
+ *
+ * **혼자 polling 하지 않는다.** 오늘 쿼리가 한 번 끝날 때마다(성공이든 실패든, `todaySettledAt`가 바뀔 때)
+ * 한 번 다시 부른다. 자기 30초 타이머를 따로 두면 낮 12시를 넘는 주기에 오늘 응답보다 먼저 옛 기간을
+ * 한 번 더 부른다(기획 S3-5 "옛 키 GET 0"). 오늘 응답 뒤에 부르니 주기는 오늘과 같은 30초다.
+ *
+ * retry 0(기획 Q9 ①, Codex 15). 앱 기본 5xx 두 번 재시도가 polling과 겹치면 한 주기에 요청이 셋이 된다.
+ * 실패하면 다음 주기가 재시도다(`chat/api/queries.ts`와 같은 이유).
+ *
+ * **스스로는 한 번도 부르지 않는다(`enabled: false`)** — 부르는 자리는 아래 effect 하나다(08f R6). 자동 조회를 켜 두면
+ * 캐시가 남은 탭 재진입에서 마운트 재조회와 진입 무효화(`useInvalidateOnMount`)가 캐시 속 **어제 기준 영업일**의
+ * 기간을 오늘 응답보다 먼저 부른다(12시를 넘겨 돌아오면 옛 기간 GET 1). 그래서:
+ * 1. 오늘 쿼리가 끝날 때마다(`todaySettledAt` 변화) 지금 키로 한 번. 기준 영업일이 바뀐 주기면 키가 이미 새 기간이다
+ * 2. 마운트 때는 이 키를 한 번도 부른 적이 없을 때만(첫 진입 — 오늘 숫자를 막 받은 뒤라 기간이 확정돼 있다).
+ *    재진입이면 진입 무효화가 오늘을 다시 부르니 그 응답을 기다린다
+ *
+ * `cancelRefetch: false`(08f R7) — 기본값은 진행 중인 재조회를 취소하고 새로 보낸다. 7일 응답이 30초보다 느리면
+ * 오늘 응답마다 취소가 반복돼 숫자가 영영 안 바뀐다. 진행 중이면 그 요청을 그대로 기다린다.
+ */
+export function useInquiryWeekQuery(
+  businessDay: string,
+  todaySettledAt: number,
+) {
+  const range = weekRangeOf(businessDay);
+  const query = useQuery({
+    queryKey: dashboardKeys.inquiryWeek(range.from, range.to),
+    queryFn: () =>
+      apiFetch<InquiryStats>(DASHBOARD_PATH.inquiryStats, {
+        searchParams: { from: range.from, to: range.to },
+      }),
+    enabled: false,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const { refetch, dataUpdatedAt, errorUpdatedAt, isFetching } = query;
+  /* 마운트 때 이 키를 부른 적이 있었나. 렌더마다 바뀌면 안 되니 첫 렌더 값만 쥔다 */
+  const neverFetchedAtMount = useRef(
+    dataUpdatedAt === 0 && errorUpdatedAt === 0 && !isFetching,
+  );
+  const last = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = last.current;
+    last.current = todaySettledAt;
+    if (prev === null ? !neverFetchedAtMount.current : prev === todaySettledAt)
+      return;
+    void refetch({ cancelRefetch: false });
+  }, [todaySettledAt, refetch]);
+  return query;
 }
 
 /** 주의 목록의 재료 — 미송 SKU 오래된 순 한 페이지. 상위 3·상위 2는 `toAttentionView`가 페이지 안에서 고른다 */

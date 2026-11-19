@@ -1,14 +1,10 @@
-import type { Metadata } from "next";
-import { OnboardingBankView } from "@/features/account";
-import { AuthLayout } from "@/shared/components/AuthLayout";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "정산 계좌 등록" };
-
-/* 칸이 3개뿐이라 440px이다. 로그인과 같은 폭 — 입력이 적은 화면 쪽이다 */
+/**
+ * 옛 계좌 온보딩 주소. 화면은 지웠다 — 브라우저 세션에만 계좌를 적고 "등록했어요"를
+ * 띄웠지만 서버엔 아무것도 가지 않았다(`side-02` N3). 북마크나 예전 링크로 들어온
+ * 사장이 404를 보지 않도록 실제로 계좌를 다루는 정산 탭으로 보낸다.
+ */
 export default function Page() {
-  return (
-    <AuthLayout>
-      <OnboardingBankView />
-    </AuthLayout>
-  );
+  redirect("/settlements");
 }

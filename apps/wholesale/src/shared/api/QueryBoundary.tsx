@@ -45,6 +45,11 @@ export interface QueryBoundaryProps {
    * `fallback`은 Suspense용이라 실패에는 안 걸린다 — 그래서 슬롯이 따로 있다.
    */
   errorFallback?: (ctx: QueryErrorContext) => ReactNode;
+  /**
+   * 바뀌면 실패 중인 경계를 리셋한다(react-error-boundary `resetKeys`). 실패한 목록의 **조건**을 바꿨을 때
+   * `다시 시도`를 누르지 않아도 새 조건으로 다시 받게 한다(채팅 목록 필터, loop-08b S4-6). 그룹의 재시도와 같이 본다
+   */
+  resetKeys?: readonly unknown[];
   className?: string;
 }
 
@@ -70,6 +75,7 @@ export function QueryBoundary({
   fallback,
   notFound,
   errorFallback,
+  resetKeys,
   className,
 }: QueryBoundaryProps) {
   const mounted = useMounted();
@@ -89,7 +95,11 @@ export function QueryBoundary({
       onReset={onReset}
       /* 그룹의 재시도 횟수가 바뀌면 실패 중인 경계만 리셋된다(react-error-boundary는
          `didCatch`인 경계에서만 resetKeys를 본다). 멀쩡한 패널은 건드리지 않는다 */
-      resetKeys={group ? [group.generation] : undefined}
+      resetKeys={
+        group || resetKeys
+          ? [...(group ? [group.generation] : []), ...(resetKeys ?? [])]
+          : undefined
+      }
       fallbackRender={({ error, resetErrorBoundary }) => {
         const described = describeError(error);
         const retry = group ? group.retry : resetErrorBoundary;

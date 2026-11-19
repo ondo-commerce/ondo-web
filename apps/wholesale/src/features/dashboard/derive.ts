@@ -2,7 +2,12 @@ import {
   BUSINESS_DAY_START_HOUR,
   DASHBOARD_TITLE,
   ELAPSED_UNKNOWN,
+  INQUIRY_INTENT_ORDER,
+  INQUIRY_OUTCOME_ORDER,
+  INQUIRY_TEXT,
+  INQUIRY_WEEK_DAYS,
   NO_DATE_TOP,
+  RATE_UNKNOWN,
   OVERDUE_TOP,
   RECEIVE_BY_LABEL,
   RECEIVE_BY_ORDER,
@@ -19,6 +24,11 @@ import type {
   DashboardSummary,
   DashboardSummaryPeek,
   DashboardSummaryView,
+  InquiryCounts,
+  InquiryStats,
+  InquiryView,
+  InquiryWeekLineState,
+  InquiryWeekRange,
   NewOrderRowView,
   NewOrderSummary,
   RatioSegment,
@@ -325,6 +335,8 @@ export function toNewOrderRows(
 ): NewOrderRowView[] {
   return orders.map((order) => ({
     id: order.id,
+    orderNumber: order.orderNumber,
+    itemCount: order.additionalItemCount + 1,
     waitingLabel: elapsedLabel(order.orderedAt, now),
     retailerName: order.retailerName,
     productSummary: orderProductSummary(order),
@@ -403,4 +415,123 @@ export function toAttentionView(
       ),
     noDateCount: noDate.length,
   };
+}
+
+/* ------------------------------------------------------------------------
+ * 문의 — 오늘 영업일 소매 메시지와 그 결과(loop-08 S2, 기획 §4-1 §4-2)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 자동으로 끝남 비율 = 자동 답 / 판정(반올림 정수 %). 판정 0이면 `-` — 0/0을 0%로 쓰면 "하나도 못 끝냈다"로 읽힌다.
+ * 답+확인은 분자에 안 넣는다(기획 Q3, 보수적). 분자가 분모보다 크게 오면(서버 버그) 100%로 막지 않고 그대로 쓴다 —
+ * 숫자를 고쳐 보이면 버그가 화면에서 안 보인다
+ */
+export function autoResolvedRate(autoReplied: number, judged: number): string {
+  if (judged <= 0) return RATE_UNKNOWN;
+  /* 100을 먼저 곱한다. 나누기를 먼저 하면 23/40 = 0.575가 57.49999…가 돼 x.5가 내림된다(QA F1).
+     정수 곱은 정확해서 손 계산(반올림 정수, 기획 §4-1 5)과 같은 값이 나온다 */
+  return `${Math.round((autoReplied * 100) / judged)}%`;
+}
+
+/** 판정 = 자동 답 + 답+확인 + 넘김(기획 §4-1 4). 되묻기, 결과 없음은 판정이 아니다 */
+export function judgedCount(counts: InquiryCounts): number {
+  return counts.autoReplied + counts.autoRepliedWithHandoff + counts.handedOff;
+}
+
+/** 카드는 오늘 영업일 1일치를 부른다 — `total`이 곧 오늘이다(`days`는 1개) */
+export function toInquiryView(stats: InquiryStats): InquiryView {
+  const counts = stats.total;
+  const judged = judgedCount(counts);
+  return {
+    retailMessages: counts.retailMessages,
+    outcomes: INQUIRY_OUTCOME_ORDER.map((key) => ({
+      label: INQUIRY_TEXT.outcome[key],
+      count: counts[key],
+    })),
+    intents: INQUIRY_INTENT_ORDER.map((key) => ({
+      label: INQUIRY_TEXT.intent[key],
+      count: counts.byIntent[key].judged,
+    })),
+    ratePercent:
+      judged === 0 ? null : Math.round((counts.autoReplied / judged) * 100),
+    outcomeLine: INQUIRY_OUTCOME_ORDER.map(
+      (key) => `${INQUIRY_TEXT.outcome[key]} ${formatNumber(counts[key])}`,
+    ).join(", "),
+    rateLabel: autoResolvedRate(counts.autoReplied, judged),
+    rateDetail: `${INQUIRY_TEXT.judged} ${formatNumber(judged)}건 중 ${formatNumber(counts.autoReplied)}건`,
+    intentLine: INQUIRY_INTENT_ORDER.map(
+      (key) =>
+        `${INQUIRY_TEXT.intent[key]} ${formatNumber(counts.byIntent[key].judged)}`,
+    ).join(", "),
+    basisLine: `${INQUIRY_TEXT.basis}, ${formatClock(stats.asOf)} ${INQUIRY_TEXT.basisSuffix}`,
+    businessDay: stats.from,
+  };
+}
+
+/* ------------------------------------------------------------------------
+ * 문의 — 최근 7일 줄(loop-08f S3, 기획 §4-4)
+ * ------------------------------------------------------------------------ */
+
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** `YYYY-MM-DD`에서 n일 뒤(음수면 앞). 달력 계산만이라 UTC로 센다 — 시간대가 끼면 자정 근처에서 하루 밀린다 */
+function shiftIsoDay(day: string, days: number): string {
+  const m = ISO_DAY.exec(day);
+  if (m === null) return day;
+  const time = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+  return new Date(time).toISOString().slice(0, 10);
+}
+
+/** 기준 영업일 포함 7일. `2026-10-28` → `{from: 2026-10-22, to: 2026-10-28}` */
+export function weekRangeOf(businessDay: string): InquiryWeekRange {
+  return {
+    from: shiftIsoDay(businessDay, -(INQUIRY_WEEK_DAYS - 1)),
+    to: businessDay,
+  };
+}
+
+/** `2026-10-22` → `10/22`. 해는 안 쓴다 — 7일이라 해가 바뀌어도 앞뒤로 읽힌다 */
+function monthDay(day: string): string {
+  const m = ISO_DAY.exec(day);
+  return m === null ? day : `${m[2]}/${m[3]}`;
+}
+
+/** 최근 7일 집계는 서버 응답의 기간과 판정 수를 함께 보여 준다. */
+export function toWeekLine(
+  stats: InquiryStats,
+): Extract<InquiryWeekLineState, { kind: "line" }> {
+  const counts = stats.total;
+  const judged = judgedCount(counts);
+  return {
+    kind: "line",
+    fromTo: `${monthDay(stats.from)}~${monthDay(stats.to)}`,
+    retailMessages: formatNumber(counts.retailMessages),
+    rateLabel: autoResolvedRate(counts.autoReplied, judged),
+    rateDetail: `${INQUIRY_TEXT.judged} ${formatNumber(judged)}건 중 ${formatNumber(counts.autoReplied)}건`,
+  };
+}
+
+/**
+ * 7일 줄 자리(기획 §4-4 4 표 8행). 입력은 쿼리 상태를 그대로 옮긴 것이다:
+ * `businessDay` = 오늘 숫자의 기준 영업일(없으면 오늘 최초 실패), `week` = 지금 키(기간)의 마지막 성공 값,
+ * `failed` = 지금 키의 마지막 시도가 실패.
+ *
+ * 숫자가 있으면 실패여도 숫자다 — 같은 기간 옛 숫자는 30초 전 값이라 틀리지 않다(Q9 ①).
+ * 기간이 다른 숫자는 없는 것으로 본다 — 옛 기간 숫자가 새 날짜 옆에 서면 틀린다(키에 기간이 있어 보통은 안 오지만 막아 둔다)
+ */
+export function toWeekLineState(input: {
+  businessDay: string | null;
+  week: InquiryStats | undefined;
+  failed: boolean;
+}): InquiryWeekLineState {
+  if (input.businessDay === null) return { kind: "none" };
+  const range = weekRangeOf(input.businessDay);
+  const week =
+    input.week !== undefined &&
+    input.week.from === range.from &&
+    input.week.to === range.to
+      ? input.week
+      : undefined;
+  if (week !== undefined) return toWeekLine(week);
+  return input.failed ? { kind: "failed" } : { kind: "loading" };
 }

@@ -11,7 +11,7 @@ export { CheckoutView } from "./components/CheckoutView";
 export { OrderCompleteView } from "./components/OrderCompleteView";
 export { OrderListView } from "./components/OrderListView";
 export { OrderDetailView, OrderNotFound } from "./components/OrderDetailView";
-export { ORDER_API_PATH, ORDERS_PAGE_SIZE } from "./constants";
+export { ORDER_API_PATH, ORDER_PATH, ORDERS_PAGE_SIZE } from "./constants";
 export {
   periodFrom,
   resolveCheckoutIds,

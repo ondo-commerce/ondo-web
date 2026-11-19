@@ -26,6 +26,8 @@ export const PRODUCT_PATH = {
   reopen: (listingId: number) => `/api/wholesale/listings/${listingId}/reopen`,
   categories: "/api/wholesale/categories",
   colors: "/api/wholesale/colors",
+  /** 초안 op(#249). 등록 흐름엔 listing id가 없어 게시글과 무관한 업로드 → URL 2단계다 */
+  listingImages: "/api/wholesale/listing-images",
 } as const;
 
 /**

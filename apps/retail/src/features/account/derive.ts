@@ -7,21 +7,18 @@ import {
   PASSWORD_MIN_LENGTH,
   SIGNUP_FIELD_OF_REQUEST,
   SIGNUP_TERMS,
+  STORE_NAME_FALLBACK,
   TERMS_CODE,
   VALIDATION_MESSAGE,
 } from "./constants";
-import { APPLICATION } from "./fixtures";
 import type {
-  AccountProfile,
   AccountStatus,
   ApplicationView,
   ApprovalStep,
   AttachedFile,
   FieldErrors,
   LoginField,
-  PasswordField,
   RejectionView,
-  SettingsField,
   SignupField,
   SignUpRequest,
   SignUpRequestField,
@@ -57,6 +54,44 @@ export function normalizeStoreName(
   if (!raw) return null;
   const collapsed = raw.replace(/\s+/g, " ").trim();
   return collapsed ? collapsed.slice(0, STORE_NAME_MAX) : null;
+}
+
+/**
+ * 탭 사이에 오가는 세션 변경(loop-08c 리뷰 R8, Codex 메타 M1). 로그인은 **소매처 id**를 싣는다 — 로그인 응답과 셸의
+ * `/me`가 같은 `RetailerResponse.retailerId`를 준다. 이메일이 아니라 id인 이유: 받는 쪽(헤더 칩)은 셸이 `/me`로 읽은 값만
+ * 갖고, 로그인 폼 이메일은 대소문자, 공백이 서버 판정과 다를 수 있다. id를 못 얻으면 null — 받은 탭은 다른 계정으로 본다
+ */
+export type SessionBroadcast =
+  { change: "logout" } | { change: "login"; retailerId: number | null };
+
+/** 채널로 온 값이 세션 알림 모양인가. 같은 출처의 다른 스크립트도 쓸 수 있는 채널이라 모양을 믿지 않는다 */
+export function parseSessionBroadcast(data: unknown): SessionBroadcast | null {
+  if (typeof data !== "object" || data === null || !("change" in data))
+    return null;
+  const { change } = data;
+  if (change === "logout") return { change };
+  if (change !== "login") return null;
+  const id = "retailerId" in data ? data.retailerId : null;
+  return {
+    change,
+    retailerId: typeof id === "number" && Number.isInteger(id) ? id : null,
+  };
+}
+
+/**
+ * 다른 탭의 알림을 받은 로그인 탭(소매처 `mine`)이 할 일(Codex 메타 M1).
+ * - `refresh`: 같은 소매처가 다시 들어왔다 — 이동 없이 채팅 세대를 올리고 401 잠금을 푼다. 쓰던 글, 보류 말풍선은 그대로
+ * - `end`: 로그아웃, 다른 소매처, 또는 어느 쪽이든 id를 모름 — 정리하고 로그인 화면으로(안전한 쪽)
+ */
+export function otherTabActionOf(
+  mine: number | null,
+  message: SessionBroadcast,
+): "refresh" | "end" {
+  return message.change === "login" &&
+    mine !== null &&
+    message.retailerId === mine
+    ? "refresh"
+    : "end";
 }
 
 /**
@@ -497,91 +532,16 @@ export function storeInitial(storeName: string): string {
   return Array.from(storeName.trim())[0] ?? "";
 }
 
-/** 설정 화면에서 고칠 수 있는 값 세 개. 잠긴 칸은 폼에 들어오지 않는다 */
-export interface SettingsValues {
-  storeName: string;
-  ownerName: string;
-  phone: string;
-}
-
 /**
- * 폼의 출발값. **화면이 문자열을 적지 않는다** — 계정 레코드에서 꺼내 온다.
+ * 화면에 세울 상호. `/me.shopName`을 **그대로** 쓰고, 비었을 때만 자리 문구다.
  *
- * 이 값을 화면이 아니라 세션 보관소(`store.ts`)가 받아 든다. 화면이 들고 있으면
- * 다른 탭에 갔다 온 순간 고쳐 둔 값이 통째로 버려진다(도매 9회차 누적 결함
- * state-loss).
+ * 헤더 칩, 설정, 주문 상세 수령 상호가 전부 이 함수 하나를 지난다 — 예전에는
+ * 설정 더미 보관소의 고정 상호가 주문 상세까지 따라가서, 어느 계정으로 들어와도
+ * 수령 상호가 같았다(`side-02` N5). 앞뒤 공백만 뗀다. 서버 값을 고쳐 쓰지 않는다.
  */
-export function settingsValuesFrom(account: AccountProfile): SettingsValues {
-  return {
-    storeName: account.storeName,
-    ownerName: account.ownerName,
-    phone: account.phone,
-  };
-}
-
-/**
- * 설정 저장 검증. 규칙은 회원가입과 **같은 것을 꺼내 쓴다**(문구도 값도).
- *
- * 연락처는 `normalizePhone`을 거쳐 본다 — `010.1234.5678`도 `01012345678`도
- * **친 글자를 지우지 않고** 통과 여부만 판정한다. 틀리면 값은 칸에 그대로 남고
- * 아래 줄이 이유를 말한다.
- */
-export function validateSettings(
-  values: SettingsValues,
-): FieldErrors<SettingsField> {
-  const errors: FieldErrors<SettingsField> = {};
-
-  if (!values.storeName.trim()) errors.storeName = VALIDATION_MESSAGE.storeName;
-  if (!values.ownerName.trim()) errors.ownerName = VALIDATION_MESSAGE.ownerName;
-
-  if (!values.phone.trim()) errors.phone = VALIDATION_MESSAGE.phone;
-  else if (!PHONE_SHAPE.test(normalizePhone(values.phone)))
-    errors.phone = VALIDATION_MESSAGE.phoneShape;
-
-  return errors;
-}
-
-/** 비밀번호 변경 다이얼로그의 세 칸 */
-export interface PasswordValues {
-  currentPassword: string;
-  newPassword: string;
-  newPasswordConfirm: string;
-}
-
-export const EMPTY_PASSWORD: PasswordValues = {
-  currentPassword: "",
-  newPassword: "",
-  newPasswordConfirm: "",
-};
-
-/**
- * 비밀번호 변경 검증.
- *
- * 지금 비밀번호가 **맞는지는 보지 않는다.** 대조할 서버도 저장된 비밀번호도
- * 없다(`types.ts` — 더미라도 자격증명을 소스에 적지 않는다). 비어 있는지까지가
- * 화면이 판정할 수 있는 전부이고, 그 사실은 다이얼로그가 글자로 말한다.
- *
- * 8자 규칙과 확인 일치 문구는 회원가입과 같은 상수를 읽는다 — 같은 규칙이
- * 화면마다 다른 말로 나오지 않게.
- */
-export function validatePasswordChange(
-  values: PasswordValues,
-): FieldErrors<PasswordField> {
-  const errors: FieldErrors<PasswordField> = {};
-
-  if (!values.currentPassword)
-    errors.currentPassword = VALIDATION_MESSAGE.password;
-
-  if (!values.newPassword) errors.newPassword = VALIDATION_MESSAGE.password;
-  else if (values.newPassword.length < PASSWORD_MIN_LENGTH)
-    errors.newPassword = VALIDATION_MESSAGE.passwordShort;
-
-  if (!values.newPasswordConfirm)
-    errors.newPasswordConfirm = VALIDATION_MESSAGE.passwordConfirm;
-  else if (values.newPasswordConfirm !== values.newPassword)
-    errors.newPasswordConfirm = VALIDATION_MESSAGE.passwordMismatch;
-
-  return errors;
+export function storeNameLabel(shopName: string | null | undefined): string {
+  const trimmed = shopName?.trim() ?? "";
+  return trimmed === "" ? STORE_NAME_FALLBACK : trimmed;
 }
 
 /** 동의 내역 한 줄 */
@@ -598,15 +558,16 @@ export interface ConsentRecord {
  * 온다 — 화면에 약관 이름도 날짜 문자열도 적지 않는다. 약관이 3종이 되면
  * `SIGNUP_TERMS`만 늘리면 이 목록도 같이 는다.
  *
- * 동의 일시가 둘 다 신청 일시인 건 더미의 한계다. 가입 폼이 두 체크를 한 번에
- * 받으므로(같은 제출) 실제로도 두 값이 갈릴 일이 지금은 없다.
+ * 일시는 `/me.appliedAt`(가입 신청 시각)이다. 가입 폼이 두 체크를 한 번에
+ * 받으므로(같은 제출) 두 동의 시각은 신청 시각과 같다. 예전에는 더미
+ * `APPLICATION.appliedAt`이라 누가 로그인해도 같은 날짜였다.
  */
-export function consentRecords(): ConsentRecord[] {
+export function consentRecords(appliedAt: string): ConsentRecord[] {
   return (["service", "privacy"] as const satisfies readonly TermsKind[]).map(
     (kind) => ({
       kind,
       label: SIGNUP_TERMS[kind].label,
-      agreedAt: APPLICATION.appliedAt,
+      agreedAt: formatDateTime(appliedAt),
     }),
   );
 }

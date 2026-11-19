@@ -1,0 +1,618 @@
+[
+  {
+    "data": [
+      {
+        "roomId": 1,
+        "counterpart": {
+          "id": 1,
+          "name": "봄봄상회"
+        },
+        "lastMessage": {
+          "sequence": 7,
+          "sender": "RETAILER",
+          "kind": "TEXT",
+          "preview": "감사합니다. 내일 주문할게요",
+          "sentAt": "2026-10-28T00:30:00.000Z"
+        },
+        "lastActivityAt": "2026-10-28T00:30:00.000Z",
+        "unreadCount": 1,
+        "myLastReadSequence": 6,
+        "needsReply": true,
+        "openHandoff": false
+      },
+      {
+        "roomId": 4,
+        "counterpart": {
+          "id": 4,
+          "name": "나래옷방"
+        },
+        "lastMessage": null,
+        "lastActivityAt": "2026-10-27T23:00:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 0,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 2,
+        "counterpart": {
+          "id": 2,
+          "name": "대기상회"
+        },
+        "lastMessage": {
+          "sequence": 4,
+          "sender": "SYSTEM",
+          "kind": "HANDOFF",
+          "preview": "자동 답변이 답하지 못했어요. 직접 답해 주세요",
+          "sentAt": "2026-10-27T22:00:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T22:00:00.000Z",
+        "unreadCount": 1,
+        "myLastReadSequence": 2,
+        "needsReply": true,
+        "openHandoff": true
+      },
+      {
+        "roomId": 5,
+        "counterpart": {
+          "id": 5,
+          "name": "다온패션"
+        },
+        "lastMessage": {
+          "sequence": 4,
+          "sender": "RETAILER",
+          "kind": "TEXT",
+          "preview": "아 하나 더요",
+          "sentAt": "2026-10-27T19:59:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T19:59:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 4,
+        "needsReply": true,
+        "openHandoff": false
+      },
+      {
+        "roomId": 6,
+        "counterpart": {
+          "id": 6,
+          "name": "라온상점"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "네 내일 보내 드릴게요",
+          "sentAt": "2026-10-27T17:02:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T17:02:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 7,
+        "counterpart": {
+          "id": 7,
+          "name": "마루의류"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T13:29:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T13:29:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 8,
+        "counterpart": {
+          "id": 8,
+          "name": "바다상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T13:16:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T13:16:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 9,
+        "counterpart": {
+          "id": 9,
+          "name": "사랑옷집"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T13:03:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T13:03:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 10,
+        "counterpart": {
+          "id": 10,
+          "name": "아라패션"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T12:50:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T12:50:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 11,
+        "counterpart": {
+          "id": 11,
+          "name": "자람상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T12:37:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T12:37:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 12,
+        "counterpart": {
+          "id": 12,
+          "name": "차오름"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T12:24:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T12:24:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 13,
+        "counterpart": {
+          "id": 13,
+          "name": "카페옷방"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T12:11:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T12:11:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 14,
+        "counterpart": {
+          "id": 14,
+          "name": "타래상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T11:58:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T11:58:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 15,
+        "counterpart": {
+          "id": 15,
+          "name": "파랑의류"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T11:45:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T11:45:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 16,
+        "counterpart": {
+          "id": 16,
+          "name": "하늘옷집"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T11:32:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T11:32:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 17,
+        "counterpart": {
+          "id": 17,
+          "name": "고운상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T11:19:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T11:19:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 18,
+        "counterpart": {
+          "id": 18,
+          "name": "누리패션"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T11:06:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T11:06:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 19,
+        "counterpart": {
+          "id": 19,
+          "name": "도담옷방"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T10:53:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T10:53:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 21,
+        "counterpart": {
+          "id": 21,
+          "name": "모아의류"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T10:40:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T10:40:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 20,
+        "counterpart": {
+          "id": 20,
+          "name": "로아상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T10:40:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T10:40:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 22,
+        "counterpart": {
+          "id": 22,
+          "name": "보람상점"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T10:14:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T10:14:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 23,
+        "counterpart": {
+          "id": 23,
+          "name": "새봄패션"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T10:01:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T10:01:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 24,
+        "counterpart": {
+          "id": 24,
+          "name": "온새미"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T09:48:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T09:48:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 25,
+        "counterpart": {
+          "id": 25,
+          "name": "제이옷방"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T09:35:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T09:35:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 26,
+        "counterpart": {
+          "id": 26,
+          "name": "초롱상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T09:22:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T09:22:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 27,
+        "counterpart": {
+          "id": 27,
+          "name": "큰별의류"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T09:09:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T09:09:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 28,
+        "counterpart": {
+          "id": 28,
+          "name": "토리패션"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T08:56:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T08:56:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 29,
+        "counterpart": {
+          "id": 29,
+          "name": "풀잎상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T08:43:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T08:43:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 30,
+        "counterpart": {
+          "id": 30,
+          "name": "한결옷집"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T08:30:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T08:30:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 31,
+        "counterpart": {
+          "id": 31,
+          "name": "여울상회"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T08:17:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T08:17:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      }
+    ],
+    "meta": {
+      "nextCursor": "MTc5MzA4OTAyMDAwMHwzMQ=="
+    }
+  },
+  {
+    "data": [
+      {
+        "roomId": 32,
+        "counterpart": {
+          "id": 32,
+          "name": "윤슬패션"
+        },
+        "lastMessage": {
+          "sequence": 2,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "목요일에 올라가요",
+          "sentAt": "2026-10-27T08:04:00.000Z"
+        },
+        "lastActivityAt": "2026-10-27T08:04:00.000Z",
+        "unreadCount": 0,
+        "myLastReadSequence": 2,
+        "needsReply": false,
+        "openHandoff": false
+      },
+      {
+        "roomId": 3,
+        "counterpart": {
+          "id": 3,
+          "name": "가람상회"
+        },
+        "lastMessage": {
+          "sequence": 120,
+          "sender": "WHOLESALER",
+          "kind": "TEXT",
+          "preview": "메시지 120",
+          "sentAt": "2026-10-26T21:00:00.000Z"
+        },
+        "lastActivityAt": "2026-10-26T21:00:00.000Z",
+        "unreadCount": 10,
+        "myLastReadSequence": 100,
+        "needsReply": false,
+        "openHandoff": false
+      }
+    ],
+    "meta": {
+      "nextCursor": null
+    }
+  }
+]

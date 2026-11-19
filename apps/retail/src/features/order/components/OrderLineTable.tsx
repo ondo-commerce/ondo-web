@@ -49,7 +49,7 @@ export function OrderLineTable({
           <Table.Th>{LINE_HEADERS.qty}</Table.Th>
           <Table.Th>{LINE_HEADERS.price}</Table.Th>
           <Table.Th>{LINE_HEADERS.subtotal}</Table.Th>
-          <Table.Th align="center">{LINE_HEADERS.status}</Table.Th>
+          <Table.Th align="left">{LINE_HEADERS.status}</Table.Th>
           <Table.Th align="center">
             <span className="sr-only">{LINE_HEADERS.favorite}</span>
           </Table.Th>
@@ -74,7 +74,7 @@ export function OrderLineTable({
               <Table.Td>{formatSheets(line.qty)}</Table.Td>
               <Table.Td>{formatWon(line.price)}</Table.Td>
               <Table.Td>{formatWon(lineAmount(line))}</Table.Td>
-              <Table.Td align="center">
+              <Table.Td align="left">
                 <LineStatusBadge status={line.status} />
                 {note ? (
                   <span className="text-muted-foreground mt-1 block text-xs">

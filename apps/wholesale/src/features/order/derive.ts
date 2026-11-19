@@ -191,16 +191,29 @@ export function chipCount(
  * 배지 색. **파랑·회색 2색뿐이다** — 상태가 5종이어도 색을 늘리지 않는다.
  * 목록 행과 우측 카드가 같은 규칙을 쓰도록 여기 한 곳에서만 정한다.
  */
-export function orderStatusTone(status: OrderStatus): "active" | "done" {
-  return ACTIVE_ORDER_STATUSES.includes(status) ? "active" : "done";
+export function orderStatusTone(status: OrderStatus): BadgeTone {
+  return ORDER_TONE[status] ?? "muted";
 }
 
-/** 정산 배지도 같은 2색 규칙 — 받을 돈이 남았으면 파랑 */
-export function settlementStatusTone(
-  status: SettlementStatus,
-): "active" | "done" {
-  return ACTIVE_SETTLEMENT_STATUSES.includes(status) ? "active" : "done";
+/** 정산 배지 — 안 받은 돈은 노랑, 받는 중은 파랑, 다 받으면 초록 */
+export function settlementStatusTone(status: SettlementStatus): BadgeTone {
+  return SETTLEMENT_TONE[status] ?? "muted";
 }
+
+type BadgeTone = "wait" | "active" | "done" | "muted";
+/** 확정을 기다리는 새 주문만 노랑이다. 확정 뒤 출고 전까지가 파랑, 다 나가면 초록, 취소는 회색 */
+const ORDER_TONE: Partial<Record<OrderStatus, BadgeTone>> = {
+  NEW: "wait",
+  CONFIRMED: "active",
+  PARTIALLY_SHIPPED: "active",
+  SHIPPED: "done",
+  CANCELLED: "muted",
+};
+const SETTLEMENT_TONE: Partial<Record<SettlementStatus, BadgeTone>> = {
+  UNPAID: "wait",
+  PARTIALLY_SETTLED: "active",
+  SETTLED: "done",
+};
 
 /* ------------------------------------------------------------------------
  * 목록 쿼리
@@ -236,6 +249,33 @@ export function toListQuery(params: OrderListParams): OrderListQuery {
   };
 }
 
+/**
+ * 주문 탭 진입 인자 `?order={id}`(#295, 01-plan §4-2). 헤더 알림 행이 이 주소로 온다.
+ * 없으면 null, 숫자가 아니거나 0 이하면 "invalid"(주소만 지우고 아무것도 안 연다). 채팅 `?room=`과 같은 규칙.
+ */
+export function parseOrderParam(raw: string | null): number | null | "invalid" {
+  if (raw === null || raw === "") return null;
+  if (!/^\d+$/.test(raw)) return "invalid";
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : "invalid";
+}
+
+/**
+ * 진입 인자로 들어왔을 때의 목록 조건. 검색어, 상태, 정산 필터를 전부 풀고 1쪽이다.
+ * 검색어를 남기면 그 주문이 목록에서 빠져 펼친 행이 안 보인다(Codex plan r1 11).
+ */
+export const ENTRY_LIST_PARAMS: OrderListParams = {
+  q: "",
+  status: STATUS_FILTER_ALL,
+  settlement: STATUS_FILTER_ALL,
+  page: 1,
+};
+
+/** 주문 상세가 404로 끝났나. 우측 카드 자리에 "이 주문을 찾을 수 없어요" 한 줄만 둘 때(S11-17) */
+export function isOrderNotFound(error: unknown): boolean {
+  return describeError(error).kind === "notFound";
+}
+
 /* ------------------------------------------------------------------------
  * 라인 표의 파생값. Figma 3프레임의 숫자를 역산해 확정한 공식이다(01-pm.md §1.4).
  * `n` = `이번 출고` 입력값이고, 입력이 없으면 n = 0이라 before와 after가 같아진다.
@@ -245,6 +285,8 @@ export function toListQuery(params: OrderListParams): OrderListQuery {
  * 가용재고. 서버가 SKU 스코프로 내려준다(`variantAvailableQty` = 재고 − 예약).
  * 더미 시절엔 `현재고 − 주문처리중`을 화면이 계산했고 그 정의가 glossary와 충돌해
  * 보류(게이트 G-1)됐는데, 서버 계약이 값을 직접 주는 것으로 닫혔다.
+ * 재고 탭 `판매가능`처럼 미송대기를 빼서 다시 세지 않는다(#212) — 서버가 출고 수량을 이 값으로
+ * 검사하니(`INSUFFICIENT_STOCK`), 화면이 더 작은 숫자를 들면 서버가 받는 수량을 화면이 막는다.
  */
 export function assignableQty(line: OrderLineView): number {
   return line.availableQty;

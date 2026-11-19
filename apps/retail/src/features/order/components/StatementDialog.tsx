@@ -1,9 +1,8 @@
 "use client";
 
-import { Button, Dialog, IconButton, Notice, Table } from "@ondo/ui";
-import { Info, Printer, X } from "lucide-react";
+import { Button, KeyValue, Dialog, IconButton, Notice, Table } from "@ondo/ui";
+import { Info, X } from "lucide-react";
 import Link from "next/link";
-import { DescList, DescRow } from "./PaymentSummary";
 import {
   DETAIL_TEXT,
   PICKUP_LABEL,
@@ -93,15 +92,17 @@ export function StatementDialog({
         </div>
 
         <div className="scroll-slim min-h-0 flex-1 overflow-y-auto p-5">
-          <DescList>
-            <DescRow term={STATEMENT_TEXT.issuer}>
+          <KeyValue>
+            <KeyValue.Row term={STATEMENT_TEXT.issuer}>
               {leg?.wholesalerName ?? ""}
-            </DescRow>
-            <DescRow term={STATEMENT_TEXT.receiver}>{receiverStore}</DescRow>
-            <DescRow term={STATEMENT_TEXT.shippedAt}>
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.receiver}>
+              {receiverStore}
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.shippedAt}>
               {shipment.shippedAt ?? SHIPMENT_PACKED}
-            </DescRow>
-            <DescRow term={STATEMENT_TEXT.receiverName}>
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.receiverName}>
               {leg?.pickup === "AGENT" ? (
                 <>
                   {order.agentName}{" "}
@@ -114,14 +115,14 @@ export function StatementDialog({
                   {PICKUP_LABEL.RETAILER}
                 </span>
               )}
-            </DescRow>
+            </KeyValue.Row>
             {/* 통합 주문번호와 도매처별 연번이 **같이** 있다(RT-40) —
                 도매처에 전화할 때 필요한 번호가 뒤쪽이다 */}
-            <DescRow term={STATEMENT_TEXT.origin}>
+            <KeyValue.Row term={STATEMENT_TEXT.origin}>
               {order.orderNo}
               {leg ? ` · ${DETAIL_TEXT.legNo(leg.legNo)}` : ""}
-            </DescRow>
-          </DescList>
+            </KeyValue.Row>
+          </KeyValue>
 
           <div className="bg-border my-3.5 h-px" />
 
@@ -196,18 +197,9 @@ export function StatementDialog({
           ) : null}
         </div>
 
+        {/* 인쇄·저장 버튼은 지웠다(D32 Q5-A). 잠긴 두 버튼과 "준비 중" 한 줄은
+            시연 경로가 아닌데 평가위원에게 미완성으로 읽힌다 */}
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 p-5 pt-0">
-          {/* 잠긴 버튼 옆에 이유가 글자로 있다 */}
-          <p className="text-muted-foreground text-body mr-auto phone:mr-0 phone:w-full">
-            {STATEMENT_TEXT.disabledReason}
-          </p>
-          <Button variant="soft" disabled>
-            <Printer aria-hidden className="size-4" />
-            {STATEMENT_TEXT.print}
-          </Button>
-          <Button variant="soft" disabled>
-            {STATEMENT_TEXT.save}
-          </Button>
           <Button asChild variant="line">
             <Link href="/settlements">{STATEMENT_TEXT.toSettlement}</Link>
           </Button>

@@ -37,6 +37,7 @@ export const TAB_HREF = {
   orders: "/orders",
   shipments: "/shipments",
   backorders: "/backorders",
+  chats: "/chats",
 } as const;
 
 /** 수령 방식 라벨. 타일 둘째 줄에 `사입삼촌 방문 2 · 직접 1`로 붙는다 */
@@ -51,7 +52,7 @@ export const RECEIVE_BY_ORDER: readonly ReceiveBy[] = ["AGENT", "RETAILER"];
 export const TILE_TITLE: Record<TodoTileKey, string> = {
   newOrders: "확정 기다리는 주문",
   packing: "포장 대기",
-  outbound: "출고 확정 안 한 봉투",
+  outbound: "출고 대기",
   backorder: "미송",
 };
 
@@ -95,6 +96,8 @@ export const QUEUE_TEXT = {
   view: "주문 보기",
   cancelledPrefix: "오늘 취소",
   columns: {
+    orderNumber: "주문 번호",
+    itemCount: "품목",
     waiting: "대기",
     retailer: "소매처",
     product: "대표 품목",
@@ -105,12 +108,76 @@ export const QUEUE_TEXT = {
 
 export const TODAY_TEXT = {
   title: "오늘",
-  refresh: "30초마다 갱신",
-  lastPrefix: "마지막",
+  lastPrefix: "최근 갱신",
   orders: "주문",
   shipped: "출고",
   cancelled: "취소",
 } as const;
+
+/**
+ * 문의 카드(loop-08 S2, 와이어프레임 21 `#state-inquiry-default`). 칸 이름은 기획 §4-2 2 글자 그대로다 —
+ * 보고서에 옮겨 적는 숫자라 화면 글자와 보고서 글자가 같아야 한다.
+ */
+export const INQUIRY_TEXT = {
+  title: "문의",
+  openChats: "채팅 열기",
+  totalPrefix: "오늘 문의",
+  totalUnit: "건",
+  outcome: {
+    autoReplied: "자동 답",
+    autoRepliedWithHandoff: "답+확인",
+    handedOff: "넘김",
+    clarified: "되묻기",
+    noResult: "결과 없음",
+  },
+  ratePrefix: "자동 처리",
+  outcomeTitle: "처리 결과",
+  intentTitle: "문의 종류",
+  judged: "판정",
+  /** 4줄 앞말. 이게 없으면 합이 12가 아니라 8인 줄을 소매 메시지 수로 읽는다(디자인 결정 51) */
+  intentPrefix: "판정한 것 중",
+  intent: {
+    STOCK: "재고",
+    BACKORDER: "미송",
+    RECEIVABLE: "미수",
+    OTHER: "기타",
+    UNCLASSIFIED: "미분류",
+  },
+  basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계",
+  basisSuffix: "기준",
+  errorTitle: "문의 숫자를 불러오지 못했어요",
+  errorDetail: "잠시 뒤 다시 시도해 주세요.",
+  /** 7일 줄(loop-08f S3). 앞말 뒤 괄호에 기간이 붙는다 — 보고서에 옮길 때 기간이 같이 가야 한다(기획 Q1) */
+  weekPrefix: "최근 7일",
+  weekTotal: "소매 메시지",
+  /** 버튼 없음(기획 §4-4 4). 다음 polling이 다시 부른다 */
+  weekFailed: "최근 7일 숫자를 불러오지 못했어요",
+  weekLoading: "최근 7일 불러오는 중",
+} as const;
+
+/** 7일 줄의 날 수. 기준 영업일 포함이라 앞으로 6일을 더 본다(기획 §4-4 1) */
+export const INQUIRY_WEEK_DAYS = 7;
+
+/** 4줄 순서. 기획 §4-2 2 그대로 — 재고, 미송, 미수가 자동 답이 있는 의도라 앞이다 */
+export const INQUIRY_INTENT_ORDER = [
+  "STOCK",
+  "BACKORDER",
+  "RECEIVABLE",
+  "OTHER",
+  "UNCLASSIFIED",
+] as const;
+
+/** 2줄 순서. 결과 우선순위(자동 답 > 넘김 > 되묻기 > 결과 없음, 기획 §4-1 2)와 같다 */
+export const INQUIRY_OUTCOME_ORDER = [
+  "autoReplied",
+  "autoRepliedWithHandoff",
+  "handedOff",
+  "clarified",
+  "noResult",
+] as const;
+
+/** 비율을 못 내는 자리(판정 0). 0%로 쓰면 "자동 답이 하나도 안 됐다"로 읽힌다 */
+export const RATE_UNKNOWN = "-";
 
 export const ATTENTION_TEXT = {
   title: "주의",
@@ -119,6 +186,7 @@ export const ATTENTION_TEXT = {
   overdueEmpty: "입고일이 지난 미송이 없어요",
   noDateEmpty: "입고일을 안 적은 미송이 없어요",
   link: "미송 탭 →",
+  none: "없음",
 } as const;
 
 /** 서버 `now`를 못 받았을 때의 큐 경과 표기. 시계 없이 "N분"을 지어내지 않는다 */

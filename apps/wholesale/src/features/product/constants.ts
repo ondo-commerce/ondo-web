@@ -1,5 +1,10 @@
 import type { BadgeProps } from "@ondo/ui";
-import type { PostStatusKey, ProductField, SkuSize } from "./types";
+import type {
+  PostStatusKey,
+  ProductField,
+  SkuSize,
+  UploadState,
+} from "./types";
 
 /** `Badge`가 가진 색은 이 둘뿐이다 — 늘리지 않는다(게이트 G-2) */
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
@@ -55,9 +60,9 @@ export const POST_STATUS_LABEL: Record<PostStatusKey, string> = {
  * `미등록`과 `시즌종료`가 같은 회색이 되는 건 의도된 결과다. 둘의 구분은 배지 글자가 맡는다.
  */
 export const POST_STATUS_TONE: Record<PostStatusKey, BadgeTone> = {
-  NONE: "done",
+  NONE: "muted",
   ON_SALE: "active",
-  SEASON_ENDED: "done",
+  SEASON_ENDED: "muted",
 };
 
 /**
@@ -151,3 +156,89 @@ export function errorId(field: ProductField): string {
 
 /** `aria-invalid`가 켜진 칸의 테두리. 색은 토큰이 정한다 */
 export const INVALID_INPUT_CLASS = "aria-[invalid=true]:border-destructive";
+
+/* ------------------------------------------------------------------------
+ * 게시글 이미지 업로드 (#250)
+ * ------------------------------------------------------------------------ */
+
+/** 게시글 이미지 칸 수. 등록·대기·진행·실패 슬롯을 다 합쳐 이 수를 넘지 않는다 */
+export const MAX_IMAGE_COUNT = 9;
+
+/**
+ * 1장 상한. 4 MiB = 4,194,304 (D18). 상한과 **같은** 크기는 통과한다.
+ *
+ * 목(`packages/api/src/mocks/wholesale/listingImage.ts`)에도 같은 값이 있다 — 역방향
+ * import가 금지라 두 곳에 산다. 어긋나면 사전 검사를 통과한 파일이 413으로 돌아와
+ * "다시 고르기형" 실패 슬롯으로 드러난다.
+ */
+export const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+/** 파일 선택 다이얼로그의 `accept`와 사전 검사의 형식 목록이 같은 값을 본다(D19) */
+export const IMAGE_ACCEPT = "image/jpeg,image/png";
+
+/**
+ * 동시에 나가는 업로드 수(D20). 프록시가 본문을 통째로 읽어 함수 메모리가 동시 수에
+ * 비례한다 — 3 × 4 MiB는 상한 추정이지 보장치가 아니라 상수 하나로 둔다.
+ */
+export const IMAGE_UPLOAD_CONCURRENCY = 3;
+
+/**
+ * 사전 검사 거절 사유별 문구. 격자 아래 목록 한 줄의 파일명 뒤에 붙는다.
+ * HEIC 안내는 괄호 한 토막만 — 긴 문장은 다른 파일의 이유를 묻는다(DD8).
+ */
+export const IMAGE_REJECT_MESSAGE = {
+  TYPE: "jpg·png만 올릴 수 있어요 — 아이폰은 사진 앱 공유 › 'JPEG로 보내기'",
+  EMPTY: "비어 있는 파일이에요 (0바이트)",
+  SIZE: "4MB까지 올릴 수 있어요 — 사진 앱에서 크기를 줄여 주세요",
+} as const;
+
+/**
+ * 업로드 중 세션이 끊겼을 때 저장 버튼 옆 한 줄(#252 S4-3). 글자를 바꾸지 않는다 — loop-03
+ * e2e가 정확 비교한다. 다른 탭에서 같은 계정으로 다시 로그인하면 풀린다(#403).
+ */
+export const SESSION_LOST_MESSAGE =
+  "로그인이 끊겼어요. 다시 로그인하기 전엔 저장할 수 없어요.";
+
+/**
+ * 수정 저장이 반쯤 됐을 때(PATCH 200 뒤 상태 변경만 401)의 잠금 문구(#404 §7 Q1). 제목, 판매가는
+ * 이미 마켓에 보이는데 상태만 옛것이라, 사장이 모르고 탭을 닫으면 판매가 계속된다. "안 바뀌었어요"가
+ * 아니라 "확인하지 못했어요"인 이유: 401이 서버에서 처리된 뒤 왔을 수 있다(BE 답 전).
+ */
+export const SESSION_LOST_PARTIAL_MESSAGE =
+  "로그인이 끊겨 판매 상태 변경은 확인하지 못했어요. 상품 정보는 저장됐어요. 다시 로그인하기 전엔 저장할 수 없어요.";
+
+/**
+ * 재로그인 전에 떠난 저장 요청이 늦게 401을 받았을 때(#404). 새 세션은 살아 있어 잠그지 않는다.
+ * "저장하지 못했어요"라고 단정하지 않는다 — 서버가 반영했을 수 있다(BE 답 전).
+ */
+export const SAVE_AUTH_LATE_MESSAGE =
+  "로그인이 바뀌어 저장 결과를 확인하지 못했어요. 다시 저장해 주세요.";
+
+/** 늦은 401이 반쯤 저장의 상태 변경에 왔을 때(#404). PATCH는 200을 받았으니 상품 정보는 저장됐다 */
+export const SAVE_AUTH_LATE_PARTIAL_MESSAGE =
+  "로그인이 바뀌어 판매 상태 변경은 확인하지 못했어요. 상품 정보는 저장됐어요. 다시 저장해 주세요.";
+
+/** 다른 탭 재로그인으로 잠금이 풀렸을 때 같은 자리 한 줄(#403). 저장을 누르면 사라진다 */
+export const SESSION_RESTORED_MESSAGE =
+  "다시 로그인했어요. 이어서 저장할 수 있어요.";
+
+/**
+ * 잠금 문구 옆 `새 탭에서 로그인`(#403 S2-5). 새 탭이라 이 탭의 폼은 그대로 남고, 거기서
+ * 같은 계정으로 로그인하면 방송이 이 탭의 잠금을 푼다. 같은 탭 로그인은 폼을 버린다(Q1 ③).
+ */
+export const RELOGIN_HREF = "/login";
+
+/** 격자가 없거나 비었을 때의 업로드 요약. 등록 화면이 `함께 게시`를 끄면 여기로 돌아온다 */
+export const IDLE_UPLOAD_STATE: UploadState = {
+  uploading: false,
+  failedCount: 0,
+};
+
+/**
+ * 격자 칸·`+`·`×`에 붙이는 포커스 표시. `packages/ui`의 `Button`·`AddSlot`은 포커스 링이
+ * 꺼져 있고 그 파일은 읽기 전용이다(#254 F6). `account`에 같은 값이 있지만 feature끼리
+ * import 하지 않으므로 복제한다. **`outline-hidden`을 걸지 않는다** — 기본 링을 지운 채
+ * 아무것도 안 그리는 것이 `account` 앞 회차 결함이었다.
+ */
+export const FOCUS_RING_CLASS =
+  "focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-2";

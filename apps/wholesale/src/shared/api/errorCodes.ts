@@ -35,6 +35,10 @@ export const WHOLESALE_ERROR_CODE = {
   VARIANT_ALLOCATED: "VARIANT_ALLOCATED",
   VARIANT_HAS_BACKORDER: "VARIANT_HAS_BACKORDER",
   VARIANT_IN_PENDING_ORDER: "VARIANT_IN_PENDING_ORDER",
+  // 게시글 이미지 업로드(POST /listing-images, 초안 #249) — 413·415는 재전송으로 안 풀리는
+  // "다시 고르기형"이다. 이름은 소매 `ErrorCode`와 같다(D19)
+  FILE_TOO_LARGE: "FILE_TOO_LARGE",
+  UNSUPPORTED_FILE_TYPE: "UNSUPPORTED_FILE_TYPE",
 
   // 주문·포장 — 400은 요청 본문이 틀린 것(라인 누락·중복·초과), 409는 지금 상태에서 안 되는 것
   ORDER_ITEM_MISSING: "ORDER_ITEM_MISSING",

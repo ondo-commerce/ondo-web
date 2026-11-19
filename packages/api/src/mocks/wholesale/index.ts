@@ -3,7 +3,10 @@ import spec from "../../../openapi/wholesale.json";
 import { handlersFromSpec } from "../handlers";
 import type { OpenApiDocument } from "../openapi";
 import { backorderHandlers } from "./backorder";
+import { chatHandlers } from "./chat";
+import { dashboardHandlers } from "./dashboard";
 import { inventoryHandlers } from "./inventory";
+import { notificationHandlers } from "./notification";
 import { orderHandlers } from "./order";
 import { productHandlers } from "./product";
 import { settlementHandlers } from "./settlement";
@@ -18,6 +21,9 @@ import { shipmentHandlers } from "./shipment";
  * 여기 없는 경로는 worker가 `bypass`로 실서버에 흘린다.
  */
 export const wholesaleHandlers: RequestHandler[] = [
+  ...chatHandlers,
+  ...notificationHandlers,
+  ...dashboardHandlers,
   ...productHandlers,
   ...orderHandlers,
   ...backorderHandlers,

@@ -1,10 +1,10 @@
 "use client";
 
-import { Button, Notice, Panel } from "@ondo/ui";
-import { Info } from "lucide-react";
+import { Button, Panel } from "@ondo/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { SummaryLayout } from "@/shared/components/SummaryLayout";
 import {
   BulkSettingSection,
   PAYMENT_OPTIONS,
@@ -13,7 +13,6 @@ import {
 import { BankAccountRow } from "./BankAccountRow";
 import { CheckoutSummaryBar } from "./CheckoutSummaryBar";
 import { MethodSelect, SetRow, SetRowGrid } from "./MethodSelect";
-import { PaymentSummary } from "./PaymentSummary";
 import { PickupContactSection } from "./PickupContactSection";
 import { WholesalerOrderCard } from "./WholesalerOrderCard";
 import {
@@ -63,8 +62,8 @@ import type { CheckoutGroup, PaymentChoice, PickupChoice } from "../types";
  * `useState`로 들면 `/cart`에 갔다 오는 순간 고른 값이 통째로 버려진다
  * (반복결함 `state-loss`).
  *
- * 화면에 뜨는 금액·장수·건수는 전부 `derive.ts`에서 나온다. 도매처 상자 머리 ·
- * 결제 요약 · 합계 바가 같은 `totalsOf`를 부르므로 세 자리가 갈릴 수 없다.
+ * 화면에 뜨는 금액·장수·건수는 전부 `derive.ts`에서 나온다. 도매처 상자 머리와
+ * 오른쪽 결제 요약 카드가 같은 `totalsOf`를 부르므로 두 자리가 갈릴 수 없다.
  */
 export function CheckoutView({ groups }: { groups: readonly CheckoutGroup[] }) {
   const router = useRouter();
@@ -126,9 +125,33 @@ export function CheckoutView({ groups }: { groups: readonly CheckoutGroup[] }) {
   };
 
   return (
-    <div className="mx-auto max-w-wrap">
+    <SummaryLayout
+      aside={
+        lines.length === 0 ? null : (
+          <CheckoutSummaryBar
+            totals={totals}
+            wholesalerCount={groups.length}
+            blockedReason={blockedReason}
+            failure={failure}
+            busy={busy}
+            onSubmit={handleSubmit}
+          />
+        )
+      }
+    >
       <Panel>
-        <Panel.Title sub={CHECKOUT_TEXT.sub}>{CHECKOUT_TEXT.title}</Panel.Title>
+        <Panel.Title
+          sub={CHECKOUT_TEXT.sub}
+          action={
+            lines.length === 0 ? null : (
+              <Button asChild variant="line" size="sm">
+                <Link href="/cart">{CHECKOUT_TEXT.backToCart}</Link>
+              </Button>
+            )
+          }
+        >
+          {CHECKOUT_TEXT.title}
+        </Panel.Title>
 
         {lines.length === 0 ? (
           <div className="py-16 text-center">
@@ -238,29 +261,9 @@ export function CheckoutView({ groups }: { groups: readonly CheckoutGroup[] }) {
               onChangeName={setAgentName}
               onChangePhone={setAgentPhone}
             />
-
-            <PaymentSummary totals={totals} wholesalerCount={groups.length} />
           </>
         )}
-
-        {/* 접수 요청이 안 갔을 때. 되돌릴 수 없는 실행이라 결과가 조용히 사라지면
-            사장이 다시 눌러 두 번 접수한다 — 멱등키가 막지만 사실은 말해야 한다 */}
-        {failure ? (
-          <Notice className="mt-4">
-            <span role="alert" className="flex items-start gap-2">
-              <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-              {failure}
-            </span>
-          </Notice>
-        ) : null}
-
-        <CheckoutSummaryBar
-          amount={totals.amount}
-          blockedReason={blockedReason}
-          busy={busy}
-          onSubmit={handleSubmit}
-        />
       </Panel>
-    </div>
+    </SummaryLayout>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
-import { Notice, Panel } from "@ondo/ui";
-import { Info } from "lucide-react";
+import { Panel } from "@ondo/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CartSummaryBar } from "./CartSummaryBar";
@@ -9,6 +8,7 @@ import { CartToolbar } from "./CartToolbar";
 import { EmptyCart } from "./EmptyCart";
 import { RemovedNotice } from "./RemovedNotice";
 import { WholesalerGroup } from "./WholesalerGroup";
+import { SummaryLayout } from "@/shared/components/SummaryLayout";
 import { SKU_ORDER_LIMIT, parseQty } from "@/shared/qty";
 import {
   describeBatchFailure,
@@ -19,7 +19,6 @@ import {
   useRestoreCartItemsMutation,
 } from "../api/mutations";
 import {
-  BACKORDER_NOTICE,
   CART_ACTION_ID,
   CART_SUB_TAIL,
   removeFailedText,
@@ -210,7 +209,19 @@ export function CartView({
   }, [serverLines]);
 
   return (
-    <div className="mx-auto max-w-wrap">
+    <SummaryLayout
+      aside={
+        empty ? null : (
+          <CartSummaryBar
+            totals={totals}
+            blockedReason={orderBlockedReason(totals)}
+            href={checkoutHref(picked)}
+            leaving={leaving}
+            onOrder={goCheckout}
+          />
+        )
+      }
+    >
       <Panel>
         <Panel.Title
           sub={
@@ -267,28 +278,9 @@ export function CartView({
                 onRemove={removeOne}
               />
             ))}
-
-            <CartSummaryBar
-              totals={totals}
-              blockedReason={orderBlockedReason(totals)}
-              href={checkoutHref(picked)}
-              leaving={leaving}
-              onOrder={goCheckout}
-            />
           </>
         )}
       </Panel>
-
-      {/* 재고 소진 배지가 왜 담기를 막지 않는지를 목록 아래에서 한 번 더 말한다.
-          담긴 것이 없으면 설명할 배지도 없다 */}
-      {empty ? null : (
-        <Notice className="mt-2">
-          <span className="flex items-center gap-2">
-            <Info aria-hidden className="size-4 shrink-0" />
-            {BACKORDER_NOTICE}
-          </span>
-        </Notice>
-      )}
-    </div>
+    </SummaryLayout>
   );
 }

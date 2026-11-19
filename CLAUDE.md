@@ -18,13 +18,16 @@ packages/config/  eslint · typescript 공유 설정 (prettier는 루트 .pretti
 
 **선례로 삼을 것: `apps/wholesale/src/features/product/`.** 폴더 구성·주석 밀도·네이밍의 기준이다.
 
-## 검증 — 이 세 개가 전부다
+## 검증 — 이 네 개가 전부다
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm build
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
-**테스트 러너가 없다.** CI(`.github/workflows/ci.yml`)도 이 3개만 돈다. 없는 테스트를 있다고 말하지 않는다.
+- `pnpm typecheck`와 `pnpm lint`는 `e2e/`도 본다(`typecheck:e2e`, `lint:e2e`. 실행은 안 한다)
+- `pnpm test` = vitest. **순수 함수만**(`features/*/derive.ts` 옆 `*.test.ts`). 컴포넌트 렌더 테스트는 안 한다(`docs/08` 규칙 7)
+- `pnpm e2e` = Playwright, mock 모드(`NEXT_PUBLIC_API_MOCK=1`). `e2e/<회차>/`에 쌓인다. CI는 아직 안 돈다(dev 서버 필요)
+- CI(`.github/workflows/ci.yml`)는 위 4개를 돈다. 없는 테스트를 있다고 말하지 않는다
 앱 하나만: `pnpm --filter retail dev`
 
 ## 커밋
@@ -65,6 +68,22 @@ pnpm typecheck && pnpm lint && pnpm build
 - tsconfig가 `strict` + `noUncheckedIndexedAccess` + `verbatimModuleSyntax`다.
   `arr[0]`은 `T | undefined`이고 타입은 `import type`으로 가져와야 한다
 
+## 우선순위 — 둘 다 못 지키면 위의 것을 지킨다
+
+코드를 짜거나 리뷰할 때 충돌하면 이 순서다. 2026-11-08 멘토링의 "정합성 > 성능 > 유지보수성"을 FE 말로 옮겼다. 바꾸려면 `docs/adr/`에 기록한다. 이 절이 원본이고 README와 `docs/13`은 여기를 가리킨다.
+
+| 순위 | 지키는 것 | 이 레포에서 실제로 보는 곳 |
+|---|---|---|
+| 1 | 화면이 서버와 어긋나지 않는다 | 변이 뒤 무효화 범위, 낙관적 업데이트 롤백, 중복 제출 방지, 늦게 도착한 응답 버리기, 409 처리 |
+| 2 | 사용자가 한 일을 잃지 않고 실패를 숨기지 않는다 | 저장 실패 시 입력 보존과 폼 잠금, 에러 문구, 재시도와 재로그인 경로 |
+| 3 | 빠르게 느껴진다 | 로딩 표시, 불필요한 리렌더, 목록 재조회 조건, 소매 첫 화면(Server Component fetch) |
+| 4 | 다음 사람이 고칠 수 있다 | `features/product` 선례, derive 순수 함수, import 방향 |
+
+- 도매는 재고, 주문, 정산 화면이라 1과 2가 항상 먼저다. 빠른데 틀린 화면보다 느린데 맞는 화면.
+- 소매의 탐색 화면(첫 화면, 검색, 상품 상세)은 3을 2보다 앞에 둔다. 장바구니, 주문, 품절처럼 재고가 걸리는 화면은 도매와 같다. 이 소매 구분은 멘토 말이 아니라 2026-11-09에 내가 정한 것이다.
+- 가용성(장애, 배포)은 인프라 몫이라 여기서 따지지 않는다.
+- AI가 우선순위 항목 중 하나를 포기해야 하면 사람에게 묻는다. 혼자 고르지 않는다. 답은 회차 `decisions.md`에 남긴다(`docs/13-ai-harness.md` 4절).
+
 ## 두 앱의 결정적 차이
 
 | | 도매 `wholesale` | 소매 `retail` |
@@ -84,7 +103,8 @@ pnpm typecheck && pnpm lint && pnpm build
 ## 더 볼 것
 
 `docs/03-git.md` 브랜치·커밋·PR · `docs/04-component-strategy.md` 승격 규칙 ·
-`docs/02-folder-structure.md` 폴더·네이밍 · `docs/08-tech-debt-rules.md` 부채 규칙 · `docs/adr/` 결정 기록
+`docs/02-folder-structure.md` 폴더·네이밍 · `docs/08-tech-debt-rules.md` 부채 규칙 · `docs/adr/` 결정 기록 ·
+`docs/13-ai-harness.md` AI 개발 하네스(에이전트 역할, findings, decisions)
 
 ⚠️ **`docs/`는 계획이고 코드는 그보다 얇다.** `packages/api`·MSW·TanStack Query·Zustand는
 ADR엔 있으나 **아직 없다.** 데이터는 전부 `fixtures.ts` 정적 더미다. 문서를 근거로 없는 걸 있다고 쓰지 않는다.

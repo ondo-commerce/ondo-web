@@ -11,6 +11,7 @@ import { FileField } from "./FileField";
 import { WarnBadge, WarnNotice } from "./WarnNotice";
 import {
   ACCOUNT_STATUS_LABEL,
+  CONTACT_LINE,
   errorId,
   fieldId,
   FIELD_LABEL_CLASS,
@@ -156,15 +157,12 @@ export function ApprovalRejectedView({
                   문의하기
                 </Button>
               }
-              title="문의 창구는 준비 중이에요"
-              description="아직 만들지 않은 화면이에요. 거절 사유를 다시 확인하고 싶으면 신청하신 이메일로 보내드린 안내를 확인해 주세요."
+              title="문의하기"
+              description={CONTACT_LINE}
             />
           </AuthSection>
-
-          {/* 몇 번 눌러야 하는지 화면이 말해 준다 — 넘어간 뒤 되돌아와 또 누르는 걸 막는다 */}
-          <p className="text-muted-foreground mt-2 text-xs leading-4.5">
-            재신청은 한 번만 누르면 돼요. 접수되면 심사 현황 화면으로 넘어가요.
-          </p>
+          {/* "접수되면 심사 현황 화면으로 넘어가요" 줄은 지웠다 — 재신청 API가 없어
+              넘어가지 않는다(`REAPPLY_UNAVAILABLE_MESSAGE`) */}
         </form>
       </AuthPanel>
 

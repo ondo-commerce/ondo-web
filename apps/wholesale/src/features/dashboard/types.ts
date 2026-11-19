@@ -27,6 +27,13 @@ export interface PackingSummary {
 export type DashboardSummary = Omit<SummaryWire, "packing"> & {
   packing: PackingSummary;
 };
+/**
+ * `GET /chat/inquiry-stats`(초안 op `inquiryStats`, loop-08 #311). 카드는 인자 없이 불러 오늘 영업일 1일치만 본다.
+ * 비율은 응답에 없다 — `derive.ts`가 계산한다(기획 §5-2 "비율은 싣지 않는다")
+ */
+export type InquiryStats = WholesaleSchema<"InquiryStats">;
+/** 결과 다섯 칸 + 의도별. `retailMessages` = 다섯 칸 합(서버가 지킨다) */
+export type InquiryCounts = WholesaleSchema<"InquiryCounts">;
 /** 확정 대기 큐 한 행. 주문 탭 목록과 같은 스키마다 */
 export type NewOrderSummary = WholesaleSchema<"OrderSummaryResponse">;
 /** 미송 SKU 한 행. `latestBackorderedAt`이 "며칠째"의 기준이다 */
@@ -72,6 +79,9 @@ export interface TodoTileView {
 /** 확정 대기 큐 한 행. 수량 열이 없다 — 목록 응답에 수량이 없어서 열을 만들지 않았다 */
 export interface NewOrderRowView {
   id: number;
+  orderNumber: number;
+  /** 주문에 든 품목 수(대표 품목 포함) */
+  itemCount: number;
   /** `42분` / `3시간` / `2일`. 서버 `now` 기준 경과 */
   waitingLabel: string;
   retailerName: string;
@@ -94,6 +104,58 @@ export interface TodayView {
   shippedQty: number;
   cancelled: number;
 }
+
+/**
+ * 우측 `문의` 카드(loop-08 S2). 줄마다 다 만든 글자를 들고 온다 — 숫자를 끼우는 건 derive가 한다.
+ * 1줄 숫자와 3줄 퍼센트만 굵기가 달라 따로 둔다(디자인 결정 49)
+ */
+export interface InquiryView {
+  /** 1줄 큰 숫자 = 오늘 소매 메시지 수 */
+  retailMessages: number;
+  /** 결과 다섯 칸을 표로 그릴 때 쓰는 낱개 값. 순서는 `INQUIRY_OUTCOME_ORDER` */
+  outcomes: readonly { label: string; count: number }[];
+  /** 의도 다섯 칸(판정한 것만). 순서는 `INQUIRY_INTENT_ORDER` */
+  intents: readonly { label: string; count: number }[];
+  /** 막대 폭 0~100. 판정 0이면 null — 빈 막대를 0%로 그리지 않는다 */
+  ratePercent: number | null;
+  /** 2줄 `자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1` */
+  outcomeLine: string;
+  /** 3줄 굵은 조각 `63%`. 판정 0이면 `-` */
+  rateLabel: string;
+  /** 3줄 꼬리 `판정 8건 중 5건` */
+  rateDetail: string;
+  /** 4줄 `재고 4, 미송 1, 미수 1, 기타 0, 미분류 2`(판정한 것만 센다) */
+  intentLine: string;
+  /** 끝 줄 `소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준`. 시각은 서버 `asOf` */
+  basisLine: string;
+  /**
+   * 기준 영업일 `YYYY-MM-DD` = 응답 `from`(loop-08f S3). 7일 쿼리가 이 값으로 기간을 정한다 —
+   * FE 시계로 오늘을 정하지 않는다(사장 PC 시계가 틀리면 어제를 오늘로 부른다)
+   */
+  businessDay: string;
+}
+
+/** 7일 쿼리 기간. 둘 다 `YYYY-MM-DD`, 양끝 포함 */
+export interface InquiryWeekRange {
+  from: string;
+  to: string;
+}
+
+/**
+ * 7일 줄 자리에 그릴 것(기획 §4-4 4 표). `none` = 오늘 숫자가 없어 줄 자리도 없다(카드 기존 오류 모양).
+ * `loading` = 그 기간 숫자가 아직 없음(막대), `failed` = 그 기간 숫자 없이 실패(muted 한 줄, 버튼 없음)
+ */
+export type InquiryWeekLineState =
+  | { kind: "none" }
+  | { kind: "loading" }
+  | { kind: "failed" }
+  | {
+      kind: "line";
+      fromTo: string;
+      retailMessages: string;
+      rateLabel: string;
+      rateDetail: string;
+    };
 
 /** 주의 목록의 SKU 한 줄 */
 export interface AttentionSkuView {

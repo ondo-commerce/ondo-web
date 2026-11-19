@@ -3,11 +3,16 @@
 import { Panel } from "@ondo/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { OptionTable } from "./OptionTable";
 import { ProductGallery } from "./ProductGallery";
 import { SummaryBar } from "./SummaryBar";
-import { PRICE_HINT, QTY_UNIT, TRADE_TERMS } from "../constants";
+import {
+  ORDER_NOW_LEAVING,
+  PRICE_HINT,
+  QTY_UNIT,
+  TRADE_TERMS,
+} from "../constants";
 import {
   describeAddToCartError,
   describePartialAdd,
@@ -20,6 +25,7 @@ import {
   type QtyIssue,
 } from "../derive";
 import type {
+  AddToCartMode,
   AddToCartResult,
   CartItemDraft,
   ColorGroup,
@@ -46,13 +52,27 @@ import { useProductFavorite } from "@/features/catalog";
 export function ProductDetailView({
   product,
   onAddToCart,
+  onOrderNow,
+  sellerAction,
+  sellerNotice,
 }: {
   product: ProductDetail;
+  /**
+   * 판매처 칸의 `문의하기`(loop-05a) 자리와 그 실패 한 줄 자리. 채팅은 `features/chat`이라 이 화면이
+   * import할 수 없어 `app/`이 끼워 넣는다 — `onAddToCart`와 같은 이유다
+   */
+  sellerAction?: ReactNode;
+  sellerNotice?: ReactNode;
   /**
    * 조합마다 하나씩 `POST /cart-items`. **reject하지 않고** 담긴 것과 못 담은 것을
    * 갈라 돌려준다 — 부분 성공을 화면이 알아야 성공분을 두 번 담지 않는다(F2)
    */
-  onAddToCart: (items: readonly CartItemDraft[]) => Promise<AddToCartResult>;
+  onAddToCart: (
+    items: readonly CartItemDraft[],
+    mode: AddToCartMode,
+  ) => Promise<AddToCartResult>;
+  /** `바로 주문하기`. 담긴 줄의 id를 받아 주문서로 보낸다. 주소는 `app/`이 만든다 */
+  onOrderNow: (cartItemIds: readonly number[]) => void;
 }) {
   /* 칸에 있는 **글자 그대로**를 들고 있다. 숫자로 바꿔 두면 `45.5`를 친 사장에게
      무엇이 잘못됐는지 되돌려 줄 방법이 없다 (`parseQty` 주석 참조) */
@@ -67,9 +87,25 @@ export function ProductDetailView({
   const { favorited, toggleFavorite } = useProductFavorite(product.id);
   /** 마지막으로 담은 수량의 지문. 지금 값과 같으면 또 담을 이유가 없다 */
   const [addedKey, setAddedKey] = useState<string | null>(null);
+  /* 일부만 담겼을 때 먼저 들어간 줄의 id. 못 담은 것을 다시 보내 다 담기면 이 줄들과
+     합쳐 주문서로 간다 — 안 모아 두면 나중에 담긴 줄만 주문서에 실린다 */
+  const [partialIds, setPartialIds] = useState<readonly number[]>([]);
+  /* 담기 응답을 기다리는 사이 다른 화면으로 떠났는지. 떠난 뒤에 온 응답이 사장을
+     주문서로 끌고 가면 안 된다(router는 화면이 내려간 뒤에도 먹는다) */
+  const mounted = useRef(true);
+  useEffect(() => {
+    /* 개발 모드는 effect를 한 번 더 돌린다. 여기서 다시 켜지 않으면 꺼진 채로 남는다 */
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [addedNotice, setAddedNotice] = useState<string | null>(null);
   const [addFailed, setAddFailed] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  /* `바로 주문하기`로 담기가 끝나 주문서로 넘어가는 중. 화면이 바뀔 때까지 버튼을
+     잠가 둔다 — 그 사이 또 눌리면 같은 옵션이 한 번 더 담긴다(서버는 합산) */
+  const [leaving, setLeaving] = useState(false);
 
   const totals = orderTotals(product, drafts);
   const currentKey = draftKey(product, drafts);
@@ -121,38 +157,70 @@ export function ProductDetailView({
       ? `수량을 1${QTY_UNIT} 이상 넣어야 담거나 주문할 수 있어요.`
       : null;
 
-  const addToCart = async () => {
+  /**
+   * 고른 수량을 장바구니에 보낸다. **전부 담겼을 때만** 그 줄들의 id를 돌려주고,
+   * 하나라도 못 담았으면 이유를 화면에 남기고 null이다. `장바구니 담기`와
+   * `바로 주문하기`가 같이 쓴다 — 실패 처리가 두 벌이면 한쪽만 부분 성공을 놓친다.
+   */
+  const sendToCart = async (
+    mode: AddToCartMode,
+  ): Promise<readonly number[] | null> => {
     setBulkNotice(null);
     setAddFailed(null);
     setAdding(true);
     try {
-      const result = await onAddToCart(toCartItems(product, drafts));
+      const result = await onAddToCart(toCartItems(product, drafts), mode);
 
       if (result.failed.length === 0) {
+        const ids = [...new Set([...partialIds, ...result.cartItemIds])];
         setAddedKey(currentKey);
+        setPartialIds([]);
         setAddedNotice(
           `장바구니에 ${totals.comboCount}개 조합 · ${totals.sheets}${QTY_UNIT}을 담았어요. 수량을 바꾸면 다시 담을 수 있어요.`,
         );
-        return;
+        return ids;
       }
 
       /* 하나도 안 들어갔다 — 칸은 그대로, 지문도 안 굳힌다. 다시 누르면 전부 보낸다 */
       if (result.done.length === 0) {
         setAddFailed(describeAddToCartError(result.failed[0]?.error));
-        return;
+        return null;
       }
 
       /* 일부만 들어갔다 — 담긴 조합의 칸을 비워 다음 담기는 못 담은 것만 보낸다.
          지문을 굳히지 않으면 성공분이 또 POST 돼 서버가 합산한다(F2) */
       setDrafts((prev) => withoutAdded(product, prev, result.done));
+      setPartialIds((prev) => [...prev, ...result.cartItemIds]);
       setAddFailed(describePartialAdd(product, result));
+      return null;
     } catch (error) {
       /* 조립부가 reject하지 않는 계약이지만, 예상 밖의 throw(코드 오류·네트워크
          계층)는 여기서 받아 화면이 `담는 중…`에 갇히지 않게 한다 */
       setAddFailed(describeAddToCartError(error));
+      return null;
     } finally {
       setAdding(false);
     }
+  };
+
+  const addToCart = async () => {
+    await sendToCart("add");
+  };
+
+  /**
+   * `바로 주문하기`. 고른 수량을 담고 **그 줄들만** 들고 주문서로 간다. 예전에는
+   * 아무것도 안 넘기고 주문서만 열어서 `주문할 조합이 없어요`가 떴다.
+   *
+   * 담는 방법이 `set`이다 — 같은 옵션이 이미 장바구니에 있으면 서버가 수량을 더하므로
+   * 담은 뒤 **지금 고른 수량으로 맞춘다**(2026-11-19 사용자 결정). 그래서 방금 `장바구니
+   * 담기`로 넣었든, 주문서에서 뒤로 와 다시 눌렀든 주문서에는 고른 수량이 나온다.
+   * 일부라도 못 담았으면 가지 않는다 — 빠진 옵션이 있는 줄 모르고 주문하게 된다.
+   */
+  const orderNow = async () => {
+    const ids = await sendToCart("set");
+    if (ids === null || ids.length === 0 || !mounted.current) return;
+    setLeaving(true);
+    onOrderNow(ids);
   };
 
   return (
@@ -164,7 +232,8 @@ export function ProductDetailView({
           <ProductGallery images={product.images} productName={product.name} />
 
           <div>
-            <SellerCard product={product} />
+            <SellerCard product={product} action={sellerAction} />
+            {sellerNotice}
 
             <section className="mt-6">
               <h1 className="text-xl font-medium">{product.name}</h1>
@@ -202,8 +271,10 @@ export function ProductDetailView({
           favorited={favorited}
           onToggleFavorite={toggleFavorite}
           onAddToCart={addToCart}
+          onOrderNow={orderNow}
+          leaving={leaving}
           adding={adding}
-          addedNotice={addFailed ?? addedNotice}
+          addedNotice={addFailed ?? (leaving ? ORDER_NOW_LEAVING : addedNotice)}
           failed={addFailed !== null}
           alreadyAdded={alreadyAdded}
         />
@@ -243,7 +314,14 @@ function Breadcrumb({ categoryPath }: { categoryPath: readonly string[] }) {
 }
 
 /** 누구 물건인지. 상품 상세에 들어온 사장이 가장 먼저 확인하는 값이다 */
-function SellerCard({ product }: { product: ProductDetail }) {
+function SellerCard({
+  product,
+  action,
+}: {
+  product: ProductDetail;
+  /** `도매처 홈` 앞에 서는 버튼(디자인 결정 1). 이름은 말줄임으로 줄고 버튼과 링크는 한 줄을 지킨다 */
+  action?: ReactNode;
+}) {
   const { wholesaler } = product;
 
   return (
@@ -263,13 +341,16 @@ function SellerCard({ product }: { product: ProductDetail }) {
           </p>
         ) : null}
       </div>
-      <Link
-        href={`/wholesalers/${wholesaler.id}`}
-        className="text-muted-foreground hover:text-foreground text-body ml-auto flex shrink-0 items-center gap-0.5"
-      >
-        도매처 홈
-        <ChevronRight aria-hidden className="size-3.5" />
-      </Link>
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {action}
+        <Link
+          href={`/wholesalers/${wholesaler.id}`}
+          className="text-muted-foreground hover:text-foreground text-body flex items-center gap-0.5"
+        >
+          도매처 홈
+          <ChevronRight aria-hidden className="size-3.5" />
+        </Link>
+      </div>
     </div>
   );
 }

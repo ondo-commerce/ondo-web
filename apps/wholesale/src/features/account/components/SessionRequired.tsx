@@ -4,14 +4,13 @@ import { Button } from "@ondo/ui";
 import Link from "next/link";
 import {
   ACCOUNT_PATH,
-  SESSION_DISCLAIMER,
   SESSION_REQUIRED_LEAD,
   SESSION_REQUIRED_TITLE,
 } from "../constants";
-import { AuthFoot, AuthPanel, AuthSection } from "./AuthPanel";
+import { AuthPanel, AuthSection } from "./AuthPanel";
 
 /**
- * 세션이 있어야 열리는 화면 셋이 로그아웃 상태에서 대신 그리는 것.
+ * 세션이 있어야 열리는 계정 화면(승인 대기·거절)이 로그아웃 상태에서 대신 그리는 것.
  *
  * **폼을 내주지 않는다.** 예전에는 세션이 없어도 칸을 다 채우고 버튼까지 눌렸는데
  * 아무것도 저장되지 않았다 — 온보딩은 이유 없이 `/login`으로 떨어졌고
@@ -26,18 +25,15 @@ export function SessionRequired({
 }: {
   lead: (typeof SESSION_REQUIRED_LEAD)[keyof typeof SESSION_REQUIRED_LEAD];
 }) {
+  /* 예전 꼬리말 "서버가 없어요 — 탭을 닫으면 로그아웃돼요"는 지웠다. 로그인은
+     서버 쿠키로 하게 된 뒤로 사실이 아니다(`side-02` N1) */
   return (
-    <>
-      <AuthPanel title={SESSION_REQUIRED_TITLE} lead={lead}>
-        <AuthSection>
-          <Button asChild size="lg" className="w-full">
-            <Link href={ACCOUNT_PATH.login}>로그인 화면으로</Link>
-          </Button>
-        </AuthSection>
-      </AuthPanel>
-
-      {/* 왜 로그인이 풀렸는지가 이 화면에서 가장 자주 나올 질문이다 */}
-      <AuthFoot>{SESSION_DISCLAIMER}</AuthFoot>
-    </>
+    <AuthPanel title={SESSION_REQUIRED_TITLE} lead={lead}>
+      <AuthSection>
+        <Button asChild size="lg" className="w-full">
+          <Link href={ACCOUNT_PATH.login}>로그인 화면으로</Link>
+        </Button>
+      </AuthSection>
+    </AuthPanel>
   );
 }

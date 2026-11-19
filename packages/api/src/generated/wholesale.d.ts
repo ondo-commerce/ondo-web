@@ -530,6 +530,187 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wholesale/chat/auto-reply-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 채팅 자동 답 설정 보기
+         * @description 이 도매처의 채팅 자동 답 설정. 저장한 적이 없으면 전부 true 다. 소매 쪽 op 는 없다(소매는 결과만 본다).
+         *
+         *     에러: 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        get: operations["autoReplySettings"];
+        /**
+         * 채팅 자동 답 설정 바꾸기
+         * @description 자동 답 설정을 통째로 바꾼다(부분 수정 없음, 칸이 빠지면 400). 도매처 단위로 저장돼 다른 기기에도 걸린다. 판정 순서 0: enabled 가 false 면 소매 문의는 전부 사람 넘김(HANDOFF), true 여도 그 의도가 false 면 그 의도만 넘김. 바꾼 뒤 들어오는 메시지부터 적용된다(이미 보낸 자동 답은 그대로).
+         *
+         *     에러: 400 VALIDATION_FAILED(errors[].field = enabled | intents | intents.STOCK …, 불린 아님 포함) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        put: operations["updateAutoReplySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/chat/inquiry-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 문의 지표 (영업일 집계)
+         * @description 내 도매처 방의 소매 TEXT 메시지(칩 답 포함)를 결과 하나로 센다. 우선순위 자동 답 > 넘김 > 되묻기 > 결과 없음. 도매 TEXT, 자동 줄, SYSTEM 줄, 남의 도매처 방은 안 센다.
+         *
+         *     출처 연결: AUTO_REPLY, CLARIFY 줄은 autoReply.replyToSequence, HANDOFF 줄은 handoff.sourceSequence 가 그 메시지의 sequence 를 가리킨다. 같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다 있으면 autoRepliedWithHandoff(재고 0, 미송 입고일 미정). 되묻기 뒤 칩 답은 그 칩 답 메시지가 자기 결과로 한 번 세진다(되묻기 메시지와 묶지 않는다).
+         *
+         *     기간: 영업일 D = [D 12:00, D+1 12:00) Asia/Seoul. 출처 메시지 sentAt 으로 날을 정한다(결과 줄 시각이 아니다). asOf(서버 집계 시각) 뒤에 쓰인 결과 줄은 안 센다 — 같은 기간을 나중에 다시 부르면 noResult 가 줄 수 있다. 보고서는 asOf 를 같이 적는다.
+         *
+         *     의도: 자동 답(답+확인 포함)이면 autoReply.intent, 넘김만이면 handoff.intent. null 은 UNCLASSIFIED. 비율은 싣지 않는다(FE 가 autoReplied / judged 로 계산).
+         *
+         *     에러: 400 VALIDATION_FAILED(날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601.
+         */
+        get: operations["inquiryStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/chat/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 채팅방 목록 (커서)
+         * @description 내 방 목록. 정렬 lastActivityAt 내림차순, 같으면 roomId 내림차순(고정). 커서 페이징이라 목록이 도중에 바뀌어도 중복, 누락이 없다. lastActivityAt 은 마지막 메시지 시각, 메시지가 없으면 방 생성 시각.
+         *
+         *     에러: 400 VALIDATION_FAILED(잘못된 cursor, size) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        get: operations["chatRooms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/chat/rooms/{roomId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 채팅방 머리
+         * @description 방 머리 1건.
+         *
+         *     에러: 401 / 403 / 404 RESOURCE_NOT_FOUND
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        get: operations["chatRoom"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/chat/rooms/{roomId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 메시지 조회 (sequence 커서)
+         * @description 메시지 조회. **data 는 항상 sequence 오름차순.**
+         *
+         *     - afterSequence=N: N 다음부터 size 개. hasMore=true 면 더 새 것이 남았다 → 기다리지 말고 바로 다음 요청(afterSequence=받은 최대)
+         *     - beforeSequence=N: N 바로 앞의 size 개(가장 가까운 것부터 size 개를 오름차순으로). hasMore=true 면 더 오래된 것이 남았다
+         *     - 둘 다 없음: 최신 size 개. hasMore 는 before 와 같은 뜻
+         *     - 둘 다 있음: 400
+         *
+         *     polling 은 열린 방 하나만 afterSequence 로 한다. 상대 읽음 위치는 meta.counterpartLastReadSequence 로 매번 갱신된다.
+         *
+         *     에러: 400 VALIDATION_FAILED / 401 / 403 / 404
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        get: operations["chatMessages"];
+        put?: never;
+        /**
+         * 메시지 보내기 (Idempotency-Key 필수)
+         * @description 메시지 보내기(사람이 쓴 TEXT). 멱등: 키 범위는 (방, 보낸 사업체), 24시간 보관(잠정).
+         *
+         *     - 새 키: 201, message.clientMessageId = 키
+         *     - 같은 키 + 같은 본문: 200 + 처음과 같은 응답 본문. 자동 답을 다시 만들지 않는다. 처음 요청이 아직 처리 중이면 끝난 뒤 같은 본문
+         *     - 같은 키 + 다른 본문: 409 IDEMPOTENCY_KEY_REUSED
+         *
+         *     응답 모양은 고정이다: {message, generatedMessages, generation}. 자동 답이 없는 지금은 generatedMessages=[], generation=NONE. 201/200 구분은 createAllocation, createInbound 와 같다.
+         *
+         *     에러: 400 VALIDATION_FAILED(errors[].field = body | Idempotency-Key) / 401 / 403 / 404 / 409 IDEMPOTENCY_KEY_REUSED / 500
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        post: operations["sendChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/chat/rooms/{roomId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 읽음 처리
+         * @description 읽음 위치 올리기. 서버가 max(기존, 요청)으로 저장하고 unreadCount 를 같은 트랜잭션에서 센다 — 늦게 온 작은 값이 배지를 되살리지 않는다. 클라이언트도 이미 아는 값보다 작은 lastReadSequence 는 무시한다. 읽음은 사업체 단위다.
+         *
+         *     unreadCount = 상대가 보낸 메시지(RETAILER) 중 lastReadSequence 초과분. SYSTEM(HANDOFF)은 세지 않는다.
+         *
+         *     에러: 400 VALIDATION_FAILED(음수, 방의 maxSequence 초과) / 401 / 403 / 404
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id, sequence 는 int64.
+         */
+        post: operations["markChatRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wholesale/colors": {
         parameters: {
             query?: never;
@@ -602,6 +783,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wholesale/listing-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 게시글 이미지 업로드 (1장)
+         * @description 파일 1장을 저장하고 공개 URL을 돌려준다. 이 URL을 POST/PATCH /products 의 listing.images[] 에 그대로 싣는다. 업로드마다 새 URL(uuid 키)이라 같은 파일을 두 번 올려도 URL은 다르다. 게시글에 붙지 않은 파일은 서버가 정리한다(정책 미정).
+         *
+         *     요청 경계: multipart 파트는 `file` 하나, binary 하나. `file` 파트가 없거나 문자열이거나 2개 이상이면 400 VALIDATION_FAILED errors=[{field:'file', reason}]. 다른 이름의 파트는 무시.
+         *
+         *     제한: jpg·png(파일 앞머리 매직 넘버로 판정, Content-Type 불신) · 최대 IMAGE_MAX_BYTES(D18, 4 MiB = 4,194,304) · 0바이트 거절.
+         *
+         *     에러: 400 VALIDATION_FAILED / 401 UNAUTHENTICATED / 403 NOT_APPROVED / 413 FILE_TOO_LARGE / 415 UNSUPPORTED_FILE_TYPE / 500 INTERNAL_ERROR(저장소 실패)
+         */
+        post: operations["uploadListingImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wholesale/listings/{listingId}/reopen": {
         parameters: {
             query?: never;
@@ -640,6 +847,85 @@ export interface paths {
          *     에러: 404 `RESOURCE_NOT_FOUND` / 409 `TRANSITION_NOT_ALLOWED` (이미 SEASON_ENDED)
          */
         post: operations["seasonEnd"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 알림 목록 (커서)
+         * @description 내 알림 목록. 정렬 createdAt 내림차순, 같으면 id 내림차순(고정). keyset 커서라 첫 장을 받은 뒤 새 알림이 생겨도 다음 장에 중복, 누락이 없다(새 알림은 첫 장 앞에 붙는다). id 는 식별용이고 순서 의미가 없다.
+         *
+         *     에러: 400 VALIDATION_FAILED(잘못된 cursor, size 범위 밖) / 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).
+         */
+        get: operations["notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 알림 읽음 처리
+         * @description 읽음 처리. 본문은 둘 중 하나.
+         *
+         *     1. {ids} 고른 알림만. 멱등(이미 읽은 것 → 200 같은 값, readAt 은 처음 읽은 시각 그대로). 없는 id, 남의 id 는 조용히 무시한다.
+         *     2. {all: true, expectedUnread} 내 안 읽음 전부. 한 트랜잭션에서 readAt IS NULL 인 행을 읽음으로 바꾸고, 바뀐 행 수가 expectedUnread 와 다르면 롤백하고 409 UNREAD_CHANGED. 그 사이 새 알림이 왔거나 다른 탭이 읽었다는 뜻이다. id 발급 순서와 커밋 순서가 같다는 보장은 필요 없다.
+         *
+         *     한계: 화면이 count 를 받은 뒤 다른 탭이 1개 읽고 새 1개가 와 수가 같으면 못 잡는다. 그 주문은 주문 탭에 신규 주문으로 남는다.
+         *
+         *     응답 notifications = 처리 뒤 남은 안 읽음 수.
+         *
+         *     에러: 400 VALIDATION_FAILED(ids 와 all 이 같이 옴, 둘 다 없음, 빈 ids, ids 101개 이상, all 인데 expectedUnread 없음, expectedUnread 0 이하) / 401 / 403 / 409 UNREAD_CHANGED
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).
+         */
+        post: operations["markNotificationsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wholesale/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 안 읽은 알림 수와 답 필요 방 수
+         * @description 헤더 배지 둘을 한 번에. notifications = 내 안 읽은 알림 수, chatsNeedingReply = 내 채팅방 중 needsReply 가 true 인 방 수(방 목록 chatRooms 의 needsReply 와 같은 정의). 화면은 30초마다 부른다.
+         *
+         *     에러: 401 / 403
+         *
+         *     공통: 봉투 {data}, 시각은 UTC 오프셋 포함 ISO 8601, 화면 표시는 Asia/Seoul. id 는 int64. 읽음 범위는 도매 사업체다(같은 사업체의 탭, 기기, 직원이 같은 읽음을 본다).
+         */
+        get: operations["notificationUnreadCount"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1408,6 +1694,21 @@ export interface components {
             data: components["schemas"]["StockMovementResponse"][];
             meta: components["schemas"]["PageMeta"];
         };
+        /** @description 의도별 켜짐. enabled 가 true 일 때만 뜻이 있다. OTHER 는 늘 사람 넘김이라 칸이 없다 */
+        AutoReplyIntentSettings: {
+            /** @description 미송 문의 자동 답 */
+            BACKORDER: boolean;
+            /** @description 미수 문의 자동 답 */
+            RECEIVABLE: boolean;
+            /** @description 재고 문의 자동 답 */
+            STOCK: boolean;
+        };
+        /** @description 채팅 자동 답 설정(도매처 단위). 화면은 enabled 스위치 하나만 보이고(05b-1), intents 는 그대로 돌려보낸다 */
+        AutoReplySettings: {
+            /** @description false 면 모든 소매 문의를 사람에게 넘긴다(자동 답 0건) */
+            enabled: boolean;
+            intents: components["schemas"]["AutoReplyIntentSettings"];
+        };
         Backorder: {
             /** Format: int32 */
             noDateSkuCount: number;
@@ -1541,6 +1842,349 @@ export interface components {
             id: number;
             name: string;
         };
+        /** @description 자동 답(AUTO_REPLY, CLARIFY)에만 붙는 근거 */
+        ChatAutoReply: {
+            /**
+             * Format: date-time
+             * @description 값을 조회한 시각. 화면에 '조회 시각'으로 보인다
+             */
+            checkedAt: string;
+            /** @description CLARIFY 에만 게시 옵션 전부(색상 → 사이즈 순, 색상은 처음 등록된 순서). 그 밖엔 null 이거나 칸이 없다. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? null`) */
+            choices?: components["schemas"]["ChatChoice"][] | null;
+            facts: components["schemas"]["ChatWholesaleFacts"];
+            /**
+             * @description RULE 규칙+템플릿 / LLM 분류 뒤 템플릿(loop-09 선택). 숫자는 둘 다 DB 값
+             * @enum {string}
+             */
+            generatedBy: "RULE" | "LLM";
+            intent: components["schemas"]["ChatIntent"];
+            /**
+             * Format: int64
+             * @description 이 답이 답한 소매 메시지의 sequence
+             */
+            replyToSequence: number;
+            subject: components["schemas"]["ChatSubject"];
+        };
+        /** @description 미송 답의 근거 */
+        ChatBackorderFacts: {
+            /**
+             * Format: date
+             * @description 예상 입고일(날짜만). 미정이면 null
+             */
+            expectedInboundDate: string | null;
+            /** @description 입고일 사유. 없으면 null */
+            expectedInboundReason: string | null;
+            /**
+             * Format: int32
+             * @description 미송 남은 수량
+             */
+            qty: number;
+        };
+        /** @description 되묻기(CLARIFY)의 보기 하나. 소매 화면이 칩으로 그리고, 고르면 label 이 메시지 본문, variantId 가 inquiry.variantId 가 된다 */
+        ChatChoice: {
+            /**
+             * Format: int64
+             * @description kind BACKORDER 에만 미송 id. 고르면 inquiry.backorderId 가 된다(그때 variantId 는 그 미송의 SKU). 그 밖엔 null 이거나 칸이 없다. NOT_LISTED 보기는 variantId 가 required 라 0 을 싣는다(BE 가 nullable 로 바꾸면 따라간다)
+             */
+            backorderId?: number | null;
+            /**
+             * @description 보기 종류. VARIANT = 재고 되묻기의 옵션, BACKORDER = 미송 되묻기의 미송 한 건, NOT_LISTED = 미송 되묻기 끝의 `다른 주문이에요`. 기존 응답에 없던 칸이라 required 가 아니다(읽는 쪽은 `?? VARIANT`). orderable 은 VARIANT 일 때만 읽는다
+             * @enum {string}
+             */
+            kind?: "VARIANT" | "BACKORDER" | "NOT_LISTED";
+            /** @description 칩 글자. 예: "레드 / M". 고르면 이 글자가 메시지 본문이 된다 */
+            label: string;
+            /** @description 게시 중이고 옵션이 살아 있는지. 재고 수량과 무관하다(재고 0 이어도 true 일 수 있다) */
+            orderable: boolean;
+            /**
+             * Format: int64
+             * @description 옵션(SKU) id. 그 게시글의 게시된 옵션이다
+             */
+            variantId: number;
+        };
+        /** @description 대화 상대 사업체. 도매 응답이면 소매처, 소매 응답이면 도매처다 */
+        ChatCounterpart: {
+            /**
+             * Format: int64
+             * @description 소매처 id (사업체 id, 계정 id 아님)
+             */
+            id: number;
+            /** @description 소매처 상호 */
+            name: string;
+        };
+        /**
+         * @description 자동 답 생성 상태. NONE 만들 것 없음 / DONE generatedMessages 에 담김 / PENDING 생성 중, 메시지 스트림(polling)으로 온다
+         * @enum {string}
+         */
+        ChatGeneration: "NONE" | "DONE" | "PENDING";
+        /** @description 넘김 줄(kind HANDOFF)이 왜 생겼는지. 도매 응답에만 싣는다. 소매 응답의 ChatMessage 에는 이 칸이 없다 */
+        ChatHandoff: {
+            /** @description 넘길 때 읽은 의도. 못 읽었으면(협상어, 의도 둘, 의도 없음) null */
+            intent: components["schemas"]["ChatIntent"] | null;
+            reason: components["schemas"]["ChatHandoffReason"];
+            /**
+             * Format: int64
+             * @description 넘김을 일으킨 소매 메시지의 sequence
+             */
+            sourceSequence: number;
+        };
+        /**
+         * @description 넘긴 이유. 값이 늘 수 있다. 모르는 값은 이유 줄 없이 그린다. OFF 자동 답 꺼짐 / NEGOTIATION 가격, 외상, 교환, 반품 / MULTI_INTENT 한 번에 두 가지 / NO_INTENT 의도 못 읽음 / NOT_SUPPORTED 자동 답 없는 질문 / NO_CONTEXT 상품 문맥 없음 / NO_OPTIONS 게시 옵션 0개 / INVALID_TARGET 남의 것, 없는 것 / CLARIFY_AGAIN 되묻기 뒤 또 불명 / NOT_LISTED 다른 주문이에요 / NO_BACKORDER 열린 미송 0개 / NO_MATCH 말한 미송 없음 / STOCK_ZERO 재고 0 답 뒤 / ETA_UNKNOWN 입고일 미정 답 뒤 / ETA_PAST 입고일 지남 답 뒤 / PAYMENT_REPORT 입금했다는 말 / PERIOD 기간을 정한 미수 질문 / NO_RELATION 정산 기록 없음 / AMOUNT_UNSURE 잔액, 연체 확인 필요 / LOOKUP_FAILED 정산 조회 실패 / HUMAN_REQUEST 사장, 직원과 직접 이야기하길 원함(사장님이랑, 직원분, 상담, 통화, 전화 요청. 호칭만으로는 아님)
+         * @enum {string}
+         */
+        ChatHandoffReason: "OFF" | "NEGOTIATION" | "MULTI_INTENT" | "NO_INTENT" | "NOT_SUPPORTED" | "NO_CONTEXT" | "NO_OPTIONS" | "INVALID_TARGET" | "CLARIFY_AGAIN" | "NOT_LISTED" | "NO_BACKORDER" | "NO_MATCH" | "STOCK_ZERO" | "ETA_UNKNOWN" | "ETA_PAST" | "PAYMENT_REPORT" | "PERIOD" | "NO_RELATION" | "AMOUNT_UNSURE" | "LOOKUP_FAILED" | "HUMAN_REQUEST";
+        /** @description 소매가 칩으로 고른 문의 문맥. 자유 문장이면 메시지에 null 이다 */
+        ChatInquiry: {
+            /**
+             * Format: int64
+             * @description 미송 문의 대상. 없으면 null
+             */
+            backorderId: number | null;
+            intent: components["schemas"]["ChatIntent"];
+            /** @description 화면용 이름(예: "빈티지 플라워 셔츠 레드 / M"). 없으면 null */
+            label: string | null;
+            /**
+             * Format: int64
+             * @description 상품 문맥(게시글 id). 없으면 null
+             */
+            listingId: number | null;
+            /** @description kind NOT_LISTED 보기를 골랐다. required 아님(`?? false`). true 면 서버는 본문을 읽지 않고 사장에게 넘긴다(본문 글자를 명령으로 쓰지 않는다) */
+            notListed?: boolean;
+            /**
+             * Format: int64
+             * @description 옵션(SKU) id. 없으면 null
+             */
+            variantId: number | null;
+        };
+        /**
+         * @description 문의 의도. STOCK 재고 / BACKORDER 미송 / RECEIVABLE 미수 / OTHER 그 밖
+         * @enum {string}
+         */
+        ChatIntent: "STOCK" | "BACKORDER" | "RECEIVABLE" | "OTHER";
+        /** @description 메시지 1건. 수정, 삭제 없음 */
+        ChatMessage: {
+            /** @description AUTO_REPLY, CLARIFY 에만. 나머지는 null */
+            autoReply: components["schemas"]["ChatAutoReply"] | null;
+            /** @description 본문. 앞뒤 공백을 지운 값. 1~1000 코드 포인트 */
+            body: string;
+            /**
+             * Format: uuid
+             * @description 보낸 쪽이 만든 uuid(= Idempotency-Key). 사람이 보낸 TEXT 에만 있고 자동 답, 시스템 줄은 null. 보류 말풍선과 합칠 때 쓴다
+             */
+            clientMessageId: string | null;
+            /** @description kind HANDOFF 면 늘 값, 그 밖 kind 면 null. required 아님(읽는 쪽 `?? null`). 소매 응답엔 칸이 없다 */
+            handoff?: components["schemas"]["ChatHandoff"] | null;
+            /**
+             * Format: int64
+             * @description 전역 식별자. **순서에 쓰지 않는다**
+             */
+            id: number;
+            /** @description 소매가 칩으로 보낸 문의 문맥. 없으면 null */
+            inquiry: components["schemas"]["ChatInquiry"] | null;
+            kind: components["schemas"]["ChatMessageKind"];
+            /** Format: int64 */
+            roomId: number;
+            sender: components["schemas"]["ChatSender"];
+            /**
+             * Format: date-time
+             * @description 서버가 받은 시각(UTC 오프셋 포함). 정렬은 sequence 로 한다 — 같은 시각, 역전이 있을 수 있다
+             */
+            sentAt: string;
+            /**
+             * Format: int64
+             * @description 방 안 순번. 1부터, 서버가 방 단위로 직렬화해 커밋 순서대로 준다. 이미 준 값보다 작은 sequence 가 뒤늦게 나타나지 않는다
+             */
+            sequence: number;
+        };
+        /**
+         * @description 메시지 종류. TEXT 사람이 쓴 글 / AUTO_REPLY 자동 답 / CLARIFY 자동 되묻기 / HANDOFF 사람 넘김 시스템 줄. **값이 늘 수 있다** — 모르는 값은 TEXT처럼 body 만 그린다
+         * @enum {string}
+         */
+        ChatMessageKind: "TEXT" | "AUTO_REPLY" | "HANDOFF" | "CLARIFY";
+        /** @description 메시지 조회 메타 */
+        ChatMessagePageMeta: {
+            /**
+             * Format: int64
+             * @description 상대가 읽은 마지막 sequence. 한 번도 안 읽었으면 null
+             */
+            counterpartLastReadSequence: number | null;
+            /** @description afterSequence 면 '더 새 것이 남았다'(기다리지 말고 바로 이어 받는다), beforeSequence 나 인자 없음이면 '더 오래된 것이 남았다' */
+            hasMore: boolean;
+            /**
+             * Format: int64
+             * @description 이 방의 지금 가장 큰 sequence. 메시지가 없으면 0
+             */
+            maxSequence: number;
+        };
+        /** @description 목록 행의 마지막 메시지 한 줄 */
+        ChatMessagePreview: {
+            kind: components["schemas"]["ChatMessageKind"];
+            /** @description 본문 앞 80 코드 포인트. 줄바꿈은 공백으로. 서버가 자른다 */
+            preview: string;
+            sender: components["schemas"]["ChatSender"];
+            /** Format: date-time */
+            sentAt: string;
+            /** Format: int64 */
+            sequence: number;
+        };
+        /** @description 연체 = 출고일 + 외상기간(당일 제외) 경과분만. 미결제 전체가 아니다 */
+        ChatOverdueFacts: {
+            /**
+             * Format: int64
+             * @description 연체 금액(원)
+             */
+            amount: number;
+            /**
+             * Format: int32
+             * @description 연체 건수
+             */
+            count: number;
+            /**
+             * Format: int32
+             * @description 가장 오래 연체된 건의 연체 일수. 연체 없으면 0
+             */
+            maxDaysOverdue: number;
+        };
+        /** @description 읽음 결과. 서버가 max(기존, 요청)으로 저장하고 미확인 수를 같은 트랜잭션에서 센다 */
+        ChatReadResult: {
+            /**
+             * Format: int64
+             * @description 저장된 값. 요청보다 클 수 있다(내려가지 않는다)
+             */
+            lastReadSequence: number;
+            /** Format: int64 */
+            roomId: number;
+            /**
+             * Format: int32
+             * @description 저장 뒤 미확인 수
+             */
+            unreadCount: number;
+        };
+        /** @description 미수 답의 근거. 그 방의 도매처 몫만. '갚을 돈 0', '선수금 있음', '연체 없음'을 서로 다른 값으로 가른다 */
+        ChatReceivableFacts: {
+            /**
+             * Format: int64
+             * @description 미결제 잔액(원, 0 이상). balance 가 플러스일 때 그 값
+             */
+            outstandingAmount: number;
+            overdue: components["schemas"]["ChatOverdueFacts"];
+            /**
+             * Format: int64
+             * @description 선수금(원, 0 이상). balance 가 마이너스일 때 그 절댓값
+             */
+            prepaidAmount: number;
+        };
+        /** @description 방 머리. ChatRoomSummary 와 같은 칸 + 상대 읽음 위치 */
+        ChatRoomDetail: {
+            counterpart: components["schemas"]["ChatCounterpart"];
+            /**
+             * Format: int64
+             * @description 상대가 읽은 마지막 sequence. 한 번도 안 읽었으면 null. polling 중엔 메시지 응답 meta 의 같은 값이 더 새롭다
+             */
+            counterpartLastReadSequence: number | null;
+            /**
+             * Format: date-time
+             * @description 정렬 기준. 마지막 메시지 시각, 메시지가 없으면 방 생성 시각
+             */
+            lastActivityAt: string;
+            /** @description 마지막 메시지. 메시지가 없으면 null */
+            lastMessage: components["schemas"]["ChatMessagePreview"] | null;
+            /**
+             * Format: int64
+             * @description 내가 읽은 마지막 sequence. 안 읽었으면 0
+             */
+            myLastReadSequence: number;
+            /** @description 도매의 답이 필요한가. openHandoff 이거나 마지막 메시지가 RETAILER TEXT. 소매 응답에서도 같은 뜻이다(도매가 아직 답 안 함) */
+            needsReply: boolean;
+            /** @description 사람 넘김(HANDOFF)이 있고 그 뒤 WHOLESALER TEXT 가 없다. AUTO_REPLY 로는 닫히지 않는다 — 사장이 직접 써야 닫힌다 */
+            openHandoff: boolean;
+            /** Format: int64 */
+            roomId: number;
+            /**
+             * Format: int32
+             * @description 상대가 보낸 메시지 중 myLastReadSequence 초과분. SYSTEM 은 세지 않는다
+             */
+            unreadCount: number;
+        };
+        /** @description 목록 행. 방은 (도매처, 소매처) 사업체 쌍에 1개이고 양쪽이 같은 roomId 를 본다 */
+        ChatRoomSummary: {
+            counterpart: components["schemas"]["ChatCounterpart"];
+            /**
+             * Format: date-time
+             * @description 정렬 기준. 마지막 메시지 시각, 메시지가 없으면 방 생성 시각
+             */
+            lastActivityAt: string;
+            /** @description 마지막 메시지. 메시지가 없으면 null */
+            lastMessage: components["schemas"]["ChatMessagePreview"] | null;
+            /**
+             * Format: int64
+             * @description 내가 읽은 마지막 sequence. 안 읽었으면 0
+             */
+            myLastReadSequence: number;
+            /** @description 도매의 답이 필요한가. openHandoff 이거나 마지막 메시지가 RETAILER TEXT. 소매 응답에서도 같은 뜻이다(도매가 아직 답 안 함) */
+            needsReply: boolean;
+            /** @description 사람 넘김(HANDOFF)이 있고 그 뒤 WHOLESALER TEXT 가 없다. AUTO_REPLY 로는 닫히지 않는다 — 사장이 직접 써야 닫힌다 */
+            openHandoff: boolean;
+            /** Format: int64 */
+            roomId: number;
+            /**
+             * Format: int32
+             * @description 상대가 보낸 메시지 중 myLastReadSequence 초과분. SYSTEM 은 세지 않는다
+             */
+            unreadCount: number;
+        };
+        /** @description 보내기 결과. 모양은 자동 답이 붙는 회차에도 바뀌지 않는다 */
+        ChatSendResult: {
+            /** @description 이 메시지에 대해 서버가 만든 자동 답, 되묻기, 넘김 줄. sequence 오름차순. 없으면 빈 배열 */
+            generatedMessages: components["schemas"]["ChatMessage"][];
+            generation: components["schemas"]["ChatGeneration"];
+            message: components["schemas"]["ChatMessage"];
+        };
+        /**
+         * @description 보낸 쪽. AUTO_REPLY·CLARIFY 는 WHOLESALER(도매 이름으로 나간 자동 답), HANDOFF 는 SYSTEM
+         * @enum {string}
+         */
+        ChatSender: "WHOLESALER" | "RETAILER" | "SYSTEM";
+        /** @description 자동 답이 가리킨 대상. 서버가 방의 도매처, 소매처 것인지 검증한 뒤의 값 */
+        ChatSubject: {
+            /**
+             * Format: int64
+             * @description 없으면 null
+             */
+            backorderId: number | null;
+            /** @description 화면용 이름. 없으면 null */
+            label: string | null;
+            /**
+             * Format: int64
+             * @description 없으면 null
+             */
+            listingId: number | null;
+            /**
+             * Format: int64
+             * @description 없으면 null
+             */
+            variantId: number | null;
+        };
+        /** @description 자동 답의 근거 값(도매 응답). intent 에 맞는 칸 하나만 차고 나머지는 null */
+        ChatWholesaleFacts: {
+            backorder: components["schemas"]["ChatBackorderFacts"] | null;
+            receivable: components["schemas"]["ChatReceivableFacts"] | null;
+            stock: components["schemas"]["ChatWholesaleStockFacts"] | null;
+        };
+        /** @description 재고 답의 근거(도매용). 정확 수량이 있다 */
+        ChatWholesaleStockFacts: {
+            /**
+             * Format: int32
+             * @description 판매가능 수량(현재고 아님). 조회 시점 값
+             */
+            availableQty: number;
+            band: components["schemas"]["StockBand"];
+            /**
+             * Format: int32
+             * @description 1회 주문 한도. 한도 없음이면 null
+             */
+            orderLimit: number | null;
+        };
         ColorGroupResponse: {
             colors: components["schemas"]["ColorItem"][];
             /** Format: int64 */
@@ -1588,6 +2232,11 @@ export interface components {
              */
             type: "TERMS" | "PRIVACY" | "INFO_CONFIRM" | "MARKETING_SMS" | "MARKETING_EMAIL" | "MARKETING_PUSH";
         };
+        /** @description 커서 페이징 메타. 오프셋 PageMeta 와 다르다 — 실시간으로 순서가 바뀌는 목록이라 전체 개수, 쪽 번호가 없다 */
+        CursorPageMeta: {
+            /** @description 다음 장 커서(불투명 문자열, FE 가 열지 않는다). 마지막 장이면 null */
+            nextCursor: string | null;
+        };
         DashboardSummaryResponse: {
             backorder: components["schemas"]["Backorder"];
             newOrders: components["schemas"]["NewOrders"];
@@ -1606,6 +2255,20 @@ export interface components {
              */
             type: "BIZ_REG" | "CEO_ID" | "STORE_PHOTO";
         };
+        /** @description 실패 응답. 성공과 달리 data 봉투가 없다. 분기는 code 로만 */
+        ErrorResponse: {
+            /**
+             * @description 대문자_스네이크
+             * @example VALIDATION_FAILED
+             */
+            code: string;
+            /** @description 필드 단위 검증 에러. 없으면 빈 배열 */
+            errors: components["schemas"]["FieldError"][];
+            /** @description 화면에 그대로 써도 되는 문구 */
+            message: string;
+            /** @description 로그를 찾는 값. 없으면 null */
+            traceId: string | null;
+        };
         ExpectedInboundRequest: {
             /** Format: date */
             expectedInboundDate: string;
@@ -1621,6 +2284,21 @@ export interface components {
             variantId: number;
             /** Format: int32 */
             variantNumber: number;
+        };
+        /** @description 입력칸 하나에 대한 에러 */
+        FieldError: {
+            /**
+             * @description 필드 단위 코드
+             * @example NOT_BLANK
+             */
+            code: string;
+            /**
+             * @description JS 경로 표기
+             * @example body
+             */
+            field: string;
+            /** @description 그 칸 아래에 그대로 붙는 문구 */
+            message: string;
         };
         InboundCreateRequest: {
             items: components["schemas"]["InboundItemRequest"][];
@@ -1658,6 +2336,95 @@ export interface components {
             variantId: number;
             /** Format: int32 */
             variantNumber: number;
+        };
+        /** @description 한 구간의 소매 메시지 결과. 다섯 칸(autoReplied, autoRepliedWithHandoff, handedOff, clarified, noResult) 합 = retailMessages */
+        InquiryCounts: {
+            /**
+             * Format: int32
+             * @description AUTO_REPLY 만 붙은 메시지
+             */
+            autoReplied: number;
+            /**
+             * Format: int32
+             * @description 같은 출처에 AUTO_REPLY 와 HANDOFF 가 둘 다(답+확인). 자동으로 끝남 비율 분자에 넣지 않는다
+             */
+            autoRepliedWithHandoff: number;
+            /** @description 판정 끝남(autoReplied + autoRepliedWithHandoff + handedOff)을 의도별로 */
+            byIntent: {
+                BACKORDER: components["schemas"]["IntentCounts"];
+                OTHER: components["schemas"]["IntentCounts"];
+                RECEIVABLE: components["schemas"]["IntentCounts"];
+                STOCK: components["schemas"]["IntentCounts"];
+                /** @description 결과 줄 intent 가 null(협상어, 의도 둘, 의도 없음) */
+                UNCLASSIFIED: components["schemas"]["IntentCounts"];
+            };
+            /**
+             * Format: int32
+             * @description CLARIFY 만. 뒤에 칩 답이 오든 안 오든 이 메시지는 되묻기로 끝
+             */
+            clarified: number;
+            /**
+             * Format: int32
+             * @description HANDOFF 만(열린 넘김 중 이유가 달라 새 줄이 생긴 것 포함)
+             */
+            handedOff: number;
+            /**
+             * Format: int32
+             * @description 결과 줄 0. 열린 넘김과 같은 이유라 줄이 안 생긴 것, 자동 답 도입 전 메시지, asOf 뒤에 결과가 붙은 것
+             */
+            noResult: number;
+            /**
+             * Format: int32
+             * @description 센 소매 TEXT 메시지 수 = 다섯 칸 합
+             */
+            retailMessages: number;
+        };
+        /** @description 영업일 하루 */
+        InquiryDay: {
+            counts: components["schemas"]["InquiryCounts"];
+            /**
+             * Format: date
+             * @description 영업일 D. 구간은 [D 12:00, D+1 12:00) Asia/Seoul
+             */
+            date: string;
+        };
+        /** @description 문의 지표 응답. 보고서는 숫자와 함께 startAt, endAt, asOf 를 그대로 옮겨 적는다 */
+        InquiryStats: {
+            /**
+             * Format: date-time
+             * @description 집계 시각. 이 뒤에 쓰인 결과 줄은 안 센다
+             */
+            asOf: string;
+            /** @description from 부터 to 까지 모든 영업일, 0인 날 포함, 오름차순. counts 합 = total */
+            days: components["schemas"]["InquiryDay"][];
+            /**
+             * Format: date-time
+             * @description to 다음날 12:00 Asia/Seoul. 이 시각은 포함하지 않는다
+             */
+            endAt: string;
+            /** Format: date */
+            from: string;
+            /**
+             * Format: date-time
+             * @description from 12:00 Asia/Seoul. 이 시각부터 포함
+             */
+            startAt: string;
+            /** Format: date */
+            to: string;
+            total: components["schemas"]["InquiryCounts"];
+        };
+        /** @description 의도 하나의 판정 끝남과 그중 자동 답만 */
+        IntentCounts: {
+            /**
+             * Format: int32
+             * @description autoReplied 칸과 같은 기준(답+확인 제외)
+             */
+            autoReplied: number;
+            /**
+             * Format: int32
+             * @description 자동 답 + 답+확인 + 넘김
+             */
+            judged: number;
         };
         Item: {
             color: string;
@@ -1703,6 +2470,13 @@ export interface components {
             sortOrder: number;
             url: string;
         };
+        ListingImageUploadResponse: {
+            /**
+             * @description 공개 읽기 가능한 절대 https URL. 소매 마켓이 <img src>로 그대로 쓰고, 도매 isImageUrl 이 https?:// 만 받는다(ListingImage 는 unoptimized 라 remotePatterns 무관). S3 키가 아니라 URL 이어야 한다. 만료되는 서명 URL 이면 안 된다 — 마켓 사진이 깨진다
+             * @example https://img.ddmondo.co.kr/wholesaler/101/listing/3f2a9c1e-….jpg
+             */
+            url: string;
+        };
         ListingResponse: {
             description: string;
             /** Format: int64 */
@@ -1744,12 +2518,94 @@ export interface components {
              */
             approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
         };
+        /** @description 읽음 위치 */
+        MarkChatReadRequest: {
+            /**
+             * Format: int64
+             * @description 화면에 그린 가장 큰 sequence. 0 이상, 방의 maxSequence 이하
+             */
+            lastReadSequence: number;
+        };
+        /** @description 고른 알림만({ids}) 또는 안 읽음 전부({all, expectedUnread}). 둘을 섞으면 400 */
+        MarkNotificationsReadRequest: {
+            ids: number[];
+        } | {
+            /** @enum {boolean} */
+            all: true;
+            /**
+             * Format: int32
+             * @description 화면이 버튼에 보여 준 안 읽음 수
+             */
+            expectedUnread: number;
+        };
+        /** @description 읽음 결과 */
+        MarkNotificationsReadResult: {
+            /**
+             * Format: int32
+             * @description 처리 뒤 남은 안 읽음 수
+             */
+            notifications: number;
+        };
         NewOrders: {
             /** Format: int32 */
             count: number;
             /** Format: date-time */
             oldestOrderedAt: string;
             oldestRetailerName: string;
+        };
+        /** @description 도매 알림 한 건. 문구(title, body)는 서버가 만든다 */
+        Notification: {
+            /** @description 예: "빈티지 플라워 셔츠 레드 / M 외 1건, 3장". 없으면 null */
+            body: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description 식별용. 순서 의미 없음
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description 처음 읽은 시각. 안 읽었으면 null
+             */
+            readAt: string | null;
+            target: components["schemas"]["NotificationTarget"];
+            /** @description 서버가 만든 한 줄. 예: "봄봄상회 새 주문" */
+            title: string;
+            type: components["schemas"]["NotificationType"];
+        };
+        /** @description 알림을 누르면 갈 곳 */
+        NotificationTarget: {
+            /**
+             * Format: int64
+             * @description 도매 주문 id
+             */
+            id: number;
+            /** @enum {string} */
+            kind: "ORDER";
+        };
+        /**
+         * @description NEW_ORDER 소매 주문 접수(그 주문의 도매 주문마다 1건), ORDER_CANCELLED 확정 전 소매 취소. 값이 늘 수 있다 — 화면은 모르는 값을 title 만 그리고 이동하지 않는다
+         * @enum {string}
+         */
+        NotificationType: "NEW_ORDER" | "ORDER_CANCELLED";
+        /** @description 헤더 배지 둘 */
+        NotificationUnreadCount: {
+            /**
+             * Format: int32
+             * @description 내 방 중 needsReply true 인 방 수. 방 목록 needsReply 와 같은 정의
+             */
+            chatsNeedingReply: number;
+            /**
+             * Format: int64
+             * @description 내 알림 중 가장 최근 것(목록 첫 행, createdAt desc, id desc)의 id. 알림이 없으면 null. 화면은 개수가 아니라 이 값이 바뀌었는지로 새 알림을 안다(1개 읽고 새로 1개 와서 수가 같아도 잡힌다). required 아님(읽는 쪽은 칸이 없으면 새 알림 판단을 끈다)
+             */
+            latestNotificationId?: number | null;
+            /**
+             * Format: int32
+             * @description 안 읽은 알림 수
+             */
+            notifications: number;
         };
         OrderConfirmRequest: {
             items: components["schemas"]["AllocationItemRequest"][];
@@ -2492,6 +3348,13 @@ export interface components {
             storeBuilding: string;
             storeUnit: string;
         };
+        /** @description 보내기 본문 */
+        SendChatMessageRequest: {
+            /** @description 1~1000자. 앞뒤 공백을 지운 뒤 유니코드 코드 포인트로 센다(JS length 아님, FE 는 [...text].length). 공백만이면 400 */
+            body: string;
+            /** @description 칩으로 고른 문의 문맥. 자유 문장이면 null */
+            inquiry: components["schemas"]["ChatInquiry"] | null;
+        };
         Shipped: {
             /** Format: int32 */
             count: number;
@@ -2557,6 +3420,11 @@ export interface components {
             /** Format: int32 */
             qtyChange: number;
         };
+        /**
+         * @description 소매에게 보이는 재고 구간. NONE 0 / UNDER_10 1~9 / UNDER_50 10~49 / FIFTY_PLUS 50 이상. 경계 10, 50 은 잠정(기획 Q2)
+         * @enum {string}
+         */
+        StockBand: "NONE" | "UNDER_10" | "UNDER_50" | "FIFTY_PLUS";
         StockMovementResponse: {
             /** Format: date-time */
             createdAt: string;
@@ -3212,6 +4080,838 @@ export interface operations {
             };
         };
     };
+    autoReplySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutoReplySettings"];
+                    };
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAutoReplySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoReplySettings"];
+            };
+        };
+        responses: {
+            /** @description 저장된 값 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutoReplySettings"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inquiryStats: {
+        parameters: {
+            query?: {
+                /** @description 첫 영업일(YYYY-MM-DD). 없으면 오늘 영업일 */
+                from?: string;
+                /** @description 마지막 영업일(포함, YYYY-MM-DD). 없으면 from. from ≤ to ≤ 오늘 영업일, 최대 62일 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InquiryStats"];
+                    };
+                };
+            };
+            /** @description 날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "날짜 형식, from > to, to 가 오늘 영업일 뒤, 62일 넘음. errors[{field: from|to}]",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    chatRooms: {
+        parameters: {
+            query?: {
+                /** @description 직전 응답 meta.nextCursor 그대로. 첫 장은 생략 */
+                cursor?: string;
+                /** @description 한 번에 몇 개. 1~100, 범위 밖은 400. 기본 30 */
+                size?: number;
+                /** @description 없으면 전부. UNREAD = unreadCount > 0, NEEDS_REPLY = needsReply. 모르는 값은 400 VALIDATION_FAILED. 거른 결과에 같은 정렬(lastActivityAt desc, roomId desc)과 cursor 를 쓴다. cursor 는 위치만 담는다 — 조건을 바꾸면 첫 장부터 받는다 */
+                filter?: "UNREAD" | "NEEDS_REPLY";
+                /** @description 소매처 이름(counterpart.name) 부분 일치. 앞뒤 공백을 지운 뒤 비면 없는 것과 같다. 안쪽 공백은 그대로 비교한다. 영문 대소문자는 구분하지 않는다. 앞뒤 공백을 지운 뒤 50자를 넘으면 400 VALIDATION_FAILED. filter 와 AND */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatRoomSummary"][];
+                        meta: components["schemas"]["CursorPageMeta"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    chatRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 방 id. 양쪽(도매, 소매)이 같은 값을 본다 */
+                roomId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatRoomDetail"];
+                    };
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RESOURCE_NOT_FOUND",
+                     *       "errors": [],
+                     *       "message": "없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다)",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    chatMessages: {
+        parameters: {
+            query?: {
+                /** @description 이 sequence 보다 큰 것. 0 이상 */
+                afterSequence?: number;
+                /** @description 이 sequence 보다 작은 것. 1 이상 */
+                beforeSequence?: number;
+                /** @description 한 번에 몇 개. 1~100, 범위 밖은 400. 기본 50 */
+                size?: number;
+            };
+            header?: never;
+            path: {
+                /** @description 방 id. 양쪽(도매, 소매)이 같은 값을 본다 */
+                roomId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatMessage"][];
+                        meta: components["schemas"]["ChatMessagePageMeta"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RESOURCE_NOT_FOUND",
+                     *       "errors": [],
+                     *       "message": "없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다)",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sendChatMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 말풍선마다 하나(= clientMessageId). 다시 보내기에도 같은 값 */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description 방 id. 양쪽(도매, 소매)이 같은 값을 본다 */
+                roomId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendChatMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description 같은 키 재요청(replay). 처음 응답과 같은 본문 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatSendResult"];
+                    };
+                };
+            };
+            /** @description 새로 만듦 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatSendResult"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RESOURCE_NOT_FOUND",
+                     *       "errors": [],
+                     *       "message": "없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다)",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 같은 Idempotency-Key 로 다른 본문이 왔다 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "IDEMPOTENCY_KEY_REUSED",
+                     *       "errors": [],
+                     *       "message": "같은 Idempotency-Key 로 다른 본문이 왔다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markChatRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 방 id. 양쪽(도매, 소매)이 같은 값을 본다 */
+                roomId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkChatReadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatReadResult"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. 필드 단위면 errors 에 담긴다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RESOURCE_NOT_FOUND",
+                     *       "errors": [],
+                     *       "message": "없는 방이거나 내 방이 아니다. 남의 방도 403 이 아니라 404 다(존재를 숨긴다)",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     colors: {
         parameters: {
             query?: never;
@@ -3295,6 +4995,41 @@ export interface operations {
             };
         };
     };
+    uploadListingImage: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 슬롯당 1개, 재시도에도 같은 값. 같은 키 재요청은 같은 url (D23). 구현 전엔 무시 */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description jpg 또는 png 1장
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ListingImageUploadResponse"];
+                    };
+                };
+            };
+        };
+    };
     reopen: {
         parameters: {
             query?: never;
@@ -3339,6 +5074,286 @@ export interface operations {
                     "*/*": {
                         data: components["schemas"]["ListingResponse"];
                     };
+                };
+            };
+        };
+    };
+    notifications: {
+        parameters: {
+            query?: {
+                /** @description 직전 응답 meta.nextCursor 그대로. 첫 장은 생략. 불투명 값(서버가 마지막 행의 createdAt, id 를 넣는다) */
+                cursor?: string;
+                /** @description 한 번에 몇 개. 1~100, 범위 밖은 400. 기본 20 */
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Notification"][];
+                        meta: components["schemas"]["CursorPageMeta"];
+                    };
+                };
+            };
+            /** @description 잘못된 cursor, size 범위 밖. errors[{field: cursor|size}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "잘못된 cursor, size 범위 밖. errors[{field: cursor|size}]",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MarkNotificationsReadResult"];
+                    };
+                };
+            };
+            /** @description 입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}] */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "VALIDATION_FAILED",
+                     *       "errors": [],
+                     *       "message": "입력이 규칙에 맞지 않는다. errors[{field: ids|all|expectedUnread}]",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNREAD_CHANGED",
+                     *       "errors": [],
+                     *       "message": "all 요청에서 실제 안 읽음 수가 expectedUnread 와 다르다. 아무것도 바꾸지 않았다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    notificationUnreadCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NotificationUnreadCount"];
+                    };
+                };
+            };
+            /** @description 로그인이 안 됐거나 세션이 끊겼다 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNAUTHENTICATED",
+                     *       "errors": [],
+                     *       "message": "로그인이 안 됐거나 세션이 끊겼다",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 승인 전 계정 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "NOT_APPROVED",
+                     *       "errors": [],
+                     *       "message": "승인 전 계정",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 서버 문제 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INTERNAL_ERROR",
+                     *       "errors": [],
+                     *       "message": "서버 문제",
+                     *       "traceId": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

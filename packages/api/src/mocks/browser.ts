@@ -1,5 +1,7 @@
 import { setupWorker } from "msw/browser";
 import type { RequestHandler } from "msw";
+import { retailChatHandlers } from "./retail/chat";
+import { retailNotificationHandlers } from "./retail/notification";
 import { wholesaleHandlers } from "./wholesale";
 
 /**
@@ -20,5 +22,25 @@ export async function startMockWorker(
   await worker.start({
     onUnhandledRequest: "bypass",
     serviceWorker: { url: "/mockServiceWorker.js" },
+  });
+}
+
+/**
+ * 소매 앱 목 시작(loop-05a). **채팅과 알림(loop-06b) 핸들러만** 올린다 — 소매는 상품, 홈, `/me`를 서버
+ * 컴포넌트가 그려서 브라우저 목이 닿지 않고(e2e에선 가짜 API 3199), 채팅과 헤더 종만 브라우저가 직접 부른다.
+ * 나머지 브라우저 요청(장바구니 쓰기 등)은 `bypass`로 프록시를 지나간다.
+ *
+ * 소매는 도매식 MockGate를 쓰지 않는다(서버가 그린 HTML을 가린다). 부르는 쪽(`features/chat`)이
+ * 첫 채팅 요청 전에 이 Promise를 기다린다.
+ */
+export async function startRetailChatWorker(): Promise<void> {
+  const worker = setupWorker(
+    ...retailNotificationHandlers,
+    ...retailChatHandlers,
+  );
+  await worker.start({
+    onUnhandledRequest: "bypass",
+    serviceWorker: { url: "/mockServiceWorker.js" },
+    quiet: true,
   });
 }

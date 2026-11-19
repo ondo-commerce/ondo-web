@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { KeyValue } from "@ondo/ui";
 import { DETAIL_TEXT } from "../constants";
 import {
   backorderCount,
@@ -10,43 +10,21 @@ import {
 } from "../derive";
 import type { OrderRecord } from "../types";
 
-/**
- * 요약 카드 한 장. 보조 글자(`.s`)가 `secondary-foreground`(gray-600)다 —
- * 기본 `muted-foreground`(gray-500)는 회색 면 위에서 4.39:1로 AA에 못 미친다
- * (셸 회차 F1). 여기는 흰 면이지만 같은 값으로 맞춰 둔다.
- */
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: ReactNode;
-  sub?: string;
-}) {
+/** 값 아래 붙는 한 줄(미송 대기, 미수가 어디서 났는지). 작은 글이다 */
+function Hint({ children }: { children: string }) {
   return (
-    <div className="border-border rounded-control border px-4 py-3.5">
-      <p className="text-muted-foreground text-body">{label}</p>
-      <p className="mt-1.5 text-[22px]/[30px] font-medium tabular-nums">
-        {value}
-      </p>
-      {sub ? (
-        <p className="text-secondary-foreground mt-1 text-xs">{sub}</p>
-      ) : null}
-    </div>
+    <span className="text-muted-foreground mt-1 block text-xs">{children}</span>
   );
 }
 
 /**
- * 요약 3장 — 주문 금액 · 출고 진행 · 미수 잔액.
+ * 주문 상세 요약 카드의 숫자 3줄 — 주문 금액 · 출고 진행 · 미수 잔액.
  *
- * 세 값이 전부 `derive.ts`에서 나온다. 특히 **주문 금액은 표 `<tfoot>`의 합계와
- * 같은 함수**를 부른다 — 원본은 요약이 517,000원인데 행 합이 618,000원이었다.
- *
- * 미수는 **나간 장끼의 금액 합**이다(RT-64). 포장만 끝난 장끼(`shippedAt: null`)는
- * 출고 기록엔 보여도 여기엔 안 든다 — `장끼 N장에서 발생`의 N도 나간 장끼만 센다.
- * 장끼 품목에 단가가 없어(스펙) 주문 라인에서 찾아 채우는데, 못 찾은 장끼가 있으면
- * `—`로 그린다 — 틀린 숫자를 맞는 것처럼 세우지 않는다.
+ * 예전에는 테두리 칸 3개에 큰 숫자로 나란히 있었다. 요약이 오른쪽 좁은 카드로
+ * 가면서 이름과 값 줄(`KeyValue`)로 바꿨다 — 디자인 규칙 4절이 "카드 안의 금액,
+ * 수량, 읽기만 하는 값은 이름과 값 줄, 금액 3개를 큰 숫자로 나란히 놓지 않는다"고
+ * 정한 자리다. 합계 줄(`total`)은 쓰지 않는다 — 셋 중 무엇도 나머지의 합이 아니라서
+ * 한 줄만 키우면 `미수 잔액 0원`이 카드에서 가장 큰 숫자가 된다.
  */
 export function OrderStats({ order }: { order: OrderRecord }) {
   const totals = orderTotals(order);
@@ -56,30 +34,26 @@ export function OrderStats({ order }: { order: OrderRecord }) {
   const shippedCount = shippedShipments(order).length;
 
   return (
-    <div className="grid grid-cols-3 gap-2 phone:grid-cols-1">
-      <Stat label={DETAIL_TEXT.stats.amount} value={formatWon(totals.amount)} />
-      <Stat
-        label={DETAIL_TEXT.stats.progress}
-        value={
-          progress.planned === 0
-            ? "—"
-            : `${progress.planned}건 중 ${progress.done}건`
-        }
-        sub={
-          backorders > 0 ? DETAIL_TEXT.backorderWaiting(backorders) : undefined
-        }
-      />
-      <Stat
-        label={DETAIL_TEXT.stats.unpaid}
-        value={unpaid === null ? "—" : formatWon(unpaid)}
-        sub={
-          unpaid === null
-            ? DETAIL_TEXT.unpaidUnknown
-            : shippedCount > 0
-              ? DETAIL_TEXT.unpaidFrom(shippedCount)
-              : undefined
-        }
-      />
-    </div>
+    <KeyValue amounts>
+      <KeyValue.Row term={DETAIL_TEXT.stats.amount}>
+        {formatWon(totals.amount)}
+      </KeyValue.Row>
+      <KeyValue.Row term={DETAIL_TEXT.stats.progress}>
+        {progress.planned === 0
+          ? "—"
+          : `${progress.planned}건 중 ${progress.done}건`}
+        {backorders > 0 ? (
+          <Hint>{DETAIL_TEXT.backorderWaiting(backorders)}</Hint>
+        ) : null}
+      </KeyValue.Row>
+      <KeyValue.Row term={DETAIL_TEXT.stats.unpaid}>
+        {unpaid === null ? "—" : formatWon(unpaid)}
+        {unpaid === null ? (
+          <Hint>{DETAIL_TEXT.unpaidUnknown}</Hint>
+        ) : shippedCount > 0 ? (
+          <Hint>{DETAIL_TEXT.unpaidFrom(shippedCount)}</Hint>
+        ) : null}
+      </KeyValue.Row>
+    </KeyValue>
   );
 }

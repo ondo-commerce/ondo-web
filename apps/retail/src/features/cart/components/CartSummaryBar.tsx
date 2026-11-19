@@ -1,22 +1,26 @@
 "use client";
 
-import { Button } from "@ondo/ui";
+import { Button, KeyValue, Notice, Panel } from "@ondo/ui";
+import { Info } from "lucide-react";
 import Link from "next/link";
 import type { MouseEvent } from "react";
 import { QTY_UNIT } from "@/shared/qty";
-import { LEAVING_TO_CHECKOUT } from "../constants";
+import { BACKORDER_NOTICE, LEAVING_TO_CHECKOUT } from "../constants";
 import { formatWon, type CartTotals } from "../derive";
 
 /**
- * 패널 바닥의 요약 바 — `선택한 조합` · `총 주문 금액` · `주문하기`.
+ * 오른쪽 요약 카드 — `선택한 조합` · `총 장수` · `총 주문 금액` · `주문하기`.
  *
  * **선택된 것만 센다**(RT-32). 그룹 머리가 담긴 전부를 세는 것과 다르다 —
  * 선택을 하나 풀면 여기 숫자가 즉시 줄어야 사장이 자기가 얼마를 사는지 안다.
  * 숫자는 전부 `totalsOf` 한 함수에서 온다.
  *
- * 화면 하단 고정이 아니라 **패널 바닥**이다. `CONTEXT-retail.md` §3은 하단
- * 고정이라고 적었지만 확정 와이어프레임(`.sumbar`)과 이미 구현된 상품 상세
- * `SummaryBar`가 둘 다 패널 바닥이다 — 바깥 구조는 코드가 이긴다(§9.6).
+ * 패널 바닥이 아니라 **목록 오른쪽에서 스크롤을 따라오는 카드**다(2026-11-18
+ * 사용자 결정, 디자인 규칙 4절 "오른쪽 요약 카드"). 담은 옵션이 길면 바닥의
+ * 합계가 화면 밖으로 밀렸다. 배치는 `CartView`가 `SummaryLayout`으로 한다.
+ *
+ * 미송 안내(`BACKORDER_NOTICE`)도 이 카드 맨 아래로 옮겼다 — 주문 버튼을 누르기
+ * 직전에 읽는 자리라서다.
  *
  * `주문하기`가 못 눌릴 때는 **진짜 `disabled` 버튼**이다. `asChild + Link`로
  * 두면 `disabled`가 `<a>`에 아무 효력이 없어 0개를 고른 채로도 넘어간다
@@ -63,45 +67,49 @@ export function CartSummaryBar({
   };
 
   return (
-    <div className="border-border bg-accent -mx-4 -mb-4 mt-4 rounded-b-panel border-t px-4 py-3.5">
-      <div className="flex flex-wrap items-center gap-x-9 gap-y-3">
-        <div>
-          <p className="text-muted-foreground text-body">선택한 조합</p>
-          <p className="text-xl font-medium tabular-nums">
-            {totals.comboCount}개 · {totals.sheets}
-            {QTY_UNIT}
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground text-body">총 주문 금액</p>
-          <p className="text-xl font-medium tabular-nums">
-            {formatWon(totals.amount)}
-          </p>
-        </div>
+    <Panel>
+      <Panel.Title>주문 요약</Panel.Title>
+      <KeyValue amounts>
+        <KeyValue.Row term="선택한 조합">{totals.comboCount}개</KeyValue.Row>
+        <KeyValue.Row term="총 장수">
+          {totals.sheets}
+          {QTY_UNIT}
+        </KeyValue.Row>
+        <KeyValue.Row term="총 주문 금액" total>
+          {formatWon(totals.amount)}
+        </KeyValue.Row>
+      </KeyValue>
 
-        <div className="ml-auto phone:ml-0 phone:w-full">
-          {blockedReason || leaving ? (
-            <Button disabled className="phone:w-full">
+      <div className="mt-6">
+        {blockedReason || leaving ? (
+          <Button disabled size="lg" className="w-full">
+            주문하기
+          </Button>
+        ) : (
+          <Button asChild size="lg" className="w-full">
+            <Link href={href} onClick={handleClick}>
               주문하기
-            </Button>
-          ) : (
-            <Button asChild className="phone:w-full">
-              <Link href={href} onClick={handleClick}>
-                주문하기
-              </Link>
-            </Button>
-          )}
-        </div>
+            </Link>
+          </Button>
+        )}
       </div>
 
-      {/* 못 누르는 이유(또는 기다리는 이유)가 버튼 옆에 글자로 있다. disabled만
-          걸면 사장이 버튼을 반복해서 누르다 만다 */}
+      {/* 못 누르는 이유(또는 기다리는 이유)가 버튼 아래 글자로 있다. disabled만
+          걸면 사장이 버튼을 반복해서 누르다 만다. 좁은 칸이라 왼쪽 맞춤이다 */}
       <p
         role="status"
-        className="text-muted-foreground text-body mt-2.5 min-h-5"
+        className="text-muted-foreground text-body mt-2 empty:mt-0"
       >
         {blockedReason ?? (leaving ? LEAVING_TO_CHECKOUT : "")}
       </p>
-    </div>
+
+      {/* 재고 소진 배지가 왜 담기를 막지 않는지 */}
+      <Notice className="mt-4">
+        <span className="flex items-start gap-2">
+          <Info aria-hidden className="size-4 shrink-0" />
+          {BACKORDER_NOTICE}
+        </span>
+      </Notice>
+    </Panel>
   );
 }

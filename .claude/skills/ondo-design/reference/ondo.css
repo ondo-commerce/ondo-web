@@ -1,0 +1,253 @@
+/* ===========================================================================
+   온도 ERP 디자인 시스템 — 페이지 1장에 통째로 인라인하는 스타일시트
+
+   출처: Figma "물보라" · 창은 페이지
+         https://figma.com/design/vXFxONKv6pwXIdwpPsYSJq/?node-id=1393-9972
+   모든 값은 Figma 실측이다. 추측값은 없다. 근거는 figma-map.md 참고.
+
+   사용법: 이 파일 전체를 새 페이지의 <style> 안에 그대로 복사한다.
+          링크(<link>)로 걸지 않는다 — 파일 하나가 단독으로 완결돼야 한다.
+   =========================================================================== */
+
+/* --- 토큰 ---------------------------------------------------------------- */
+:root {
+  /* 색 — 무채색은 6단계뿐이다. 중간값을 새로 만들지 않는다 */
+  --ink: #191f28;        /* 본문·제목               (Figma: black)   */
+  --ink-soft: #4e5968;   /* 보조 텍스트, Chip/Sub 글자 (Figma: gray900) */
+  --muted: #8b95a1;      /* 라벨·비활성·플레이스홀더  (Figma: gray800) */
+  --muted-soft: #b0b8c1; /* 아이콘·강한 테두리        (Figma: gray700) */
+  --line: #d1d5db;       /* 기본 테두리·구분선        (Figma: gray500) */
+  --fill: #f2f4f6;       /* 페이지 배경·옅은 채움     (Figma: gray300) */
+  --panel: #ffffff;
+
+  --accent: #3182f6;      /* 강조는 이 파랑 하나뿐   (Figma: blue500) */
+  --accent-soft: #eef4ff; /*                        (Figma: blue200) */
+  --danger: #f04452;      /* 필수 표시 *, 재고 0     (Figma 변수 없음) */
+  --good: #00875f;        /* 마진율 상승 등 양수      (Figma 변수 없음) */
+
+  /* 반경 — 용도별로 고정. 새 값 추가 금지 */
+  --r-panel: 16px; /* 흰 패널 */
+  --r-lg: 10px;    /* 대형 CTA */
+  --r-md: 8px;     /* 입력·드롭다운·검색·목록행·토글 */
+  --r-sm: 6px;     /* 버튼·라벨·체크박스 */
+  --r-pill: 999px; /* 칩 */
+
+  --shadow-panel: 0 .5px 2px rgba(0, 0, 0, .1);
+  --shadow-raise: 0 1px 2px rgba(15, 18, 23, .12);
+
+  /* 컨트롤 높이 — Figma는 33/34/35px가 섞여 있어 36px로 통일했다 */
+  --h-control: 36px;
+  --h-control-sm: 28px;
+}
+
+/* --- 베이스 -------------------------------------------------------------- */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fill);
+  color: var(--ink);
+  font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo",
+    "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  letter-spacing: -.015em; /* Figma 14px 기준 -0.21px */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- 타이포 — 6단계뿐이다 ------------------------------------------------ */
+.t-logo    { font-size: 22px; font-weight: 700; letter-spacing: -.09em; }
+.t-h1      { font-size: 24px; font-weight: 700; letter-spacing: -.015em; }
+.t-h2      { font-size: 20px; font-weight: 500; letter-spacing: -.023em; }
+.t-h3      { font-size: 16px; font-weight: 500; letter-spacing: -.015em; }
+.t-section { font-size: 15px; font-weight: 500; letter-spacing: -.015em; }
+.t-caption { font-size: 13px; font-weight: 400; letter-spacing: -.015em; color: var(--muted); }
+.t-muted   { color: var(--muted); }
+.t-soft    { color: var(--ink-soft); }
+.t-good    { color: var(--good); }
+.t-danger  { color: var(--danger); }
+.num       { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* --- 페이지 뼈대 --------------------------------------------------------- */
+/* 좌측 사이드바 + 우측 열(상단바 + 본문). **폭은 유동이다** — 1512px 고정을 쓰지 않는다.
+   실측 출처는 앱 코드다 (apps/wholesale/src/shared/components/AppShell.tsx). */
+.page { display: flex; min-width: 1280px; }
+
+/* 좌측 세로 네비 — 모든 화면에서 항목·순서 동일. 접힘 상태는 .snb.mini(64px) */
+.snb { flex: 0 0 208px; width: 208px; background: var(--panel); border-right: 1px solid var(--line); }
+.snb .brand { display: flex; align-items: center; gap: 4px; height: 56px; padding: 0 8px 0 16px; }
+.snb .brand .mark { width: 24px; height: 24px; display: grid; place-items: center; font-size: 15px; color: var(--ink); }
+.snb .brand .name { font-size: 18px; font-weight: 700; letter-spacing: -.03em; }
+.snb .menu { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.snb .menu a { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: var(--r-md); color: var(--muted); text-decoration: none; font-size: 14px; }
+.snb .menu a .ico { width: 18px; text-align: center; }
+.snb .menu a.active { background: var(--fill); color: var(--ink); font-weight: 500; }
+.snb.mini { flex-basis: 64px; width: 64px; }
+.snb.mini .brand { justify-content: center; padding: 0; }
+.snb.mini .brand .name { display: none; }
+.snb.mini .menu a { justify-content: center; padding: 0; }
+
+/* 우측 열 — 상단바(계정·알림만) + 본문. 화면 제목은 상단바가 아니라 패널이 갖는다 */
+.col { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.topbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 52px; padding: 0 20px; }
+.topbar .ico-btn { width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--r-md); color: var(--muted); }
+.main { padding: 0 16px 16px; }
+
+/* 본문 — 좌(넓은 목록) + 우(상세/보조) 2단이 기본. gap 16px 고정 */
+.body { display: flex; gap: 16px; align-items: flex-start; }
+.col-main { flex: 1 1 auto; min-width: 0; }
+.col-side { flex: 0 0 512px; }
+.col-side > .panel + .panel { margin-top: 16px; }
+
+/* 등록·수정 폼 — 좌우 1:1 2단 + 하단 우측 정렬 액션바 */
+.form-2col { display: flex; gap: 16px; align-items: flex-start; }
+.form-2col > * { flex: 1 1 0; min-width: 0; }
+.actionbar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* 흰 패널 — 안쪽 여백은 항상 30px */
+.panel { background: var(--panel); border-radius: var(--r-panel); box-shadow: var(--shadow-panel); padding: 30px; }
+.panel-title { margin: 0 0 24px; }
+.panel-title .sub { margin-top: 6px; color: var(--muted); font-size: 14px; }
+.section { margin-top: 24px; }
+.section > .t-section { margin-bottom: 16px; }
+.divider { height: 1px; background: var(--line); border: 0; margin: 20px 0; }
+
+/* --- 버튼 ---------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--h-control); min-width: 60px; padding: 0 16px;
+  border: 0; border-radius: var(--r-sm);
+  background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 500; letter-spacing: -.015em;
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+}
+.btn.ghost { background: var(--fill); color: var(--muted); }
+.btn.line  { background: var(--panel); color: var(--ink-soft); border: 1px solid var(--line); }
+.btn.sm    { height: var(--h-control-sm); padding: 0 12px; font-size: 13px; }
+.btn.lg    { height: 52px; width: 100%; border-radius: var(--r-lg); font-size: 18px; }
+.btn.disabled { background: var(--fill); color: var(--muted-soft); cursor: default; }
+/* 텍스트 링크형 액션 (예: "마켓 등록하러 가기 →") */
+.link-act { color: var(--accent); font-size: 14px; text-decoration: none; }
+
+/* --- 입력 (정적 — 실제 <input> 대신 div로 그린다) ------------------------ */
+.f-input, .f-select, .f-search {
+  display: flex; align-items: center;
+  height: var(--h-control); padding: 0 14px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--panel); color: var(--ink); font-size: 14px;
+}
+.f-input.ph, .f-select.ph, .f-textarea.ph { color: var(--muted); }
+.f-input.sm { height: var(--h-control-sm); }
+.f-input.num { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.f-select { justify-content: space-between; gap: 8px; padding-right: 12px; }
+.f-textarea { min-height: 84px; padding: 10px 14px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); line-height: 1.6; }
+
+/* 검색 — 테두리 없이 회색 채움 */
+.f-search { border: 0; background: var(--fill); gap: 8px; color: var(--muted); width: 339px; }
+
+/* 필터 드롭다운 — 회색 채움, 짧음 */
+.f-filter {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: 32px; padding: 0 10px 0 16px;
+  background: var(--fill); border-radius: var(--r-md); color: var(--ink); font-size: 14px;
+}
+.caret { color: var(--muted-soft); font-size: 11px; }
+
+/* 필드 = 라벨 + 입력. 라벨과 입력 사이는 8px 고정 */
+.field { margin-bottom: 22px; }
+.field-label { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 14px; font-weight: 500; }
+.field-label .req { color: var(--danger); }
+
+/* --- 칩 / 라벨 ----------------------------------------------------------- */
+/* Chip = 알약, Label = 사각. 색 조합은 이 둘뿐이다 */
+.chip, .label {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 24px; padding: 0 10px; font-size: 14px; white-space: nowrap;
+}
+.chip { border-radius: var(--r-pill); }
+.label { border-radius: var(--r-sm); }
+.chip.on, .label.on { background: var(--accent-soft); color: var(--accent); }
+.chip.sub, .label.sub { background: var(--fill); color: var(--ink-soft); }
+.label.plain { background: transparent; color: var(--muted); font-size: 13px; padding: 0; }
+
+/* 사이즈 칩 — 테두리형 토글 (XS·S·M·L·Free) */
+.size-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; padding: 0 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--muted-soft); background: var(--panel); color: var(--muted); font-size: 14px;
+}
+.size-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.size-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 상태 배지 — 파랑=진행/신규, 회색=완료·비활성. 색을 더 늘리지 않는다 */
+.badge { display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: var(--r-sm); font-size: 13px; background: var(--fill); color: var(--muted); }
+.badge.on { background: var(--panel); border: 1px solid var(--accent); color: var(--accent); }
+
+/* --- 체크박스 / 토글 (정적) --------------------------------------------- */
+.f-check { width: 24px; height: 24px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel); display: inline-grid; place-items: center; }
+.f-check.on { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 14px; }
+.f-switch { width: 44px; height: 24px; border-radius: var(--r-pill); background: var(--line); position: relative; }
+.f-switch.on { background: var(--accent); }
+.f-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+.f-switch.on::after { left: auto; right: 3px; }
+
+/* 세그먼트 토글 (판매중 / 시즌종료) */
+.seg { display: inline-flex; gap: 0; padding: 4px 5px; background: var(--fill); border-radius: var(--r-md); }
+.seg .opt { height: 36px; padding: 0 24px; display: grid; place-items: center; border-radius: var(--r-md); font-size: 14px; font-weight: 700; color: var(--muted); }
+.seg .opt.on { background: var(--panel); color: var(--accent); box-shadow: var(--shadow-raise); }
+
+/* --- 아코디언 목록 행 (상품/재고/주문 목록의 기본 단위) ------------------ */
+.rows { display: flex; flex-direction: column; gap: 4px; }
+.row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 16px 12px 20px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--panel);
+}
+.row.open { background: var(--fill); }          /* 펼쳐진 행은 회색 */
+.row .chev { color: var(--muted-soft); font-size: 12px; width: 14px; }
+.row .name { font-size: 16px; font-weight: 500; }
+.row .tail { margin-left: auto; color: var(--muted); font-size: 14px; }
+/* 펼침 영역 — 행 바로 아래, 같은 테두리 안 느낌으로 */
+.row-body { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--r-md) var(--r-md); padding: 24px; background: var(--panel); }
+
+/* --- 표 ------------------------------------------------------------------ */
+table.otable { width: 100%; border-collapse: collapse; }
+.otable thead th {
+  background: var(--fill); color: var(--muted); font-size: 13px; font-weight: 400;
+  padding: 10px 12px; text-align: right; white-space: nowrap;
+}
+.otable thead th:first-child, .otable thead th.l { text-align: left; }
+.otable thead th.c { text-align: center; }
+.otable tbody td {
+  padding: 12px; font-size: 14px; color: var(--ink);
+  border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums;
+}
+.otable tbody td.l { text-align: left; font-variant-numeric: normal; }
+.otable tbody td.c { text-align: center; font-variant-numeric: normal; }
+.otable tbody tr:last-child td { border-bottom: 0; }
+/* 우측 상세 패널에 띄워 둔 행 하나를 표시한다. 화면당 한 행만 */
+.otable tbody tr.sel td { background: var(--accent-soft); }
+/* 셀 규칙(.otable tbody td)이 색 유틸보다 강해서, 표 안에서는 따로 못 박아 준다 */
+.otable tbody td.t-muted  { color: var(--muted); }
+.otable tbody td.t-soft   { color: var(--ink-soft); }
+.otable tbody td.t-good   { color: var(--good); }
+.otable tbody td.t-danger { color: var(--danger); }
+
+/* 색상 점 — 상품 색상 표기 전용 */
+.dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 1px solid rgba(25, 31, 40, .12); vertical-align: -3px; }
+.color-cell { display: flex; align-items: center; gap: 6px; }
+
+/* --- 안내 배너 ----------------------------------------------------------- */
+.notice { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent); font-size: 14px; }
+.notice.line { border: 1px solid var(--accent); }
+
+/* --- 이미지 슬롯 --------------------------------------------------------- */
+.slot { width: 96px; height: 96px; border-radius: var(--r-md); background: var(--fill); display: grid; place-items: center; color: var(--muted-soft); font-size: 13px; }
+.slot.lg { width: 200px; height: 200px; }
+.slot.add { border: 1px dashed var(--line); background: var(--panel); }
+.slots { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* --- 스크롤 스파이 (긴 등록 폼 우측 목차) -------------------------------- */
+.spy { width: 200px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.spy a { display: block; padding: 9px 12px; font-size: 13px; color: var(--muted); text-decoration: none; }
+.spy a.active { background: var(--fill); color: var(--ink); }

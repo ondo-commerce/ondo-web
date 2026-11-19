@@ -145,6 +145,13 @@ export const ACTIVE_SETTLEMENT_STATUSES: readonly SettlementStatus[] = [
 export const PAGE_SIZE = 100;
 
 /**
+ * 검색창 문구(placeholder와 aria-label 둘 다). 칸이 약속하는 범위 = 서버 `q`가 실제로 거는 범위다.
+ * 서버는 거래처명·상품명 부분 일치에 더해, `q`가 숫자이고 int 범위면 주문번호 일치도 OR로 건다
+ * (11-08 서버 메모 5절, MUL-150). 그래서 주문번호를 되돌린다(F2, #196).
+ */
+export const ORDER_SEARCH_LABEL = "주문번호·거래처·품명 검색";
+
+/**
  * 확정·취소·포장이 거절됐을 때 사장이 읽을 문구. 코드로만 가른다 — 서버 `message`는
  * 개발자 문장이라 제목으로 안 쓰고 그 아래 보조로만 붙인다(`describeError`와 같은 규칙).
  *
@@ -168,3 +175,6 @@ export const ORDER_ERROR_TEXT: Readonly<Record<string, string>> = {
   DOCUMENT_FROZEN: "이미 출고에 묶인 포장이라 여기서는 지울 수 없어요.",
   RESOURCE_NOT_FOUND: "이미 없어진 항목이에요. 목록을 새로 불러왔어요.",
 };
+
+/** 진입 인자로 연 주문이 없을 때(404) 우측 카드 자리 한 줄(S11-17, 디자인 결정 37). 다시 시도는 없다 */
+export const ORDER_NOT_FOUND_TEXT = "이 주문을 찾을 수 없어요";

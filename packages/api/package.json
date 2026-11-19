@@ -13,13 +13,15 @@
     "codegen:retail": "openapi-typescript ./openapi/retail.json -o ./src/generated/retail.d.ts --properties-required-by-default",
     "sync-spec": "node scripts/sync-spec.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src scripts"
+    "lint": "eslint src scripts",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@ondo/config": "workspace:*",
     "eslint": "^9.39.5",
     "openapi-typescript": "^7.10.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "msw": "^2.15.0"

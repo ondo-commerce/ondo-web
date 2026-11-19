@@ -30,6 +30,7 @@ export {
   type AddSlotProps,
   type ImageSlotProps,
 } from "./patterns/ImageSlot";
+export { KeyValue, type KeyValueProps } from "./patterns/KeyValue";
 export { Notice, type NoticeProps } from "./patterns/Notice";
 export {
   ScrollSpyNav,

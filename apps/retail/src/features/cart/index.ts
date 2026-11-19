@@ -38,3 +38,16 @@ export type { CartLine } from "./types";
  * 상세 화면이 `variantId`를 아직 fixtures에서 읽고 있어 연결은 #163 몫이다.
  */
 export { useAddCartItemMutation } from "./api/mutations";
+
+/**
+ * 상품 상세 `바로 주문하기`가 담은 줄의 수량을 고른 값으로 맞출 때 쓴다. 같은 옵션이
+ * 이미 담겨 있으면 서버가 수량을 더하기 때문이다(2026-11-19 사용자 결정: 덮어쓴다).
+ */
+export { useChangeQtyMutation } from "./api/mutations";
+
+/**
+ * 채팅 재고 카드(loop-05b S8)의 `장바구니에 담기`. 뮤테이션이 아니라 함수다 — 채팅이 자기 뮤테이션 안에서
+ * 401을 채팅 세션 끊김으로 바꿔야 해서(`api/mutations.ts` `addCartItem` 주석). `app/(shop)/chats/[roomId]`가
+ * 끼워 넘긴다.
+ */
+export { addCartItem } from "./api/mutations";

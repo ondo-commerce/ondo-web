@@ -35,6 +35,8 @@ export function QtyStepper({
   onChange,
   disabled = false,
   label,
+  invalid = false,
+  describedBy,
 }: {
   /** 칸에 들어 있는 **글자 그대로**. 숫자가 아니다 */
   value: string;
@@ -42,6 +44,12 @@ export function QtyStepper({
   disabled?: boolean;
   /** 스크린리더용 이름. `체리레드 S 수량`처럼 어느 조합인지까지 읽혀야 한다 */
   label: string;
+  /**
+   * 부르는 쪽 판정으로 못 받는 값(채팅 재고 카드의 한도 초과 등, loop-05b S8-6). 칸 글자를 빨갛게 하고
+   * `aria-invalid`를 단다. 이유 문구는 부르는 쪽이 그리고 그 id를 `describedBy`로 넘긴다
+   */
+  invalid?: boolean;
+  describedBy?: string;
 }) {
   const { qty, issue } = parseQty(value);
   /* 상한 초과(OVER_LIMIT)는 값이 500으로 맞춰져 있어 셀 수 있다 — 막을 것은
@@ -73,12 +81,17 @@ export function QtyStepper({
         aria-label={label}
         value={value}
         disabled={disabled}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         onChange={(e) => onChange(e.target.value)}
         /* `outline-hidden`으로 브라우저 기본 링까지 지웠던 자리다. 이 페이지에서
            −/+ · 일괄 입력 · 썸네일은 모두 기본 링이 보이는데 **숫자를 넣는 칸
            하나만** 안 보였다. 상자 안쪽으로 그리는 것은 부모가 overflow-hidden
            이라 바깥 링이 잘려서다 */
-        className="border-border h-6.5 w-full min-w-0 border-x bg-transparent text-center tabular-nums focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed"
+        className={cn(
+          "border-border h-6.5 w-full min-w-0 border-x bg-transparent text-center tabular-nums focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed",
+          invalid && "text-destructive-strong",
+        )}
       />
 
       <button

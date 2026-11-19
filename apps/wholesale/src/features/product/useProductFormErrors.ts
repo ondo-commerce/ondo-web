@@ -55,9 +55,11 @@ function revealInvalidField(field: ProductField): boolean {
   const container = document.getElementById(fieldId(field));
   if (!container) return false;
 
+  // 이미지 격자의 `+`는 button 이다(S3-7). 없으면(실패 칸으로 9칸이 찼을 때, F3) 격자 자신
   const target =
-    container.querySelector<HTMLElement>('input[aria-invalid="true"]') ??
-    container;
+    container.querySelector<HTMLElement>(
+      ':is(input, button)[aria-invalid="true"]',
+    ) ?? container;
 
   target.scrollIntoView({ block: "center" });
   target.focus({ preventScroll: true });

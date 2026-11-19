@@ -20,7 +20,7 @@ export function PaymentPickupPanel({ order }: { order: OrderRecord }) {
         <section
           key={leg.wholesaleOrderId}
           aria-label={`${leg.wholesalerName} 결제·수령`}
-          className="border-border bg-accent text-body mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border px-3.5 py-2.5 first:mt-0"
+          className="border-border text-body mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border px-3.5 py-2.5 first:mt-0"
         >
           <h3 className="text-sm font-medium">{leg.wholesalerName}</h3>
           <LegStatusBadge statusKey={leg.statusKey} label={leg.statusLabel} />

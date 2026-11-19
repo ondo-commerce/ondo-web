@@ -1,16 +1,24 @@
 "use client";
 
 import { Button, cn, FormField, Input, Notice } from "@ondo/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { clearHeaderSession } from "@/shared/api/headerCounts";
 import { AuthFoot, AuthLinks, AuthPanel, AuthSection } from "./AuthPanel";
 import { ComingSoonDialog, LinkButton } from "./ComingSoonDialog";
 import { FieldError } from "./FieldError";
 import { isCredentialFailure, useLoginMutation } from "../api/session";
 import {
+  broadcastSessionChange,
+  runSessionChange,
+  runSignIn,
+} from "../sessionChange";
+import {
   ACCOUNT_PATH,
+  CONTACT_LINE,
   DEV_SEED_ACCOUNT,
   errorId,
   fieldId,
@@ -39,6 +47,7 @@ const EMPTY: LoginValues = { email: "", password: "" };
  */
 export function LoginView() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const loginMutation = useLoginMutation();
   const [values, setValues] = useState<LoginValues>(EMPTY);
   const [errors, setErrors] = useState<FieldErrors<LoginField>>({});
@@ -84,9 +93,21 @@ export function LoginView() {
       return;
     }
 
+    /* 쓰던 글은 들어온 소매처 것만 남긴다(loop-08e Q1 ①). 맨 먼저 — 이동 뒤 새 셸의 첫 입력창이 앞 소매처 글을
+       읽으면 안 된다. 응답에 id가 없으면 전부 지운다(어느 소매처인지 모르면 남길 근거가 없다) */
+    const retailerId = me.retailerId ?? null;
+    runSignIn(retailerId);
+
     /* `replace`다 — 뒤로 가기로 로그인 화면에 돌아오면 이미 세션이 있는 채로
        폼을 다시 보게 된다. `refresh`는 서버 컴포넌트(셸의 `/me`)가 새 쿠키로
-       다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다 */
+       다시 그리게 한다 — 안 하면 라우터 캐시가 로그인 전 결과를 되돌려 준다.
+       헤더 count와 알림 캐시는 그 전에 버린다 — 다른 계정으로 들어왔으면 앞 계정 행이 남아 있다(06b §4-1 3 ①) */
+    await clearHeaderSession(queryClient);
+    /* 채팅 캐시도 한 번 더 — 로그아웃 응답을 기다리는 사이 방 polling이 앞 계정 값을 다시 채웠을 수 있다(loop-08c S7) */
+    runSessionChange();
+    /* 같은 쿠키를 보는 다른 탭은 앞 계정 화면을 그리고 있을 수 있다(loop-08c 리뷰 R8). 소매처 id를 실어 같은
+       계정이면 받은 탭이 정리 없이 이어 가게 한다(Codex 메타 M1) */
+    broadcastSessionChange({ change: "login", retailerId });
     router.replace(homePathForStatus(toAccountStatus(me.approvalStatus)));
     router.refresh();
   };
@@ -176,8 +197,8 @@ export function LoginView() {
       <AuthLinks>
         <ComingSoonDialog
           trigger={<LinkButton>비밀번호 찾기</LinkButton>}
-          title="비밀번호 찾기는 준비 중이에요"
-          description="아직 만들지 않은 화면이에요. 지금은 운영자에게 연락하면 임시 비밀번호를 받을 수 있어요."
+          title="비밀번호를 잊으셨나요?"
+          description={CONTACT_LINE}
         />
         <span aria-hidden>·</span>
         <Link

@@ -1,7 +1,8 @@
 "use client";
 
-import { Button, Panel, Table } from "@ondo/ui";
+import { Panel, Table } from "@ondo/ui";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useNewOrderQueueQuery } from "../api/queries";
 import { QUEUE_TEXT, TAB_HREF } from "../constants";
 import { formatNumber } from "@/shared/lib/format";
@@ -21,6 +22,7 @@ import { formatNumber } from "@/shared/lib/format";
  */
 export function NewOrderQueue({ now }: { now: string }) {
   const { data: rows } = useNewOrderQueueQuery(now);
+  const router = useRouter();
 
   if (rows.length === 0) {
     return (
@@ -36,33 +38,44 @@ export function NewOrderQueue({ now }: { now: string }) {
     <Table stickyHead>
       <Table.Head>
         <Table.Row>
+          <Table.Th align="left">{QUEUE_TEXT.columns.orderNumber}</Table.Th>
           <Table.Th align="left">{QUEUE_TEXT.columns.waiting}</Table.Th>
           <Table.Th align="left">{QUEUE_TEXT.columns.retailer}</Table.Th>
           <Table.Th align="left">{QUEUE_TEXT.columns.product}</Table.Th>
+          <Table.Th>{QUEUE_TEXT.columns.itemCount}</Table.Th>
           <Table.Th>{QUEUE_TEXT.columns.amount}</Table.Th>
-          <Table.Th align="left">{QUEUE_TEXT.columns.receivedAt}</Table.Th>
-          <Table.Th>
-            <span className="sr-only">{QUEUE_TEXT.view}</span>
-          </Table.Th>
+          <Table.Th>{QUEUE_TEXT.columns.receivedAt}</Table.Th>
         </Table.Row>
       </Table.Head>
       <Table.Body>
         {rows.map((row) => (
-          <Table.Row key={row.id}>
+          /* 펼치는 표가 아니라서 줄 전체가 이동이다(2026-11-18 사용자 지시). 버튼 열을 따로 두지 않는다.
+             키보드와 낭독기는 소매처 이름의 링크 하나로 간다 */
+          <Table.Row
+            key={row.id}
+            className="cursor-pointer"
+            onClick={() => router.push(TAB_HREF.orders)}
+          >
+            <Table.Td align="left" tone="muted" className="tabular-nums">
+              {row.orderNumber}
+            </Table.Td>
             <Table.Td align="left" className="tabular-nums">
               {row.waitingLabel}
             </Table.Td>
-            <Table.Td align="left">{row.retailerName}</Table.Td>
-            <Table.Td align="left">{row.productSummary}</Table.Td>
-            <Table.Td>{formatNumber(row.orderAmount)}</Table.Td>
-            <Table.Td align="left" tone="muted" className="tabular-nums">
-              {row.receivedAtLabel}
+            <Table.Td align="left">
+              <Link
+                href={TAB_HREF.orders}
+                aria-label={`${row.retailerName} ${QUEUE_TEXT.view}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {row.retailerName}
+              </Link>
             </Table.Td>
-            <Table.Td>
-              {/* 주문 탭의 펼침은 화면 state라 특정 주문을 URL로 못 연다 — 탭 루트로 보낸다 */}
-              <Button asChild variant="line" size="sm">
-                <Link href={TAB_HREF.orders}>{QUEUE_TEXT.view}</Link>
-              </Button>
+            <Table.Td align="left">{row.productSummary}</Table.Td>
+            <Table.Td>{formatNumber(row.itemCount)}종</Table.Td>
+            <Table.Td>{formatNumber(row.orderAmount)}원</Table.Td>
+            <Table.Td tone="muted" className="tabular-nums">
+              {row.receivedAtLabel}
             </Table.Td>
           </Table.Row>
         ))}

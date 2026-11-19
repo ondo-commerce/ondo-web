@@ -1,11 +1,11 @@
 "use client";
 
-import { Button, Notice, Panel } from "@ondo/ui";
+import { Button, KeyValue, Notice, Panel } from "@ondo/ui";
 import { Info } from "lucide-react";
 import Link from "next/link";
-import { DescList, DescRow } from "./PaymentSummary";
 import { OrderResultCard } from "./OrderResultCard";
 import { PartialAcceptDialog } from "./PartialAcceptDialog";
+import { SummaryLayout } from "@/shared/components/SummaryLayout";
 import {
   COMPLETE_ACTION_ID,
   COMPLETE_EMPTY,
@@ -61,11 +61,42 @@ export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
      Radix가 되돌릴 자리를 모른다. 화면에서 다음에 할 일이 `주문 내역 보기`라
      그쪽으로 옮긴다 */
   const focusNext = () => {
-    document.getElementById(COMPLETE_ACTION_ID)?.focus();
+    /* 좁은 화면에서는 이 링크가 든 요약 카드가 결과 카드 아래에 있다. 스크롤까지
+       따라가면 `주문이 접수됐어요` 제목이 화면 위로 밀려난다 */
+    document.getElementById(COMPLETE_ACTION_ID)?.focus({ preventScroll: true });
   };
 
+  /* 합계와 다음에 갈 곳이 오른쪽에서 따라온다(디자인 규칙 4절 "오른쪽 요약
+     카드"). 도매처가 많아 결과 카드가 길어도 `주문 내역 보기`가 화면에 남는다.
+     둘 다 테두리 버튼이다 — 접수는 이미 끝났고 여기서 꼭 해야 할 일이 없어서
+     파란 주 버튼을 두지 않는다(기존 화면도 테두리 버튼 둘이었다) */
+  const summary = (
+    <Panel>
+      <Panel.Title>{COMPLETE_TEXT.summaryTitle}</Panel.Title>
+      <KeyValue amounts>
+        <KeyValue.Row term="총 장수">
+          {formatSheets(totals.sheets)}
+        </KeyValue.Row>
+        <KeyValue.Row term="도매처">{order.legs.length}곳</KeyValue.Row>
+        <KeyValue.Row term="합계" total>
+          {formatWon(totals.amount)}
+        </KeyValue.Row>
+      </KeyValue>
+      <Button asChild variant="line" className="mt-6 w-full">
+        <Link id={COMPLETE_ACTION_ID} href={ORDER_PATH.orders}>
+          {COMPLETE_TEXT.viewOrders}
+        </Link>
+      </Button>
+      <Button asChild variant="line" className="mt-2 w-full">
+        <Link href={ORDER_PATH.order(order.orderId)}>
+          {COMPLETE_TEXT.viewDetail}
+        </Link>
+      </Button>
+    </Panel>
+  );
+
   return (
-    <div className="mx-auto max-w-wrap">
+    <SummaryLayout aside={summary}>
       <Panel>
         <Panel.Title
           sub={
@@ -76,20 +107,6 @@ export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
               </b>{" "}
               · {order.orderedAt} · 도매처 {order.legs.length}곳
             </>
-          }
-          action={
-            <div className="flex items-center gap-2">
-              <Button asChild variant="line">
-                <Link href={ORDER_PATH.order(order.orderId)}>
-                  {COMPLETE_TEXT.viewDetail}
-                </Link>
-              </Button>
-              <Button asChild variant="line">
-                <Link id={COMPLETE_ACTION_ID} href={ORDER_PATH.orders}>
-                  {COMPLETE_TEXT.viewOrders}
-                </Link>
-              </Button>
-            </div>
           }
         >
           {COMPLETE_TEXT.title}
@@ -111,16 +128,6 @@ export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
             />
           ))}
         </section>
-
-        <section className="mt-6">
-          <DescList>
-            <DescRow term="총 장수">{formatSheets(totals.sheets)}</DescRow>
-            <DescRow term="도매처">{order.legs.length}곳</DescRow>
-            <DescRow term="합계" strong>
-              {formatWon(totals.amount)}
-            </DescRow>
-          </DescList>
-        </section>
       </Panel>
 
       {rejected.length > 0 ? (
@@ -134,6 +141,6 @@ export function OrderCompleteView({ order }: { order: OrderRecord | null }) {
           onCloseFocus={focusNext}
         />
       ) : null}
-    </div>
+    </SummaryLayout>
   );
 }

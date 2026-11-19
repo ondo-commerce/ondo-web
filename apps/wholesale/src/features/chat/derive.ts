@@ -1,0 +1,1041 @@
+import { isApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
+import {
+  BODY_COUNTER_FROM,
+  BODY_MAX,
+  BOTTOM_SLACK_PX,
+  HISTORY_AUTO_LOAD_PX,
+  USER_SCROLL_WINDOW_MS,
+  NEW_MESSAGE_TEXT,
+  CHAT_TIME_ZONE,
+  DRAFT_KEY_PREFIX,
+  HANDOFF_REASON_TEXT,
+  PENDING_TEXT,
+  READ_MARK_KINDS,
+  ROOM_POLL_BACKOFF_MAX_MS,
+  ROOM_POLL_JITTER,
+  ROOM_LIST_FILTERS,
+  ROOM_POLL_MS,
+  ROOM_QUERY_MAX,
+  ROOM_TEXT,
+  STOCK_BAND_LABEL,
+  UNREAD_MAX_SHOWN,
+  WEEKDAY_LABEL,
+} from "./constants";
+import type {
+  AutoReplyNote,
+  AutoReplySettings,
+  BubbleKind,
+  ChatAutoReply,
+  ChatHandoffReason,
+  ChatMessage,
+  ChatMessagePageMeta,
+  ChatReadResult,
+  ChatRoomPage,
+  ChatRoomRowView,
+  ChatRoomsFilter,
+  ChatRoomSummary,
+  ChatThread,
+  ClarifyChoicesView,
+  ComposerCheck,
+  FactLine,
+  FactPart,
+  FactsView,
+  HistorySlot,
+  HistoryStatus,
+  PendingByRoom,
+  PendingMessage,
+  ReadMarks,
+  RoomListFilter,
+  RoomListParams,
+  SendFailure,
+  ThreadItem,
+} from "./types";
+import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
+import { formatNumber } from "@/shared/lib/format";
+
+/* ------------------------------------------------------------------------
+ * 시각 — 서버는 UTC 오프셋이 붙은 ISO를 주고, 화면은 전부 서울 시각으로 읽는다.
+ * 브라우저 시간대에 기대지 않는다(해외 출장 중인 사장 노트북도 서울 시각이어야 한다).
+ * ------------------------------------------------------------------------ */
+
+interface SeoulParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  /** 0 = 일요일 */
+  weekday: number;
+}
+
+const SEOUL_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: CHAT_TIME_ZONE,
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+  weekday: "short",
+  hourCycle: "h23",
+});
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+function seoulParts(ms: number): SeoulParts {
+  const parts: Record<string, string> = {};
+  for (const part of SEOUL_FORMAT.formatToParts(ms)) {
+    parts[part.type] = part.value;
+  }
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    weekday: WEEKDAY_INDEX[parts.weekday ?? ""] ?? 0,
+  };
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** 말풍선 옆 시각 `HH:mm` */
+export function formatClock(iso: string): string {
+  const p = seoulParts(Date.parse(iso));
+  return `${pad2(p.hour)}:${pad2(p.minute)}`;
+}
+
+/**
+ * 목록 행 시각. 오늘이면 `HH:mm`, 올해면 `M/D`, 그 전이면 `YY.M.D`(서울 기준 달력).
+ * `nowMs`를 받는 이유: 오늘이 언제인지는 화면이 정한다 — 함수 안에서 시계를 읽으면 테스트가 날짜에 묶인다.
+ */
+export function formatListTime(iso: string, nowMs: number): string {
+  const at = seoulParts(Date.parse(iso));
+  const now = seoulParts(nowMs);
+  if (at.year === now.year && at.month === now.month && at.day === now.day) {
+    return `${pad2(at.hour)}:${pad2(at.minute)}`;
+  }
+  if (at.year === now.year) return `${at.month}/${at.day}`;
+  return `${String(at.year % 100).padStart(2, "0")}.${at.month}.${at.day}`;
+}
+
+/**
+ * 근거 칸 조회 시각(#302 S3-5, 디자인 결정 43). `checkedAt`의 서울 날짜가 오늘이면 `14:20 조회`, 아니면
+ * `10/28 14:20 조회`(M/D, 앞 0 없음). 다음 날 같은 방을 열면 "14:20"이 오늘 값처럼 보여서 날짜를 붙인다(기획 Q4).
+ * 해가 달라도 `M/D`만 쓴다 — 소매 `checkedLabel`과 같은 규칙(앱끼리 복제, 한쪽을 바꾸면 다른 쪽도).
+ */
+export function checkedLabel(checkedAt: string, nowMs: number): string {
+  const time = `${formatClock(checkedAt)}${ROOM_TEXT.checkedSuffix}`;
+  if (seoulDateKey(checkedAt) === seoulDateKey(new Date(nowMs).toISOString()))
+    return time;
+  const p = seoulParts(Date.parse(checkedAt));
+  return `${p.month}/${p.day} ${time}`;
+}
+
+/** 서울 달력 날짜 키. 날짜 구분선을 가르는 기준이다 */
+export function seoulDateKey(iso: string): string {
+  const p = seoulParts(Date.parse(iso));
+  return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+}
+
+/** 날짜 구분선 `10월 27일 (화)` */
+export function formatDateDivider(iso: string): string {
+  const p = seoulParts(Date.parse(iso));
+  return `${p.month}월 ${p.day}일 (${WEEKDAY_LABEL[p.weekday]})`;
+}
+
+/* ------------------------------------------------------------------------
+ * 목록
+ * ------------------------------------------------------------------------ */
+
+/** 안 읽은 수 배지 글자. 0이면 배지를 그리지 않는다(null) */
+export function formatUnread(count: number): string | null {
+  if (count <= 0) return null;
+  return count > UNREAD_MAX_SHOWN ? `${UNREAD_MAX_SHOWN}+` : String(count);
+}
+
+/**
+ * 읽음 응답이 목록 응답보다 새로우면 그것을 쓴다(S3-7).
+ *
+ * 왜 필요한가: 방을 열어 읽음을 보낸 **직후**, 그 전에 떠난 목록 요청이 늦게 돌아오면 그 응답은
+ * 읽기 전 값(`myLastReadSequence` 작음, `unreadCount` 큼)을 들고 온다. 그대로 그리면 사라진 배지가
+ * 되살아난다. 읽음 위치는 올라가기만 하므로 더 큰 쪽이 새 값이다.
+ *
+ * 같으면 목록 쪽을 쓴다 — 같은 위치를 본 뒤 더 늦게 계산된 값이라 그 사이 온 메시지가 반영돼 있다.
+ */
+export function applyReadMark(
+  room: ChatRoomSummary,
+  mark: ChatReadResult | undefined,
+): ChatRoomSummary {
+  if (mark === undefined || mark.lastReadSequence <= room.myLastReadSequence)
+    return room;
+  return {
+    ...room,
+    myLastReadSequence: mark.lastReadSequence,
+    unreadCount: mark.unreadCount,
+  };
+}
+
+/** 읽음 응답을 쌓는다. 방마다 더 큰 위치만 남긴다 — 늦게 온 읽음 응답이 값을 내리지 못하게 */
+export function mergeReadMark(
+  marks: ReadMarks,
+  result: ChatReadResult,
+): ReadMarks {
+  const known = marks[result.roomId];
+  if (known !== undefined && known.lastReadSequence > result.lastReadSequence)
+    return marks;
+  return { ...marks, [result.roomId]: result };
+}
+
+export function toRoomRowView(
+  room: ChatRoomSummary,
+  nowMs: number,
+): ChatRoomRowView {
+  return {
+    roomId: room.roomId,
+    name: room.counterpart.name,
+    preview: room.lastMessage?.preview ?? "",
+    time: formatListTime(room.lastActivityAt, nowMs),
+    unreadLabel: formatUnread(room.unreadCount),
+    unreadCount: room.unreadCount,
+    needsReply: room.needsReply,
+  };
+}
+
+/**
+ * 받은 페이지들을 한 줄로. **roomId가 겹치면 앞 페이지 것만 남긴다** — 이어 받는 사이 어떤 방에
+ * 새 말이 와서 맨 위로 올라가면, 다시 받은 1페이지와 이미 받은 2페이지에 같은 방이 있을 수 있다.
+ * 앞쪽이 더 최근에 정렬된 값이다.
+ */
+export function toRoomRows(
+  pages: readonly ChatRoomPage[],
+  marks: ReadMarks,
+  nowMs: number,
+): ChatRoomRowView[] {
+  const seen = new Set<number>();
+  const rows: ChatRoomRowView[] = [];
+  for (const page of pages) {
+    for (const room of page.data) {
+      if (seen.has(room.roomId)) continue;
+      seen.add(room.roomId);
+      rows.push(toRoomRowView(applyReadMark(room, marks[room.roomId]), nowMs));
+    }
+  }
+  return rows;
+}
+
+/**
+ * `?room=` 값. 양의 정수만 방 번호다. 없으면 `null`(방 미선택), 형식이 틀리면 `"invalid"` —
+ * 서버에 묻지 않고 바로 "대화를 찾을 수 없어요"로 간다.
+ */
+export function parseRoomParam(raw: string | null): number | null | "invalid" {
+  if (raw === null || raw === "") return null;
+  if (!/^\d+$/.test(raw)) return "invalid";
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : "invalid";
+}
+
+/* ------------------------------------------------------------------------
+ * 목록 조건(loop-08b S4) — URL `?filter&q&room`이 원본이다
+ * ------------------------------------------------------------------------ */
+
+/** `?filter=` 값. 모르는 값, 없음은 `ALL`(§4-2 3). 대소문자는 고치지 않는다 — 계약도 `unread`는 400이다 */
+export function parseListFilter(raw: string | null): RoomListFilter {
+  return ROOM_LIST_FILTERS.find((f) => f === raw) ?? "ALL";
+}
+
+/**
+ * 검색어 정리. 앞뒤 공백을 지우고 50자(코드 포인트)까지, 비면 null(조건 없음). 안쪽 공백은 그대로 —
+ * 서버도 그대로 비교한다(계약 `q`). 자른 뒤 끝이 공백이면 그것도 지운다(서버가 어차피 지운다)
+ */
+export function normalizeQuery(raw: string | null): string | null {
+  const trimmed = raw?.trim() ?? "";
+  const cut = [...trimmed].slice(0, ROOM_QUERY_MAX).join("").trimEnd();
+  return cut === "" ? null : cut;
+}
+
+/** 주소의 `?filter&q`를 목록 조건으로. 첫 진입과 뒤로 가기(popstate)가 같은 규칙으로 읽는다(loop-08b F2) */
+export function readListParams(
+  params: Pick<URLSearchParams, "get">,
+): RoomListParams {
+  return {
+    filter: parseListFilter(params.get("filter")),
+    q: normalizeQuery(params.get("q")),
+  };
+}
+
+/** 두 조건이 같은가. 같으면 state를 안 바꿔 미뤄 둔 목록("찾는 중")이 괜히 돌지 않게 한다 */
+export function sameListParams(a: RoomListParams, b: RoomListParams): boolean {
+  return a.filter === b.filter && a.q === b.q;
+}
+
+/** 서버로 보낼 `filter`. `ALL`이면 안 보낸다 */
+export function toServerFilter(
+  filter: RoomListFilter,
+): ChatRoomsFilter | undefined {
+  return filter === "ALL" ? undefined : filter;
+}
+
+/**
+ * URL 값 하나. `&`, `=`, `+`, `#`, `%`, `?`만 퍼센트로 바꾸고 공백은 `+`(폼 방식). 한글은 그대로 둔다 —
+ * 주소창과 링크가 읽히고, 브라우저가 보낼 때 알아서 인코딩한다. 읽는 쪽(`URLSearchParams`)은 둘 다 같은 값이다
+ */
+function encodeQueryValue(value: string): string {
+  return value
+    .replace(/[%&=+#?]/g, (c) => encodeURIComponent(c))
+    .replace(/ /g, "+");
+}
+
+/**
+ * `/chats` 주소. 순서 고정 filter → q → room(S4-1, 와이어프레임 `href`). `ALL`, 빈 검색, 방 없음은 칸을 안 단다
+ */
+export function chatsHref(
+  filter: RoomListFilter,
+  q: string | null,
+  roomId: number | null,
+): string {
+  const parts: string[] = [];
+  if (filter !== "ALL") parts.push(`filter=${filter}`);
+  if (q !== null) parts.push(`q=${encodeQueryValue(q)}`);
+  if (roomId !== null) parts.push(`room=${roomId}`);
+  return parts.length === 0 ? "/chats" : `/chats?${parts.join("&")}`;
+}
+
+/** 목록 행 링크. 지금 조건을 달고 방만 바꾼다(§4-2 3) */
+export function roomHref(
+  roomId: number,
+  filter: RoomListFilter,
+  q: string | null,
+): string {
+  return chatsHref(filter, q, roomId);
+}
+
+/** 조건이 걸려 있나. 조건 결과 0과 내 방 0을 가른다(§4-2 5) */
+export function hasListCondition(params: RoomListParams): boolean {
+  return params.filter !== "ALL" || params.q !== null;
+}
+
+/**
+ * 방별 입력 기억 키(loop-08b §4-1 1). 이메일은 앞뒤 공백을 지우고 소문자로 — 로그인 칸에 친 모양이 달라도
+ * 같은 계정이면 같은 키다. 이메일이 없으면(로그아웃, 판정 전) `null` — 저장하지 않는다.
+ *
+ * 사업체 id를 넣지 않는 이유: 방은 (도매처, 소매처) 쌍에 하나라 roomId가 이미 사업체를 정한다.
+ * 계정 하나 = 도매처 하나로 본다(미확인, 실서버 연결 전 다시 본다).
+ */
+export function draftKey(email: string | null, roomId: number): string | null {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (normalized === "") return null;
+  return `${DRAFT_KEY_PREFIX}${normalized}:${roomId}`;
+}
+
+/* ------------------------------------------------------------------------
+ * 방 — 메시지 합치기, 구분선, 말풍선 모양
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 메시지 두 묶음을 sequence로 합친다. 같은 sequence는 하나만(나중 것이 이긴다 — 서버가 다시 준 값),
+ * 결과는 오름차순. polling 결과, 보내기 응답이 같은 메시지를 두 번 가져와도 한 번만 그린다.
+ */
+export function mergeMessages(
+  existing: readonly ChatMessage[],
+  incoming: readonly ChatMessage[],
+): ChatMessage[] {
+  const bySequence = new Map<number, ChatMessage>();
+  for (const message of existing) bySequence.set(message.sequence, message);
+  for (const message of incoming) bySequence.set(message.sequence, message);
+  return [...bySequence.values()].sort((a, b) => a.sequence - b.sequence);
+}
+
+/** 이어 받은 마지막 sequence. 응답이 비면 그대로 */
+export function advanceCursor(
+  cursor: number,
+  page: readonly ChatMessage[],
+): number {
+  return page.reduce((max, m) => Math.max(max, m.sequence), cursor);
+}
+
+/* ------------------------------------------------------------------------
+ * 이전 메시지와 위치 보존(loop-08c S2)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 이전 장(before) 응답을 캐시에 합친다(§4-1 3). 겹치는 sequence는 하나만, **cursor는 그대로**다 — cursor는
+ * polling이 빠짐없이 이어 받은 위쪽 끝이라 옛 메시지와 상관없다. `historyHasMore`는 이 응답의 `hasMore`
+ * ("더 오래된 것이 남았다")로 바꾼다. 상대 읽음은 meta에도 와서 큰 쪽으로 합친다(내려가지 않는다).
+ * 부르는 쪽이 **끝날 때의** 캐시를 넘긴다 — 기다리는 사이 polling이 붙인 메시지를 덮지 않게
+ */
+export function mergeOlder(
+  thread: ChatThread,
+  page: { data: readonly ChatMessage[]; meta: ChatMessagePageMeta },
+): ChatThread {
+  return {
+    ...thread,
+    messages: mergeMessages(thread.messages, page.data),
+    historyHasMore: page.meta.hasMore,
+    historyFetched: true,
+    historyStatus: "idle",
+    counterpartRead: mergeCounterpartRead(
+      thread.counterpartRead,
+      page.meta.counterpartLastReadSequence,
+    ),
+  };
+}
+
+/** log가 바닥인가(§4-2 1). 아래 끝까지 남은 거리가 `BOTTOM_SLACK_PX` 이하 */
+export function isAtBottom(
+  scrollHeight: number,
+  scrollTop: number,
+  clientHeight: number,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= BOTTOM_SLACK_PX;
+}
+
+/**
+ * scroll 이벤트에서 바닥을 잴 때 쓸 log 높이(loop-08h S1, 소매 loop-08e #363 `bottomCheckHeight` 복제 — 앱끼리
+ * 참조하지 않는다). 사장 스크롤이 아니면 ResizeObserver가 마지막으로 본 높이로 잰다 — 크기가 바뀐 뒤 "바꾸기 전
+ * 바닥이었나"는 ResizeObserver가 처리하기 전까지 옛 높이 기준이다.
+ *
+ * 왜: 한 프레임 안에서 log가 줄고(입력창 6줄, 창 높이) 같은 프레임에 scroll이 먼저 오면, scroll이 줄어든 높이로
+ * 재서 "바닥 아님"을 쓰고 뒤이은 ResizeObserver가 바닥에 붙이기를 건너뛴다(08h S1-7).
+ * 판정을 아예 건너뛰면 안 된다 — 위로 옮긴 프로그램 스크롤이 크기 변경과 겹치면 옛 "바닥"이 남아 ResizeObserver가
+ * 바닥으로 끌어내린다(소매 08e 개발 중 실측).
+ *
+ * 사장이 직접 스크롤한 중(사용자 스크롤 창 안)이면 지금 높이로 잰다 — 옛 높이로 재면 휠로 조금 올린 것을 바닥으로
+ * 볼 수 있다(S1-5 ②). ResizeObserver가 없으면(`observedHeight` null) 지금 높이
+ */
+export function bottomCheckHeight(input: {
+  /** ResizeObserver가 마지막으로 본 log `clientHeight` */
+  observedHeight: number | null;
+  clientHeight: number;
+  userScrolled: boolean;
+}): number {
+  if (input.userScrolled || input.observedHeight === null)
+    return input.clientHeight;
+  return input.observedHeight;
+}
+
+/**
+ * 사장 스크롤 창이 무엇으로 바뀌나(리뷰 R1).
+ * - `input`: 사장이 직접 옮겼다(wheel 위로, touchmove, log 안 ↑ PageUp Home, log를 누른 채 scroll)
+ * - `scroll`: 그 밖의 scroll. 창 안이면 이어진 스크롤(관성)이라 창을 민다, 밖이면 그대로
+ * - `focus`: log 안으로 포커스가 들어왔다. 뒤따르는 scroll은 브라우저 포커스 스크롤이다
+ * - `merged`: 이전 장을 합쳤다. 위치 복원은 프로그램 스크롤이고 다음 자동은 새 입력부터(S2-20)
+ */
+export type UserScrollEvent = "input" | "scroll" | "focus" | "merged";
+
+/** 사장 스크롤 창의 끝 시각(ms)을 다음 값으로. 0이면 창이 닫혀 있다 */
+export function nextUserScrollUntil(
+  until: number,
+  event: UserScrollEvent,
+  now: number,
+): number {
+  switch (event) {
+    case "input":
+      return now + USER_SCROLL_WINDOW_MS;
+    case "scroll":
+      return now <= until ? now + USER_SCROLL_WINDOW_MS : until;
+    case "focus":
+    case "merged":
+      return 0;
+  }
+}
+
+/** 지금 난 scroll이 사장 스크롤인가 — 창 안이면 그렇다 */
+export function isUserScrollActive(until: number, now: number): boolean {
+  return now <= until;
+}
+
+/**
+ * 터치 한 번의 이동이 위로 스크롤인가(Codex 메타 M4). 손가락이 아래로 가면(화면 y가 커지면) 내용이 내려오고 log는
+ * 위로 간다. 방향 없이 touchmove를 다 사장 위 스크롤로 보면, 맨 위 근처에서 아래로 조금 끈 것도 자동을 부른다.
+ * 직전 좌표가 없으면(첫 이동) 판정하지 않는다
+ */
+export function isTouchScrollUp(prevY: number | null, y: number): boolean {
+  return prevY !== null && y > prevY;
+}
+
+/** 자동 불러오기 판정에 드는 값. 하나라도 거짓이면 부르지 않는다(§4-1 2-1) */
+export interface AutoLoadInput {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  /** 지금 scroll이 사장 입력에 이어진 것인가(`isUserScrollActive`). 프로그램, 포커스가 옮긴 스크롤은 아니다 */
+  userScrolled: boolean;
+  historyHasMore: boolean;
+  historyStatus: HistoryStatus;
+  sessionLost: boolean;
+}
+
+/**
+ * 위로 스크롤했을 때 이전 장을 자동으로 부를까(D45, §4-1 2-1). 온라인 여부는 여기서 안 본다 — 오프라인이면
+ * 부르는 쪽(`fetchOlder`)이 요청 없이 실패 줄을 바로 띄운다(§4-1 6). 짧은 방(내용이 log를 못 넘침)은
+ * 스크롤이 없어 자동이 못 걸린다 — 그 방은 버튼이 길이다(S2-19 ②)
+ */
+export function shouldAutoLoadOlder(input: AutoLoadInput): boolean {
+  return (
+    input.historyHasMore &&
+    input.historyStatus === "idle" &&
+    !input.sessionLost &&
+    input.userScrolled &&
+    input.scrollHeight > input.clientHeight &&
+    input.scrollTop <= HISTORY_AUTO_LOAD_PX
+  );
+}
+
+/**
+ * 맨 위 자리에 무엇을 그리나(디자인 결정 81~84). 세션이 끊겼으면 다른 무엇보다 잠긴 버튼이다 — 이유는
+ * 입력창 아래 끊김 줄이 말한다(결정 83). 끝(`hasMore` false)은 이전 장을 받아 본 방에서만 문구를 쓴다 —
+ * 처음부터 50개 이하인 방은 아무것도 없다(§4-1 5)
+ */
+export function historySlotOf(
+  thread: Pick<
+    ChatThread,
+    "historyHasMore" | "historyFetched" | "historyStatus"
+  >,
+  sessionLost: boolean,
+): HistorySlot {
+  if (thread.historyHasMore) {
+    if (sessionLost) return "locked";
+    if (thread.historyStatus === "loading") return "loading";
+    if (thread.historyStatus === "failed") return "failed";
+    return "more";
+  }
+  return thread.historyFetched ? "end" : "none";
+}
+
+/**
+ * 바닥을 떠난 뒤 붙은 메시지 중 상대가 보낸 수(§4-2 3-1, Q3 ①). `since` = 바닥을 떠날 때 그려져 있던 가장 큰
+ * sequence — 그 사이 위에 붙은 옛 메시지는 sequence가 작아 안 센다. 넘김 줄은 상대 말이 아니라 안 센다.
+ * 상대는 앱이 정한다: 도매 = RETAILER(소매는 08d에서 WHOLESALER)
+ */
+export function newMessageCount(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+  since: number,
+  counterpart: ChatMessage["sender"],
+): number {
+  return messages.filter(
+    (m) =>
+      m.sequence > since && m.sender === counterpart && m.kind !== "HANDOFF",
+  ).length;
+}
+
+/** 새 메시지 버튼에 보이는 글. 상대 말이 0개여도 새 줄이 있으면 내려갈 길은 남긴다(§4-2 3-3) */
+export function newMessageText(count: number): string {
+  return count >= 1
+    ? `${NEW_MESSAGE_TEXT.countPrefix}${count}${NEW_MESSAGE_TEXT.countSuffix}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/** 새 메시지 버튼 이름. 보이는 글로 시작해 할 일을 붙인다 — "새 메시지 2개, 아래로 이동"(디자인 결정 88) */
+export function newMessageLabel(count: number): string {
+  return count >= 1
+    ? `${newMessageText(count)}, ${NEW_MESSAGE_TEXT.jump}`
+    : NEW_MESSAGE_TEXT.jump;
+}
+
+/** 화면에 그린 가장 큰 sequence. 읽음 요청에 쓴다 */
+export function maxSequenceOf(messages: readonly ChatMessage[]): number {
+  return messages.at(-1)?.sequence ?? 0;
+}
+
+/**
+ * 상대 읽음 위치 둘을 합친다(loop-08 S3, 기획 §4-3 1). 읽음은 올라가기만 하므로 큰 쪽이 새 값이다 —
+ * 늦게 온 방 머리, 늦게 온 messages 응답이 들고 온 작은 값은 버린다. null은 "아직 안 읽음"이라 숫자가 이긴다
+ */
+export function mergeCounterpartRead(
+  known: number | null,
+  incoming: number | null | undefined,
+): number | null {
+  if (incoming === null || incoming === undefined) return known;
+  if (known === null) return incoming;
+  return Math.max(known, incoming);
+}
+
+/**
+ * `읽음`을 붙일 말풍선의 sequence(기획 §4-3 2, Q1). 상대가 읽은 위치 이하인 내 쪽 메시지(내 글, 자동 답, 되묻기)
+ * 중 가장 아래 하나. 값이 null이거나 대상이 없으면 null — "안 읽음"은 쓰지 않는다(디자인 결정 48).
+ *
+ * 보내는 중, 못 보낸 말풍선은 `messages`에 없다(서버 sequence가 없는 `PendingMessage`) — 그래서 대상이 될 수 없다
+ */
+export function readMarkerSequence(
+  messages: readonly ChatMessage[],
+  counterpartRead: number | null,
+): number | null {
+  if (counterpartRead === null) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m === undefined || m.sequence > counterpartRead) continue;
+    if (m.sender === "WHOLESALER" && READ_MARK_KINDS.has(m.kind))
+      return m.sequence;
+  }
+  return null;
+}
+
+/** 메시지 사이에 날짜가 바뀌는 자리마다 구분선을 끼운다. 첫 메시지 앞에도 하나 */
+export function toThreadItems(messages: readonly ChatMessage[]): ThreadItem[] {
+  const items: ThreadItem[] = [];
+  let lastDate: string | null = null;
+  for (const message of messages) {
+    const date = seoulDateKey(message.sentAt);
+    if (date !== lastDate) {
+      items.push({
+        type: "divider",
+        key: `d-${date}`,
+        label: formatDateDivider(message.sentAt),
+      });
+      lastDate = date;
+    }
+    items.push({ type: "message", key: `m-${message.sequence}`, message });
+  }
+  return items;
+}
+
+/**
+ * 말풍선 모양. 모르는 kind(나중에 생길 ORDER_LINK 같은 값)는 TEXT처럼 body만 — sender로 좌우를 가른다.
+ * 생성 타입이 enum이라 지금은 그런 값이 오지 않지만, 서버가 값을 늘리면 FE 배포 전에 먼저 온다(가이드 §9).
+ */
+export function bubbleKindOf(
+  message: Pick<ChatMessage, "sender" | "kind">,
+): BubbleKind {
+  if (message.sender === "SYSTEM") return "system";
+  if (message.sender === "RETAILER") return "them";
+  switch (message.kind) {
+    case "AUTO_REPLY":
+      return "auto";
+    case "CLARIFY":
+      return "clarify";
+    default:
+      return "me";
+  }
+}
+
+/** 낭독기용 발신자 이름. 화면에는 안 보이고 말풍선 앞에 숨겨 둔다 */
+export function senderLabel(
+  message: Pick<ChatMessage, "sender">,
+  counterpartName: string,
+): string {
+  if (message.sender === "RETAILER") return counterpartName;
+  if (message.sender === "SYSTEM") return ROOM_TEXT.system;
+  return ROOM_TEXT.me;
+}
+
+/**
+ * 되묻기 보기 줄(#296 S13-1 디자인 결정 37, #299 S4-1 디자인 결정 38). 소매에게 나간 보기를 사장이 글자로 본다 —
+ * 도매에선 누를 수 없다. choices가 없거나 null이거나 비면 줄 자체가 없다. 순서는 서버 순서 그대로.
+ *
+ * "(주문 불가)"는 **kind VARIANT + `orderable: false`**만 붙인다(색, 취소선 없음). 미송 보기와 `다른 주문이에요`
+ * 보기도 계약상 orderable 칸이 있지만(NOT_LISTED는 늘 false) 주문 가능 여부를 뜻하지 않는다 — 읽으면
+ * 사장이 "주문 불가 미송"으로 잘못 읽는다. kind가 없으면 VARIANT(계약 `?? VARIANT`, 05b 서버 그대로).
+ *
+ * 미송 보기가 하나라도 있으면 목록 모양(`list`)이다. 재고 보기만이면 05b-2 그대로 한 줄.
+ */
+export function toClarifyChoicesView(
+  autoReply: ChatAutoReply | null,
+): ClarifyChoicesView | null {
+  const choices = autoReply?.choices ?? [];
+  if (choices.length === 0) return null;
+  const labels = choices.map((c) =>
+    (c.kind ?? "VARIANT") === "VARIANT" && !c.orderable
+      ? `${c.label}${ROOM_TEXT.choiceNotOrderable}`
+      : c.label,
+  );
+  if (choices.some((c) => (c.kind ?? "VARIANT") !== "VARIANT"))
+    return { mode: "list", items: labels };
+  return {
+    mode: "inline",
+    text: `${ROOM_TEXT.choicesPrefix}${labels.join(", ")}`,
+  };
+}
+
+const WIRE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * 근거 칸 입고 예정일(08f §4-2, Q3 ①). 올해면 `11/5(목)`, 해가 다르면 `2027/1/5(화)`. 오늘, 지난 날도 같은 꼴 —
+ * 지남은 같은 말풍선의 답 본문과 넘김 줄이 이미 말한다(D37 ②).
+ * 요일은 날짜 글자 그대로 센다. 시각이 없는 날짜라 시간대를 바꾸면 하루가 밀린다. "올해"만 `nowMs`의 서울 해로 본다.
+ * `YYYY-MM-DD`가 아니면(계약 밖 값) 받은 글자 그대로 둔다 — 틀린 요일을 지어내지 않는다.
+ */
+export function inboundDateLabel(date: string, nowMs: number): string {
+  const match = WIRE_DATE.exec(date);
+  if (match === null) return date;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const md = `${month}/${day}(${WEEKDAY_LABEL[weekday]})`;
+  return year === seoulParts(nowMs).year ? md : `${year}/${md}`;
+}
+
+/**
+ * 자동 답변 근거 칸. 도매 화면에만 정확 수량이 있다 — 사장이 소매처가 본 구간과 실제 값을 같이 본다.
+ * 미수는 값만 두 줄. 미송은 `미송 2장, 입고 예정 11/5(목), 사유 …` 한 줄이다(08f §4-2, `inboundDateLabel`).
+ *
+ * 끝 줄은 **모든** 자동 답에 "HH:mm 조회"다(F12, S7-13). 되묻기처럼 값이 없어도 언제 본 값으로 답했는지는
+ * 남긴다. 시각은 말풍선 시각이 아니라 `checkedAt` — 같은 키로 다시 받아도 처음 조회 시각 그대로다(S7-10).
+ * 오늘이 아니면 날짜가 붙는다(`checkedLabel`, #302 S3-5). `nowMs`는 방이 1분마다 갱신하는 지금 시각이다(리뷰 M4).
+ *
+ * `data-ac`도 여기서 정한다(QA F1). 끝 줄은 loop-04 번호 S7-13에 07 번호 S3-5, 미수 답이면 S3-3이 더 붙는다
+ * (와이어프레임 17 `#state-rc-latest` `.seen data-ac="S3-5 S3-3"`). 값 줄은 미결제 줄만 S3-3이다.
+ */
+export function toFactsView(
+  autoReply: ChatAutoReply | null,
+  nowMs: number,
+): FactsView | null {
+  if (autoReply === null) return null;
+  const { stock, backorder, receivable } = autoReply.facts;
+  const lines: FactLine[] = [];
+  const lineAc: (string | null)[] = [];
+  const checked = checkedLabel(autoReply.checkedAt, nowMs);
+  let seen = checked;
+  // 값 조각은 굵게(와이어프레임 `.facts b`, QA F11). 사장이 숫자부터 읽는다
+  const value = (text: string): FactPart => ({ text, strong: true });
+  const label = (text: string): FactPart => ({ text, strong: false });
+  if (stock !== null) {
+    // 서버 자동 답 facts 값 그대로 — 서버가 이미 미송대기까지 빼서 셌다(MUL-157). 다시 세지 않는다(#212)
+    const available = [
+      label("판매가능 "),
+      value(`${formatNumber(stock.availableQty)}장`),
+    ];
+    lines.push(
+      stock.orderLimit === null
+        ? available
+        : [
+            ...available,
+            label(", 주문 한도 "),
+            value(`${formatNumber(stock.orderLimit)}장`),
+          ],
+    );
+    lineAc.push(null);
+    seen = `소매처에게는 "${STOCK_BAND_LABEL[stock.band]}"으로 보였어요. ${checked}`;
+  }
+  if (backorder !== null) {
+    // 08f §4-2: 굵게는 수량과 날짜만. 사유는 소매에게 나간 답과 맞춰 보는 글이라 보통 글자다
+    const line = [label("미송 "), value(`${formatNumber(backorder.qty)}장`)];
+    if (backorder.expectedInboundDate === null) {
+      line.push(label(", 입고일 미정"));
+    } else {
+      line.push(
+        label(", 입고 예정 "),
+        value(inboundDateLabel(backorder.expectedInboundDate, nowMs)),
+      );
+    }
+    const reason = backorder.expectedInboundReason?.trim() ?? "";
+    if (reason !== "") line.push(label(`, 사유 ${reason}`));
+    lines.push(line);
+    lineAc.push("08f:S2-2");
+  }
+  if (receivable !== null) {
+    lines.push([
+      label("미결제 "),
+      value(`${formatNumber(receivable.outstandingAmount)}원`),
+      label(", 선수금 "),
+      value(`${formatNumber(receivable.prepaidAmount)}원`),
+    ]);
+    lineAc.push("S3-3");
+    const { count, amount, maxDaysOverdue } = receivable.overdue;
+    lines.push(
+      count === 0
+        ? [label("연체 없음")]
+        : [
+            label("연체 "),
+            value(`${count}건 ${formatNumber(amount)}원`),
+            label(` (최대 ${maxDaysOverdue}일)`),
+          ],
+    );
+    lineAc.push(null);
+  }
+  const seenAc = receivable === null ? "S7-13 S3-5" : "S7-13 S3-5 S3-3";
+  return { lines, lineAc, seen, seenAc };
+}
+
+/**
+ * 넘김 이유 한 줄 글(#302 S3-1, 08d S6). 계약 enum 21값은 다 글이 있고, 그 밖 값(서버가 새로 늘린 값)과
+ * 이유 없음은 null — 이유 줄을 그리지 않는다(디자인 결정 42). 인자가 `string`인 이유: 서버 enum은 FE 배포보다
+ * 먼저 늘어난다(가이드 §9). 생성 타입 밖 값도 여기서 걸러진다.
+ */
+export function handoffReasonText(
+  reason: string | null | undefined,
+): string | null {
+  if (reason === null || reason === undefined) return null;
+  if (!Object.hasOwn(HANDOFF_REASON_TEXT, reason)) return null;
+  return HANDOFF_REASON_TEXT[reason as ChatHandoffReason] ?? null;
+}
+
+/**
+ * 시스템 줄 아래 이유 글. HANDOFF 줄만 — 계약상 `handoff`는 HANDOFF면 늘 값, 그 밖 kind면 null이지만
+ * 다른 kind에 값이 실려 와도 넘김 줄이 아니면 이유를 달지 않는다. 칸이 없으면(옛 서버, `?? null`) 이유 없음.
+ */
+export function handoffReasonOf(
+  message: Pick<ChatMessage, "kind" | "handoff">,
+): string | null {
+  if (message.kind !== "HANDOFF") return null;
+  return handoffReasonText(message.handoff?.reason);
+}
+
+/**
+ * 스위치를 눌렀을 때 PUT 본문. `intents`는 받은 값 그대로 돌려보낸다 — 화면은 전체 스위치 하나지만 계약은
+ * 의도별 칸이라(Q6), 여기서 기본값으로 덮으면 다른 곳에서 끈 의도가 다시 켜진다.
+ */
+export function toggledSettings(
+  settings: AutoReplySettings,
+  enabled: boolean,
+): AutoReplySettings {
+  return { enabled, intents: { ...settings.intents } };
+}
+
+/**
+ * 목록 머리 아래 한 줄. 실패가 꺼짐 안내보다 먼저다 — 실패면 스위치가 원래 값으로 돌아와 있어서
+ * 꺼짐 안내가 같이 뜨면 "꺼졌다"와 "못 바꿨다"가 함께 보인다. 설정을 아직 모르면 아무것도 없다.
+ */
+export function autoReplyNoteOf(
+  settings: AutoReplySettings | undefined,
+  failed: boolean,
+): AutoReplyNote {
+  if (failed) return "failed";
+  if (settings === undefined) return null;
+  return settings.enabled ? null : "off";
+}
+
+/** 근거 한 줄을 글자로. 테스트와 낭독용 */
+export function factLineText(line: FactLine): string {
+  return line.map((part) => part.text).join("");
+}
+
+/**
+ * 낭독기 알림(S3-8). 방을 연 뒤(`baseline` 이후) 도착한 **소매처** 메시지 중 마지막 것만.
+ * 첫 로딩 때는 null — 열자마자 50개를 읽어 주지 않는다. 내가 보낸 말, 자동 답변도 읽지 않는다.
+ *
+ * sequence를 같이 주는 이유(QA F8): 같은 본문("네")이 연달아 오면 글자가 그대로라 live 영역에 변화가 없고
+ * 낭독기가 두 번째를 안 읽는다. 그리는 쪽이 sequence를 key로 써서 매번 새 노드로 바꾼다.
+ */
+export function liveAnnouncement(
+  messages: readonly ChatMessage[],
+  baseline: number,
+  counterpartName: string,
+): { text: string; sequence: number } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message === undefined || message.sequence <= baseline) break;
+    if (message.sender === "RETAILER")
+      return {
+        text: `${counterpartName}: ${message.body}`,
+        sequence: message.sequence,
+      };
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------------
+ * polling 간격
+ * ------------------------------------------------------------------------ */
+
+/**
+ * 다음 polling까지 기다릴 시간(S3-6). 실패 0번이면 3초. n번 연속 실패면 3초 × 2^(n−1)에 ±20%를 섞는다
+ * — 1번째 실패 뒤 3초, 2번째 6초, 3번째 12초. **흔들림을 섞은 뒤에도** 30초를 넘지 않는다(기획 §4-1,
+ * 리뷰 F5) — 서버가 살아난 뒤 사장이 30초 넘게 새 말을 못 보는 일이 없게.
+ *
+ * 성공 간격에는 흔들림을 섞지 않는다. 평소엔 탭마다 여는 시각이 달라 저절로 흩어지고, 몰림은
+ * 서버가 같이 아팠다가 같이 살아날 때 생긴다.
+ *
+ * `random`은 [0, 1). 받는 이유: 테스트가 경계값(−20%, +20%)을 정확히 볼 수 있게.
+ */
+export function pollDelayMs(failures: number, random: number): number {
+  if (failures <= 0) return ROOM_POLL_MS;
+  const base = Math.min(
+    ROOM_POLL_MS * 2 ** (failures - 1),
+    ROOM_POLL_BACKOFF_MAX_MS,
+  );
+  const jitter = 1 + (random * 2 - 1) * ROOM_POLL_JITTER;
+  return Math.min(Math.round(base * jitter), ROOM_POLL_BACKOFF_MAX_MS);
+}
+
+/* ------------------------------------------------------------------------
+ * 보내기 (#265)
+ * ------------------------------------------------------------------------ */
+
+/** 서버와 같은 셈 — 앞뒤 공백을 빼고 코드 포인트로. 이모지 하나가 1자다 */
+export function bodyLength(text: string): number {
+  return [...text.trim()].length;
+}
+
+/**
+ * 입력창 판정(S4-4). 넘어도 **자르지 않는다** — 붙여 넣은 긴 글을 사장이 직접 줄이게 둔다.
+ * 판정과 안내만 하고 보내기를 잠근다.
+ */
+export function checkComposer(text: string): ComposerCheck {
+  const length = bodyLength(text);
+  const over = length > BODY_MAX;
+  const shown = `${formatNumber(length)}/${formatNumber(BODY_MAX)}`;
+  return {
+    length,
+    blank: length === 0,
+    over,
+    counter: !over && length >= BODY_COUNTER_FROM ? shown : null,
+    overMessage: over
+      ? `${formatNumber(BODY_MAX)}자까지 보낼 수 있어요 (${shown})`
+      : null,
+  };
+}
+
+/**
+ * 보내기 실패를 화면 반응 셋으로. **`code`로만 가른다.** 서버까지 못 간 것(`NETWORK_ERROR`)은
+ * 오프라인과 같은 안내다 — 사장이 할 일(연결 확인 뒤 다시 보내기)이 같다.
+ */
+export function sendFailureOf(error: unknown): SendFailure {
+  if (isApiError(error)) {
+    if (error.code === WHOLESALE_ERROR_CODE.UNAUTHENTICATED) return "session";
+    if (error.code === TRANSPORT_ERROR_CODE.NETWORK) return "offline";
+  }
+  return "server";
+}
+
+/**
+ * 같은 계정 재로그인을 넘긴 보내기의 실패 종류(loop-08d S2-1, M8). 세션 세대가 바뀐 뒤 도착한 401은 옛 쿠키의 답이라
+ * 세션 끊김이 아니라 `server`(다시 보내기, 지우기)로 본다 — 끊김으로 보면 새 세션을 다시 잠근다.
+ * 다시 보내기는 같은 `clientMessageId`라 서버가 한 번만 만든다. 401 아닌 실패는 그대로(M6)
+ */
+export function staleSendFailure(
+  failure: SendFailure,
+  sessionChanged: boolean,
+): SendFailure {
+  return failure === "session" && sessionChanged ? "server" : failure;
+}
+
+/**
+ * 실패 말풍선에 `다시 보내기`를 둘까(loop-08d F1, D48). **잠겨 있는 동안만 뺀다** — 실패 종류는 묻지 않는다.
+ * 401(`session`)로 실패한 글도 같은 계정 재로그인으로 잠금이 풀리면 다시 보낼 수 있다. 처음 `clientMessageId`
+ * 그대로라 서버엔 하나만 생긴다(08c S3-11 규칙). 지우고 다시 치게 하지 않으려는 것
+ */
+export function canRetrySend(sessionLost: boolean): boolean {
+  return !sessionLost;
+}
+
+/** 실패 말풍선 아래 문구 */
+export function failureText(failure: SendFailure | null): string {
+  return failure === "offline" ? PENDING_TEXT.offline : PENDING_TEXT.failed;
+}
+
+/**
+ * 보내기 응답을 방 캐시에 넣는다. **cursor는 그대로 둔다** — 내가 보낸 7번 앞에 소매처의 6번이 같이
+ * 커밋됐을 수 있다. cursor를 7로 올리면 다음 polling이 6번을 건너뛴다(`ChatThread` 주석).
+ * 다음 polling이 7번을 다시 가져와도 `mergeMessages`가 한 번만 남긴다.
+ */
+export function insertSent(
+  thread: ChatThread,
+  sent: readonly ChatMessage[],
+): ChatThread {
+  return { ...thread, messages: mergeMessages(thread.messages, sent) };
+}
+
+/**
+ * 말풍선의 와이어프레임 `data-ac`(QA F7). 기본 S3-1, 방을 연 뒤 polling으로 붙었으면 S3-3 S3-4,
+ * 보류 말풍선과 같은 키라 그것을 대신한 것(응답 유실 뒤 합쳐진 것)이면 S4-6. 연 뒤 붙은 내 글이면 S3-5(loop-08).
+ * 넘김 줄과 그 바로 앞 소매 문의는 S9-3(와이어프레임 `#state-autoreply-off-flow`, QA F4). 넘김이 꺼짐 때문인지
+ * 메시지만으로는 모른다 — 넘김 줄이면 다 단다.
+ */
+export function messageAc(
+  message: Pick<
+    ChatMessage,
+    "sequence" | "clientMessageId" | "kind" | "sender"
+  >,
+  baseline: number,
+  pendingIds: ReadonlySet<string>,
+  handoffCauseIds: ReadonlySet<number> = new Set(),
+): string {
+  const ac = ["S3-1"];
+  if (message.sequence > baseline) ac.push("S3-3", "S3-4");
+  /* loop-08 S3-5: 방을 연 뒤 내가 보낸 글(와이어프레임 17 `#state-read-send` seq 7). 번호가 loop-04 S3-5와
+     겹쳐 말풍선 쪽에선 이 글만 S3-5를 단다(QA F3) */
+  if (
+    message.sequence > baseline &&
+    message.sender === "WHOLESALER" &&
+    message.kind === "TEXT"
+  )
+    ac.push("S3-5");
+  if (
+    message.clientMessageId !== null &&
+    pendingIds.has(message.clientMessageId)
+  )
+    ac.push("S4-6");
+  if (message.kind === "HANDOFF" || handoffCauseIds.has(message.sequence))
+    ac.push("S9-3");
+  return ac.join(" ");
+}
+
+/**
+ * 넘김 줄 바로 앞의 소매 말 sequence들 — 넘김을 부른 문의다(S9-3). 서버는 소매 말과 넘김 줄을 연달아
+ * 붙인다(n, n+1). 사이에 다른 말이 끼면 잇지 않는다. 소매 앱의 같은 이름 함수와 같은 규칙(앱끼리 복제)
+ */
+export function handoffCauses(
+  messages: readonly Pick<ChatMessage, "sequence" | "sender" | "kind">[],
+): Set<number> {
+  const causes = new Set<number>();
+  const sorted = [...messages].sort((a, b) => a.sequence - b.sequence);
+  sorted.forEach((message, i) => {
+    const prev = sorted[i - 1];
+    if (message.kind === "HANDOFF" && prev?.sender === "RETAILER")
+      causes.add(prev.sequence);
+  });
+  return causes;
+}
+
+/**
+ * 화면에 남길 보류 말풍선(S4-6). 서버 메시지 중 같은 `clientMessageId`가 있으면 뺀다 — 응답은 유실됐는데
+ * polling이 먼저 가져온 경우다. 그러면 실패 말풍선 대신 서버 말풍선 하나만 남는다.
+ */
+export function visiblePending(
+  pending: readonly PendingMessage[],
+  messages: readonly ChatMessage[],
+): PendingMessage[] {
+  const delivered = new Set(
+    messages.flatMap((m) =>
+      m.clientMessageId === null ? [] : [m.clientMessageId],
+    ),
+  );
+  return pending.filter((p) => !delivered.has(p.clientMessageId));
+}
+
+const NO_PENDING: readonly PendingMessage[] = [];
+
+/** 방 하나의 보류 말풍선. 없으면 같은 빈 배열 — 렌더마다 새 배열이면 memo가 매번 깨진다 */
+export function pendingOfRoom(
+  all: PendingByRoom,
+  roomId: number,
+): readonly PendingMessage[] {
+  return all[roomId] ?? NO_PENDING;
+}
+
+/** 방 하나의 보류 말풍선만 바꾼다. 비면 그 방 칸을 지운다 — 다른 방 칸은 그대로(S3-10) */
+export function withRoomPending(
+  all: PendingByRoom,
+  roomId: number,
+  change: (list: readonly PendingMessage[]) => PendingMessage[],
+): PendingByRoom {
+  const next = change(pendingOfRoom(all, roomId));
+  if (next.length > 0) return { ...all, [roomId]: next };
+  if (!(roomId in all)) return all;
+  const rest = { ...all };
+  delete rest[roomId];
+  return rest;
+}
+
+/** 같은 키의 보류 말풍선을 바꾼다. 없으면 맨 아래에 붙인다(다시 보내기는 제자리) */
+export function upsertPending(
+  pending: readonly PendingMessage[],
+  next: PendingMessage,
+): PendingMessage[] {
+  const index = pending.findIndex(
+    (p) => p.clientMessageId === next.clientMessageId,
+  );
+  if (index < 0) return [...pending, next];
+  return pending.map((p, i) => (i === index ? next : p));
+}

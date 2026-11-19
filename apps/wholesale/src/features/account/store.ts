@@ -1,9 +1,20 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SESSION_STORAGE_KEY } from "./constants";
-import { findAccount, normalizeEmail } from "./derive";
-import type { Account, AccountStatus, BankAccount } from "./types";
+import { SESSION_CHANNEL_NAME, SESSION_STORAGE_KEY } from "./constants";
+import {
+  findAccount,
+  normalizeEmail,
+  parseSessionBroadcast,
+  otherTabActionOf,
+} from "./derive";
+import { noteSessionEnd } from "./loginNotice";
+import type {
+  Account,
+  AccountStatus,
+  BankAccount,
+  SessionEndReason,
+} from "./types";
 
 /**
  * 로그인 세션 흉내. **서버도 쿠키도 없다** — API가 붙으면 이 파일만 갈아 끼운다.
@@ -30,11 +41,6 @@ export interface AccountOverride {
    */
   appliedAt?: string;
   bankAccount?: BankAccount | null;
-  /**
-   * 계좌 온보딩을 이미 한 번 지나갔나. 로그아웃해도 지우지 않는다 — 같은 탭에서
-   * 다시 로그인했을 때 방금 거절한 안내가 또 뜨면 안내가 아니라 방해다.
-   */
-  bankPromptSeen?: boolean;
 }
 
 interface SessionState {
@@ -166,7 +172,6 @@ export type SessionView =
   | {
       state: "signedIn";
       account: Account;
-      bankPromptSeen: boolean;
       /** 이번 세션에 신청한 시각. 더미 계정으로 로그인만 했으면 `null`이다 */
       appliedAt: string | null;
     };
@@ -223,28 +228,8 @@ function resolve(snapshot: SessionState): SessionView {
   return {
     state: "signedIn",
     account,
-    bankPromptSeen: override?.bankPromptSeen ?? account.bankAccount !== null,
     appliedAt: override?.appliedAt ?? null,
   };
-}
-
-/**
- * 이메일 하나의 덮어쓰기를 합쳐 넣는다. **저장소를 먼저 읽는다**(`ensureLoaded`) —
- * 읽지 않은 채 합치면 이 탭에 이미 있던 다른 변경이 사라진다.
- */
-function patchOverride(email: string, patch: AccountOverride): SessionState {
-  const current = ensureLoaded();
-  const next: SessionState = {
-    ...current,
-    loaded: true,
-    overrides: {
-      ...current.overrides,
-      [email]: { ...current.overrides[email], ...patch },
-    },
-  };
-  writeStorage(next);
-  commit(next);
-  return next;
 }
 
 /**
@@ -274,6 +259,7 @@ export function signIn(email: string): SessionView {
   };
   writeStorage(next);
   commit(next);
+  broadcastSession(next.email);
   return resolve(next);
 }
 
@@ -304,6 +290,7 @@ export function signInWithStatus(
   };
   writeStorage(next);
   commit(next);
+  broadcastSession(next.email);
   return resolve(next);
 }
 
@@ -312,74 +299,105 @@ export function signInWithStatus(
  * 등록한 계좌가 사라지면 사장은 자기가 한 일이 남지 않는 앱이라고 배운다.
  */
 export function signOut(): void {
+  endSession("self");
+  broadcastSession(null);
+}
+
+/**
+ * 이 탭의 세션을 닫는다(정리 포함). 다른 탭에 알리지는 않는다 — 다른 탭에서 온 알림을 받아 닫을 때도 쓴다.
+ * `reason`은 로그인 화면이 "다른 탭 때문"이라고 말할지 정한다(#410)
+ */
+function endSession(reason: SessionEndReason): void {
+  /* 세션을 지우기 **전에** 적는다. 지우면 가드가 `/login`으로 옮기고, 그 뒤엔 방송 순간의 주소를 잃는다 */
+  noteSessionEnd(reason, window.location.pathname);
   const current = ensureLoaded();
   const next: SessionState = { ...current, loaded: true, email: null };
+  /* 세션을 닫기 **전에** 지운다. 닫으면 가드가 ERP 화면을 내리고, 내려가는 입력창이 마지막 글을 저장한다 —
+     지우기가 그 뒤면 순서에 기대게 된다. 저장 쪽도 세대 번호로 막지만(chat `draftStore`) 앞에서 끝낸다 */
+  for (const cleanup of signOutCleanups) {
+    try {
+      cleanup();
+    } catch {
+      /* 정리 하나가 실패해도 로그아웃은 끝나야 한다 */
+    }
+  }
   writeStorage(next);
   commit(next);
 }
 
 /**
- * 가입 신청을 접수하고 그 계정으로 로그인한다. 승인이 앱 밖에서 일어나므로 여기서
- * 하는 일은 "심사 중 계정 하나가 생겼다"까지다.
+ * 로그아웃 때 같이 지울 것(loop-08b Q2 — 채팅의 쓰던 글). 덮어쓰기와 달리 **사람에게 딸린 화면 기억**이라
+ * 공용 단말에서 다음 사람이 보면 안 된다. 이 feature는 무엇을 지우는지 모른다 — `app/`이 끼워 넣는다
+ * (feature끼리 import 금지). 돌려준 함수로 뺀다
+ */
+const signOutCleanups = new Set<() => void>();
+
+export function onSignOut(cleanup: () => void): () => void {
+  signOutCleanups.add(cleanup);
+  return () => {
+    signOutCleanups.delete(cleanup);
+  };
+}
+
+/*
+ * 탭 사이 세션 변경(loop-08c 리뷰 R8). 탭 2에서 로그아웃하고 B로 들어오면 쿠키는 B인데 탭 1은 A라고 믿고 A의 목록,
+ * 대화, 쓰던 글을 계속 그렸다. 로그인, 로그아웃마다 채널로 알리고, 받은 탭은 계정이 다르면 자기 세션을 닫는다 —
+ * 로그아웃과 같은 정리(`onSignOut`: 채팅 캐시와 세대, 헤더 알림 캐시, 쓰던 글)가 돌고 가드가 로그인 화면으로 보낸다.
+ * B를 이 탭에 그대로 열지 않는 이유: 이 탭은 B의 승인 상태를 모른다(로그인 응답이 탭 2에만 왔다).
+ */
+let sessionChannel: BroadcastChannel | null = null;
+
+function channel(): BroadcastChannel | null {
+  if (sessionChannel !== null) return sessionChannel;
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined")
+    return null;
+  try {
+    sessionChannel = new BroadcastChannel(SESSION_CHANNEL_NAME);
+  } catch {
+    /* 채널을 못 열면 탭 사이 전달만 빠진다 — 각 탭의 로그인, 로그아웃은 그대로 돈다 */
+    return null;
+  }
+  return sessionChannel;
+}
+
+function broadcastSession(email: string | null): void {
+  try {
+    channel()?.postMessage({ email });
+  } catch {
+    /* 알림이 실패해도 이 탭의 로그인, 로그아웃은 끝나야 한다 */
+  }
+}
+
+/**
+ * 다른 탭의 세션 알림을 듣는다. 앱 맨 위(`app/SignOutCleanup.tsx`)가 한 번 건다 — 어느 화면이 떠 있든 들어야 한다.
+ * 보낸 탭 자신은 받지 않는다(BroadcastChannel 규칙). 돌려준 함수로 뗀다.
  *
- * 방금 적은 상호명·사업자 등록번호를 세션에 얹는 이유: 승인 대기 화면이 이 값을
- * 읽어야 **상수 하나가 늘 같은 이름을 말하는 일**이 없다(`retail-account` F1).
+ * 같은 계정 재로그인(Codex 메타 M2)은 세션을 닫지 않고 `onRefresh`를 부른다 — 401로 잠긴 채팅을 새 쿠키로 이어 가게.
+ * 무엇을 풀지는 이 feature가 모른다. `app/`이 채팅 쪽 함수를 넘긴다(feature끼리 import 금지)
  */
-export function applySignup(input: {
-  email: string;
-  storeName: string;
-  bizNo: string;
-}): void {
-  /* 덮어쓰기의 **키**가 곧 로그인 대조 값이다(`wholesale-account` F7) */
-  const email = normalizeEmail(input.email);
-  const next = patchOverride(email, {
-    storeName: input.storeName,
-    bizNo: input.bizNo,
-    status: "PENDING",
-    appliedAt: formatAppliedAt(new Date()),
-  });
-  const signedIn: SessionState = { ...next, email };
-  writeStorage(signedIn);
-  commit(signedIn);
+export function watchOtherTabSessions(onRefresh: () => void): () => void {
+  const target = channel();
+  if (target === null) return () => {};
+  const onMessage = (event: MessageEvent) => {
+    const message = parseSessionBroadcast(event.data);
+    if (message === null) return;
+    const action = otherTabActionOf(ensureLoaded().email, message.email);
+    if (action === "end") endSession("otherTab");
+    else if (action === "refresh") onRefresh();
+  };
+  target.addEventListener("message", onMessage);
+  return () => target.removeEventListener("message", onMessage);
 }
 
-/**
- * 서류를 다시 내고 재심사를 신청한다. 무엇을 다시 올렸는지는 담지 않는다 — 보낼
- * 서버가 없어 파일은 화면에 이름을 남기는 데서 끝난다.
- */
-export function applyReapply(email: string): void {
-  patchOverride(email, {
-    status: "PENDING",
-    appliedAt: formatAppliedAt(new Date()),
-  });
+/** 로그인한 이메일(소문자). 판정 전, 로그아웃이면 null */
+export function useSessionEmail(): string | null {
+  const session = useSession();
+  return session.state === "signedIn" ? session.account.email : null;
 }
 
-/**
- * 확정 와이어프레임 형식 그대로. `toLocaleString`을 쓰지 않는 이유: 브라우저
- * 로케일에 따라 갈려서 같은 화면이 단말마다 다른 모양의 날짜를 말한다.
+/*
+ * 가입 신청(`applySignup`)·재신청(`applyReapply`)·계좌 저장(`saveBankAccount`)은
+ * 지웠다. 셋 다 브라우저 세션에만 적고 "심사 중"·"등록했어요"를 띄웠는데 서버엔
+ * 아무것도 가지 않았다 — 거짓 성공이다(`side-02` N3). 가입은 업로드 API가 생기면
+ * 서버 호출로 다시 만든다(D32 Q1-C).
  */
-function formatAppliedAt(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${at.getFullYear()}.${pad(at.getMonth() + 1)}.${pad(at.getDate())} ` +
-    `${pad(at.getHours())}:${pad(at.getMinutes())}`
-  );
-}
-
-/**
- * 정산 계좌를 등록한다. **첫 계좌는 자동으로 주 계좌다** — `isPrimary`를 두지 않는
- * 이유는 계좌가 하나뿐인 순간에 구분할 대상이 없어서다. 체크박스를 보여 주면
- * "안 켜면 어떻게 되나"라는 질문만 생긴다. 다계좌 이슈가 열릴 때 타입까지 연다.
- */
-export function saveBankAccount(email: string, account: BankAccount): void {
-  patchOverride(email, { bankAccount: account, bankPromptSeen: true });
-}
-
-/**
- * 계좌 입력을 건너뛴다. **다음 로그인부터 온보딩이 다시 뜨지 않는다** — 한 번
- * 거절한 안내를 반복하는 것은 안내가 아니라 방해다. 대신 안 넣은 사실이
- * **계정 메뉴에 상시로 남아** 찾아갈 곳이 하나로 고정된다.
- */
-export function skipBankPrompt(email: string): void {
-  patchOverride(email, { bankPromptSeen: true });
-}

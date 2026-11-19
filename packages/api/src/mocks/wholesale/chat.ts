@@ -1,0 +1,2160 @@
+import { delay, http, HttpResponse } from "msw";
+import type { WholesalePaths, WholesaleSchema } from "../../wholesale";
+import { CHAT_EXTRA_LISTINGS } from "../chat/extraListings";
+import { chatExtraReceivables } from "../chat/extraReceivables";
+import {
+  DEFAULT_AUTO_REPLY_SETTINGS,
+  decideInquiry,
+  generatedLines,
+  linesToAppend,
+  openHandoffOf,
+  type AutoReplySettings,
+  type InquiryListing,
+} from "../chat/inquiry";
+import { addDays, koreanDate, seoulDate } from "../chat/backorderCandidates";
+import {
+  businessDateOf,
+  businessDates,
+  inquiryStats,
+} from "../chat/inquiryStats";
+import {
+  STATS_FIXTURE_ROOMS,
+  STATS_SEED_NAME,
+} from "../chat/inquiryStats.fixture";
+import type { InquiryPacking } from "../chat/packingOrders";
+import type { InquiryReceivable } from "../chat/receivable";
+import {
+  BACKORDER_SEED_ETA_DAYS,
+  backorderIdsError,
+  inquiryBackorders,
+  resetBackorderMock,
+} from "./backorder";
+import { addReadyPackings, readyPackingsError, resetOrderMock } from "./order";
+import { chatStockListing } from "./product";
+import { mockReceivableRows, resetSettlementMock } from "./settlement";
+import { inquiryPackings, resetShipmentMock } from "./shipment";
+
+/**
+ * 채팅 목 — 초안 op 5개(#263, 스냅샷 `x-ondo-draft`). 계약은 `01-plan.md` §5-2, 목은 §5-3.
+ *
+ * BE 시드가 없다(채팅 코드 자체가 없다, D10). 그래서 다른 목과 달리 **시드를 여기서 지었다.**
+ * 지은 것이 무엇을 시험하려고 있는지 방마다 적는다 — 값이 그럴듯한 게 목적이 아니라
+ * 경계(30개 페이지, 50개 페이지, 같은 시각, 역전, 중복 재전송, 남의 방)를 만드는 게 목적이다.
+ *
+ * 상태가 있다: 방, 방별 sequence, 양쪽 읽음 위치, Idempotency-Key 저장소. 새로고침하면 시드로 돌아간다.
+ *
+ * 세션이 없는 목이라 "나"는 도매처 101(상품 목의 첫 도매처)이다. 소매처 1 봄봄상회, 2 대기상회는
+ * 주문, 미송 목과 같은 id다. 3~32는 목 전용 가명이다.
+ *
+ * 소매 쪽 목(`../retail/chat.ts`, loop-05a)은 이 저장소를 같이 쓴다 — 방은 (도매처, 소매처) 쌍에
+ * 1개이고 양쪽이 같은 roomId를 보기 때문이다(README "채팅 목"). 맨 아래 `chatStore`가 그 입구다.
+ * 목은 앱마다 브라우저 안에 살아서 도매 탭과 소매 탭이 상태를 나누지는 않는다 — 나누는 건 시드와 규칙이다.
+ */
+
+type ChatMessage = WholesaleSchema<"ChatMessage">;
+type ChatRoomSummary = WholesaleSchema<"ChatRoomSummary">;
+type ChatRoomDetail = WholesaleSchema<"ChatRoomDetail">;
+type ChatSendResult = WholesaleSchema<"ChatSendResult">;
+type ChatInquiry = WholesaleSchema<"ChatInquiry">;
+type ChatMessageKind = WholesaleSchema<"ChatMessageKind">;
+type ChatSender = WholesaleSchema<"ChatSender">;
+type ChatIntent = WholesaleSchema<"ChatIntent">;
+
+/** 세션 없는 목의 "나". 상품 목의 첫 도매처 */
+export const CHAT_ME_WHOLESALER_ID = 101;
+
+/** 본문 손잡이. `includes`로 본다 — 긴 글 안에 섞여도 걸린다. 위에서부터 먼저 맞는 것 하나 */
+export const CHAT_BODY_HOOK = {
+  /** 401 UNAUTHENTICATED. 만들지 않는다 */
+  AUTH_401: "auth401",
+  /** 403 NOT_APPROVED. 만들지 않는다 */
+  AUTH_403: "auth403",
+  /** 만들고 저장하고 **응답만** 500. 같은 키로 다시 보내면 200 replay (응답 유실 재현) */
+  FAIL_AFTER_COMMIT: "failAfterCommit",
+  /** 같은 키의 첫 요청만 500(만들지 않음), 다시 보내면 201 */
+  FAIL_500_ONCE: "fail500once",
+  /** 늘 500. 만들지 않는다 */
+  FAIL_500: "fail500",
+  /** 만든 뒤 5초 있다가 201 ("보내는 중" 확인, 중복 요청 대기) */
+  SLOW_5S: "slow5s",
+} as const;
+
+/** 보내기 기본 지연. "보내는 중" 말풍선이 한 프레임은 보이게 */
+export const CHAT_SEND_DELAY_MS = 300;
+export const CHAT_SLOW_MS = 5_000;
+
+export const CHAT_BODY_MAX = 1000;
+const PREVIEW_MAX = 80;
+const ROOM_PAGE_DEFAULT = 30;
+const MESSAGE_PAGE_DEFAULT = 50;
+const SIZE_MAX = 100;
+
+/** `/__mock/chat/fail`이 고르는 op. 앞 4개는 스펙 op, `room`은 방 머리 */
+export const CHAT_FAIL_OPS = [
+  "rooms",
+  "room",
+  "messages",
+  "send",
+  "read",
+  "settings",
+  /** 미수 자동 답의 정산 원본 조회(loop-07 S1-9). 보내기는 201 이고 답 대신 넘김(LOOKUP_FAILED)이 붙는다 */
+  "receivable",
+  /**
+   * 미송 0일 때 포장 답의 포장 원본 조회(loop-08i S2-3). 보내기는 201 이고 답 대신 넘김(NO_BACKORDER)이 붙는다.
+   * `status`는 안 쓴다(HTTP 응답이 아니다)
+   */
+  "packing",
+  /** 문의 지표 `inquiryStats`(loop-08 S2-5). 대시보드 카드 안 오류 */
+  "stats",
+] as const;
+type ChatFailOp = (typeof CHAT_FAIL_OPS)[number];
+
+/**
+ * `/__mock/chat/delay`가 고르는 op(loop-08 §5-4 3). 늦은 방 머리가 polling 뒤에 옛 읽음 값을 들고 도착하는
+ * 순서 역전을 만든다. 소매 목의 같은 손잡이와 모양이 같다.
+ * `rooms`는 검색어를 바꾼 사이 늦게 온 이전 목록(loop-08b S4-7), `send`는 응답 전에 방을 옮기는 경우(S3-12).
+ * `send`는 **저장은 요청 시점, 응답만 늦다** — 그사이 messages 조회가 그 메시지를 먼저 가져오는 경로도 생긴다
+ */
+export const CHAT_DELAY_OPS = [
+  "room",
+  "messages",
+  "rooms",
+  "send",
+  /** 문의 지표. 대시보드 7일 줄의 최초 로딩과 재조회 중 모양(loop-08f §5-2 1). `range`로 한 종류만 늦춘다 */
+  "stats",
+] as const;
+type ChatDelayOp = (typeof CHAT_DELAY_OPS)[number];
+
+/**
+ * stats 요청 종류(loop-08f §5-2 1). `fail`, `delay`의 `range`로 하나만 고른다 — 대시보드의 오늘 쿼리와 7일 쿼리를
+ * 따로 실패시키고 따로 늦추려고. `today` = `from`, `to` 둘 다 없는 요청, `multi` = `from`이 있는 요청(`statsRangeOf`).
+ * 소매 `fail {op: messages, page}`(08d)와 같은 꼴이다. 도매 목 모드는 브라우저 MSW가 받아 `page.route` 지연을
+ * 믿기 어려워 목에 둔다
+ */
+export const CHAT_STATS_RANGES = ["today", "multi"] as const;
+export type ChatStatsRange = (typeof CHAT_STATS_RANGES)[number];
+
+/**
+ * messages 요청 종류(loop-08c §5-3 1). `fail`, `delay`의 `page`로 하나만 고른다 — 이전 메시지(before)와
+ * polling(after)의 응답 순서를 따로 늦추고 따로 실패시키려고. 쿼리로 가른다(`messagesPageOf`)
+ */
+export const CHAT_MESSAGES_PAGES = ["latest", "before", "after"] as const;
+export type ChatMessagesPage = (typeof CHAT_MESSAGES_PAGES)[number];
+
+/** 계획 저장 키. `page`, `range` 없는 계획은 op 이름, 있는 계획은 `messages:before`, `stats:multi`처럼 */
+type FailKey =
+  ChatFailOp | `messages:${ChatMessagesPage}` | `stats:${ChatStatsRange}`;
+type DelayKey =
+  ChatDelayOp | `messages:${ChatMessagesPage}` | `stats:${ChatStatsRange}`;
+
+/** 방 목록 필터와 검색(초안 쿼리 `filter`, `q`, loop-08b §5-2) */
+type ChatRoomsQuery = NonNullable<
+  WholesalePaths["/api/wholesale/chat/rooms"]["get"]["parameters"]["query"]
+>;
+type ChatRoomFilter = NonNullable<ChatRoomsQuery["filter"]>;
+export const CHAT_ROOM_FILTERS = [
+  "UNREAD",
+  "NEEDS_REPLY",
+] as const satisfies readonly ChatRoomFilter[];
+/** `q` 상한. 앞뒤 공백을 지운 뒤 코드 포인트로 센다 */
+export const CHAT_ROOM_QUERY_MAX = 50;
+
+/** 필터, 검색 시험용 시드 이름(`reset {seed: "rooms-70"}`). 기본 시드를 대신한다 */
+export const ROOMS_70_SEED_NAME = "rooms-70";
+
+/**
+ * 소매 이전 메시지 시험용 시드 이름(`reset {seed: "retail-history"}`, loop-08d §5-2 4). 기본 시드에서 방 1만 바꾼다.
+ * 도매 `reset`, 소매 `reset` 둘 다 받는다(저장소가 하나)
+ */
+export const RETAIL_HISTORY_SEED_NAME = "retail-history";
+
+/** 목이 받는 시드 이름 전부. 없으면 기본 시드 */
+const CHAT_SEED_NAMES = [
+  STATS_SEED_NAME,
+  ROOMS_70_SEED_NAME,
+  RETAIL_HISTORY_SEED_NAME,
+] as const;
+
+/** `reset`의 `seed` 값 검사. 맞는 이름이면 true */
+export function isChatSeedName(raw: unknown): raw is string {
+  return CHAT_SEED_NAMES.some((s) => s === raw);
+}
+
+/** 모르는 `seed`의 400 메시지(도매, 소매 같은 글) */
+export const CHAT_SEED_INVALID_MESSAGE = `seed는 ${CHAT_SEED_NAMES.join(" | ")}`;
+
+/** 문의 지표 조회 기간 상한(일). 스펙 `to` 설명과 같다 */
+export const STATS_MAX_DAYS = 62;
+
+/* --- 상태 --------------------------------------------------------------- */
+
+interface MockRoom {
+  roomId: number;
+  wholesalerId: number;
+  retailerId: number;
+  retailerName: string;
+  createdAt: string;
+  messages: ChatMessage[];
+  /** 도매(나)가 읽은 위치 */
+  wholesalerLastRead: number;
+  /** 소매가 읽은 위치. 한 번도 안 읽었으면 null */
+  retailerLastRead: number | null;
+  /**
+   * 방의 상품 문맥(loop-05b §4-2 6). 소매 `createChatRoom`의 listingId와 그 시각(ms).
+   * 자동 답이 "이 상품"을 이 값으로 읽는다. 30분 지나면 없는 것으로 본다(판정이 잰다)
+   */
+  context: { listingId: number; at: number } | null;
+}
+
+interface IdempotencyRecord {
+  bodyHash: string;
+  /** 처음 요청이 끝나야 채워진다. 같은 키 동시 요청은 이걸 기다린다 */
+  ready: Promise<void>;
+  /** 만든 직후(지연 전에) 채운다. 만들지 못한 요청(500, 401 …)은 기록을 남기지 않는다 */
+  result: ChatSendResult | null;
+}
+
+let rooms: MockRoom[] = [];
+let nextMessageId = 1;
+/** 키 범위는 (방, 보낸 사업체). 목은 보내는 쪽이 도매뿐이라 `${roomId}:WHOLESALER:${key}` */
+const idempotency = new Map<string, IdempotencyRecord>();
+/** `fail500once`가 이미 한 번 실패시킨 키 */
+const failedOnceKeys = new Set<string>();
+const failPlan = new Map<FailKey, { status: number; times: number }>();
+const delayPlan = new Map<DelayKey, { ms: number; times: number }>();
+/**
+ * 자동 답 설정(도매처 단위, 초안 op `autoReplySettings`). 목은 "나"(101) 한 벌만 둔다 — 다른 도매처 방은
+ * 늘 켜짐으로 판정한다. 새로고침하면 켜짐으로 돌아간다(BE는 저장, §4-3)
+ */
+let autoReplySettings: AutoReplySettings = structuredClone(
+  DEFAULT_AUTO_REPLY_SETTINGS,
+);
+
+/* --- 시드 --------------------------------------------------------------- */
+
+/** 시드 기준 시각. 방 1이 10/27(화)과 10/28(수)에 걸친다(S3-1 날짜 구분선) */
+const SEED_BASE_MS = Date.parse("2026-10-28T10:00:00+09:00");
+const MINUTE_MS = 60_000;
+
+function at(minutesBeforeBase: number): string {
+  return new Date(SEED_BASE_MS - minutesBeforeBase * MINUTE_MS).toISOString();
+}
+
+const RETAILER_NAMES: readonly string[] = [
+  "봄봄상회",
+  "대기상회",
+  "가람상회",
+  "나래옷방",
+  "다온패션",
+  "라온상점",
+  "마루의류",
+  "바다상회",
+  "사랑옷집",
+  "아라패션",
+  "자람상회",
+  "차오름",
+  "카페옷방",
+  "타래상회",
+  "파랑의류",
+  "하늘옷집",
+  "고운상회",
+  "누리패션",
+  "도담옷방",
+  "로아상회",
+  "모아의류",
+  "보람상점",
+  "새봄패션",
+  "온새미",
+  "제이옷방",
+  "초롱상회",
+  "큰별의류",
+  "토리패션",
+  "풀잎상회",
+  "한결옷집",
+  "여울상회",
+  "윤슬패션",
+];
+
+interface SeedLine {
+  sender: ChatSender;
+  kind?: ChatMessageKind;
+  body: string;
+  sentAt: string;
+  clientMessageId?: string | null;
+  inquiry?: ChatInquiry | null;
+  autoReply?: ChatMessage["autoReply"];
+  /** HANDOFF 줄의 이유(loop-07). 다른 kind 는 비워 둔다(저장은 null) */
+  handoff?: ChatMessage["handoff"];
+}
+
+function room(
+  roomId: number,
+  retailerIndex: number,
+  createdAt: string,
+  lines: readonly SeedLine[],
+  read: { wholesaler: number; retailer: number | null },
+  wholesalerId = CHAT_ME_WHOLESALER_ID,
+): MockRoom {
+  const r: MockRoom = {
+    roomId,
+    wholesalerId,
+    retailerId: retailerIndex + 1,
+    retailerName:
+      RETAILER_NAMES[retailerIndex] ?? `소매처 ${retailerIndex + 1}`,
+    createdAt,
+    messages: [],
+    wholesalerLastRead: read.wholesaler,
+    retailerLastRead: read.retailer,
+    context: null,
+  };
+  for (const line of lines) {
+    append(r, line);
+  }
+  return r;
+}
+
+/** 시드 메시지의 clientMessageId. 무작위를 섞으면 새로고침마다 값이 달라져 화면 검증이 흔들린다 */
+function seedUuid(id: number): string {
+  return `00000000-0000-4000-8000-${String(id).padStart(12, "0")}`;
+}
+
+function append(r: MockRoom, line: SeedLine): ChatMessage {
+  const id = nextMessageId++;
+  const message: ChatMessage = {
+    id,
+    roomId: r.roomId,
+    sequence: (r.messages.at(-1)?.sequence ?? 0) + 1,
+    clientMessageId:
+      line.clientMessageId === undefined
+        ? line.sender === "SYSTEM" || (line.kind ?? "TEXT") !== "TEXT"
+          ? null
+          : seedUuid(id)
+        : line.clientMessageId,
+    sender: line.sender,
+    kind: line.kind ?? "TEXT",
+    body: line.body,
+    sentAt: line.sentAt,
+    inquiry: line.inquiry ?? null,
+    autoReply: line.autoReply ?? null,
+    // HANDOFF 면 늘 값, 그 밖 null(loop-07 §5-2). 소매 응답은 이 칸을 싣지 않는다(`../retail/chat.ts`)
+    handoff:
+      (line.kind ?? "TEXT") === "HANDOFF" ? (line.handoff ?? null) : null,
+  };
+  r.messages.push(message);
+  return message;
+}
+
+/** 방 6의 "같은 키로 두 번 보낸 기록". 이 키로 다시 보내면 200 replay */
+export const CHAT_SEED_REPLAY_KEY = "6f1d1f0e-4d3b-4c55-9a77-000000000006";
+
+function seedRooms(): MockRoom[] {
+  nextMessageId = 1;
+  const list: MockRoom[] = [];
+
+  // 방 1 봄봄상회 — 두 날(10/27 화, 10/28 수), 재고 문의 → 되묻기 → 자동 답, 사장 답, 안 읽은 소매 글 1
+  list.push(
+    room(
+      1,
+      0,
+      at(60 * 26),
+      [
+        {
+          sender: "RETAILER",
+          body: "안녕하세요, 플라워 셔츠 문의드려요",
+          sentAt: at(60 * 25),
+        },
+        {
+          sender: "WHOLESALER",
+          body: "네 말씀하세요",
+          sentAt: at(60 * 25 - 3),
+        },
+        {
+          sender: "RETAILER",
+          body: "이 셔츠 몇 장 남았어요?",
+          sentAt: at(40),
+          inquiry: {
+            intent: "STOCK",
+            listingId: 2001,
+            variantId: null,
+            backorderId: null,
+            label: "빈티지 플라워 셔츠",
+          },
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "CLARIFY",
+          body: "어떤 색상, 사이즈요?",
+          sentAt: at(40),
+          autoReply: {
+            intent: "STOCK",
+            replyToSequence: 3,
+            generatedBy: "RULE",
+            checkedAt: at(40),
+            subject: {
+              listingId: 2001,
+              variantId: null,
+              backorderId: null,
+              label: "빈티지 플라워 셔츠",
+            },
+            facts: { stock: null, backorder: null, receivable: null },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "레드 / M",
+          sentAt: at(38),
+          inquiry: {
+            intent: "STOCK",
+            listingId: 2001,
+            variantId: 3002,
+            backorderId: null,
+            label: "빈티지 플라워 셔츠 레드 / M",
+          },
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          body: "레드 M은 10~49장 있어요. 지금 주문할 수 있어요(한 번에 최대 500장)",
+          sentAt: at(38),
+          // 상품 목 3002의 시드 재고(35, 주문제한 500)를 옮겨 적었다. 상품 목과 상태를 공유하지 않는다
+          autoReply: {
+            intent: "STOCK",
+            replyToSequence: 5,
+            generatedBy: "RULE",
+            checkedAt: at(38),
+            subject: {
+              listingId: 2001,
+              variantId: 3002,
+              backorderId: null,
+              label: "빈티지 플라워 셔츠 레드 / M",
+            },
+            facts: {
+              stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
+              backorder: null,
+              receivable: null,
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "감사합니다. 내일 주문할게요",
+          sentAt: at(30),
+        },
+      ],
+      { wholesaler: 6, retailer: 6 },
+    ),
+  );
+
+  // 방 2 대기상회 — 열린 사람 넘김. 그 뒤 자동 답이 와도 닫히지 않는다(openHandoff)
+  list.push(
+    room(
+      2,
+      1,
+      at(60 * 5),
+      [
+        { sender: "RETAILER", body: "제 미수 얼마예요?", sentAt: at(60 * 4) },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          // 정산 목(대기상회 = 소매처 2, 확정 주문만 있고 출고 0)과 같은 값, 문장 C. 같은 방에서 다시 물어도
+          // 같은 답이 나와야 한다 — 옛 시드 786,000원은 정산 원본에 없는 금액이었다(QA F3)
+          body: "지금 갚을 돈은 없어요",
+          sentAt: at(60 * 4),
+          autoReply: {
+            intent: "RECEIVABLE",
+            replyToSequence: 1,
+            generatedBy: "RULE",
+            checkedAt: at(60 * 4),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: null,
+              label: null,
+            },
+            facts: {
+              stock: null,
+              backorder: null,
+              receivable: {
+                outstandingAmount: 0,
+                prepaidAmount: 0,
+                overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+              },
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "조금 깎아 주세요",
+          sentAt: at(60 * 3),
+        },
+        {
+          sender: "SYSTEM",
+          kind: "HANDOFF",
+          body: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
+          sentAt: at(60 * 3),
+          handoff: { reason: "NEGOTIATION", intent: null, sourceSequence: 3 },
+        },
+      ],
+      { wholesaler: 2, retailer: 4 },
+    ),
+  );
+
+  // 방 3 가람상회 — 메시지 120개(50개 페이지를 두 번 넘긴다). 홀수 소매, 짝수 도매. 100까지 읽음
+  const long: SeedLine[] = [];
+  for (let i = 1; i <= 120; i++) {
+    long.push({
+      sender: i % 2 === 1 ? "RETAILER" : "WHOLESALER",
+      body: `메시지 ${i}`,
+      sentAt: at(60 * 30 - i),
+    });
+  }
+  list.push(room(3, 2, at(60 * 31), long, { wholesaler: 100, retailer: 120 }));
+
+  // 방 4 나래옷방 — 메시지 0개. lastActivityAt = 방 생성 시각
+  list.push(room(4, 3, at(60 * 2), [], { wholesaler: 0, retailer: null }));
+
+  // 방 5 다온패션 — 같은 sentAt 2개(2, 3)와 역전(4가 3보다 이른 시각). 순서는 sequence가 정한다
+  list.push(
+    room(
+      5,
+      4,
+      at(60 * 7),
+      [
+        { sender: "RETAILER", body: "주문 확인 부탁해요", sentAt: at(60 * 6) },
+        { sender: "WHOLESALER", body: "확인했어요", sentAt: at(60 * 5) },
+        { sender: "RETAILER", body: "감사해요", sentAt: at(60 * 5) },
+        { sender: "RETAILER", body: "아 하나 더요", sentAt: at(60 * 5 + 1) },
+      ],
+      { wholesaler: 4, retailer: 2 },
+    ),
+  );
+
+  // 방 6 라온상점 — 같은 키로 두 번 보낸 기록. 메시지는 1개뿐이고 키는 저장소에 있다
+  list.push(
+    room(
+      6,
+      5,
+      at(60 * 9),
+      [
+        { sender: "RETAILER", body: "샘플 받을 수 있나요", sentAt: at(60 * 8) },
+        {
+          sender: "WHOLESALER",
+          body: "네 내일 보내 드릴게요",
+          sentAt: at(60 * 8 - 2),
+          clientMessageId: CHAT_SEED_REPLAY_KEY,
+        },
+      ],
+      { wholesaler: 2, retailer: 2 },
+    ),
+  );
+
+  // 방 7~32 — 목록 페이지(30개)를 넘기는 평범한 방. 20, 21은 lastActivityAt이 같다(roomId 보조 정렬)
+  for (let roomId = 7; roomId <= 32; roomId++) {
+    const minutes = roomId === 21 ? 60 * 10 + 20 * 13 : 60 * 10 + roomId * 13;
+    list.push(
+      room(
+        roomId,
+        roomId - 1,
+        at(minutes + 60),
+        [
+          {
+            sender: "RETAILER",
+            body: "이번 주 신상 있나요?",
+            sentAt: at(minutes + 5),
+          },
+          {
+            sender: "WHOLESALER",
+            body: "목요일에 올라가요",
+            sentAt: at(minutes),
+          },
+        ],
+        { wholesaler: 2, retailer: roomId % 3 === 0 ? 1 : 2 },
+      ),
+    );
+  }
+
+  // 방 33 — 다른 도매처(102)와 봄봄상회의 방. 101에게는 없는 방이다(404).
+  // 소매 목(봄봄상회 = 나)이 보는 두 번째 방이라 소매 화면이 시험할 것을 여기 둔다(loop-05a S5-6 S5-7):
+  // 미송, 미수 자동 답(정확 수량 검사가 빈 검사가 되지 않게)과 사람 넘김 줄.
+  // 미송 답의 입고일은 미송 목 시드(801 = SKU 3801)와 같은 reset 기준 상대값이다 — 날짜를 박아 두면 날이 바뀐 뒤
+  // 같은 미송에 날짜가 둘(시드 답과 새 답) 보인다(리뷰 M5)
+  const seedToday = seoulDate(Date.now());
+  const room33Eta = addDays(seedToday, BACKORDER_SEED_ETA_DAYS[3801]);
+  list.push(
+    room(
+      33,
+      0,
+      at(60 * 3),
+      [
+        { sender: "RETAILER", body: "다른 도매처 방", sentAt: at(60 * 2) },
+        {
+          sender: "RETAILER",
+          body: "블랙 L 미송 언제 와요?",
+          sentAt: at(60 * 2 - 1),
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          body: `블랙 L 미송 20장은 ${koreanDate(room33Eta, seedToday)} 입고 예정이에요`,
+          sentAt: at(60 * 2 - 1),
+          autoReply: {
+            intent: "BACKORDER",
+            replyToSequence: 2,
+            generatedBy: "RULE",
+            checkedAt: at(60 * 2 - 1),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: 801,
+              label: "코튼 셔츠 블랙 / L",
+            },
+            facts: {
+              stock: null,
+              backorder: {
+                qty: 20,
+                expectedInboundDate: room33Eta,
+                expectedInboundReason: null,
+              },
+              receivable: null,
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "제 미수 얼마예요?",
+          sentAt: at(60 * 2 - 2),
+        },
+        {
+          sender: "WHOLESALER",
+          kind: "AUTO_REPLY",
+          body: "갚을 돈 52,000원이에요. 기한 지난 것은 없어요",
+          sentAt: at(60 * 2 - 2),
+          autoReply: {
+            intent: "RECEIVABLE",
+            replyToSequence: 4,
+            generatedBy: "RULE",
+            checkedAt: at(60 * 2 - 2),
+            subject: {
+              listingId: null,
+              variantId: null,
+              backorderId: null,
+              label: null,
+            },
+            facts: {
+              stock: null,
+              backorder: null,
+              receivable: {
+                outstandingAmount: 52_000,
+                prepaidAmount: 0,
+                overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+              },
+            },
+          },
+        },
+        {
+          sender: "RETAILER",
+          body: "조금 깎아 주세요",
+          sentAt: at(60 * 2 - 3),
+        },
+        {
+          sender: "SYSTEM",
+          kind: "HANDOFF",
+          body: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
+          sentAt: at(60 * 2 - 3),
+          handoff: { reason: "NEGOTIATION", intent: null, sourceSequence: 6 },
+        },
+      ],
+      { wholesaler: 0, retailer: 7 },
+      102,
+    ),
+  );
+
+  return list;
+}
+
+/**
+ * 문의 지표 시드 `stats-v1`(loop-08 §5-4 2). 기본 시드를 **대신한다** — 기본 시드에도 10/27 영업일 소매 메시지가
+ * 있어서 섞으면 손으로 센 기대값(S1-5, S2-1)이 안 맞는다. fixture 의 unit 전용 방(F13, F17)은 넣지 않는다.
+ * 읽음 위치는 양쪽 다 끝까지(안 읽은 배지가 지표 화면 시험에 섞이지 않게)
+ */
+function seedStatsRooms(): MockRoom[] {
+  nextMessageId = 1;
+  return STATS_FIXTURE_ROOMS.filter((r) => !r.unitOnly).map((r) =>
+    room(
+      r.roomId,
+      r.retailerId - 1,
+      new Date(
+        Date.parse(r.lines[0]?.sentAt ?? at(0)) - MINUTE_MS,
+      ).toISOString(),
+      r.lines,
+      { wholesaler: r.lines.length, retailer: r.lines.length },
+      r.wholesalerId,
+    ),
+  );
+}
+
+/**
+ * 필터, 검색 시드 `rooms-70`(loop-08b §5-3 2). 기본 시드를 **대신한다** — 기대값(S1-2, S4-2)이 이 시드만으로
+ * 손 계산한 숫자라서다. 내 방 70개(roomId 100 + i, "소매처 i"), i가 작을수록 최근(i분 전, 동률 없음).
+ *
+ * - i 홀수(35개): 소매 TEXT 를 안 읽었고, 그 뒤 자동 답이 답했다. **안 읽음이지만 답 필요는 아니다** —
+ *   `needsReply`는 "마지막이 소매 TEXT"라서 소매 글로 끝내면 두 집합이 겹친다(기획 "두 집합은 겹치지 않는다")
+ * - i 4의 배수(17개): 마지막이 소매 TEXT, 읽음 처리됨 → 답 필요만
+ * - 나머지(18개): 마지막이 도매 TEXT, 다 읽음
+ * - 남의 방 1개(도매처 102, "소매처 6", 171): 가장 최근이고 안 읽음 + 답 필요 — 소유 도매처 거르기가 빠지면
+ *   모든 조건 결과에 끼어든다
+ *
+ * 소매처 id 는 1000 + i 다. 1~33은 주문, 정산 목의 실제 소매처라 겹치면 미수 자동 답이 남의 장부를 읽는다
+ */
+function seedRooms70(): MockRoom[] {
+  nextMessageId = 1;
+  const list: MockRoom[] = [];
+  const named = (r: MockRoom, i: number) => {
+    r.retailerName = `소매처 ${i}`;
+    return r;
+  };
+  for (let i = 1; i <= 70; i++) {
+    const lines: SeedLine[] =
+      i % 2 === 1
+        ? [
+            {
+              sender: "WHOLESALER",
+              body: "네 말씀하세요",
+              sentAt: at(i + 0.5),
+            },
+            {
+              sender: "RETAILER",
+              body: "레드 M 있어요?",
+              sentAt: at(i + 0.2),
+              inquiry: {
+                intent: "STOCK",
+                listingId: 2001,
+                variantId: 3002,
+                backorderId: null,
+                label: "빈티지 플라워 셔츠 레드 / M",
+              },
+            },
+            {
+              sender: "WHOLESALER",
+              kind: "AUTO_REPLY",
+              body: "레드 M은 10~49장 있어요. 지금 주문할 수 있어요(한 번에 최대 500장)",
+              sentAt: at(i),
+              // 기본 시드 방 1의 자동 답과 같은 사실(상품 목 3002 시드 재고)
+              autoReply: {
+                intent: "STOCK",
+                replyToSequence: 2,
+                generatedBy: "RULE",
+                checkedAt: at(i),
+                subject: {
+                  listingId: 2001,
+                  variantId: 3002,
+                  backorderId: null,
+                  label: "빈티지 플라워 셔츠 레드 / M",
+                },
+                facts: {
+                  stock: {
+                    availableQty: 35,
+                    band: "UNDER_50",
+                    orderLimit: 500,
+                  },
+                  backorder: null,
+                  receivable: null,
+                },
+              },
+            },
+          ]
+        : i % 4 === 0
+          ? [
+              {
+                sender: "WHOLESALER",
+                body: "네 말씀하세요",
+                sentAt: at(i + 0.5),
+              },
+              { sender: "RETAILER", body: "내일 몇 시에 와요?", sentAt: at(i) },
+            ]
+          : [
+              {
+                sender: "RETAILER",
+                body: "블랙 L 주문할게요",
+                sentAt: at(i + 0.5),
+              },
+              { sender: "WHOLESALER", body: "네 넣어 둘게요", sentAt: at(i) },
+            ];
+    // 홀수 방은 첫 줄(도매 인사)까지만 읽었다 → 소매 글 1개가 안 읽음. 나머지는 끝까지
+    const read = i % 2 === 1 ? 1 : lines.length;
+    list.push(
+      named(
+        room(100 + i, 999 + i, at(i + 1), lines, {
+          wholesaler: read,
+          retailer: lines.length,
+        }),
+        i,
+      ),
+    );
+  }
+  list.push(
+    named(
+      room(
+        171,
+        1005,
+        at(1),
+        [{ sender: "RETAILER", body: "남의 방이에요", sentAt: at(0) }],
+        { wholesaler: 0, retailer: 1 },
+        102,
+      ),
+      6,
+    ),
+  );
+  return list;
+}
+
+/**
+ * `retail-history` 시드(loop-08d §5-2 4). 기본 시드를 짓고 **방 1만** 메시지 120개로 바꾼다 — 소매 "나"(봄봄상회)가
+ * 50개 페이지를 두 번 넘기는 방이 기본 시드엔 없다(소매가 보는 방은 1, 33뿐). 꼴은 방 3과 같다: 전부 TEXT,
+ * 홀수 RETAILER(소매 화면의 "나"), 짝수 WHOLESALER. 소매 읽음 100(안 읽은 도매 글 10개), 도매 읽음 끝까지.
+ * 시각은 방 생성(26시간 전) 뒤 1분 간격이라 날짜 구분선이 시험 사이에 흔들리지 않는다
+ */
+function seedRetailHistoryRooms(): MockRoom[] {
+  const list = seedRooms();
+  const lines: SeedLine[] = [];
+  for (let i = 1; i <= 120; i++) {
+    lines.push({
+      sender: i % 2 === 1 ? "RETAILER" : "WHOLESALER",
+      body: `메시지 ${i}`,
+      sentAt: at(60 * 26 - i),
+    });
+  }
+  const history = room(1, 0, at(60 * 26), lines, {
+    wholesaler: 120,
+    retailer: 100,
+  });
+  return list.map((r) => (r.roomId === 1 ? history : r));
+}
+
+function seedIdempotency() {
+  idempotency.clear();
+  const r = rooms.find((x) => x.roomId === 6);
+  const message = r?.messages.find(
+    (m) => m.clientMessageId === CHAT_SEED_REPLAY_KEY,
+  );
+  if (r === undefined || message === undefined) return;
+  const result: ChatSendResult = {
+    message,
+    generatedMessages: [],
+    generation: "NONE",
+  };
+  idempotency.set(keyOf(r.roomId, CHAT_SEED_REPLAY_KEY), {
+    bodyHash: hashOf({ body: message.body, inquiry: null }),
+    ready: Promise.resolve(),
+    result,
+  });
+}
+
+/* --- 계산 (계약 §5-2 계산 규칙) ---------------------------------------- */
+
+function codePoints(text: string): number {
+  return [...text].length;
+}
+
+function maxSequence(r: MockRoom): number {
+  return r.messages.at(-1)?.sequence ?? 0;
+}
+
+/** 도매 기준 미확인 = RETAILER가 보낸 것 중 읽음 위치 초과분. SYSTEM은 세지 않는다 */
+function unreadCount(r: MockRoom): number {
+  return r.messages.filter(
+    (m) => m.sender === "RETAILER" && m.sequence > r.wholesalerLastRead,
+  ).length;
+}
+
+/**
+ * HANDOFF 뒤 WHOLESALER TEXT가 없다. AUTO_REPLY, CLARIFY로는 닫히지 않는다. 닫힘 = "사장이 답했다"이고 입금 확인
+ * 완료가 아니다(loop-07 §4-2 2). 규칙은 판정 쪽 `openHandoffOf` 하나 — 자동 답의 넘김 줄 억제와 같은 기준이다
+ */
+function openHandoff(r: MockRoom): boolean {
+  return openHandoffOf(r.messages) !== null;
+}
+
+function lastActivityAt(r: MockRoom): string {
+  return r.messages.at(-1)?.sentAt ?? r.createdAt;
+}
+
+function summaryOf(r: MockRoom): ChatRoomSummary {
+  const last = r.messages.at(-1);
+  const handoff = openHandoff(r);
+  return {
+    roomId: r.roomId,
+    counterpart: { id: r.retailerId, name: r.retailerName },
+    lastMessage:
+      last === undefined
+        ? null
+        : {
+            sequence: last.sequence,
+            sender: last.sender,
+            kind: last.kind,
+            preview: [...last.body.replace(/\s*\n\s*/g, " ")]
+              .slice(0, PREVIEW_MAX)
+              .join(""),
+            sentAt: last.sentAt,
+          },
+    lastActivityAt: lastActivityAt(r),
+    unreadCount: unreadCount(r),
+    myLastReadSequence: r.wholesalerLastRead,
+    needsReply:
+      handoff || (last?.sender === "RETAILER" && last.kind === "TEXT"),
+    openHandoff: handoff,
+  };
+}
+
+function detailOf(r: MockRoom): ChatRoomDetail {
+  return {
+    ...summaryOf(r),
+    counterpartLastReadSequence: r.retailerLastRead,
+  };
+}
+
+/** 정렬 `lastActivityAt` desc, `roomId` desc. 커서는 이 순서의 한 지점이다 */
+function compareRooms(a: MockRoom, b: MockRoom): number {
+  const diff = Date.parse(lastActivityAt(b)) - Date.parse(lastActivityAt(a));
+  return diff !== 0 ? diff : b.roomId - a.roomId;
+}
+
+/** 불투명 커서. FE는 열지 않는다 — 모양이 바뀌어도 FE가 깨지지 않게 base64로 감싼다 */
+function encodeCursor(r: MockRoom): string {
+  return btoa(`${Date.parse(lastActivityAt(r))}|${r.roomId}`);
+}
+
+function decodeCursor(
+  cursor: string,
+): { activityMs: number; roomId: number } | null {
+  let raw: string;
+  try {
+    raw = atob(cursor);
+  } catch {
+    return null;
+  }
+  const match = /^(\d+)\|(\d+)$/.exec(raw);
+  if (match === null) return null;
+  return { activityMs: Number(match[1]), roomId: Number(match[2]) };
+}
+
+function myRoom(roomId: number): MockRoom | undefined {
+  return rooms.find(
+    (r) => r.roomId === roomId && r.wholesalerId === CHAT_ME_WHOLESALER_ID,
+  );
+}
+
+function keyOf(roomId: number, key: string): string {
+  return `${roomId}:WHOLESALER:${key}`;
+}
+
+/** 키 재사용 판정(`IDEMPOTENCY_KEY_REUSED`)에만 쓴다. 본문과 문맥을 같이 본다 */
+function hashOf(body: { body: unknown; inquiry: unknown }): string {
+  return JSON.stringify([body.body, body.inquiry ?? null]);
+}
+
+/* --- 자동 답 (loop-05b) -------------------------------------------------- */
+
+/** 판정이 읽는 상품. 상품 목 시드 + 채팅 목 전용 게시글(`../chat/extraListings.ts`) */
+function chatCatalog(listingId: number): InquiryListing | null {
+  return (
+    chatStockListing(listingId) ??
+    CHAT_EXTRA_LISTINGS.find((l) => l.listingId === listingId) ??
+    null
+  );
+}
+
+function settingsFor(wholesalerId: number): AutoReplySettings {
+  return wholesalerId === CHAT_ME_WHOLESALER_ID
+    ? autoReplySettings
+    : DEFAULT_AUTO_REPLY_SETTINGS;
+}
+
+/**
+ * 미수 판정 원본(loop-07 §5-4 1, 2): 정산 목 장부(도매처 101) + 채팅 목 전용 표(102). 부를 때마다 저장소를
+ * 지금 읽는다 — 정산 탭 입금이 다음 답에 바로 쓰인다. `fail {op: receivable}`이 걸려 있으면 던진다(→ LOOKUP_FAILED)
+ */
+function chatReceivables(): readonly InquiryReceivable[] {
+  if (consumeFailure("receivable"))
+    throw new Error("목: 정산 조회 실패 손잡이");
+  const now = Date.now();
+  return [
+    ...mockReceivableRows(now),
+    ...chatExtraReceivables(new Date(now).toISOString()),
+  ];
+}
+
+/**
+ * 포장 판정 원본(loop-08i §5-4 1): 주문 목 포장 + 출고 목 봉투(`./shipment` `inquiryPackings`). 부를 때마다 지금
+ * 읽는다. `fail {op: packing}`이 걸려 있으면 던진다 — 판정이 잡아 NO_BACKORDER 넘김으로 바꾼다(미수 원본과 같은 꼴)
+ */
+function chatPackings(): readonly InquiryPacking[] {
+  if (consumeFailure("packing")) throw new Error("목: 포장 조회 실패 손잡이");
+  return inquiryPackings();
+}
+
+/**
+ * 방금 넣은 소매 메시지에 자동 답을 붙인다. 소매 목 보내기와 도매 `incoming` 주입이 같이 부른다.
+ * 판정은 `../chat/inquiry.ts`(순수), 여기는 저장소에 줄을 넣기만 한다.
+ *
+ * 열린 넘김이 있을 때 넘김 줄을 넣을지는 `linesToAppend`가 정한다(골든셋도 같은 함수): 이유가 같으면 안 넣고,
+ * 다르면 새 줄(loop-07 Q3). 답 + 넘김 두 줄(재고 0, 미송 입고일 미정과 지남)의 넘김 줄은 늘 붙인다(D34,
+ * 디자인 결정 27, loop-06 §4-2 6) — 소매 카드는 바로 아래 넘김 줄이 있어야 "사장님이 답한다"가 보인다.
+ *
+ * 판정이 던지면(목 버그) 오류가 아니라 넘김이다(§5-2): 소매는 답 대신 "전달했어요"를 본다.
+ * 미수 원본이 던지는 건 판정 안에서 LOOKUP_FAILED 넘김이 된다(여기까지 안 온다).
+ */
+function runAutoReply(r: MockRoom, message: ChatMessage): ChatMessage[] {
+  const now = Date.now();
+  const history = r.messages.filter((m) => m.sequence < message.sequence);
+  let lines: ReturnType<typeof generatedLines>;
+  try {
+    lines = generatedLines(
+      decideInquiry({
+        body: message.body,
+        inquiry: message.inquiry,
+        now,
+        wholesalerId: r.wholesalerId,
+        retailerId: r.retailerId,
+        today: seoulDate(now),
+        settings: settingsFor(r.wholesalerId),
+        context: r.context,
+        history,
+        catalog: chatCatalog,
+        backorders: inquiryBackorders,
+        receivables: chatReceivables,
+        packings: chatPackings,
+      }),
+      message.sequence,
+      now,
+    );
+  } catch {
+    lines = generatedLines(
+      { kind: "HANDOFF", reason: "NO_INTENT", intent: null },
+      message.sequence,
+      now,
+    );
+  }
+  const sentAt = new Date(now).toISOString();
+  return linesToAppend(lines, history).map((line) =>
+    append(r, {
+      sender: line.sender,
+      kind: line.kind,
+      body: line.body,
+      sentAt,
+      clientMessageId: null,
+      autoReply: line.autoReply,
+      handoff: line.handoff,
+    }),
+  );
+}
+
+function setContext(r: MockRoom, listingId: number | null, ageMinutes = 0) {
+  r.context =
+    listingId === null
+      ? null
+      : { listingId, at: Date.now() - ageMinutes * MINUTE_MS };
+}
+
+/** PUT 본문 검사. 부분 수정이 없어서 칸이 하나라도 빠지면 400이다 */
+function settingsErrors(input: unknown) {
+  const errors: { field: string; code: string; message: string }[] = [];
+  const body = (input ?? {}) as Partial<{
+    enabled: unknown;
+    intents: Record<string, unknown> | null;
+  }>;
+  if (typeof body.enabled !== "boolean")
+    errors.push({
+      field: "enabled",
+      code: "NOT_BOOLEAN",
+      message: "켜짐, 꺼짐 값이 필요합니다.",
+    });
+  if (
+    typeof body.intents !== "object" ||
+    body.intents === null ||
+    Array.isArray(body.intents)
+  ) {
+    errors.push({
+      field: "intents",
+      code: "NOT_NULL",
+      message: "의도별 설정이 필요합니다.",
+    });
+  } else {
+    for (const key of ["STOCK", "BACKORDER", "RECEIVABLE"] as const) {
+      if (typeof body.intents[key] !== "boolean")
+        errors.push({
+          field: `intents.${key}`,
+          code: "NOT_BOOLEAN",
+          message: "켜짐, 꺼짐 값이 필요합니다.",
+        });
+    }
+  }
+  return errors;
+}
+
+/**
+ * 도매, 소매 목이 같이 올리는 손잡이(스펙에 없음). 둘 다 같은 저장소를 바꾼다.
+ * - `POST /__mock/chat/rooms/{roomId}/context {listingId, ageMinutes = 0}` 방 상품 문맥을 박는다.
+ *   `ageMinutes: 31`이면 지난 문맥(넘김), `listingId: null`이면 문맥 없음, 2901/2902는 목 전용 경계 상품
+ * - `POST /__mock/chat/auto-reply {enabled, intents?}` 자동 답 켜고 끄기. 소매 탭은 도매 탭 스위치와
+ *   상태를 나누지 않아서(브라우저마다 목) 이걸로 따로 맞춘다
+ */
+export const chatSharedKnobs = [
+  http.post(
+    "*/__mock/chat/rooms/:roomId/context",
+    async ({ params, request }) => {
+      const r = rooms.find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        listingId?: number | null;
+        ageMinutes?: number;
+      };
+      if (input.listingId === undefined)
+        return invalid("listingId", "NOT_NULL", "listingId가 필요합니다.");
+      setContext(r, input.listingId, input.ageMinutes ?? 0);
+      return HttpResponse.json({
+        data: { roomId: r.roomId, context: r.context },
+      });
+    },
+  ),
+
+  http.post("*/__mock/chat/auto-reply", async ({ request }) => {
+    const input = (await request
+      .json()
+      .catch(() => ({}))) as Partial<AutoReplySettings>;
+    if (typeof input.enabled !== "boolean")
+      return invalid("enabled", "NOT_BOOLEAN", "enabled(불린)가 필요합니다.");
+    autoReplySettings = {
+      enabled: input.enabled,
+      intents: { ...autoReplySettings.intents, ...input.intents },
+    };
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+
+  /**
+   * `GET /__mock/chat/log` 목이 돌려준 계획 실패(`fail`로 건 것) 기록, 오래된 것부터(loop-08d §5-2 3-1).
+   * 본문 손잡이(`auth401` 등)의 실패는 적지 않는다. `reset`이 비운다
+   */
+  http.get("*/__mock/chat/log", () =>
+    HttpResponse.json({ data: plannedFailureLog }),
+  ),
+];
+
+/* --- 응답 --------------------------------------------------------------- */
+
+const CODE_BY_STATUS: Record<number, string> = {
+  400: "VALIDATION_FAILED",
+  401: "UNAUTHENTICATED",
+  403: "NOT_APPROVED",
+  404: "RESOURCE_NOT_FOUND",
+  409: "IDEMPOTENCY_KEY_REUSED",
+};
+
+const MESSAGE_BY_STATUS: Record<number, string> = {
+  400: "입력한 내용을 다시 확인해 주세요.",
+  401: "로그인이 필요합니다.",
+  403: "승인된 계정만 사용할 수 있습니다.",
+  404: "대화를 찾을 수 없습니다.",
+  409: "같은 Idempotency-Key로 다른 요청이 왔습니다.",
+};
+
+function fail(
+  status: number,
+  errors: { field: string; code: string; message: string }[] = [],
+) {
+  return HttpResponse.json(
+    {
+      code: CODE_BY_STATUS[status] ?? "INTERNAL_ERROR",
+      message: MESSAGE_BY_STATUS[status] ?? "서버 오류가 발생했습니다.",
+      errors,
+      traceId: null,
+    },
+    { status },
+  );
+}
+
+function invalid(field: string, code: string, message: string) {
+  return fail(400, [{ field, code, message }]);
+}
+
+/**
+ * 계획 하나를 1회 소모한다. `keys` 앞의 것이 먼저다 — `page`가 맞는 계획이 `page` 없는 계획보다 먼저 쓰인다
+ * (loop-08c §5-3 1). 쓴 계획의 값을 돌려주고, 없으면 null
+ */
+function takePlan<K, P extends { times: number }>(
+  plans: Map<K, P>,
+  keys: readonly K[],
+): P | null {
+  for (const key of keys) {
+    const plan = plans.get(key);
+    if (plan === undefined || plan.times <= 0) continue;
+    plan.times -= 1;
+    if (plan.times === 0) plans.delete(key);
+    return { ...plan };
+  }
+  return null;
+}
+
+function planKeys<Op extends string>(
+  op: Op,
+  page: ChatMessagesPage | undefined,
+): (Op | `messages:${ChatMessagesPage}`)[] {
+  return op === "messages" && page !== undefined
+    ? [`messages:${page}`, op]
+    : [op];
+}
+
+/** stats 계획 키. `range`가 맞는 계획이 `range` 없는 계획보다 먼저다(`planKeys`의 page와 같은 규칙) */
+function statsPlanKeys(
+  range: ChatStatsRange | null,
+): ("stats" | `stats:${ChatStatsRange}`)[] {
+  return range === null ? ["stats"] : [`stats:${range}`, "stats"];
+}
+
+/** stats 요청 종류. `from`이 있으면 multi, `from`, `to` 둘 다 없으면 today, `to`만 있으면 어느 쪽도 아니다(null) */
+function statsRangeOf(url: URL): ChatStatsRange | null {
+  if (url.searchParams.get("from") !== null) return "multi";
+  return url.searchParams.get("to") === null ? "today" : null;
+}
+
+/**
+ * 손잡이 본문의 `range`. 없으면 undefined(stats 전부), 맞는 값이면 그 값, 모르는 값이거나 stats 밖의 op에
+ * 붙였으면 null(→ 400). `knobPage`와 같은 규칙
+ */
+function knobRange(
+  op: string,
+  raw: unknown,
+): ChatStatsRange | undefined | null {
+  if (raw === undefined) return undefined;
+  if (op !== "stats") return null;
+  return CHAT_STATS_RANGES.find((r) => r === raw) ?? null;
+}
+
+function knobRangeInvalid() {
+  return invalid(
+    "range",
+    "INVALID",
+    `range는 op stats에만, ${CHAT_STATS_RANGES.join(" | ")}`,
+  );
+}
+
+function isDelayOp(op: string): op is ChatDelayOp {
+  return CHAT_DELAY_OPS.some((o) => o === op);
+}
+
+/**
+ * messages 요청 종류. `beforeSequence`가 있으면 before, `afterSequence`가 있으면 after, 둘 다 없으면 latest.
+ * 둘 다 있으면(어차피 400) before로 본다. 빈 값은 없는 것으로 본다(`intParam`과 같다)
+ */
+function messagesPageOf(url: URL): ChatMessagesPage {
+  const has = (name: string) => {
+    const raw = url.searchParams.get(name);
+    return raw !== null && raw !== "";
+  };
+  if (has("beforeSequence")) return "before";
+  if (has("afterSequence")) return "after";
+  return "latest";
+}
+
+/**
+ * 손잡이 본문의 `page`. 없으면 undefined(그 op 전부), 맞는 값이면 그 값, 모르는 값이거나 messages 밖의 op에
+ * 붙였으면 null(→ 400). messages 밖은 요청 종류가 하나라 받으면 시험이 뜻과 다르게 돈다
+ */
+function knobPage(
+  op: string,
+  raw: unknown,
+): ChatMessagesPage | undefined | null {
+  if (raw === undefined) return undefined;
+  if (op !== "messages") return null;
+  return CHAT_MESSAGES_PAGES.find((p) => p === raw) ?? null;
+}
+
+function knobPageInvalid() {
+  return invalid(
+    "page",
+    "INVALID",
+    `page는 op messages에만, ${CHAT_MESSAGES_PAGES.join(" | ")}`,
+  );
+}
+
+/**
+ * `/__mock/chat/fail`로 걸어 둔 실패. 걸려 있으면 1회 소모하고 그 응답을 돌려준다.
+ * 같은 op에 지연도 걸려 있으면 **실패도 그만큼 늦게** 보낸다(loop-08c §5-3 2) — 로그아웃을 넘어 도착하는 늦은
+ * 401을 만들려고. 지연이 없으면 예전처럼 바로 돌아온다
+ */
+async function plannedFailure(
+  op: ChatFailOp,
+  page?: ChatMessagesPage,
+  /** op stats 요청 종류(`statsRangeOf`). 그 밖의 op는 안 준다 */
+  range: ChatStatsRange | null = null,
+) {
+  const plan = takePlan<FailKey, { status: number; times: number }>(
+    failPlan,
+    op === "stats" ? statsPlanKeys(range) : planKeys(op, page),
+  );
+  if (plan === null) return null;
+  const epoch = resetEpoch;
+  const delayMs = isDelayOp(op) ? await plannedDelay(op, page, range) : 0;
+  recordPlannedFailure({ op, page, status: plan.status, delayMs, epoch });
+  return fail(plan.status);
+}
+
+/**
+ * 목이 실제로 돌려준 계획 실패 한 건(loop-08d §5-2 3-1). 지연을 다 기다린 **뒤에** 적는다 — 브라우저가 그 요청을
+ * 취소해도 목은 끝까지 돌고 적는다. 시험은 "옛 요청이 늦은 401로 끝났는가"를 브라우저 쪽 결과(401인지 취소인지
+ * 갈린다) 대신 이 기록으로 본다(S2-4 ②)
+ */
+export interface PlannedFailureLog {
+  op: string;
+  /** messages 요청 종류. messages 밖이면 null */
+  page: ChatMessagesPage | null;
+  status: number;
+  /** 기다린 ms. 지연이 안 걸렸으면 0 */
+  delayMs: number;
+  /** 응답을 돌려준 시각 */
+  sentAt: string;
+}
+
+let plannedFailureLog: PlannedFailureLog[] = [];
+
+/**
+ * reset 세대. `resetChatMock`마다 오른다. 계획 실패는 지연 **전에** 이 값을 잡고, 지연 뒤 적을 때 값이 바뀌었으면
+ * 적지 않는다 — reset 전에 출발한 늦은 실패가 reset으로 비운 기록을 다시 채우면 다음 시험이 남의 401을 센다
+ */
+let resetEpoch = 0;
+
+function plannedFailureEpoch(): number {
+  return resetEpoch;
+}
+
+/** 계획 실패 한 건을 적는다. 도매, 소매 목이 같이 부른다(기록은 앱마다 브라우저 안에 하나) */
+function recordPlannedFailure(entry: {
+  op: string;
+  page: ChatMessagesPage | undefined;
+  status: number;
+  delayMs: number;
+  /** 지연 전에 잡은 reset 세대(`plannedFailureEpoch`) */
+  epoch: number;
+}) {
+  if (entry.epoch !== resetEpoch) return;
+  plannedFailureLog.push({
+    op: entry.op,
+    page: entry.page ?? null,
+    status: entry.status,
+    delayMs: entry.delayMs,
+    sentAt: new Date().toISOString(),
+  });
+}
+
+/** 걸어 둔 실패가 있으면 1회 소모하고 true. HTTP 응답이 아닌 실패(미수 원본 조회)도 이걸로 본다 */
+function consumeFailure(op: ChatFailOp): boolean {
+  return takePlan(failPlan, [op]) !== null;
+}
+
+/**
+ * 걸어 둔 지연. **응답 값을 정한 뒤에** 기다린다 — 그래야 먼저 떠난 방 머리가 polling 뒤에 옛 읽음 값으로
+ * 도착한다(S3-3). 소매 목, 도매 알림 목과 같은 규칙
+ */
+async function plannedDelay(
+  op: ChatDelayOp,
+  page?: ChatMessagesPage,
+  range: ChatStatsRange | null = null,
+): Promise<number> {
+  const plan = takePlan<DelayKey, { ms: number; times: number }>(
+    delayPlan,
+    op === "stats" ? statsPlanKeys(range) : planKeys(op, page),
+  );
+  if (plan === null) return 0;
+  await delay(plan.ms);
+  return plan.ms;
+}
+
+/** `YYYY-MM-DD`이고 달력에 있는 날이면 true(`2026-13-01`, `2026-02-30`은 false) */
+function isCalendarDate(raw: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const ms = Date.parse(`${raw}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === raw;
+}
+
+/**
+ * 문의 지표 쿼리 검사. 오늘 영업일은 `now` 기준(낮 12시 경계). 순서: 형식 → from > to → 미래 to → 62일.
+ * 성공이면 `{from, to}`, 실패면 400 응답
+ */
+function statsRange(url: URL, now: number) {
+  const today = businessDateOf(now);
+  const fromRaw = url.searchParams.get("from");
+  const toRaw = url.searchParams.get("to");
+  for (const [field, raw] of [
+    ["from", fromRaw],
+    ["to", toRaw],
+  ] as const) {
+    if (raw !== null && !isCalendarDate(raw))
+      return {
+        error: invalid(field, "INVALID_FORMAT", "날짜는 YYYY-MM-DD 입니다."),
+      };
+  }
+  const from = fromRaw ?? today;
+  const to = toRaw ?? from;
+  if (from > to)
+    return {
+      error: invalid("from", "OUT_OF_RANGE", "from이 to보다 늦습니다."),
+    };
+  if (to > today)
+    return {
+      error: invalid(
+        "to",
+        "OUT_OF_RANGE",
+        "오늘 영업일 뒤는 조회할 수 없습니다.",
+      ),
+    };
+  if (businessDates(from, to).length > STATS_MAX_DAYS)
+    return {
+      error: invalid(
+        "to",
+        "OUT_OF_RANGE",
+        `최대 ${STATS_MAX_DAYS}일까지 조회할 수 있습니다.`,
+      ),
+    };
+  return { from, to };
+}
+
+/** 쿼리 정수. 없으면 `fallback`, 정수가 아니면 `NaN` */
+function intParam(url: URL, name: string, fallback: number | null) {
+  const raw = url.searchParams.get(name);
+  if (raw === null || raw === "") return fallback;
+  return /^-?\d+$/.test(raw) ? Number(raw) : Number.NaN;
+}
+
+/** `size` 쿼리. 없으면 기본값, 1~100 밖이거나 정수가 아니면 null(→ 400) */
+function sizeOf(url: URL, fallback: number): number | null {
+  const size = intParam(url, "size", fallback) ?? fallback;
+  return Number.isNaN(size) || size < 1 || size > SIZE_MAX ? null : size;
+}
+
+function sizeInvalid() {
+  return invalid("size", "OUT_OF_RANGE", "size는 1~100이어야 합니다.");
+}
+
+interface RoomCondition {
+  filter: ChatRoomFilter | null;
+  /** 앞뒤 공백을 지운 검색어. 비면 null(조건 없음) */
+  q: string | null;
+}
+
+/**
+ * 방 목록 `filter`, `q` 쿼리 검사(loop-08b §5-2). 성공이면 조건, 실패면 400 응답.
+ * 빈 `filter=`는 없는 것으로 본다 — Spring 의 enum 변환이 빈 문자열을 null 로 바꾸는 것과 맞춘다
+ */
+function roomCondition(
+  url: URL,
+): RoomCondition | { error: ReturnType<typeof invalid> } {
+  const filterRaw = url.searchParams.get("filter");
+  let filter: ChatRoomFilter | null = null;
+  if (filterRaw !== null && filterRaw !== "") {
+    const known = CHAT_ROOM_FILTERS.find((f) => f === filterRaw);
+    if (known === undefined)
+      return {
+        error: invalid(
+          "filter",
+          "INVALID",
+          `filter는 ${CHAT_ROOM_FILTERS.join(" | ")}`,
+        ),
+      };
+    filter = known;
+  }
+  const q = (url.searchParams.get("q") ?? "").trim();
+  if (codePoints(q) > CHAT_ROOM_QUERY_MAX)
+    return {
+      error: invalid(
+        "q",
+        "TOO_LONG",
+        `검색어는 ${CHAT_ROOM_QUERY_MAX}자까지입니다.`,
+      ),
+    };
+  return { filter, q: q === "" ? null : q };
+}
+
+/** 영문 대문자만 소문자로. `toLowerCase`는 다른 문자(그리스, 전각 등)까지 바꿔 계약("영문 대소문자")보다 넓다 */
+function foldAscii(text: string): string {
+  return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/** 조건 판정은 응답과 같은 `summaryOf`를 지난다 — 목록 칸과 거르는 기준이 갈라지지 않게 */
+function matchesRoomCondition(r: MockRoom, condition: RoomCondition): boolean {
+  if (condition.q !== null) {
+    // 안쪽 공백은 그대로 비교한다(공백 접기 없음)
+    if (!foldAscii(r.retailerName).includes(foldAscii(condition.q)))
+      return false;
+  }
+  if (condition.filter === null) return true;
+  const summary = summaryOf(r);
+  return condition.filter === "UNREAD"
+    ? summary.unreadCount > 0
+    : summary.needsReply;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/* --- 핸들러 ------------------------------------------------------------- */
+
+/** 스펙 자동 핸들러 **앞에** 놓는다. 같은 경로면 이쪽이 이긴다 */
+export const chatHandlers = [
+  /** 자동 답 설정(초안 op `autoReplySettings`). 처음엔 전부 켜짐 */
+  http.get("*/api/wholesale/chat/auto-reply-settings", async () => {
+    const planned = await plannedFailure("settings");
+    if (planned) return planned;
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+
+  /**
+   * 설정 바꾸기(초안 op `updateAutoReplySettings`). 통째로 바꾼다. 실패 손잡이는
+   * `/__mock/chat/fail {op: "settings", status}` — GET, PUT이 같은 계획을 쓴다
+   */
+  http.put("*/api/wholesale/chat/auto-reply-settings", async ({ request }) => {
+    const planned = await plannedFailure("settings");
+    if (planned) return planned;
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return invalid("body", "INVALID_FORMAT", "JSON 본문이 아닙니다.");
+    }
+    const errors = settingsErrors(raw);
+    if (errors.length > 0) return fail(400, errors);
+    const input = raw as AutoReplySettings;
+    autoReplySettings = {
+      enabled: input.enabled,
+      intents: {
+        STOCK: input.intents.STOCK,
+        BACKORDER: input.intents.BACKORDER,
+        RECEIVABLE: input.intents.RECEIVABLE,
+      },
+    };
+    await delay(CHAT_SEND_DELAY_MS);
+    return HttpResponse.json({ data: autoReplySettings });
+  }),
+
+  http.get("*/api/wholesale/chat/rooms", async ({ request }) => {
+    const planned = await plannedFailure("rooms");
+    if (planned) return planned;
+    const url = new URL(request.url);
+    const size = sizeOf(url, ROOM_PAGE_DEFAULT);
+    if (size === null) return sizeInvalid();
+
+    const cursorRaw = url.searchParams.get("cursor");
+    const cursor = cursorRaw === null ? null : decodeCursor(cursorRaw);
+    if (cursorRaw !== null && cursor === null)
+      return invalid("cursor", "INVALID_CURSOR", "cursor가 올바르지 않습니다.");
+
+    const condition = roomCondition(url);
+    if ("error" in condition) return condition.error;
+
+    // 순서가 계약이다: 내 방 → 조건 → 정렬 → cursor 자르기. 조건을 자른 장 안에서 걸면 둘째 장 이후 방을 못 찾는다
+    const sorted = rooms
+      .filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
+      .filter((r) => matchesRoomCondition(r, condition))
+      .sort(compareRooms);
+    // 키셋: 커서 지점보다 정렬상 뒤에 오는 것부터. 그사이 순서가 바뀌어도 중복이 안 난다
+    const rest =
+      cursor === null
+        ? sorted
+        : sorted.filter((r) => {
+            const ms = Date.parse(lastActivityAt(r));
+            return (
+              ms < cursor.activityMs ||
+              (ms === cursor.activityMs && r.roomId < cursor.roomId)
+            );
+          });
+    const page = rest.slice(0, size);
+    const last = page.at(-1);
+    const meta: WholesaleSchema<"CursorPageMeta"> = {
+      nextCursor:
+        rest.length > size && last !== undefined ? encodeCursor(last) : null,
+    };
+    // 값을 정한 뒤 기다린다 — 늦게 도착한 이전 검색 결과가 옛 값을 들고 온다(S4-7)
+    const data = page.map(summaryOf);
+    await plannedDelay("rooms");
+    return HttpResponse.json({ data, meta });
+  }),
+
+  /**
+   * 문의 지표(초안 op `inquiryStats`, loop-08 §5-2). 집계는 순수 함수 `../chat/inquiryStats.ts`, 여기는 쿼리 검사와
+   * 저장소 전달만 한다. 기준 시각은 요청 시점의 `Date.now()`(e2e 는 `page.clock`, 테스트는 가짜 Date)
+   */
+  http.get("*/api/wholesale/chat/inquiry-stats", async ({ request }) => {
+    const url = new URL(request.url);
+    const kind = statsRangeOf(url);
+    const planned = await plannedFailure("stats", undefined, kind);
+    if (planned) return planned;
+    const now = Date.now();
+    const range = statsRange(url, now);
+    if ("error" in range) return range.error;
+    const data = inquiryStats(rooms, {
+      wholesalerId: CHAT_ME_WHOLESALER_ID,
+      from: range.from,
+      to: range.to,
+      asOf: now,
+    });
+    // 값은 요청 시점에 정하고 응답만 늦춘다(다른 delay op와 같은 규칙)
+    await plannedDelay("stats", undefined, kind);
+    return HttpResponse.json({ data });
+  }),
+
+  http.get("*/api/wholesale/chat/rooms/:roomId", async ({ params }) => {
+    const planned = await plannedFailure("room");
+    if (planned) return planned;
+    const r = myRoom(Number(params.roomId));
+    if (r === undefined) return fail(404);
+    const data = detailOf(r);
+    await plannedDelay("room");
+    return HttpResponse.json({ data });
+  }),
+
+  http.get(
+    "*/api/wholesale/chat/rooms/:roomId/messages",
+    async ({ params, request }) => {
+      const url = new URL(request.url);
+      const page = messagesPageOf(url);
+      const planned = await plannedFailure("messages", page);
+      if (planned) return planned;
+      const r = myRoom(Number(params.roomId));
+      if (r === undefined) return fail(404);
+
+      const size = sizeOf(url, MESSAGE_PAGE_DEFAULT);
+      if (size === null) return sizeInvalid();
+      const after = intParam(url, "afterSequence", null);
+      const before = intParam(url, "beforeSequence", null);
+      if (after !== null && before !== null)
+        return invalid(
+          "afterSequence",
+          "MUTUALLY_EXCLUSIVE",
+          "afterSequence와 beforeSequence는 같이 쓸 수 없습니다.",
+        );
+      if (after !== null && (Number.isNaN(after) || after < 0))
+        return invalid("afterSequence", "OUT_OF_RANGE", "0 이상이어야 합니다.");
+      if (before !== null && (Number.isNaN(before) || before < 1))
+        return invalid(
+          "beforeSequence",
+          "OUT_OF_RANGE",
+          "1 이상이어야 합니다.",
+        );
+
+      let data: ChatMessage[];
+      let hasMore: boolean;
+      if (after !== null) {
+        const newer = r.messages.filter((m) => m.sequence > after);
+        data = newer.slice(0, size);
+        hasMore = newer.length > size;
+      } else {
+        const older =
+          before === null
+            ? r.messages
+            : r.messages.filter((m) => m.sequence < before);
+        data = older.slice(Math.max(older.length - size, 0));
+        hasMore = older.length > size;
+      }
+      const meta: WholesaleSchema<"ChatMessagePageMeta"> = {
+        hasMore,
+        maxSequence: maxSequence(r),
+        counterpartLastReadSequence: r.retailerLastRead,
+      };
+      await plannedDelay("messages", page);
+      return HttpResponse.json({ data, meta });
+    },
+  ),
+
+  /**
+   * 보내기. 검사 순서: 키 헤더(400) → 본문 형식(400) → 인증 손잡이(401, 403) → 방(404) →
+   * 멱등(200 replay, 409) → 글자 수(400) → 500 손잡이 → 만들기 → `failAfterCommit` → 지연 → 201.
+   *
+   * 멱등을 글자 수보다 먼저 보는 이유: 같은 키에 다른 본문이면 그 본문이 규칙에 맞든 아니든 409가
+   * 계약이다. 실서버라면 인증이 맨 앞이지만 목은 본문을 읽어야 손잡이를 알 수 있다.
+   */
+  http.post(
+    "*/api/wholesale/chat/rooms/:roomId/messages",
+    async ({ params, request }) => {
+      const planned = await plannedFailure("send");
+      if (planned) return planned;
+      const key = request.headers.get("Idempotency-Key");
+      if (key === null || !UUID_PATTERN.test(key))
+        return invalid(
+          "Idempotency-Key",
+          "INVALID_FORMAT",
+          "Idempotency-Key 헤더(uuid)가 필요합니다.",
+        );
+
+      let raw: unknown;
+      try {
+        raw = await request.json();
+      } catch {
+        return invalid("body", "INVALID_FORMAT", "JSON 본문이 아닙니다.");
+      }
+      const input = (raw ?? {}) as Partial<
+        WholesaleSchema<"SendChatMessageRequest">
+      >;
+      if (typeof input.body !== "string")
+        return invalid("body", "NOT_BLANK", "메시지를 입력해 주세요.");
+      const text = input.body.trim();
+
+      if (text.includes(CHAT_BODY_HOOK.AUTH_401)) return fail(401);
+      if (text.includes(CHAT_BODY_HOOK.AUTH_403)) return fail(403);
+
+      const r = myRoom(Number(params.roomId));
+      if (r === undefined) return fail(404);
+
+      const storeKey = keyOf(r.roomId, key);
+      const bodyHash = hashOf({ body: input.body, inquiry: input.inquiry });
+      const known = idempotency.get(storeKey);
+      if (known !== undefined) {
+        if (known.bodyHash !== bodyHash) return fail(409);
+        // 처음 요청이 아직 처리 중이면 끝날 때까지 기다린다 — 동시 요청도 1건만 만든다
+        await known.ready;
+        if (known.result !== null)
+          return HttpResponse.json({ data: known.result }, { status: 200 });
+      }
+
+      if (text.length === 0)
+        return invalid("body", "NOT_BLANK", "메시지를 입력해 주세요.");
+      if (codePoints(text) > CHAT_BODY_MAX)
+        return invalid("body", "TOO_LONG", "1,000자까지 보낼 수 있어요.");
+
+      if (text.includes(CHAT_BODY_HOOK.FAIL_500_ONCE)) {
+        if (!failedOnceKeys.has(storeKey)) {
+          failedOnceKeys.add(storeKey);
+          return fail(500);
+        }
+      } else if (
+        !text.includes(CHAT_BODY_HOOK.FAIL_AFTER_COMMIT) &&
+        text.includes(CHAT_BODY_HOOK.FAIL_500)
+      ) {
+        return fail(500);
+      }
+
+      // 여기부터 저장. await 없이 기록부터 남겨 같은 키 동시 요청이 이 기록을 보게 한다
+      let settle: () => void = () => undefined;
+      const record: IdempotencyRecord = {
+        bodyHash,
+        ready: new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+        result: null,
+      };
+      idempotency.set(storeKey, record);
+
+      const message = append(r, {
+        sender: "WHOLESALER",
+        kind: "TEXT",
+        body: text,
+        sentAt: new Date().toISOString(),
+        clientMessageId: key,
+        inquiry: input.inquiry ?? null,
+      });
+      // 내가 보낸 것까지는 읽은 것이다
+      r.wholesalerLastRead = Math.max(r.wholesalerLastRead, message.sequence);
+      record.result = { message, generatedMessages: [], generation: "NONE" };
+
+      // 저장은 끝났고 응답만 늦다(S3-12). 같은 키로 다시 보내면 이 응답을 기다렸다가 replay 한다
+      await plannedDelay("send");
+      await delay(
+        text.includes(CHAT_BODY_HOOK.SLOW_5S)
+          ? CHAT_SLOW_MS
+          : CHAT_SEND_DELAY_MS,
+      );
+      settle();
+      if (text.includes(CHAT_BODY_HOOK.FAIL_AFTER_COMMIT)) return fail(500);
+      return HttpResponse.json({ data: record.result }, { status: 201 });
+    },
+  ),
+
+  http.post(
+    "*/api/wholesale/chat/rooms/:roomId/read",
+    async ({ params, request }) => {
+      const planned = await plannedFailure("read");
+      if (planned) return planned;
+      const r = myRoom(Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as Partial<
+        WholesaleSchema<"MarkChatReadRequest">
+      >;
+      const seq = input.lastReadSequence;
+      if (
+        typeof seq !== "number" ||
+        !Number.isInteger(seq) ||
+        seq < 0 ||
+        seq > maxSequence(r)
+      )
+        return invalid(
+          "lastReadSequence",
+          "OUT_OF_RANGE",
+          "방에 없는 sequence입니다.",
+        );
+      // 내려가지 않는다. 계산과 저장 사이에 await가 없어 원자적이다
+      r.wholesalerLastRead = Math.max(r.wholesalerLastRead, seq);
+      const data: WholesaleSchema<"ChatReadResult"> = {
+        roomId: r.roomId,
+        lastReadSequence: r.wholesalerLastRead,
+        unreadCount: unreadCount(r),
+      };
+      return HttpResponse.json({ data });
+    },
+  ),
+
+  /* --- 시험 손잡이 (목 전용, 스펙에 없음) ------------------------------- */
+
+  /**
+   * 소매 메시지 주입. `{body, count?, intent?, contextListingId?}` → count개를 이어서 넣는다. e2e가 polling을 만드는 입구.
+   *
+   * `contextListingId`가 있으면(숫자 또는 null) 방 문맥을 그 값으로 바꾸고, 넣은 메시지에 **자동 답을 붙인다**
+   * (count 1일 때만, loop-05b S9-3 장면 5, 6). 없으면 예전처럼 메시지만 넣는다 — loop-04 e2e가 세는 메시지 수를
+   * 바꾸지 않으려고 자동 답을 켜는 쪽을 명시로 두었다
+   *
+   * `choices`가 있으면(배열 또는 null) 그 자동 답의 되묻기 보기를 그 값으로 바꾼다(03-review M4). 생성기는
+   * 게시 옵션만 보기로 내서 "보기 없음"이나 "주문 불가"를 못 만든다 — 계약상 둘 다 올 수 있는 응답이다
+   */
+  http.post(
+    "*/__mock/chat/rooms/:roomId/incoming",
+    async ({ params, request }) => {
+      const r = rooms.find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        body?: string;
+        count?: number;
+        intent?: ChatIntent;
+        contextListingId?: number | null;
+        autoReply?: boolean;
+        inquiry?: Partial<ChatInquiry> & { intent: ChatIntent };
+        choices?: NonNullable<ChatMessage["autoReply"]>["choices"];
+      };
+      const count = Math.max(1, Math.min(input.count ?? 1, 500));
+      const base = input.body ?? "새 문의예요";
+      // `autoReply: true`는 방 문맥을 안 바꾸고 판정만 돌린다(loop-06 §5-4 5, 미송은 상품 문맥이 필요 없다)
+      const generate =
+        (input.contextListingId !== undefined || input.autoReply === true) &&
+        count === 1;
+      if (input.contextListingId !== undefined)
+        setContext(r, input.contextListingId);
+      // `inquiry`는 칩 주입(미송 칩 `{intent: BACKORDER, backorderId}`, `{notListed: true}`). 없으면 예전처럼 intent만
+      const inquiry: ChatInquiry | null =
+        input.inquiry !== undefined
+          ? {
+              intent: input.inquiry.intent,
+              listingId: input.inquiry.listingId ?? null,
+              variantId: input.inquiry.variantId ?? null,
+              backorderId: input.inquiry.backorderId ?? null,
+              label: input.inquiry.label ?? null,
+              ...(input.inquiry.notListed === undefined
+                ? {}
+                : { notListed: input.inquiry.notListed }),
+            }
+          : input.intent === undefined
+            ? null
+            : {
+                intent: input.intent,
+                listingId: null,
+                variantId: null,
+                backorderId: null,
+                label: null,
+              };
+      const created: ChatMessage[] = [];
+      for (let i = 1; i <= count; i++) {
+        created.push(
+          append(r, {
+            sender: "RETAILER",
+            body: count === 1 ? base : `${base} ${i}`,
+            sentAt: new Date().toISOString(),
+            inquiry,
+          }),
+        );
+      }
+      const first = created[0];
+      if (generate && first !== undefined)
+        created.push(...runAutoReply(r, first));
+      const { choices } = input;
+      if (choices !== undefined)
+        for (const m of created)
+          if (m.kind === "CLARIFY" && m.autoReply !== null)
+            m.autoReply = { ...m.autoReply, choices };
+      return HttpResponse.json({ data: created }, { status: 201 });
+    },
+  ),
+
+  /**
+   * 다음 n회 실패. `{op, page?, status = 500, times = 1}`. 메시지 조회 500(S3-9), backoff(S3-6)용.
+   * `page`(latest | before | after)는 op messages에만 — 그 종류의 요청만 실패한다(loop-08c S1-1).
+   * 같은 op에 `delay`도 걸려 있으면 실패 응답도 그만큼 늦다(S1-3).
+   * `range`(today | multi)는 op stats에만 — 오늘 요청과 기간 요청 중 하나만 실패한다(loop-08f §5-2 1)
+   */
+  http.post("*/__mock/chat/fail", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      op?: string;
+      page?: unknown;
+      range?: unknown;
+      status?: number;
+      times?: number;
+    };
+    const op = CHAT_FAIL_OPS.find((o) => o === input.op);
+    if (op === undefined)
+      return invalid("op", "INVALID", `op는 ${CHAT_FAIL_OPS.join(" | ")}`);
+    const page = knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
+    const range = knobRange(op, input.range);
+    if (range === null) return knobRangeInvalid();
+    const key: FailKey =
+      range !== undefined
+        ? `stats:${range}`
+        : page === undefined
+          ? op
+          : `messages:${page}`;
+    failPlan.set(key, {
+      status: input.status ?? 500,
+      times: input.times ?? 1,
+    });
+    return HttpResponse.json({
+      data: { op, page, range, ...failPlan.get(key) },
+    });
+  }),
+
+  /**
+   * 상대(소매)가 여기까지 읽었다 `{sequence}`(loop-08 §5-4 3). 내려가지 않는다(작은 값은 무시하고 지금 값을 돌려준다).
+   * 방에 없는 sequence 는 400. 다음 방 머리와 messages meta 의 `counterpartLastReadSequence`가 이 값이다
+   */
+  http.post(
+    "*/__mock/chat/rooms/:roomId/counterpart-read",
+    async ({ params, request }) => {
+      const r = rooms.find((x) => x.roomId === Number(params.roomId));
+      if (r === undefined) return fail(404);
+      const input = (await request.json().catch(() => ({}))) as {
+        sequence?: unknown;
+      };
+      const seq = input.sequence;
+      if (
+        typeof seq !== "number" ||
+        !Number.isInteger(seq) ||
+        seq < 0 ||
+        seq > maxSequence(r)
+      )
+        return invalid("sequence", "OUT_OF_RANGE", "방에 없는 sequence입니다.");
+      r.retailerLastRead = Math.max(r.retailerLastRead ?? 0, seq);
+      return HttpResponse.json({
+        data: {
+          roomId: r.roomId,
+          counterpartLastReadSequence: r.retailerLastRead,
+        },
+      });
+    },
+  ),
+
+  /**
+   * 다음 n회 응답을 ms 늦춘다. `{op: room|messages|rooms|send|stats, page?, range?, ms, times = 1}`. 값은 요청 시점에
+   * 정한다. `send`는 저장한 뒤 응답만 늦춘다(기본 보내기 지연 300ms 위에 더한다). `page`는 `fail`과 같다(loop-08c S1-2).
+   * `range`는 `fail`과 같다(op stats에만, loop-08f §5-2 1)
+   */
+  http.post("*/__mock/chat/delay", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      op?: string;
+      page?: unknown;
+      range?: unknown;
+      ms?: number;
+      times?: number;
+    };
+    const op = CHAT_DELAY_OPS.find((o) => o === input.op);
+    if (op === undefined)
+      return invalid("op", "INVALID", `op는 ${CHAT_DELAY_OPS.join(" | ")}`);
+    const page = knobPage(op, input.page);
+    if (page === null) return knobPageInvalid();
+    const range = knobRange(op, input.range);
+    if (range === null) return knobRangeInvalid();
+    if (typeof input.ms !== "number" || input.ms < 0)
+      return invalid("ms", "INVALID", "ms(0 이상 숫자)가 필요합니다.");
+    const key: DelayKey =
+      range !== undefined
+        ? `stats:${range}`
+        : page === undefined
+          ? op
+          : `messages:${page}`;
+    delayPlan.set(key, { ms: input.ms, times: input.times ?? 1 });
+    return HttpResponse.json({
+      data: { op, page, range, ...delayPlan.get(key) },
+    });
+  }),
+
+  /**
+   * 시드로 되돌린다. `{rooms: 0}`이면 내 방을 비운다(빈 상태), `{rooms: n}`이면 최근 n개만.
+   * `{seed: "stats-v1"}`이면 기본 시드 대신 문의 지표 fixture(F1~F12, F14~F16)를 넣는다.
+   * `{seed: "rooms-70"}`이면 필터, 검색 시드(내 방 70 + 남의 방 1, `seedRooms70`).
+   * `{seed: "retail-history"}`이면 기본 시드에서 방 1만 메시지 120개(`seedRetailHistoryRooms`)
+   */
+  http.post("*/__mock/chat/reset", async ({ request }) => {
+    const input = (await request.json().catch(() => ({}))) as {
+      rooms?: number;
+      noBackorders?: boolean;
+      seed?: string;
+      readyPackings?: unknown;
+      backorderIds?: unknown;
+    };
+    if (input.seed !== undefined && !isChatSeedName(input.seed))
+      return invalid("seed", "INVALID", CHAT_SEED_INVALID_MESSAGE);
+    // 검사를 reset보다 먼저 전부(loop-08i §5-4 3, loop-08j §5-4 2). 틀리면 400이고 아무것도 안 바뀐다
+    const packingError = readyPackingsError(input.readyPackings);
+    if (packingError !== null)
+      return invalid("readyPackings", packingError.code, packingError.message);
+    const idsError = backorderIdsError(input.backorderIds, input.noBackorders);
+    if (idsError !== null)
+      return invalid("backorderIds", idsError.code, idsError.message);
+    resetChatMock(input.rooms, {
+      noBackorders: input.noBackorders === true,
+      seed: input.seed,
+      readyPackings: input.readyPackings as number[] | undefined,
+      backorderIds: input.backorderIds as number[] | undefined,
+    });
+    return HttpResponse.json({
+      data: {
+        rooms: rooms.filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
+          .length,
+      },
+    });
+  }),
+
+  ...chatSharedKnobs,
+];
+
+/**
+ * 시드로 되돌린다. `keepRooms`를 주면 내 방은 최근 그 개수만 남긴다. 테스트와 `/__mock/chat/reset`이 부른다.
+ * `readyPackings`(loop-08i §5-4 3)는 주문 목 reset 뒤 그 주문들의 READY 포장을 만든다. 값이 틀리면 **아무것도
+ * 바꾸기 전에** 던진다 — HTTP 손잡이는 같은 검사를 먼저 해 400으로 돌려준다
+ */
+export function resetChatMock(
+  keepRooms?: number,
+  options: {
+    noBackorders?: boolean;
+    seed?: string;
+    readyPackings?: readonly number[];
+    /** 그 미송만 남긴다(loop-08j §5-4). 틀린 값이면 아무것도 바꾸기 전에 던진다 */
+    backorderIds?: readonly number[];
+  } = {},
+) {
+  const packingError = readyPackingsError(options.readyPackings);
+  if (packingError !== null)
+    throw new Error(`mock: readyPackings ${packingError.code}`);
+  const idsError = backorderIdsError(
+    options.backorderIds,
+    options.noBackorders,
+  );
+  if (idsError !== null) throw new Error(`mock: backorderIds ${idsError.code}`);
+  rooms =
+    options.seed === STATS_SEED_NAME
+      ? seedStatsRooms()
+      : options.seed === ROOMS_70_SEED_NAME
+        ? seedRooms70()
+        : options.seed === RETAIL_HISTORY_SEED_NAME
+          ? seedRetailHistoryRooms()
+          : seedRooms();
+  // 미송 자동 답의 후보 원본도 시드로. 입고 예정일이 reset 시각 기준 상대값이라 같이 돌린다(loop-06 §5-4 3)
+  resetBackorderMock({
+    empty: options.noBackorders === true,
+    ids: options.backorderIds,
+  });
+  // 미수 자동 답의 원본(정산 장부)도 시드로(loop-07 S3-4 "reset → 입금"). 배정액은 주문 목에, 판매 줄을 만드는
+  // 출고는 출고 목에 있어 셋을 같이 돌린다(정산 목 reset 주석: 같이 되돌려야 맞물린다)
+  resetOrderMock();
+  resetShipmentMock();
+  resetSettlementMock();
+  // 소매 e2e는 주문 op가 목에 안 닿아(소매 worker는 채팅, 알림만) 포장을 여기서 만든다. 출고 목은 READY를 그대로 읽는다
+  addReadyPackings(options.readyPackings ?? []);
+  if (keepRooms !== undefined) {
+    const keep = new Set(
+      rooms
+        .filter((r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID)
+        .sort(compareRooms)
+        .slice(0, Math.max(keepRooms, 0))
+        .map((r) => r.roomId),
+    );
+    rooms = rooms.filter(
+      (r) => r.wholesalerId !== CHAT_ME_WHOLESALER_ID || keep.has(r.roomId),
+    );
+  }
+  seedIdempotency();
+  failedOnceKeys.clear();
+  failPlan.clear();
+  delayPlan.clear();
+  resetEpoch += 1;
+  plannedFailureLog = [];
+  autoReplySettings = structuredClone(DEFAULT_AUTO_REPLY_SETTINGS);
+  // 방 1은 빈티지 플라워 셔츠(2001)에서 연 방이다. 문맥 시각은 reset 시각 — 시드 메시지 시각(10/28 고정)으로
+  // 박으면 늘 30분이 지나 시연 장면 2가 넘김으로 끝난다
+  const first = rooms.find((r) => r.roomId === 1);
+  if (first !== undefined) setContext(first, 2001);
+}
+
+resetChatMock();
+
+/**
+ * 내 방 중 `needsReply`가 true인 방 수. 알림 목(`./notification`)의 `chatsNeedingReply`가 부른다 —
+ * 방 목록 `needsReply`와 같은 `summaryOf`를 지나게 해 두 숫자가 갈라지지 않게 한다(loop-05b2 §5-4 2)
+ */
+export function chatsNeedingReplyCount(): number {
+  return rooms.filter(
+    (r) => r.wholesalerId === CHAT_ME_WHOLESALER_ID && summaryOf(r).needsReply,
+  ).length;
+}
+
+/* --- 소매 목이 같이 쓰는 것 (README "채팅 목": 방 id 체계는 하나다) -------- */
+
+export type { MockRoom as ChatMockRoom, IdempotencyRecord };
+
+/**
+ * 소매 핸들러(`../retail/chat.ts`)가 읽고 쓰는 저장소 입구. 시드를 두 벌 짓지 않으려고 여기서 꺼낸다.
+ * `rooms`는 reset마다 새 배열이라 값이 아니라 함수로 준다.
+ */
+export const chatStore = {
+  rooms: () => rooms,
+  /** 새 방. 번호는 지금 가장 큰 roomId + 1(시드 뒤 첫 방은 34) */
+  addRoom(wholesalerId: number, retailerId: number): MockRoom {
+    const roomId = rooms.reduce((max, r) => Math.max(max, r.roomId), 0) + 1;
+    const r = room(
+      roomId,
+      retailerId - 1,
+      new Date().toISOString(),
+      [],
+      { wholesaler: 0, retailer: null },
+      wholesalerId,
+    );
+    rooms.push(r);
+    return r;
+  },
+  /** 그 소매처의 방을 지운다. 소매 `reset {empty}`(목록 빈 상태, loop-06 S2-4)용 */
+  removeRetailerRooms(retailerId: number) {
+    rooms = rooms.filter((r) => r.retailerId !== retailerId);
+  },
+  append,
+  runAutoReply,
+  /** 소매 `fail {op: receivable}`(loop-07 S1-9). 원본 조회 실패는 저장소 하나를 지나므로 도매 쪽 계획에 건다 */
+  failReceivable(times: number) {
+    failPlan.set("receivable", { status: 500, times });
+  },
+  setContext,
+  catalog: chatCatalog,
+  maxSequence,
+  openHandoff,
+  lastActivityAt,
+  /** 소매 방 목록 cursor(loop-08 §5-4 4). 도매 목록과 같은 정렬과 같은 불투명 값 */
+  compareRooms,
+  encodeCursor,
+  decodeCursor,
+  codePoints,
+  hashOf,
+  intParam,
+  sizeOf,
+  sizeInvalid,
+  idempotency,
+  UUID_PATTERN,
+  MESSAGE_PAGE_DEFAULT,
+  /** 소매 손잡이도 도매와 같은 규칙으로 `page`를 가른다(loop-08d §5-2 1). 400 응답만 소매 어휘로 따로 만든다 */
+  messagesPageOf,
+  knobPage,
+  takePlan,
+  planKeys,
+  recordPlannedFailure,
+  plannedFailureEpoch,
+} as const;

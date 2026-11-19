@@ -42,6 +42,8 @@ export function BackorderToolbar({
             key={chip.id}
             href={backorderHref(chip.id, sort)}
             aria-current={active ? "true" : undefined}
+            /* 도매처 칩은 입고일 변경 알림이 여는 자리다(06b 와이어프레임 `#state-arrive`, `?wholesaler=` 칩) */
+            data-ac={chip.id === FILTER_ALL ? undefined : "S2-5 S4-2"}
             className={cn(
               "text-body flex h-8 items-center rounded-control px-3 whitespace-nowrap transition-colors",
               /* 켜진 칩은 **바탕과 글자가 둘 다** 뒤집힌다. 글자색만 같으면

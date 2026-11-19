@@ -15,16 +15,19 @@ import { Topbar } from "@/shared/components/Topbar";
  */
 export function AppShell({
   accountMenu,
+  inbox,
   children,
 }: {
   /** 헤더 오른쪽 끝 계정 드롭다운. `app/(erp)/layout.tsx`가 끼워 넣는다 —
       세션을 읽는 물건이라 `features/account`에 있고, `shared`는 그쪽을 볼 수 없다 */
   accountMenu: ReactNode;
+  /** 헤더 채팅 링크 + 알림 종(`features/notification`). 계정 메뉴와 같은 이유로 layout이 끼운다 */
+  inbox: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex h-dvh flex-col">
-      <Topbar accountMenu={accountMenu} />
+      <Topbar accountMenu={accountMenu} inbox={inbox} />
       {/* 페이지 루트는 이 flex 칸을 min-h-0 flex-1로 이어받는다 */}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col p-2">
         {children}

@@ -1,0 +1,1126 @@
+import { ApiError, TRANSPORT_ERROR_CODE } from "@ondo/api";
+import { describe, expect, it } from "vitest";
+import {
+  advanceCursor,
+  applyReadMark,
+  autoReplyNoteOf,
+  bodyLength,
+  bubbleKindOf,
+  checkComposer,
+  factLineText,
+  failureText,
+  formatClock,
+  formatDateDivider,
+  formatListTime,
+  formatUnread,
+  insertSent,
+  liveAnnouncement,
+  mergeCounterpartRead,
+  mergeMessages,
+  mergeReadMark,
+  readMarkerSequence,
+  handoffCauses,
+  messageAc,
+  parseRoomParam,
+  chatsHref,
+  hasListCondition,
+  normalizeQuery,
+  parseListFilter,
+  readListParams,
+  roomHref,
+  sameListParams,
+  toServerFilter,
+  pollDelayMs,
+  sendFailureOf,
+  staleSendFailure,
+  canRetrySend,
+  toClarifyChoicesView,
+  toFactsView,
+  toggledSettings,
+  toRoomRows,
+  toThreadItems,
+  upsertPending,
+  visiblePending,
+} from "./derive";
+import { STOCK_BAND_LABEL } from "./constants";
+import type {
+  AutoReplySettings,
+  ChatAutoReply,
+  ChatMessage,
+  ChatRoomPage,
+  ChatRoomSummary,
+  ChatThread,
+  PendingMessage,
+} from "./types";
+
+/** 서울 2026-10-28(수) 10:30 */
+const NOW = Date.parse("2026-10-28T10:30:00+09:00");
+
+function message(
+  sequence: number,
+  patch: Partial<ChatMessage> = {},
+): ChatMessage {
+  return {
+    id: 1000 + sequence,
+    roomId: 1,
+    sequence,
+    clientMessageId: null,
+    sender: "RETAILER",
+    kind: "TEXT",
+    body: `메시지 ${sequence}`,
+    sentAt: "2026-10-28T10:00:00+09:00",
+    inquiry: null,
+    autoReply: null,
+    ...patch,
+  };
+}
+
+function room(
+  roomId: number,
+  patch: Partial<ChatRoomSummary> = {},
+): ChatRoomSummary {
+  return {
+    roomId,
+    counterpart: { id: roomId, name: `상회${roomId}` },
+    lastMessage: null,
+    lastActivityAt: "2026-10-28T09:00:00+09:00",
+    unreadCount: 0,
+    myLastReadSequence: 0,
+    needsReply: false,
+    openHandoff: false,
+    ...patch,
+  };
+}
+
+function page(rooms: ChatRoomSummary[]): ChatRoomPage {
+  return { data: rooms, meta: { nextCursor: null } };
+}
+
+describe("S2-2 목록 시각과 안 읽은 수", () => {
+  it("S2-2 시각: 오늘 HH:mm, 올해 M/D, 그 전 YY.M.D (서울 달력)", () => {
+    expect(formatListTime("2026-10-28T09:05:00+09:00", NOW)).toBe("09:05");
+    // UTC로는 10/27 15:10이지만 서울은 10/28 00:10 — 오늘이다
+    expect(formatListTime("2026-10-27T15:10:00Z", NOW)).toBe("00:10");
+    expect(formatListTime("2026-10-27T23:59:00+09:00", NOW)).toBe("10/27");
+    expect(formatListTime("2026-01-03T12:00:00+09:00", NOW)).toBe("1/3");
+    expect(formatListTime("2025-12-30T12:00:00+09:00", NOW)).toBe("25.12.30");
+    expect(formatListTime("2009-03-04T12:00:00+09:00", NOW)).toBe("09.3.4");
+  });
+
+  it("S2-2 안 읽은 수: 0이면 없음, 99까지 그대로, 100 이상 99+", () => {
+    expect(formatUnread(0)).toBeNull();
+    expect(formatUnread(1)).toBe("1");
+    expect(formatUnread(99)).toBe("99");
+    expect(formatUnread(100)).toBe("99+");
+    expect(formatUnread(128)).toBe("99+");
+  });
+
+  it("S2-3 이어 받은 페이지를 합칠 때 roomId가 겹치면 앞 페이지 것만", () => {
+    const rows = toRoomRows(
+      [
+        page([
+          room(5, { lastActivityAt: "2026-10-28T10:20:00+09:00" }),
+          room(4),
+        ]),
+        page([room(5), room(3)]),
+      ],
+      {},
+      NOW,
+    );
+    expect(rows.map((r) => r.roomId)).toEqual([5, 4, 3]);
+    expect(rows[0]?.time).toBe("10:20");
+  });
+});
+
+describe("S3-7 읽음은 내려가지 않는다", () => {
+  it("S3-7 읽음 응답이 목록보다 새로우면(위치가 더 크면) 그 미확인 수를 쓴다", () => {
+    const late = room(1, { myLastReadSequence: 6, unreadCount: 1 });
+    const mark = { roomId: 1, lastReadSequence: 7, unreadCount: 0 };
+    expect(applyReadMark(late, mark)).toMatchObject({
+      myLastReadSequence: 7,
+      unreadCount: 0,
+    });
+    const rows = toRoomRows([page([late])], { 1: mark }, NOW);
+    expect(rows[0]?.unreadLabel).toBeNull();
+  });
+
+  it("S3-7 목록이 같거나 더 새로우면 목록 값 — 그 사이 온 메시지가 반영돼 있다", () => {
+    const mark = { roomId: 1, lastReadSequence: 7, unreadCount: 0 };
+    expect(
+      applyReadMark(room(1, { myLastReadSequence: 7, unreadCount: 2 }), mark)
+        .unreadCount,
+    ).toBe(2);
+    expect(applyReadMark(room(1), undefined)).toEqual(room(1));
+  });
+
+  it("S3-7 늦게 온 읽음 응답(작은 위치)은 쌓인 값을 내리지 못한다", () => {
+    const first = mergeReadMark(
+      {},
+      { roomId: 1, lastReadSequence: 9, unreadCount: 0 },
+    );
+    const late = mergeReadMark(first, {
+      roomId: 1,
+      lastReadSequence: 7,
+      unreadCount: 2,
+    });
+    expect(late).toBe(first);
+    expect(
+      mergeReadMark(first, {
+        roomId: 1,
+        lastReadSequence: 9,
+        unreadCount: 0,
+      })[1]?.lastReadSequence,
+    ).toBe(9);
+  });
+});
+
+describe("S3-1 날짜 구분선과 말풍선 모양", () => {
+  it("S3-1 서울 날짜가 바뀌는 자리마다 구분선, 요일 포함", () => {
+    const items = toThreadItems([
+      message(1, { sentAt: "2026-10-27T09:00:00+09:00" }),
+      message(2, { sentAt: "2026-10-27T23:59:00+09:00" }),
+      // UTC 15:00 = 서울 다음 날 00:00
+      message(3, { sentAt: "2026-10-27T15:00:00Z" }),
+      message(4, { sentAt: "2026-10-28T09:00:00+09:00" }),
+    ]);
+    expect(
+      items.map((i) => (i.type === "divider" ? i.label : i.message.sequence)),
+    ).toEqual(["10월 27일 (화)", 1, 2, "10월 28일 (수)", 3, 4]);
+    expect(toThreadItems([])).toEqual([]);
+  });
+
+  it("S3-1 kind 분기: 소매 왼쪽, 내 TEXT 오른쪽, 자동 답변, 되묻기, 사람 넘김", () => {
+    expect(bubbleKindOf({ sender: "RETAILER", kind: "TEXT" })).toBe("them");
+    expect(bubbleKindOf({ sender: "WHOLESALER", kind: "TEXT" })).toBe("me");
+    expect(bubbleKindOf({ sender: "WHOLESALER", kind: "AUTO_REPLY" })).toBe(
+      "auto",
+    );
+    expect(bubbleKindOf({ sender: "WHOLESALER", kind: "CLARIFY" })).toBe(
+      "clarify",
+    );
+    expect(bubbleKindOf({ sender: "SYSTEM", kind: "HANDOFF" })).toBe("system");
+  });
+
+  it("S3-1 모르는 kind는 TEXT처럼 body만 — sender로 좌우", () => {
+    // 서버가 값을 늘리면 FE 배포 전에 먼저 온다(가이드 §9). 생성 타입에 없는 값을 일부러 넣는다
+    const unknown = "ORDER_LINK" as unknown as ChatMessage["kind"];
+    expect(bubbleKindOf({ sender: "WHOLESALER", kind: unknown })).toBe("me");
+    expect(bubbleKindOf({ sender: "RETAILER", kind: unknown })).toBe("them");
+    expect(bubbleKindOf({ sender: "SYSTEM", kind: unknown })).toBe("system");
+  });
+
+  it("S3-1 날짜 구분선과 말풍선 시각 형식", () => {
+    expect(formatDateDivider("2026-10-27T16:20:00+09:00")).toBe(
+      "10월 27일 (화)",
+    );
+    expect(formatClock("2026-10-28T01:38:00Z")).toBe("10:38");
+  });
+
+  it("S3-1 자동 답변 근거: 정확 수량, 주문 한도, 소매처가 본 구간, 조회 시각", () => {
+    const autoReply: ChatAutoReply = {
+      intent: "STOCK",
+      replyToSequence: 5,
+      generatedBy: "RULE",
+      checkedAt: "2026-10-28T09:22:00+09:00",
+      subject: {
+        listingId: 2001,
+        variantId: 3002,
+        backorderId: null,
+        label: null,
+      },
+      facts: {
+        stock: { availableQty: 1200, band: "FIFTY_PLUS", orderLimit: 500 },
+        backorder: null,
+        receivable: null,
+      },
+    };
+    const view = toFactsView(autoReply, NOW);
+    expect(view?.lines.map(factLineText)).toEqual([
+      "판매가능 1,200장, 주문 한도 500장",
+    ]);
+    expect(view?.seen).toBe(
+      '소매처에게는 "50장 이상"으로 보였어요. 09:22 조회',
+    );
+    // 수량만 굵게(QA F11)
+    expect(view?.lines[0]?.filter((p) => p.strong).map((p) => p.text)).toEqual([
+      "1,200장",
+      "500장",
+    ]);
+    expect(toFactsView(null, NOW)).toBeNull();
+    expect(
+      toFactsView(
+        {
+          ...autoReply,
+          facts: {
+            stock: null,
+            backorder: null,
+            receivable: {
+              outstandingAmount: 786_000,
+              prepaidAmount: 0,
+              overdue: { count: 0, amount: 0, maxDaysOverdue: 0 },
+            },
+          },
+        },
+        NOW,
+      )?.lines.map(factLineText),
+    ).toEqual(["미결제 786,000원, 선수금 0원", "연체 없음"]);
+  });
+});
+
+describe("S3-3 S3-4 polling 결과 합치기", () => {
+  it("S3-4 sequence로 합친다 — 겹친 것은 한 번, 결과는 오름차순", () => {
+    const merged = mergeMessages(
+      [message(1), message(2), message(3)],
+      [message(3, { body: "다시 받은 3" }), message(5), message(4)],
+    );
+    expect(merged.map((m) => m.sequence)).toEqual([1, 2, 3, 4, 5]);
+    expect(merged[2]?.body).toBe("다시 받은 3");
+  });
+
+  it("S3-4 cursor는 받은 것 중 가장 큰 sequence, 빈 응답이면 그대로", () => {
+    expect(advanceCursor(120, [message(121), message(170)])).toBe(170);
+    expect(advanceCursor(120, [])).toBe(120);
+  });
+});
+
+describe("S3-8 낭독 알림", () => {
+  const messages = [
+    message(7),
+    message(8, { body: "아 그리고 차콜 L도 10장요" }),
+    message(9, { sender: "WHOLESALER", body: "네" }),
+  ];
+
+  it("S3-8 연 뒤 온 소매 메시지 중 마지막 것을 '이름: 본문'으로", () => {
+    expect(liveAnnouncement(messages, 7, "봄봄상회")).toEqual({
+      text: "봄봄상회: 아 그리고 차콜 L도 10장요",
+      sequence: 8,
+    });
+  });
+
+  it("S3-8 첫 로딩(기준점 = 마지막)이면 없음, 내 말만 왔으면 없음", () => {
+    expect(liveAnnouncement(messages, 9, "봄봄상회")).toBeNull();
+    expect(liveAnnouncement(messages, 8, "봄봄상회")).toBeNull();
+  });
+
+  it("S3-8 같은 본문이 연달아 와도 sequence가 달라 새 알림이다(QA F8)", () => {
+    const twice = [message(10, { body: "네" }), message(11, { body: "네" })];
+    const first = liveAnnouncement(twice.slice(0, 1), 9, "봄봄상회");
+    const second = liveAnnouncement(twice, 9, "봄봄상회");
+    expect(first?.text).toBe(second?.text);
+    expect(first?.sequence).not.toBe(second?.sequence);
+  });
+});
+
+describe("S3-6 polling 간격", () => {
+  it("S3-6 성공이면 3초, 흔들림 없음", () => {
+    expect(pollDelayMs(0, 0)).toBe(3000);
+    expect(pollDelayMs(0, 0.999)).toBe(3000);
+  });
+
+  it("S3-6 연속 실패 1, 2, 3번 → 3, 6, 12초 ±20%", () => {
+    for (const [failures, base] of [
+      [1, 3000],
+      [2, 6000],
+      [3, 12000],
+    ] as const) {
+      expect(pollDelayMs(failures, 0)).toBe(base * 0.8);
+      expect(pollDelayMs(failures, 0.5)).toBe(base);
+      expect(pollDelayMs(failures, 0.999_999)).toBeCloseTo(base * 1.2, -1);
+    }
+  });
+
+  it("S3-6 흔들림을 섞은 최종값도 30초를 넘지 않는다(리뷰 F5)", () => {
+    // 4번째 실패: 24초 +20% = 28.8초 — 상한 안
+    expect(pollDelayMs(4, 0.999_999)).toBeLessThanOrEqual(30_000);
+    expect(pollDelayMs(4, 0.999_999)).toBeGreaterThan(28_000);
+    // 5번째부터 기준 30초. +20%를 섞어도 30초에서 자르고, −20%는 24초
+    for (const failures of [5, 6, 10, 50]) {
+      expect(pollDelayMs(failures, 0.999_999)).toBe(30_000);
+      expect(pollDelayMs(failures, 0.5)).toBe(30_000);
+      expect(pollDelayMs(failures, 0)).toBe(24_000);
+    }
+  });
+});
+
+describe("S2-5 ?room= 값", () => {
+  it("S2-5 양의 정수만 방 번호, 없으면 null, 나머지는 invalid", () => {
+    expect(parseRoomParam(null)).toBeNull();
+    expect(parseRoomParam("")).toBeNull();
+    expect(parseRoomParam("99999")).toBe(99999);
+    expect(parseRoomParam("0")).toBe("invalid");
+    expect(parseRoomParam("-1")).toBe("invalid");
+    expect(parseRoomParam("abc")).toBe("invalid");
+    expect(parseRoomParam("1.5")).toBe("invalid");
+  });
+});
+
+describe("S4-4 글자 수", () => {
+  it("S4-4 앞뒤 공백을 빼고 코드 포인트로 센다 — 이모지 하나가 1자", () => {
+    expect(bodyLength("  👍가 ")).toBe(2);
+    expect("👍".length).toBe(2); // JS length 와 다르다
+    expect(bodyLength("   \n ")).toBe(0);
+  });
+
+  it("S4-4 공백만이면 잠김, 문구 없음", () => {
+    expect(checkComposer("   ")).toMatchObject({
+      blank: true,
+      over: false,
+      overMessage: null,
+      counter: null,
+    });
+  });
+
+  it("S4-4 이모지 포함 정확히 1000자는 보낼 수 있고 900자부터 카운터", () => {
+    const exact = "👍".repeat(10) + "가".repeat(990);
+    expect(checkComposer(exact)).toMatchObject({
+      length: 1000,
+      blank: false,
+      over: false,
+      counter: "1,000/1,000",
+      overMessage: null,
+    });
+    expect(checkComposer("가".repeat(899)).counter).toBeNull();
+    expect(checkComposer("가".repeat(900)).counter).toBe("900/1,000");
+  });
+
+  it("S4-4 1001자는 자르지 않고 안내, 잠김", () => {
+    const over = "👍".repeat(10) + "가".repeat(991);
+    expect(checkComposer(over)).toMatchObject({
+      length: 1001,
+      over: true,
+      counter: null,
+      overMessage: "1,000자까지 보낼 수 있어요 (1,001/1,000)",
+    });
+  });
+});
+
+describe("S4-5 S4-7 S4-8 보내기 실패 종류", () => {
+  it("S4-7 401 → session, S4-8 서버까지 못 감 → offline, 그 밖 → server", () => {
+    const err = (status: number, code: string) =>
+      new ApiError({ status, code, message: "x" });
+    expect(sendFailureOf(err(401, "UNAUTHENTICATED"))).toBe("session");
+    expect(sendFailureOf(err(0, TRANSPORT_ERROR_CODE.NETWORK))).toBe("offline");
+    expect(sendFailureOf(err(500, "INTERNAL_ERROR"))).toBe("server");
+    expect(sendFailureOf(err(409, "IDEMPOTENCY_KEY_REUSED"))).toBe("server");
+    expect(sendFailureOf(new Error("렌더 버그"))).toBe("server");
+  });
+
+  it("loop-08d S2-1 M8 세션 세대가 바뀐 뒤 도착한 401만 server(잠그지 않음), 나머지는 그대로", () => {
+    expect(staleSendFailure("session", true)).toBe("server");
+    expect(staleSendFailure("session", false)).toBe("session");
+    expect(staleSendFailure("server", true)).toBe("server");
+    expect(staleSendFailure("offline", true)).toBe("offline");
+  });
+
+  it("loop-08d F1 다시 보내기는 잠긴 동안만 빠진다 — 401 실패도 잠금이 풀리면 보임", () => {
+    expect(canRetrySend(true)).toBe(false);
+    expect(canRetrySend(false)).toBe(true);
+  });
+
+  it("S4-8 문구: 오프라인만 '연결이 끊겨', 나머지는 '못 보냈어요'", () => {
+    expect(failureText("offline")).toBe("연결이 끊겨 못 보냈어요");
+    expect(failureText("server")).toBe("못 보냈어요");
+    expect(failureText("session")).toBe("못 보냈어요");
+  });
+});
+
+describe("S4-6 보류 말풍선 합치기", () => {
+  const pending: PendingMessage[] = [
+    {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "failed",
+      failure: "server",
+    },
+    { clientMessageId: "k-2", body: "또", status: "sending", failure: null },
+  ];
+
+  it("S4-6 polling 이 같은 clientMessageId 를 가져오면 보류 말풍선을 뺀다 — 1개로 합쳐진다", () => {
+    const delivered = message(8, {
+      sender: "WHOLESALER",
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+    });
+    expect(
+      visiblePending(pending, [message(7), delivered]).map(
+        (p) => p.clientMessageId,
+      ),
+    ).toEqual(["k-2"]);
+    expect(visiblePending(pending, [message(7)])).toHaveLength(2);
+  });
+
+  it("S4-5 다시 보내기는 제자리에서 상태만 바뀌고, 새 말풍선은 맨 아래", () => {
+    const retried = upsertPending(pending, {
+      clientMessageId: "k-1",
+      body: "30장이면 장당 500원 빼 드릴게요",
+      status: "sending",
+      failure: null,
+    });
+    expect(retried.map((p) => [p.clientMessageId, p.status])).toEqual([
+      ["k-1", "sending"],
+      ["k-2", "sending"],
+    ]);
+    const added = upsertPending(pending, {
+      clientMessageId: "k-3",
+      body: "새",
+      status: "sending",
+      failure: null,
+    });
+    expect(added.at(-1)?.clientMessageId).toBe("k-3");
+  });
+
+  it("S4-6 보내기 응답은 메시지에만 넣고 cursor 는 올리지 않는다 — 그 앞 소매 메시지를 놓치지 않게", () => {
+    const thread: ChatThread = {
+      messages: [message(5)],
+      cursor: 5,
+      failures: 0,
+      nextPollMs: 3000,
+      counterpartRead: null,
+      historyHasMore: false,
+      historyFetched: false,
+      historyStatus: "idle",
+    };
+    const next = insertSent(thread, [
+      message(7, { sender: "WHOLESALER", clientMessageId: "k-1" }),
+    ]);
+    expect(next.cursor).toBe(5);
+    expect(next.messages.map((m) => m.sequence)).toEqual([5, 7]);
+    // 다음 polling 이 6, 7 을 가져와도 7 은 한 번
+    expect(
+      mergeMessages(next.messages, [message(6), message(7)]).map(
+        (m) => m.sequence,
+      ),
+    ).toEqual([5, 6, 7]);
+  });
+
+  it("S4-6 S3-3 data-ac: 연 뒤 붙은 말풍선은 S3-3 S3-4, 보류 말풍선을 대신한 것은 S4-6(QA F7)", () => {
+    const ids = new Set(["k-1"]);
+    expect(messageAc(message(5), 7, ids)).toBe("S3-1");
+    expect(messageAc(message(8), 7, ids)).toBe("S3-1 S3-3 S3-4");
+    expect(messageAc(message(9, { clientMessageId: "k-1" }), 7, ids)).toBe(
+      "S3-1 S3-3 S3-4 S4-6",
+    );
+  });
+
+  it("loop-08 S3-5 data-ac: 연 뒤 붙은 내 글에만 S3-5. 연 뒤 소매 글, 연 뒤 자동 답, 연 앞 내 글은 아님(QA F3)", () => {
+    const none = new Set<string>();
+    const mine = { sender: "WHOLESALER" } as const;
+    expect(messageAc(message(8, mine), 7, none)).toBe("S3-1 S3-3 S3-4 S3-5");
+    expect(messageAc(message(8), 7, none)).toBe("S3-1 S3-3 S3-4");
+    expect(
+      messageAc(message(8, { ...mine, kind: "AUTO_REPLY" }), 7, none),
+    ).toBe("S3-1 S3-3 S3-4");
+    expect(messageAc(message(5, mine), 7, none)).toBe("S3-1");
+  });
+
+  it("S9-3 data-ac: 넘김 줄과 바로 앞 소매 문의에만 S9-3(QA F4)", () => {
+    const messages = [
+      message(5),
+      message(6, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+      message(7),
+      message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+    ];
+    const causes = handoffCauses(messages);
+    expect([...causes]).toEqual([7]);
+    const acs = messages.map((m) => messageAc(m, 8, new Set(), causes));
+    expect(acs).toEqual(["S3-1", "S3-1", "S3-1 S9-3", "S3-1 S9-3"]);
+  });
+
+  it("S9-3 넘김 앞이 소매 말이 아니면(도매 답 뒤 넘김) 문의로 잇지 않는다", () => {
+    expect(
+      handoffCauses([
+        message(8, { sender: "SYSTEM", kind: "HANDOFF" }),
+        message(7, { sender: "WHOLESALER" }),
+      ]).size,
+    ).toBe(0);
+  });
+});
+
+describe("S7-13 모든 자동 답 근거 칸 끝 줄 = HH:mm 조회 (F12)", () => {
+  const base: ChatAutoReply = {
+    intent: "STOCK",
+    replyToSequence: 3,
+    generatedBy: "RULE",
+    // UTC로 와도 서울 시각으로 읽는다(01:20Z = 서울 10:20)
+    checkedAt: "2026-10-28T01:20:00Z",
+    subject: {
+      listingId: 2001,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+
+  it("되묻기(값 없음) → 값 줄 0, 끝 줄 '10:20 조회'", () => {
+    const view = toFactsView(base, NOW);
+    expect(view?.lines).toEqual([]);
+    expect(view?.seen).toBe("10:20 조회");
+  });
+
+  it("재고 → 앞말 + 조회 시각, 구간 글자는 소매 카드와 같은 '10~49장'", () => {
+    const view = toFactsView(
+      {
+        ...base,
+        facts: {
+          stock: { availableQty: 35, band: "UNDER_50", orderLimit: 500 },
+          backorder: null,
+          receivable: null,
+        },
+      },
+      NOW,
+    );
+    expect(view?.lines.map(factLineText)).toEqual([
+      "판매가능 35장, 주문 한도 500장",
+    ]);
+    expect(view?.seen).toBe('소매처에게는 "10~49장"으로 보였어요. 10:20 조회');
+  });
+
+  it("미송 → 값 줄 + '14:02 조회'(앞말 없음)", () => {
+    const view = toFactsView(
+      {
+        ...base,
+        intent: "BACKORDER",
+        checkedAt: "2026-10-28T14:02:00+09:00",
+        facts: {
+          stock: null,
+          backorder: {
+            qty: 20,
+            expectedInboundDate: "10/30",
+            expectedInboundReason: null,
+          },
+          receivable: null,
+        },
+      },
+      NOW,
+    );
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미송 20장, 입고 예정 10/30",
+    ]);
+    expect(view?.seen).toBe("14:02 조회");
+  });
+
+  it("미수 → 값 두 줄 + '06:40 조회'. 서울 자정 넘김(전날 21:40Z)도 서울 날로 읽는다", () => {
+    const view = toFactsView(
+      {
+        ...base,
+        intent: "RECEIVABLE",
+        checkedAt: "2026-10-27T21:40:00Z",
+        facts: {
+          stock: null,
+          backorder: null,
+          receivable: {
+            outstandingAmount: 786_000,
+            prepaidAmount: 0,
+            overdue: { count: 1, amount: 120_000, maxDaysOverdue: 3 },
+          },
+        },
+      },
+      NOW,
+    );
+    expect(view?.lines.map(factLineText)).toEqual([
+      "미결제 786,000원, 선수금 0원",
+      "연체 1건 120,000원 (최대 3일)",
+    ]);
+    expect(view?.seen).toBe("06:40 조회");
+  });
+
+  it("구간 글자 표 4개 = 소매 카드 글자(디자인 결정 20, 27)", () => {
+    expect(STOCK_BAND_LABEL).toEqual({
+      NONE: "재고 없음",
+      UNDER_10: "1~9장",
+      UNDER_50: "10~49장",
+      FIFTY_PLUS: "50장 이상",
+    });
+  });
+});
+
+describe("08f S2-1 근거 칸 미송 줄 4형식", () => {
+  /** 서울 2026-10-29(목) 14:20 — 골든 t0 */
+  const T0 = Date.parse("2026-10-29T14:20:00+09:00");
+
+  function backorderLine(
+    backorder: {
+      qty: number;
+      expectedInboundDate: string | null;
+      expectedInboundReason: string | null;
+    },
+    nowMs = T0,
+  ) {
+    const view = toFactsView(
+      {
+        intent: "BACKORDER",
+        replyToSequence: 3,
+        generatedBy: "RULE",
+        checkedAt: "2026-10-29T14:20:00+09:00",
+        subject: {
+          listingId: null,
+          variantId: 3019,
+          backorderId: 9003,
+          label: null,
+        },
+        facts: { stock: null, backorder, receivable: null },
+      },
+      nowMs,
+    );
+    expect(view?.lines).toHaveLength(1);
+    /* e2e가 이 줄을 data-ac로 잡는다 */
+    expect(view?.lineAc).toEqual(["08f:S2-2"]);
+    const line = view?.lines[0] ?? [];
+    return {
+      text: factLineText(line),
+      strong: line.filter((p) => p.strong).map((p) => p.text),
+    };
+  }
+
+  it("① 예정 + 사유 → '미송 2장, 입고 예정 11/5(목), 사유 원단 수급 지연', 굵게는 2장과 11/5(목)만", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: "원단 수급 지연",
+      }),
+    ).toEqual({
+      text: "미송 2장, 입고 예정 11/5(목), 사유 원단 수급 지연",
+      strong: ["2장", "11/5(목)"],
+    });
+  });
+
+  it("② 미정, 사유 없음 → '미송 1장, 입고일 미정', 굵게는 1장만", () => {
+    expect(
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: null,
+        expectedInboundReason: null,
+      }),
+    ).toEqual({ text: "미송 1장, 입고일 미정", strong: ["1장"] });
+  });
+
+  it("③ 미정 + 사유 → '미송 1장, 입고일 미정, 사유 공장 확인 중'", () => {
+    expect(
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: null,
+        expectedInboundReason: "공장 확인 중",
+      }),
+    ).toEqual({
+      text: "미송 1장, 입고일 미정, 사유 공장 확인 중",
+      strong: ["1장"],
+    });
+  });
+
+  it.each([
+    ["빈 글자", ""],
+    ["공백만", "   "],
+    ["null", null],
+  ])("④ 사유 %s → 사유 조각 0", (_name, reason) => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: reason,
+      }).text,
+    ).toBe("미송 2장, 입고 예정 11/5(목)");
+  });
+
+  it("⑤ 사유 ' 원단 ' → 앞뒤 공백을 잘라 '사유 원단'", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2026-11-05",
+        expectedInboundReason: " 원단 ",
+      }).text,
+    ).toBe("미송 2장, 입고 예정 11/5(목), 사유 원단");
+  });
+
+  it("⑥ 해가 다름 2027-01-05 → '입고 예정 2027/1/5(화)', 굵게는 날짜 전체", () => {
+    expect(
+      backorderLine({
+        qty: 2,
+        expectedInboundDate: "2027-01-05",
+        expectedInboundReason: null,
+      }),
+    ).toEqual({
+      text: "미송 2장, 입고 예정 2027/1/5(화)",
+      strong: ["2장", "2027/1/5(화)"],
+    });
+  });
+
+  it("⑦ 오늘(10/29), 지난 날(10/26)도 같은 꼴 → '10/29(목)', '10/26(월)'", () => {
+    const line = (date: string) =>
+      backorderLine({
+        qty: 1,
+        expectedInboundDate: date,
+        expectedInboundReason: null,
+      }).text;
+    expect(line("2026-10-29")).toBe("미송 1장, 입고 예정 10/29(목)");
+    expect(line("2026-10-26")).toBe("미송 1장, 입고 예정 10/26(월)");
+  });
+
+  it("⑧ 지금이 2026-12-31 23:59 서울, 날짜 2027-01-01 → '2027/1/1(금)'(서울 해로 판정)", () => {
+    expect(
+      backorderLine(
+        {
+          qty: 1,
+          expectedInboundDate: "2027-01-01",
+          expectedInboundReason: null,
+        },
+        Date.parse("2026-12-31T23:59:00+09:00"),
+      ).text,
+    ).toBe("미송 1장, 입고 예정 2027/1/1(금)");
+    /* 같은 날짜라도 서울이 이미 2027년이면(UTC로는 아직 12/31) 올해 꼴이다 */
+    expect(
+      backorderLine(
+        {
+          qty: 1,
+          expectedInboundDate: "2027-01-01",
+          expectedInboundReason: null,
+        },
+        Date.parse("2027-01-01T00:30:00+09:00"),
+      ).text,
+    ).toBe("미송 1장, 입고 예정 1/1(금)");
+  });
+});
+
+describe("S9 자동 답변 스위치", () => {
+  const on: AutoReplySettings = {
+    enabled: true,
+    intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+  };
+
+  it("S9-2 끄기 PUT 본문 = {enabled: false, intents 전부 true} — 받은 intents 그대로", () => {
+    expect(toggledSettings(on, false)).toEqual({
+      enabled: false,
+      intents: { STOCK: true, BACKORDER: true, RECEIVABLE: true },
+    });
+    // 다른 곳에서 끈 의도를 기본값으로 덮어 다시 켜지 않는다
+    const stockOff = { ...on, intents: { ...on.intents, STOCK: false } };
+    expect(toggledSettings(stockOff, false).intents.STOCK).toBe(false);
+    // 받은 객체는 그대로(캐시 값을 고치지 않는다)
+    toggledSettings(on, false).intents.STOCK = false;
+    expect(on.intents.STOCK).toBe(true);
+  });
+
+  it("S9-2 S9-4 안내 줄: 꺼짐 → off, 실패 → failed(꺼짐보다 먼저), 켜짐이나 모름 → 없음", () => {
+    expect(autoReplyNoteOf(on, false)).toBeNull();
+    expect(autoReplyNoteOf({ ...on, enabled: false }, false)).toBe("off");
+    expect(autoReplyNoteOf({ ...on, enabled: false }, true)).toBe("failed");
+    expect(autoReplyNoteOf(on, true)).toBe("failed");
+    expect(autoReplyNoteOf(undefined, false)).toBeNull();
+  });
+});
+
+describe("#296 S13-1 되묻기 보기 줄", () => {
+  const clarify: ChatAutoReply = {
+    intent: "STOCK",
+    replyToSequence: 3,
+    generatedBy: "RULE",
+    checkedAt: "2026-10-28T01:20:00Z",
+    subject: {
+      listingId: 2001,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+  const choice = (label: string, variantId: number, orderable = true) => ({
+    label,
+    variantId,
+    orderable,
+  });
+
+  it("보기 5개 → '보기: ' + 서버 순서대로 쉼표", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          choice("레드 / S", 3001),
+          choice("레드 / M", 3002),
+          choice("레드 / L", 3003),
+          choice("네이비 / S", 3004),
+          choice("네이비 / M", 3005),
+        ],
+      }),
+    ).toEqual({
+      mode: "inline",
+      text: "보기: 레드 / S, 레드 / M, 레드 / L, 네이비 / S, 네이비 / M",
+    });
+  });
+
+  it("orderable false → 뒤에 '(주문 불가)'만(와이어프레임 그대로 붙여 쓴다)", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          choice("레드 / M", 3002),
+          choice("레드 / L", 3003, false),
+          choice("네이비 / M", 3005),
+        ],
+      }),
+    ).toEqual({
+      mode: "inline",
+      text: "보기: 레드 / M, 레드 / L(주문 불가), 네이비 / M",
+    });
+  });
+
+  it("choices 칸 없음, null, 빈 배열, 자동 답 없음 → 줄 없음(null)", () => {
+    expect(toClarifyChoicesView(clarify)).toBeNull();
+    expect(toClarifyChoicesView({ ...clarify, choices: null })).toBeNull();
+    expect(toClarifyChoicesView({ ...clarify, choices: [] })).toBeNull();
+    expect(toClarifyChoicesView(null)).toBeNull();
+  });
+});
+
+describe("#299 S4-1 미송 되묻기 보기 줄", () => {
+  /* 목 생성기가 실제로 내는 모양(`backorderCandidates.ts`): 미송 보기는 orderable true,
+     `다른 주문이에요`는 variantId 0, orderable false */
+  const clarify: ChatAutoReply = {
+    intent: "BACKORDER",
+    replyToSequence: 7,
+    generatedBy: "RULE",
+    checkedAt: "2026-10-29T05:20:00Z",
+    subject: {
+      listingId: null,
+      variantId: null,
+      backorderId: null,
+      label: null,
+    },
+    facts: { stock: null, backorder: null, receivable: null },
+  };
+  const order = (
+    label: string,
+    backorderId: number,
+    variantId: number,
+    orderable = true,
+  ) => ({
+    kind: "BACKORDER" as const,
+    label,
+    variantId,
+    backorderId,
+    orderable,
+  });
+  const notListed = {
+    kind: "NOT_LISTED" as const,
+    label: "다른 주문이에요",
+    variantId: 0,
+    backorderId: null,
+    orderable: false,
+  };
+  const ITEMS = [
+    "빈티지 플라워 셔츠 레드/L, 남은 4장, 9/4 주문 #7001",
+    "와이드 데님 팬츠 소라/M, 남은 1장, 9/6 주문 #7002",
+    "빈티지 플라워 셔츠 레드/L, 남은 2장, 9/6 주문 #7006",
+    "린넨 셋업 자켓 베이지/L, 남은 2장, 9/7 주문 #7003",
+  ];
+
+  it("미송 4 + 다른 주문이에요 → 목록 모양, 서버 순서 그대로, 쉼표로 잇지 않는다", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          order(ITEMS[0] ?? "", 9001, 3003),
+          order(ITEMS[1] ?? "", 9002, 3011),
+          order(ITEMS[2] ?? "", 9006, 3003),
+          order(ITEMS[3] ?? "", 9003, 3019),
+          notListed,
+        ],
+      }),
+    ).toEqual({ mode: "list", items: [...ITEMS, "다른 주문이에요"] });
+  });
+
+  it("BACKORDER, NOT_LISTED 는 orderable false 여도 '(주문 불가)' 0", () => {
+    const view = toClarifyChoicesView({
+      ...clarify,
+      choices: [order(ITEMS[0] ?? "", 9001, 3003, false), notListed],
+    });
+    expect(view).toEqual({
+      mode: "list",
+      items: [ITEMS[0], "다른 주문이에요"],
+    });
+    expect(JSON.stringify(view)).not.toContain("(주문 불가)");
+  });
+
+  it("섞여 와도 VARIANT + orderable false 만 '(주문 불가)'. kind 없음은 VARIANT 로 읽는다", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          {
+            kind: "VARIANT",
+            label: "레드 / L",
+            variantId: 3003,
+            orderable: false,
+          },
+          { label: "레드 / M", variantId: 3002, orderable: false },
+          {
+            kind: "VARIANT",
+            label: "레드 / S",
+            variantId: 3001,
+            orderable: true,
+          },
+          order(ITEMS[3] ?? "", 9003, 3019, false),
+          notListed,
+        ],
+      }),
+    ).toEqual({
+      mode: "list",
+      items: [
+        "레드 / L(주문 불가)",
+        "레드 / M(주문 불가)",
+        "레드 / S",
+        ITEMS[3],
+        "다른 주문이에요",
+      ],
+    });
+  });
+
+  it("kind VARIANT 만 명시돼 오면 05b-2 그대로 한 줄", () => {
+    expect(
+      toClarifyChoicesView({
+        ...clarify,
+        choices: [
+          {
+            kind: "VARIANT",
+            label: "레드 / M",
+            variantId: 3002,
+            orderable: true,
+          },
+          {
+            kind: "VARIANT",
+            label: "레드 / L",
+            variantId: 3003,
+            orderable: false,
+          },
+        ],
+      }),
+    ).toEqual({ mode: "inline", text: "보기: 레드 / M, 레드 / L(주문 불가)" });
+  });
+});
+
+describe("S3-1 상대 읽음 (loop-08)", () => {
+  /* 시드 방 1 모양: 1 소매, 2 내 글, 3 소매, 4 되묻기, 5 소매, 6 자동 답, 7 넘김, 8 소매 */
+  const thread = [
+    message(1),
+    message(2, { sender: "WHOLESALER" }),
+    message(3),
+    message(4, { sender: "WHOLESALER", kind: "CLARIFY" }),
+    message(5),
+    message(6, { sender: "WHOLESALER", kind: "AUTO_REPLY" }),
+    message(7, { sender: "SYSTEM", kind: "HANDOFF" }),
+    message(8),
+  ];
+
+  it.each([
+    {
+      read: 8,
+      expected: 6,
+      why: "자동 답이 대상, 그 뒤 넘김과 소매 글은 아니다",
+    },
+    { read: 5, expected: 4, why: "되묻기가 대상" },
+    { read: 3, expected: 2, why: "내 글이 대상" },
+    { read: 1, expected: null, why: "그 위치까지 내 쪽 메시지가 없다" },
+    { read: 0, expected: null, why: "0" },
+  ])("읽음 $read → $expected ($why)", ({ read, expected }) => {
+    expect(readMarkerSequence(thread, read)).toBe(expected);
+  });
+
+  it("null(아직 안 읽음) → 없음. 빈 방 → 없음", () => {
+    expect(readMarkerSequence(thread, null)).toBeNull();
+    expect(readMarkerSequence([], 5)).toBeNull();
+  });
+
+  it("넘김 줄(SYSTEM)만 읽힌 자리 → 그 앞 내 쪽 메시지. 넘김에는 안 붙는다", () => {
+    expect(readMarkerSequence(thread, 7)).toBe(6);
+    expect(
+      readMarkerSequence([message(1), message(2, { sender: "SYSTEM" })], 2),
+    ).toBeNull();
+  });
+
+  it("보내는 중, 못 보낸 말풍선은 서버 메시지 목록에 없다 — 읽음 값이 커도 마지막 서버 메시지까지만", () => {
+    /* 보류 말풍선(`PendingMessage`)은 sequence가 없어 이 함수가 받지 않는다. 읽음이 999여도 6 */
+    expect(readMarkerSequence(thread.slice(0, 6), 999)).toBe(6);
+  });
+
+  it("mergeCounterpartRead(5, 3) → 5. 작은 값, null, undefined 는 내리지 못한다", () => {
+    expect(mergeCounterpartRead(5, 3)).toBe(5);
+    expect(mergeCounterpartRead(3, 5)).toBe(5);
+    expect(mergeCounterpartRead(5, null)).toBe(5);
+    expect(mergeCounterpartRead(5, undefined)).toBe(5);
+    expect(mergeCounterpartRead(null, 0)).toBe(0);
+    expect(mergeCounterpartRead(null, null)).toBeNull();
+  });
+});
+
+describe("loop-08b S4-1 목록 조건과 행 링크", () => {
+  it('parseListFilter("UNREAD") → UNREAD, "NEEDS_REPLY" → NEEDS_REPLY, "x"와 null, 소문자 → ALL', () => {
+    expect(parseListFilter("UNREAD")).toBe("UNREAD");
+    expect(parseListFilter("NEEDS_REPLY")).toBe("NEEDS_REPLY");
+    expect(parseListFilter("x")).toBe("ALL");
+    expect(parseListFilter(null)).toBe("ALL");
+    expect(parseListFilter("unread")).toBe("ALL");
+    expect(parseListFilter("ALL")).toBe("ALL");
+  });
+
+  it('normalizeQuery("  봄봄 ") → "봄봄", 공백만과 null → null, 안쪽 공백 그대로', () => {
+    expect(normalizeQuery("  봄봄 ")).toBe("봄봄");
+    expect(normalizeQuery("   ")).toBeNull();
+    expect(normalizeQuery("")).toBeNull();
+    expect(normalizeQuery(null)).toBeNull();
+    expect(normalizeQuery("소매처  70")).toBe("소매처  70");
+  });
+
+  it("60자 → 앞 50자(코드 포인트로 센다 — 이모지 하나가 1자)", () => {
+    const sixty = "가나다라마바사아자차".repeat(6);
+    expect(normalizeQuery(sixty)).toBe(sixty.slice(0, 50));
+    const emoji = "😀".repeat(60);
+    expect([...(normalizeQuery(emoji) ?? "")]).toHaveLength(50);
+  });
+
+  it("F2 readListParams는 주소를 첫 진입과 같은 규칙으로 읽고, chatsHref와 왕복하면 같은 조건", () => {
+    expect(readListParams(new URLSearchParams(""))).toEqual({
+      filter: "ALL",
+      q: null,
+    });
+    expect(
+      readListParams(new URLSearchParams("filter=UNREAD&q=+소매처+6+&room=3")),
+    ).toEqual({ filter: "UNREAD", q: "소매처 6" });
+    const href = chatsHref("NEEDS_REPLY", "A&B", 7);
+    expect(readListParams(new URL(href, "http://x").searchParams)).toEqual({
+      filter: "NEEDS_REPLY",
+      q: "A&B",
+    });
+  });
+
+  it("F2 sameListParams는 filter와 q가 둘 다 같을 때만 참", () => {
+    const base = { filter: "UNREAD", q: "봄봄" } as const;
+    expect(sameListParams(base, { filter: "UNREAD", q: "봄봄" })).toBe(true);
+    expect(sameListParams(base, { filter: "ALL", q: "봄봄" })).toBe(false);
+    expect(sameListParams(base, { filter: "UNREAD", q: null })).toBe(false);
+  });
+
+  it('roomHref(5, "UNREAD", "소매처 6") → "/chats?filter=UNREAD&q=소매처+6&room=5"(순서 고정)', () => {
+    expect(roomHref(5, "UNREAD", "소매처 6")).toBe(
+      "/chats?filter=UNREAD&q=소매처+6&room=5",
+    );
+  });
+
+  it("ALL과 빈 검색은 칸을 안 단다. 예약 문자는 퍼센트로 — 읽으면 같은 값", () => {
+    expect(roomHref(5, "ALL", null)).toBe("/chats?room=5");
+    expect(chatsHref("ALL", null, null)).toBe("/chats");
+    expect(chatsHref("NEEDS_REPLY", null, null)).toBe(
+      "/chats?filter=NEEDS_REPLY",
+    );
+    const href = roomHref(3, "ALL", "A&B=1+2 #?%");
+    expect(href).toBe("/chats?q=A%26B%3D1%2B2+%23%3F%25&room=3");
+    expect(new URL(href, "http://x").searchParams.get("q")).toBe("A&B=1+2 #?%");
+  });
+
+  it("toServerFilter: ALL은 안 보낸다, hasListCondition: 칩이나 검색이 있으면 참", () => {
+    expect(toServerFilter("ALL")).toBeUndefined();
+    expect(toServerFilter("UNREAD")).toBe("UNREAD");
+    expect(hasListCondition({ filter: "ALL", q: null })).toBe(false);
+    expect(hasListCondition({ filter: "UNREAD", q: null })).toBe(true);
+    expect(hasListCondition({ filter: "ALL", q: "봄" })).toBe(true);
+  });
+});

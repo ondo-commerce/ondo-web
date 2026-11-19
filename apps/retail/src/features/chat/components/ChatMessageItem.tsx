@@ -1,0 +1,332 @@
+"use client";
+
+import { Button, cn } from "@ondo/ui";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { PENDING_TEXT, ROOM_TEXT } from "../constants";
+import {
+  autoReplySeen,
+  bubbleKindOf,
+  canRetrySend,
+  failureText,
+  formatClock,
+  keepActionOf,
+  pendingAc,
+  senderLabel,
+  systemLineText,
+} from "../derive";
+import type { ChatMessage, PendingMessage } from "../types";
+
+/** 휴대폰에서는 보낸 쪽과 받은 쪽이 같은 폭을 채우지 않도록 여백을 남긴다. */
+const BUBBLE_WIDTH = "max-w-xl phone:max-w-17/20";
+
+/**
+ * 메시지 한 줄 — 소매 시점. 나 오른쪽, 도매와 자동 답 왼쪽(`bubbleKindOf`). 도매 `ChatMessageItem`과 짝이다.
+ *
+ * 낭독기 규칙(도매 디자인 결정 20): 말풍선 앞에 숨긴 "무드온, 10:08: "를 두고 보이는 시각은
+ * `aria-hidden`. log 영역은 `aria-live="off"`라 이 글은 사용자가 대화를 훑을 때만 읽힌다.
+ */
+export function ChatMessageItem({
+  message,
+  counterpartName,
+  now,
+  ac,
+  extra = null,
+  readMark = false,
+}: {
+  message: ChatMessage;
+  counterpartName: string;
+  /** 방의 지금 시각(ms). 조회 시각이 오늘인지 가른다(`checkedLabel`) */
+  now: number;
+  /** 와이어프레임 `data-ac`(`messageAc`) */
+  ac: string;
+  /**
+   * 자동 답 말풍선 안, 본문과 조회 시각 사이에 들어갈 칸 — 되묻기 칩 줄(`ClarifyChoices`)이나 재고 카드
+   * (`StockReplyCard`). 방이 판정해서 넘긴다(loop-05b 방향안 A: 답 하나 = 말풍선 하나)
+   */
+  extra?: ReactNode;
+  /** 상대가 여기까지 읽었다 — 읽힌 내 글 중 가장 아래 하나에만 true(`readMarkerSequence`, loop-08 S4) */
+  readMark?: boolean;
+}) {
+  const kind = bubbleKindOf(message);
+  const time = formatClock(message.sentAt);
+  const who = senderLabel(message, counterpartName);
+
+  if (kind === "system") {
+    return (
+      <div
+        role="note"
+        data-kind={message.kind}
+        data-ac={ac}
+        className="text-muted-foreground flex max-w-full flex-wrap items-center justify-center gap-2 self-center text-center text-xs wrap-anywhere"
+      >
+        <span className="sr-only">{`${who}, ${time}: `}</span>
+        {systemLineText(message)}
+        <span aria-hidden className="text-muted-foreground text-xs">
+          {time}
+        </span>
+      </div>
+    );
+  }
+
+  const mine = kind === "me";
+  return (
+    <div
+      data-kind={message.kind}
+      data-sequence={message.sequence}
+      data-sender={message.sender}
+      data-client-id={message.clientMessageId ?? undefined}
+      data-ac={ac}
+      className={cn(
+        "flex min-w-0 flex-col gap-1",
+        BUBBLE_WIDTH,
+        mine ? "items-end self-end" : "items-start self-start",
+      )}
+    >
+      <span className="sr-only">{`${who}, ${time}: `}</span>
+      {kind === "auto" ? (
+        <AutoReplyBubble message={message} now={now}>
+          {extra}
+        </AutoReplyBubble>
+      ) : (
+        <Bubble tone={mine ? "me" : "them"}>{message.body}</Bubble>
+      )}
+      {/* 시각 줄. `읽음`은 이 줄 안 시각 왼쪽이다(디자인 결정 60) — 새 줄로 두면 값이 바뀔 때 말풍선이 16px
+          늘어 읽던 자리가 밀린다. 보이는 글자는 시각과 같이 aria-hidden, 낭독은 아래 숨긴 ", 읽음" */}
+      <span
+        aria-hidden
+        className="text-muted-foreground flex gap-1 text-xs leading-4 tabular-nums"
+      >
+        {readMark ? (
+          <span className="text-secondary-foreground" data-ac="S4-2">
+            {ROOM_TEXT.read}
+          </span>
+        ) : null}
+        {time}
+      </span>
+      {readMark ? (
+        <span className="sr-only" data-ac="S4-2">
+          {ROOM_TEXT.readSr}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** 실패 말풍선 링크 모양. ≤40rem에서는 터치 높이 44, 넓은 화면에서는 글자 높이 */
+const FAILED_LINK = "phone:h-11 text-xs underline";
+
+/**
+ * 아직 sequence가 없는 내 말풍선 — 보내는 중, 못 보냄. 방 맨 아래에 붙는다(도매 디자인 결정 14).
+ * 잠긴 동안은 `다시 보내기`를 빼고 `지우기`만 둔다 — 다시 보내도 401이다.
+ * 영구 실패(loop-12)는 `다시 보내기` 대신 글을 남기는 버튼 하나(`keepActionOf`) + `지우기`.
+ */
+export function PendingItem({
+  item,
+  sessionLost,
+  onRetry,
+  onRemove,
+  onToComposer,
+  onApproval,
+  approvalBusy,
+}: {
+  item: PendingMessage;
+  /** 새 보내기 잠금(`roomSendLockedOf`). 끊김, 로그아웃 중에 더해 닫힌 방도 일시 실패 `다시 보내기`를 뺀다(D69) */
+  sessionLost: boolean;
+  onRetry: () => void;
+  onRemove: () => void;
+  /** 409, 400 `입력창으로` — 글을 입력창 뒤에 붙이고 말풍선을 뺀다 */
+  onToComposer: () => void;
+  /** 403 `승인 상태 보기` — 글을 그 방 초안에 저장한 뒤 승인 화면으로 */
+  onApproval: () => void;
+  /** 승인 화면으로 가는 중. 버튼을 잠근다 — 두 번째 누름이 글을 또 붙이지 않게(12-R2) */
+  approvalBusy: boolean;
+}) {
+  const sending = item.status === "sending";
+  const keep = keepActionOf(item.failure);
+  return (
+    <div
+      aria-busy={sending || undefined}
+      data-client-id={item.clientMessageId}
+      data-pending={item.status}
+      data-ac={pendingAc(item)}
+      className={cn(
+        "flex min-w-0 flex-col items-end gap-1 self-end",
+        BUBBLE_WIDTH,
+      )}
+    >
+      <span className="sr-only">{`${ROOM_TEXT.me}, ${sending ? PENDING_TEXT.sending : PENDING_TEXT.srFailed}: `}</span>
+      <Bubble tone={sending ? "me" : "failed"}>{item.body}</Bubble>
+      {sending ? (
+        <span className="text-muted-foreground flex items-center gap-1.5 text-xs leading-4">
+          <span
+            aria-hidden
+            className="border-border border-t-secondary-foreground size-3 animate-spin rounded-full border-2 motion-reduce:animate-none"
+          />
+          {PENDING_TEXT.sending}
+        </span>
+      ) : (
+        <span
+          role="alert"
+          /* 긴 실패 문구와 복구 버튼의 터치 영역이 겹치지 않게 각각 한 줄로 둔다. */
+          className="text-destructive-strong text-body flex max-w-full flex-col items-end gap-1 text-right"
+        >
+          {failureText(item.failure)}
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            {/* 일시 실패는 잠긴 동안만 뺀다(loop-08e §4-1, 08d F1). 401 실패도 잠금이 풀리면 같은 키로 다시 보낸다.
+              08e §4-1 규칙의 영구 실패 예외(loop-12 D68): 영구 넷은 잠금과 무관하게 늘 뺀다.
+              링크는 ≤40rem에서 높이 44 — 소매 다른 터치 대상(문의하기, 방 머리 링크, 칩)과 같은 손가락 기준(08f Q6 ①).
+              넓은 화면에서는 글자 높이에 맞춘다. */}
+            {!canRetrySend(item.failure, sessionLost) ? null : (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                onClick={onRetry}
+                data-ac="S6-4 S6-6"
+              >
+                {PENDING_TEXT.retry}
+              </Button>
+            )}
+            {keep === "approval" ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                disabled={approvalBusy}
+                onClick={onApproval}
+                data-ac="12:S1-6 12:S1-8"
+              >
+                {PENDING_TEXT.approval}
+              </Button>
+            ) : keep === "copy" ? (
+              <CopyBodyButton body={item.body} />
+            ) : keep === "toComposer" ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={FAILED_LINK}
+                onClick={onToComposer}
+                data-ac="12:S1-6 12:S1-7"
+              >
+                {PENDING_TEXT.toComposer}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className={FAILED_LINK}
+              onClick={onRemove}
+              data-ac={keep === null ? "S6-4" : "S6-4 12:S1-6"}
+            >
+              {PENDING_TEXT.remove}
+            </Button>
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 404 `복사하기`(loop-12 §4-2 3의 3). 그 방 입력창은 닫혀 있어 글을 다른 대화로 가져갈 길이 클립보드뿐이다.
+ * 결과를 버튼 글자로 알린다. 막힌 브라우저(권한 거절, 보안 맥락 아님)는 `복사 못 했어요` — 말풍선 글은 그대로라
+ * 직접 선택해 복사할 수 있다. `navigator.clipboard`가 없는 맥락도 같은 실패로 받으려고 promise 안에서 부른다
+ */
+function CopyBodyButton({ body }: { body: string }) {
+  const [result, setResult] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = () => {
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(body))
+      .then(
+        () => setResult("copied"),
+        () => setResult("failed"),
+      );
+  };
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="sm"
+      className={FAILED_LINK}
+      onClick={copy}
+      data-ac="12:S1-6 12:S1-9"
+    >
+      {result === "copied"
+        ? PENDING_TEXT.copied
+        : result === "failed"
+          ? PENDING_TEXT.copyFailed
+          : PENDING_TEXT.copy}
+    </Button>
+  );
+}
+
+/**
+ * 말풍선 면. 내 것은 primary, 도매는 secondary.
+ * `wrap-anywhere`: 공백 없는 1000자도 블록 폭을 넘지 않게(S5-9). 줄바꿈은 보낸 그대로.
+ */
+function Bubble({
+  tone,
+  className,
+  children,
+}: {
+  tone: "me" | "them" | "plain" | "failed";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "max-w-full rounded-control px-3 py-2 text-sm whitespace-pre-wrap wrap-anywhere",
+        tone === "me" && "bg-primary text-primary-foreground",
+        tone === "them" && "bg-secondary text-foreground",
+        tone === "plain" && "bg-card text-foreground border-border border",
+        tone === "failed" &&
+          "bg-card text-foreground border-destructive border",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 자동 답변(AUTO_REPLY, CLARIFY) — 상대 쪽, 흰 면 + 테두리 + `자동 답변` 글자 + 본문 + (칩 줄 또는 카드) +
+ * `HH:mm 조회`(05a 디자인 결정 7, 05b 결정 18). 소매 응답엔 정확 수량이 없다(D31②). 모든 자동 답에 조회
+ * 시각을 단다(F12, S7-13). 오늘이 아닌 답은 `10/28 14:20 조회`(07 결정 45).
+ */
+function AutoReplyBubble({
+  message,
+  now,
+  children,
+}: {
+  message: ChatMessage;
+  now: number;
+  children: ReactNode;
+}) {
+  const seen = autoReplySeen(message, now);
+  const receivable = message.autoReply?.intent === "RECEIVABLE";
+  return (
+    <Bubble tone="plain" className="grid gap-2">
+      <span className="text-muted-foreground text-xs">
+        {ROOM_TEXT.autoReply}
+      </span>
+      <span data-body="">{message.body}</span>
+      {children}
+      {seen ? (
+        <span
+          data-ac={receivable ? "S5-6 S7-13 S2-1 S2-5" : "S5-6 S7-13"}
+          data-seen=""
+          className="text-muted-foreground text-xs"
+        >
+          {seen}
+        </span>
+      ) : null}
+    </Bubble>
+  );
+}

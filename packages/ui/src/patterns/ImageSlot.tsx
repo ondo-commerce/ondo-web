@@ -40,7 +40,14 @@ export function ImageSlot({
   ...props
 }: ImageSlotProps) {
   return (
-    <div className={cn(slot({ size }), "bg-secondary", className)} {...props}>
+    <div
+      className={cn(
+        slot({ size }),
+        "bg-secondary border-border overflow-hidden border",
+        className,
+      )}
+      {...props}
+    >
       {children}
       {overlay}
     </div>

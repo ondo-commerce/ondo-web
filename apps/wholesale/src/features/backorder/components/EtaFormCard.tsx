@@ -5,7 +5,11 @@ import { useId, useState, type FormEvent } from "react";
 import { useExpectedInboundMutation } from "../api/mutations";
 import { useSkuBackordersQuery } from "../api/queries";
 import { ETA_FIELDS } from "../constants";
-import { isEtaFormat, toExpectedInboundRequest } from "../derive";
+import {
+  etaNoticeText,
+  isEtaFormat,
+  toExpectedInboundRequest,
+} from "../derive";
 import type { EtaField } from "../types";
 import { describeError } from "@/shared/api/describeError";
 import { toFieldErrors, type FormErrors } from "@/shared/api/fieldErrors";
@@ -31,6 +35,7 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
 
   const etaId = useId();
   const reasonId = useId();
+  const noticeId = useId();
   const [eta, setEta] = useState(summary.eta ?? "");
   const [reason, setReason] = useState(summary.etaReason ?? "");
   /** 화면이 먼저 잡은 오류(형식). 서버 오류는 뮤테이션 결과에서 그때그때 읽는다 */
@@ -47,6 +52,9 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
   });
   /* 등록된 값이 있을 때만 빈칸 저장(해제)이 열린다. 처음부터 빈 SKU에 빈칸을 보낼 이유는 없다 */
   const canSubmit = !empty || summary.eta !== null;
+  /* 저장하면 소매처에 알림이 가는지 미리 알린다(loop-06b S3-1). 저장 성공은 다시 받은 요약까지 기다려
+     끝나므로 그때는 입력 = 저장된 날짜라 줄이 저절로 빠진다(도매 디자인 결정 46) */
+  const notice = etaNoticeText(eta, summary.eta, summary.customerCount);
 
   /* 서버 오류: `VALIDATION_FAILED`는 칸으로, 나머지(404·500…)는 폼 위 한 줄로 */
   const serverErrors: FormErrors<EtaField> | null = save.error
@@ -75,7 +83,8 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
   };
 
   return (
-    <form onSubmit={submit} noValidate>
+    /* data-ac: 와이어프레임 `20_retail-notifications/_screen-wholesale.html` `form.eta`와 같은 값(04-qa F4) */
+    <form onSubmit={submit} noValidate data-ac="S3-1 S4-2">
       {errors._form ? (
         <p role="alert" className="text-destructive-strong mb-3 text-sm">
           {errors._form}
@@ -119,13 +128,31 @@ export function EtaFormCard({ variantId }: { variantId: number }) {
         ) : null}
       </FormField>
 
+      {/* 결과 예고라 경고색, 아이콘 없음(도매 디자인 결정 45). aria-live를 안 쓰고 버튼에 묶는다 —
+          날짜를 칠 때마다 읽히면 시끄럽다 */}
+      {notice ? (
+        <p
+          id={noticeId}
+          className="text-secondary-foreground mb-3 text-body"
+          data-ac="S3-1 S4-2"
+        >
+          {notice.lead}
+          <span className="text-foreground font-medium">{notice.count}</span>
+          {notice.tail}
+        </p>
+      ) : null}
+
       <div className="flex items-center justify-end gap-3">
         {save.isSuccess ? (
           <p role="status" className="text-muted-foreground text-sm">
             {empty ? "예상 입고일을 지웠어요" : "저장했어요"}
           </p>
         ) : null}
-        <Button type="submit" disabled={!canSubmit || save.isPending}>
+        <Button
+          type="submit"
+          disabled={!canSubmit || save.isPending}
+          aria-describedby={notice ? noticeId : undefined}
+        >
           {empty && summary.eta !== null ? "해제" : "저장"}
         </Button>
       </div>

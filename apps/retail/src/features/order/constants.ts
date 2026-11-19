@@ -185,6 +185,8 @@ export const AGENT_NAME_ISSUE = `이름에는 글자나 숫자가 한 자는 있
 
 /** 주문 완료 화면의 문장 전부 */
 export const COMPLETE_TEXT = {
+  /** 오른쪽 요약 카드 제목 */
+  summaryTitle: "주문 요약",
   title: "주문이 접수됐어요",
   /** 확인 시한을 적지 않는다 — "30분"은 팀이 정한 약속이 아니었다(2026-09-10 결정).
       소매에 알림 채널이 없어 타이머도 만들지 않는다(§5-6) */
@@ -478,10 +480,6 @@ export const STATEMENT_TEXT = {
   shippedAt: "출고 일시",
   receiverName: "수령인",
   origin: "원주문",
-  print: "인쇄",
-  save: "저장",
-  /** 잠긴 두 버튼 옆에 글자로 선다. 눌러도 아무 일이 없는 버튼으로 두지 않는다 */
-  disabledReason: "인쇄·저장은 아직 준비 중이에요.",
   toSettlement: "정산에서 보기",
   /** 단가를 못 찾은 줄의 금액 자리 */
   priceUnknown: "—",

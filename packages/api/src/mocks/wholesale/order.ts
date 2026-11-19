@@ -359,6 +359,14 @@ export function allocateMockPayment(order: MockOrder, amount: number): void {
   order.allocatedAmount += amount;
 }
 
+/**
+ * 배분 취소 — 정산 목의 `POST /allocations/{id}/cancel`이 부른다. 그 줄 금액만큼 배정액을 빼서 주문 미수가
+ * 다시 는다(스펙). 줄 하나가 붙인 돈만 빼므로 0 밑으로 가지 않는다
+ */
+export function releaseMockAllocation(order: MockOrder, amount: number): void {
+  order.allocatedAmount -= amount;
+}
+
 /* --- 파생 (서버 규칙을 스펙 설명대로) ------------------------------------ */
 
 function sum(items: readonly MockLine[], pick: (l: MockLine) => number) {
@@ -373,6 +381,15 @@ function statusKey(order: MockOrder): OrderStatusKey {
   return shipped < total ? "PARTIALLY_SHIPPED" : "SHIPPED";
 }
 
+/**
+ * 그 주문에 포장(READY, PACKED)이 하나라도 있나. 있으면 취소할 수 없다(loop-08j §5-2 7) — 스펙 `cancel` 설명
+ * "이미 배분이 달려 있다". 미송 탭 배분이 신규 주문 7003에 포장을 만들 수 있게 되면서 필요해졌다. 취소 op,
+ * 알림 취소(`cancelMockOrder`), 상세와 목록의 `isCancellable`이 이 함수 하나를 본다
+ */
+function hasPacking(order: MockOrder): boolean {
+  return packings.some((p) => p.orderId === order.id);
+}
+
 function flags(order: MockOrder) {
   const key = statusKey(order);
   const isNew = key === "NEW";
@@ -383,7 +400,7 @@ function flags(order: MockOrder) {
   return {
     key,
     isConfirmable: isNew,
-    isCancellable: isNew,
+    isCancellable: isNew && !hasPacking(order),
     isPackable: packable,
   };
 }
@@ -514,12 +531,34 @@ function fail(status: number, code: string, message: string, field?: string) {
   );
 }
 
+/** Java `int` 최댓값. 서버 `orderNumber`가 int라 이보다 큰 숫자는 주문번호가 될 수 없다 */
+const INT_MAX = 2_147_483_647;
+
+/**
+ * 검색어가 주문번호로 읽히면 그 번호, 아니면 null. 서버 `OrderSpecs.asOrderNumber`와 같은 규칙이다:
+ * 앞뒤 공백을 떼고 숫자로만 되어 있으며 int 범위 안이어야 한다. 넘치면 숫자가 아닌 검색어처럼 글자로만 찾는다
+ * (`Integer.parseInt`가 던지는 것을 서버가 null로 받는다). 앞자리 0은 parseInt처럼 무시된다
+ */
+function asOrderNumber(q: string): number | null {
+  const trimmed = q.trim();
+  if (!/^[0-9]+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return n <= INT_MAX ? n : null;
+}
+
+/**
+ * 거래처명과 상품명 부분 일치(대소문자 무시)에, 숫자 검색어면 주문번호 일치를 OR로 더한다.
+ * 서버 규칙(ondo-api `docs/decisions/web-handoff-2026-11.md` 5절, MUL-150): 이름 검색도 같이 돌아서
+ * `q=77`은 77번 주문과 "77상회"를 함께 낸다. 포장 회차 검색은 서버가 보류라 여기도 없다
+ */
 function matchesQuery(order: MockOrder, q: string | null): boolean {
   if (!q) return true;
   const lower = q.toLowerCase();
+  const orderNumber = asOrderNumber(q);
   return (
     order.retailerName.toLowerCase().includes(lower) ||
-    order.items.some((l) => l.productName.toLowerCase().includes(lower))
+    order.items.some((l) => l.productName.toLowerCase().includes(lower)) ||
+    (orderNumber !== null && order.orderNumber === orderNumber)
   );
 }
 
@@ -597,6 +636,150 @@ function applyAllocation(order: MockOrder, qtyByLine: Map<number, number>) {
   };
   packings.push(packing);
   return packing;
+}
+
+/**
+ * 소매 주문 접수를 흉내 내 신규 주문 1건을 넣는다. 알림 목(`./notification`)의 `incoming` 손잡이만 부른다.
+ * id, 주문번호, 줄 id는 지금 가장 큰 값 + 1(시드 뒤 첫 주문은 7006). 줄은 시드에 있는 variant만 받는다 —
+ * 상품명, 색, 사이즈, 재고를 지어내지 않으려고 `VARIANT` 표를 그대로 쓴다
+ */
+export function addMockOrder(input: {
+  retailerId: number;
+  retailerName: string;
+  variantId: keyof typeof VARIANT;
+  qty: number;
+  unitPrice: number;
+  orderedAt: string;
+}): MockOrder {
+  const max = (pick: (o: MockOrder) => number[]) =>
+    Math.max(...orders.flatMap(pick));
+  const order: MockOrder = {
+    id: max((o) => [o.id]) + 1,
+    orderNumber: max((o) => [o.orderNumber]) + 1,
+    orderedAt: input.orderedAt,
+    retailerId: input.retailerId,
+    retailerName: input.retailerName,
+    paymentMethod: "CASH",
+    receiveBy: "AGENT",
+    status: "NEW",
+    items: [
+      line(
+        max((o) => o.items.map((l) => l.id)) + 1,
+        input.variantId,
+        input.qty,
+        input.unitPrice,
+        0,
+        0,
+        false,
+      ),
+    ],
+    allocatedAmount: 0,
+  };
+  orders.push(order);
+  return order;
+}
+
+/**
+ * 확정 전 소매 취소를 흉내 낸다. 신규 주문이 아니거나 포장이 달렸으면 바꾸지 않고 false(취소 op의 409와 같은
+ * 규칙, `flags`의 `isCancellable`)
+ */
+export function cancelMockOrder(order: MockOrder): boolean {
+  if (!flags(order).isCancellable) return false;
+  order.status = "CANCELLED";
+  return true;
+}
+
+/* --- 미송 탭 배분이 쓰는 문 (loop-08j §5-2) --------------------------------
+ * 미송 목(`./backorder`)이 이 모듈을 import한다. 반대 방향 import는 순환이라 포장 삭제와 주문 탭 길 포장 생성은
+ * 등록받은 함수로 알린다(loop-08k).
+ * ----------------------------------------------------------------------- */
+
+/** 배분 한 줄. 주문 목 주문 id와 줄 id, 수량 */
+export interface AllocationLine {
+  orderId: number;
+  orderItemId: number;
+  qty: number;
+}
+
+export type AllocationPackingCode =
+  "BACKORDER_NOT_OPEN" | "ALLOCATION_EXCEEDS_ORDER";
+
+/**
+ * 미송 탭 배분을 주문 목에 적용해도 되는지 검사한다. 저장소는 안 바꾼다(08i `readyPackingsError` 꼴, 검사와 적용
+ * 분리). 두 단계로 본다 — ① 모든 줄의 주문 취소 → `BACKORDER_NOT_OPEN`(BE에선 취소 주문의 미송이 열려 있을 수
+ * 없어 스펙 목록에서 가장 가까운 code) ② 그다음 모든 줄의 잔량: 같은 줄 요청 합이 `qty − allocatedQty`를 넘음 →
+ * `ALLOCATION_EXCEEDS_ORDER`(주문 탭이 먼저 잡은 잔량, 기획 Q2 ①). 줄마다 번갈아 보면 요청 순서에 따라 code가
+ * 바뀌어서 단계를 나눴다(기획 §5-2 1, 08j-R1). 없는 주문, 줄은 대응 단계에서 걸러져 오므로 던진다. `isPackable`은
+ * 안 본다
+ */
+export function allocationPackingError(
+  lines: readonly AllocationLine[],
+): AllocationPackingCode | null {
+  const resolved = lines.map((req) => {
+    const order = orders.find((o) => o.id === req.orderId);
+    const l = order?.items.find((x) => x.id === req.orderItemId);
+    if (order === undefined || l === undefined)
+      throw new Error(`mock: 배분 줄이 없다 ${req.orderId}/${req.orderItemId}`);
+    return { order, l, qty: req.qty };
+  });
+  if (resolved.some(({ order }) => order.status === "CANCELLED"))
+    return "BACKORDER_NOT_OPEN";
+  const want = new Map<number, number>();
+  for (const { l, qty } of resolved) {
+    const total = (want.get(l.id) ?? 0) + qty;
+    if (total > l.qty - l.allocatedQty) return "ALLOCATION_EXCEEDS_ORDER";
+    want.set(l.id, total);
+  }
+  return null;
+}
+
+/**
+ * 주문 하나에 배분 수량만큼 READY 포장을 만들고 돌려준다. 주문 탭 `포장 준비`와 같은 `applyAllocation` 길이라 줄
+ * `allocatedQty`도 같이 오른다. `addReadyPackings`를 못 쓰는 이유: 기본 시드로 검사해 신규 7003을 거절하고, 미배분량
+ * 전부를 포장하며, 만든 포장을 안 돌려준다(Codex 5). 여기선 `isPackable`을 안 본다 — 신규 주문 7003도 받는다.
+ * 검사는 부르는 쪽이 `allocationPackingError`로 먼저 했어야 한다 — 틀리면 던진다
+ */
+export function addAllocationPacking(
+  orderId: number,
+  lines: readonly { orderItemId: number; qty: number }[],
+): MockPacking {
+  const error = allocationPackingError(lines.map((l) => ({ orderId, ...l })));
+  if (error !== null) throw new Error(`mock: 배분 포장 ${error}`);
+  const order = orders.find((o) => o.id === orderId);
+  if (order === undefined) throw new Error(`mock: 주문이 없다 ${orderId}`);
+  const qtyByLine = new Map<number, number>();
+  for (const l of lines)
+    qtyByLine.set(l.orderItemId, (qtyByLine.get(l.orderItemId) ?? 0) + l.qty);
+  const packing = applyAllocation(order, qtyByLine);
+  if (packing === null) throw new Error(`mock: 배분할 줄이 없다 ${orderId}`);
+  return packing;
+}
+
+/**
+ * 포장 삭제(204)를 들을 함수 하나. 미송 목이 등록해 배분이 만든 포장이면 미송을 되살린다(스펙 `cancelPacking`
+ * "해소했던 미송이 되살아난다"). 칸이 하나뿐이라 다시 등록하면 바뀐다(모듈이 두 번 읽혀도 두 번 안 불린다)
+ */
+let packingCancelledListener: ((packingId: number) => void) | null = null;
+
+export function onMockPackingCancelled(
+  listener: (packingId: number) => void,
+): void {
+  packingCancelledListener = listener;
+}
+
+/**
+ * 주문 탭 길(포장 준비 op, 확정 op의 이번 출고, reset `readyPackings`)로 포장을 만든 뒤 들을 함수 하나(loop-08k §5-2 1).
+ * 미송 목이 등록해 대응되는 미송을 줄이고 배분 기록을 남긴다 — 그래야 그 포장 삭제가 08j 부활 길로 미송을 되살린다.
+ * `applyAllocation` 안에서 부르지 않는다: 미송 탭 배분(`addAllocationPacking`)도 그 함수를 지나서, 미송 목이 이미 줄인
+ * 미송을 한 번 더 줄이게 된다(Codex 7). 포장이 저장소에 들어간 뒤에만 부른다(실패 경로는 안 부름). 칸 하나(삭제 칸과 같은 이유)
+ */
+let orderPackingCreatedListener:
+  ((packing: MockPacking, order: MockOrder) => void) | null = null;
+
+export function onMockOrderPackingCreated(
+  listener: (packing: MockPacking, order: MockOrder) => void,
+): void {
+  orderPackingCreatedListener = listener;
 }
 
 function findOrder(raw: string | readonly string[] | undefined) {
@@ -702,7 +885,9 @@ export const orderHandlers = [
       const result = validateAllocation(order, body.items ?? [], true);
       if (result instanceof Map) {
         order.status = "CONFIRMED";
-        applyAllocation(order, result);
+        // 이번 출고가 0이면 포장이 안 생겨(null) 미송 목도 그대로다
+        const packing = applyAllocation(order, result);
+        if (packing !== null) orderPackingCreatedListener?.(packing, order);
         return HttpResponse.json({ data: detailResponse(order) });
       }
       return result;
@@ -722,6 +907,12 @@ export const orderHandlers = [
         409,
         "TRANSITION_NOT_ALLOWED",
         "확정된 주문은 취소할 수 없습니다.",
+      );
+    if (!flags(order).isCancellable)
+      return fail(
+        409,
+        "TRANSITION_NOT_ALLOWED",
+        "포장이 달린 주문은 취소할 수 없습니다.",
       );
     order.status = "CANCELLED";
     return HttpResponse.json({ data: detailResponse(order) });
@@ -770,6 +961,7 @@ export const orderHandlers = [
           "배분할 라인이 없습니다.",
           "items",
         );
+      orderPackingCreatedListener?.(packing, order);
       const data: WholesaleSchema<"PackingCreatedResponse"> = {
         id: packing.id,
         orderId: order.id,
@@ -808,9 +1000,109 @@ export const orderHandlers = [
       }
     }
     packings = packings.filter((p) => p.id !== id);
+    // 미송 탭 배분이 만든 포장이면 미송 목도 되살린다(loop-08j §5-2 4). 기록 없는 포장이면 듣는 쪽이 아무것도 안 한다
+    packingCancelledListener?.(id);
     return new HttpResponse(null, { status: 204 });
   }),
 ];
+
+/* --- 채팅 reset 손잡이 `readyPackings` (loop-08i §5-4 3) -------------------- */
+
+/** 손잡이 실패 code. field는 늘 `readyPackings` */
+export type ReadyPackingsCode =
+  "INVALID" | "DUPLICATE" | "NOT_FOUND" | "NOT_PACKABLE" | "INSUFFICIENT_STOCK";
+
+type ReadyPackingsPlan =
+  | { ok: true; orderIds: number[] }
+  | { ok: false; code: ReadyPackingsCode; message: string };
+
+/**
+ * 손잡이 값 검사. **기본 시드**를 본다 — reset 뒤 시드 위에 포장을 만드는 손잡이라서, 지금 상태(이미 포장한 7002)로
+ * 보면 같은 값이 reset 전후로 다르게 판정된다. 시드를 새로 지어 읽기만 하고 저장소는 안 건드린다.
+ *
+ * 순서: 배열 아님, 정수 아님, 0 이하 → INVALID. 중복 → DUPLICATE. 그다음 앞 주문부터 시드에 없음 → NOT_FOUND,
+ * `isPackable` false → NOT_PACKABLE, 가용재고 모자람 → INSUFFICIENT_STOCK. `isPackable`은 재고를 안 본다(7001: 상태는
+ * 되는데 재고 0) — 그래서 재고는 따로 본다. 앞 주문이 잡은 재고는 뒤 주문 가용재고에서 뺀다(같은 SKU를 두 주문이 쓸 때)
+ */
+function planReadyPackings(value: unknown): ReadyPackingsPlan {
+  if (
+    !Array.isArray(value) ||
+    !value.every((v) => typeof v === "number" && Number.isInteger(v) && v > 0)
+  )
+    return {
+      ok: false,
+      code: "INVALID",
+      message: "readyPackings는 1 이상 정수 주문 id 배열입니다.",
+    };
+  const ids = value as number[];
+  if (new Set(ids).size !== ids.length)
+    return {
+      ok: false,
+      code: "DUPLICATE",
+      message: "같은 주문이 두 번 들어왔습니다.",
+    };
+  const seed = seedOrders();
+  const reserved = new Map<number, number>();
+  for (const id of ids) {
+    const order = seed.find((o) => o.id === id);
+    if (order === undefined)
+      return {
+        ok: false,
+        code: "NOT_FOUND",
+        message: `기본 시드에 없는 주문입니다(${id}).`,
+      };
+    if (!flags(order).isPackable)
+      return {
+        ok: false,
+        code: "NOT_PACKABLE",
+        message: `지금은 포장을 만들 수 없는 주문입니다(${id}).`,
+      };
+    for (const l of order.items) {
+      const want = l.qty - l.allocatedQty;
+      const taken = reserved.get(l.variantId) ?? 0;
+      if (want > availableQty(l) - taken)
+        return {
+          ok: false,
+          code: "INSUFFICIENT_STOCK",
+          message: `가용재고가 부족합니다(${id}).`,
+        };
+      reserved.set(l.variantId, taken + want);
+    }
+  }
+  return { ok: true, orderIds: ids };
+}
+
+/**
+ * 손잡이 값이 틀렸으면 그 이유, 맞으면 null. reset **전에** 부른다 — 틀린 값으로 반쪽만 reset되는 일이 없게
+ * (Codex 8). 빈 배열과 칸 없음(undefined)은 같은 뜻이라 null
+ */
+export function readyPackingsError(
+  value: unknown,
+): { code: ReadyPackingsCode; message: string } | null {
+  if (value === undefined) return null;
+  const plan = planReadyPackings(value);
+  return plan.ok ? null : { code: plan.code, message: plan.message };
+}
+
+/**
+ * 그 주문들의 미배분 수량 전부로 READY 포장을 만든다(주문 탭 `포장 준비`와 같은 `applyAllocation` 길). reset 뒤
+ * 시드 위에서만 부른다. 검사를 다시 하고 틀리면 던진다 — 부르는 쪽이 `readyPackingsError`를 먼저 봤어야 한다
+ */
+export function addReadyPackings(orderIds: readonly number[]): void {
+  const plan = planReadyPackings(orderIds);
+  if (!plan.ok) throw new Error(`mock: readyPackings ${plan.code}`);
+  for (const id of plan.orderIds) {
+    const order = orders.find((o) => o.id === id);
+    if (order === undefined) throw new Error(`mock: 주문이 없다 ${id}`);
+    const packing = applyAllocation(
+      order,
+      new Map(order.items.map((l) => [l.id, l.qty - l.allocatedQty])),
+    );
+    // 주문 탭 길과 같은 포장이라 미송 목도 같이 줄인다(loop-08k §5-2 4). chat reset이 미송 목을 먼저 돌려서
+    // 여기서 남는 기록은 이번 reset이 만든 것뿐이다
+    if (packing !== null) orderPackingCreatedListener?.(packing, order);
+  }
+}
 
 /** 화면 검증 중 시드로 되돌릴 때. 앱은 부르지 않는다 */
 export function resetOrderMock() {

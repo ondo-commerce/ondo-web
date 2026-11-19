@@ -32,6 +32,8 @@ import { WHOLESALE_ERROR_CODE } from "@/shared/api/errorCodes";
  *   제약         Σ x_i ≤ A     그리고     0 ≤ x_i ≤ b_i
  *
  * T와 A는 서버 값이다. 가용재고의 정의(게이트 G-1)는 서버 계약이 닫았다 — 화면이 빼기 하지 않는다.
+ * 재고 탭 `판매가능`(미송대기까지 뺀 값, #212)과 일부러 다르다: A는 미송에 나눠 줄 상한이라
+ * 미송대기를 빼면 배분할 재고가 미송만큼 사라진다.
  */
 
 /* ------------------------------------------------------------------------
@@ -374,6 +376,44 @@ export function toExpectedInboundRequest(
     expectedInboundReason: (date === null || trimmedReason === ""
       ? null
       : trimmedReason) as unknown as string,
+  };
+}
+
+/** 입고일 안내 줄 한 줄. 숫자("2곳")만 굵게 그리려고 셋으로 나눈다 */
+export interface EtaNoticeText {
+  lead: string;
+  count: string;
+  tail: string;
+}
+
+/**
+ * 입고일 폼의 안내 줄(loop-06b S3-1, 01-plan §4-3 1). **저장하면 알림이 가는 경우에만** 문구를 낸다.
+ * 알림은 날짜가 바뀔 때만 생긴다(생성 규칙 `dateChangeNotifications`) — 사유만 고쳤거나 같은 날짜를 다시 치면
+ * 아무에게도 안 가니 줄도 없다. 형식이 틀린 동안은 저장이 막혀 있어 예고할 결과가 없다.
+ *
+ * N은 `stats.retailerCount`(펼친 SKU의 미송 소매처 수, 계약 변경 없음). 0이면 줄 0 — "0곳에 알림이 가요"는
+ * 아무 일도 안 일어난다는 말을 결과처럼 적는 셈이다.
+ *
+ * `saved`는 화면 표기 `YYYY.MM.DD` 또는 미정(null). 비교는 앞뒤 공백만 빼고 글자 그대로 한다.
+ */
+export function etaNoticeText(
+  input: string,
+  saved: string | null,
+  retailerCount: number,
+): EtaNoticeText | null {
+  if (retailerCount <= 0) return null;
+  const count = `${retailerCount}곳`;
+  const value = input.trim();
+  if (value === "") {
+    return saved === null
+      ? null
+      : { lead: "해제하면 소매처 ", count, tail: "에 입고일 미정 알림이 가요" };
+  }
+  if (!isEtaFormat(value) || value === saved) return null;
+  return {
+    lead: "저장하면 이 옵션을 기다리는 소매처 ",
+    count,
+    tail: "에 알림이 가요",
   };
 }
 

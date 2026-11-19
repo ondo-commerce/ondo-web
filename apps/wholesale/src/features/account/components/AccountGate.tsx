@@ -43,7 +43,7 @@ export function useAccountGate(allowed: AccountStatus): GateVerdict {
      읽으면 정상 세션이 튕긴다 */
   const redirect =
     session.state === "signedIn"
-      ? accountRedirectFor(session.account, session.bankPromptSeen, allowed)
+      ? accountRedirectFor(session.account, allowed)
       : null;
 
   useEffect(() => {
