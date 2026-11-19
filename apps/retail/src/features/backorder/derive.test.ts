@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { backordersEmptyKind, pageOf } from "./derive";
-import type { BackorderLine } from "./types";
+import { backordersEmptyKind, pageOf, toBackorderLines } from "./derive";
+import type { BackorderLine, BackorderWire } from "./types";
 
 /**
  * 미송은 서버 장을 다 받아 합친 뒤 화면이 100줄씩 나눈다(#451). 장 나누기와 빈 장의
@@ -61,5 +61,29 @@ describe("backordersEmptyKind", () => {
     expect(backordersEmptyKind({ shown: rows.length, paging })).toBe(
       "outOfRange",
     );
+  });
+});
+
+describe("toBackorderLines", () => {
+  function wire(backorderId: number, qty: number): BackorderWire {
+    return {
+      backorderId,
+      orderId: 8006,
+      orderNo: "20261119-2334-0001",
+      orderedAt: "2026-11-19T23:34:00+09:00",
+      listingId: 2109,
+      title: "코듀로이 셔츠",
+      colorName: "카멜",
+      size: "M",
+      qty,
+      expectedInboundDate: "2026-11-21",
+      expectedInboundReason: "운영 점검용 입고일 등록",
+      wholesaler: { id: 101, name: "무드온" },
+    };
+  }
+
+  it("장 사이에 밀려 두 번 온 미송은 먼저 온 한 줄만 남긴다", () => {
+    const lines = toBackorderLines([wire(1, 2), wire(2, 3), wire(2, 3)]);
+    expect(lines.map((line) => line.id)).toEqual(["1", "2"]);
   });
 });

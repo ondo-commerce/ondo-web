@@ -9,7 +9,7 @@ export {
   resolvePage,
   resolveSort,
   resolveWholesalerId,
-  toBackorderLine,
+  toBackorderLines,
   todayKst,
   wholesalerChips,
 } from "./derive";

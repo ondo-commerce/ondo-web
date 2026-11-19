@@ -91,6 +91,21 @@ export function toBackorderLine(wire: BackorderWire): BackorderLine {
 }
 
 /**
+ * 서버 장들을 이어 붙인 미송 → 화면 줄. 장 사이에 미송이 생기거나 풀리면 줄이 밀려 같은
+ * 미송이 두 장에 걸쳐 올 수 있어서 `backorderId`로 한 번 거른다(먼저 온 것을 남긴다).
+ * 밀려서 빠지는 줄은 여기서 못 막는다 — 다시 열면 돌아온다.
+ */
+export function toBackorderLines(
+  items: readonly BackorderWire[],
+): BackorderLine[] {
+  return [
+    ...new Map(
+      items.map((wire) => [wire.backorderId, toBackorderLine(wire)] as const),
+    ).values(),
+  ];
+}
+
+/**
  * 보이는 목록에서 `page`(1-base) 한 장을 자른다. 마지막 장을 넘는 수는 빈 `rows`가 되고,
  * 화면은 `backordersEmptyKind`로 "이 페이지에는 미송이 없어요"와 `첫 장으로`를 세운다(#168).
  */
