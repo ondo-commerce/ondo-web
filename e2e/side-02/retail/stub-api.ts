@@ -158,8 +158,8 @@ interface StubBackorder {
  * 미송 표 상태 셋(loop-08f §4-1 9, `POST /__stub/reset {backorders}`). 본문이 없으면 `seed`.
  * - `seed`: 아래 시드(무드온 4 + 라온 1)
  * - `empty`: 0행 — 미송이 다 해소된 소매처
- * - `page2-only-102`: 무드온 100행(첫 장 `size=100`을 채움) 뒤 101번째에 라온 1행. 링크는 맞는데 받은 장에
- *   그 도매처가 없어 화면이 `전체`로 떨어지는 경우(§3 out 2)
+ * - `page2-only-102`: 무드온 100행(첫 장 `size=100`을 채움) 뒤 101번째에 라온 1행. 서버 2장째에만 있는
+ *   도매처. 화면이 장을 다 받아 합치므로 라온 칩이 서야 한다(#451. 예전엔 `전체`로 떨어졌다)
  */
 export type StubBackorderState = "seed" | "empty" | "page2-only-102";
 const BACKORDER_STATES: readonly StubBackorderState[] = [

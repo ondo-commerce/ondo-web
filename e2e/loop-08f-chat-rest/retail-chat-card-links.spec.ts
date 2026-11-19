@@ -167,23 +167,19 @@ test.describe("S4-4 도착 화면 — stub 미송 표 상태별", () => {
     expect(errors).toEqual([]);
   });
 
-  test("③ stub page2-only-102 → 방 33 카드 링크 → 첫 장 무드온 100행, 전체 칩, 떨어짐 안내", async ({
+  /* #451: 서버 2장째에만 있는 도매처도 칩이 서고 그 줄이 보인다. 예전엔 받은 첫 장(무드온 100행)에
+     라온이 없어서 `전체`로 떨어졌다 — 알림이나 카드를 눌러 와도 그 줄을 못 보던 결함이다 */
+  test("③ stub page2-only-102 → 방 33 카드 링크 → 2장째 라온 줄이 라온 칩으로 선다, 떨어짐 안내 없음", async ({
     page,
   }) => {
     const { reply } = await cardInRoom(page, 33, 801);
     await stubBackorders(page, "page2-only-102");
     await backorderLink(reply).click();
     await expect(page).toHaveURL(RAON_HREF);
-    await expect(page.getByText(DROPPED_TEXT)).toBeVisible();
-    await expect(activeChip(page)).toHaveText("전체");
-    await expect(backorderRows(page)).toHaveCount(100);
-    const names = await backorderRows(page).evaluateAll((rows) =>
-      rows.map((r) => (r.textContent ?? "").includes("무드온")),
-    );
-    expect(names.every(Boolean)).toBe(true);
-    await expect(backorderRows(page).filter({ hasText: "라온" })).toHaveCount(
-      0,
-    );
+    await expect(activeChip(page)).toHaveText("라온");
+    await expect(page.getByText(DROPPED_TEXT)).toHaveCount(0);
+    await expect(backorderRows(page)).toHaveCount(1);
+    await expect(backorderRows(page).first()).toContainText("라온");
   });
 });
 
