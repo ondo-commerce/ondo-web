@@ -136,7 +136,7 @@ Table.Th = function TableTh({
   return (
     <th
       className={cn(
-        "border-y border-gray-100 text-muted-foreground relative px-3 py-2 text-body font-normal whitespace-nowrap",
+        "border-y border-gray-100 text-muted-foreground relative px-3 py-2.5 text-body font-normal whitespace-nowrap",
         align[a],
         className,
       )}
@@ -150,7 +150,7 @@ Table.Th = function TableTh({
    inset-0은 패딩 박스 기준이라 border-b 바깥으로 넘지 않는다 — 선은 직선으로 남는다.
    isolate가 없으면 -z-10이 패널 배경 뒤로 빠져 아무것도 안 보인다 */
 const td = cva(
-  "border-gray-100 relative isolate border-b p-2 " +
+  "border-gray-100 relative isolate border-b px-2 py-3 " +
     "before:absolute before:inset-0 before:-z-10 before:transition-colors",
   {
     variants: {

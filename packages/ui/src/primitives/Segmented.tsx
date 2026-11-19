@@ -184,7 +184,7 @@ Segmented.Item = function SegmentedItem({
       className={cn(
         /* cursor-pointer: Tailwind v4 preflight가 button의 커서를 default로 바꾼다
            (Button·Select·ToggleChip과 같은 이유) */
-        "text-accent-foreground grid h-7 cursor-pointer place-items-center rounded-control px-3 text-[13px] font-medium transition-colors",
+        "text-muted-foreground grid h-7 cursor-pointer place-items-center rounded-control px-3 text-[13px] font-medium transition-colors",
         /* 배경과 그림자는 위의 조각이 그린다. 여기서 다시 칠하면 조각이 이동하는
            동안 두 개의 흰 면이 동시에 보인다 — 남는 건 글자색뿐이다 */
         "data-[state=on]:text-foreground",
