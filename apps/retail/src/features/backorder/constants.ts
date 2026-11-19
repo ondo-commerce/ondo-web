@@ -7,12 +7,12 @@ export const BACKORDER_PATH = "/backorders";
 export const BACKORDER_API_PATH = "/api/retail/backorders";
 
 /**
- * 한 번에 받는 장수. **BE 상한이 100이다**(`BackorderController.MAX_PAGE_SIZE` — 넘기면
- * `VALIDATION_FAILED`). 스펙에는 상한이 안 적혀 있어 여기 적어 둔다(`04-wire.md` §3).
+ * 서버에서 한 번에 받는 장수이자 화면 한 장의 줄 수. **BE 상한이 100이다**
+ * (`BackorderController.MAX_PAGE_SIZE` — 넘기면 `VALIDATION_FAILED`). 스펙에는 상한이
+ * 안 적혀 있어 여기 적어 둔다(`04-wire.md` §3).
  *
- * 기본값 20 대신 상한을 쓰는 이유: 화면에 페이저가 없었고 요약 3카드가 **받은 목록**으로
- * 계산된다. 20건씩 자르면 카드가 "지금 장"만 세는 폭이 넓어진다. 100을 넘는 사장에게만
- * `이전 · 다음`이 붙는다.
+ * 상한을 쓰는 이유는 서버 장을 전부 받아 합치기 때문이다(#451) — 크게 받을수록 요청이 준다.
+ * 화면은 100줄을 넘는 사장에게만 `이전 · 다음`을 붙인다.
  */
 export const BACKORDER_PAGE_SIZE = 100;
 
