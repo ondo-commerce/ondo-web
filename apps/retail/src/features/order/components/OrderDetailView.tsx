@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { OrderLineCards } from "./OrderLineCards";
 import { OrderLineTable } from "./OrderLineTable";
 import { OrderStats } from "./OrderStats";
+import { SummaryLayout } from "@/shared/components/SummaryLayout";
 import { PaymentPickupPanel } from "./PaymentPickupPanel";
 import { ShipmentRecords } from "./ShipmentRecords";
 import { StatementDialog } from "./StatementDialog";
@@ -107,85 +108,91 @@ export function OrderDetailView({
     );
   };
 
-  return (
-    <div className="mx-auto max-w-wrap">
-      <Panel>
-        <Panel.Title sub={detailSubtitle(order)}>
-          <span className="tabular-nums">{order.orderNo}</span>
-        </Panel.Title>
+  /* 주문번호 · 숫자 · 취소가 오른쪽에서 스크롤을 따라온다(디자인 규칙 4절
+     "오른쪽 요약 카드"). 상품과 출고 기록이 길어도 취소 버튼을 찾으러 맨 위로
+     돌아가지 않는다 */
+  const summary = (
+    <Panel>
+      <Panel.Title sub={detailSubtitle(order)}>
+        <span className="tabular-nums">{order.orderNo}</span>
+      </Panel.Title>
 
-        <OrderStats order={order} />
+      <OrderStats order={order} />
 
-        <section className="mt-6">
-          {/* 잠긴 **이유마다 다른 말**을 한다. 한 벌로 두던 때는 취소된 주문이
+      <section className="mt-6">
+        {/* 잠긴 **이유마다 다른 말**을 한다. 한 벌로 두던 때는 취소된 주문이
               `이미 확정돼서 잠겼어요`라고 말해 머리 배지와 정면으로 부딪쳤다(F3) */}
-          <Notice>
-            <span className="flex items-start gap-2">
-              <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-              {lock ? DETAIL_TEXT.cancelLocked[lock] : DETAIL_TEXT.cancelOpen}
-            </span>
-          </Notice>
+        <Notice>
+          <span className="flex items-start gap-2">
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+            {lock ? DETAIL_TEXT.cancelLocked[lock] : DETAIL_TEXT.cancelOpen}
+          </span>
+        </Notice>
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {step === "confirming" ? (
-              <>
-                <Button
-                  id={CANCEL_ACTION_ID.confirm}
-                  variant="soft"
-                  disabled={busy}
-                  onClick={handleConfirm}
-                >
-                  {busy
-                    ? DETAIL_TEXT.cancelling
-                    : DETAIL_TEXT.cancelConfirmAction}
-                </Button>
-                <Button
-                  variant="line"
-                  disabled={busy}
-                  onClick={() => setStep("idle")}
-                >
-                  {DETAIL_TEXT.cancelDismiss}
-                </Button>
-              </>
-            ) : (
-              /* 못 누를 때는 **진짜 `disabled`**다. `aria-disabled`만 걸면
-                 잠긴 주문에서도 눌린다(직전 회차 F11) */
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {step === "confirming" ? (
+            <>
               <Button
-                id={CANCEL_ACTION_ID.cancel}
+                id={CANCEL_ACTION_ID.confirm}
                 variant="soft"
-                disabled={!cancelable || busy}
-                onClick={() => {
-                  setResult(null);
-                  setStep("confirming");
-                }}
+                disabled={busy}
+                onClick={handleConfirm}
               >
-                {DETAIL_TEXT.cancel}
+                {busy
+                  ? DETAIL_TEXT.cancelling
+                  : DETAIL_TEXT.cancelConfirmAction}
               </Button>
-            )}
+              <Button
+                variant="line"
+                disabled={busy}
+                onClick={() => setStep("idle")}
+              >
+                {DETAIL_TEXT.cancelDismiss}
+              </Button>
+            </>
+          ) : (
+            /* 못 누를 때는 **진짜 `disabled`**다. `aria-disabled`만 걸면
+                 잠긴 주문에서도 눌린다(직전 회차 F11) */
+            <Button
+              id={CANCEL_ACTION_ID.cancel}
+              variant="soft"
+              disabled={!cancelable || busy}
+              onClick={() => {
+                setResult(null);
+                setStep("confirming");
+              }}
+            >
+              {DETAIL_TEXT.cancel}
+            </Button>
+          )}
 
-            {/* 확인 질문과 실행 결과가 같은 자리에서 바뀐다. `role=status` 노드는
+          {/* 확인 질문과 실행 결과가 같은 자리에서 바뀐다. `role=status` 노드는
                 비어 있을 때도 자리를 지킨다: 지운 뒤에 새로 생기는 노드는 보조기술이
                 못 읽고 지나갈 수 있다 */}
-            <p
-              role="status"
-              className="text-secondary-foreground text-body empty:hidden"
-            >
-              {step === "confirming"
-                ? DETAIL_TEXT.cancelConfirm
-                : step === "done"
-                  ? (result ?? "")
-                  : ""}
-            </p>
-          </div>
-        </section>
-      </Panel>
+          <p
+            role="status"
+            className="text-secondary-foreground text-body empty:hidden"
+          >
+            {step === "confirming"
+              ? DETAIL_TEXT.cancelConfirm
+              : step === "done"
+                ? (result ?? "")
+                : ""}
+          </p>
+        </div>
+      </section>
+    </Panel>
+  );
 
-      <Panel className="mt-2">
+  return (
+    <SummaryLayout aside={summary} asideFirstWhenNarrow>
+      <Panel>
         <Panel.Title>{DETAIL_TEXT.lineSection}</Panel.Title>
-        {/* 960px 아래에서는 표를 세로 카드로 갈아끼운다 — 표를 그대로 두면
-            페이지 전체가 옆으로 밀려 `단가 · 소계 · 상태 · 찜`이 첫 화면에서
-            사라진다(F1). 값은 두 벌이 같은 함수에서 읽는다 */}
-        <div className="hidden tablet:block">
+        {/* 1200px 아래에서는 표를 세로 카드로 갈아끼운다 — 표를 그대로 두면
+            `단가 · 소계 · 상태 · 찜`이 옆으로 밀려 첫 화면에서 사라진다(F1).
+            예전 기준은 960px였는데, 오른쪽 요약 카드가 본문 폭을 360px 가져가면서
+            961~1200px에서도 8열 표가 안 들어가게 됐다. 값은 두 벌이 같은 함수에서 읽는다 */}
+        <div className="hidden laptop:block">
           <OrderLineCards
             order={order}
             favorites={favorites}
@@ -193,7 +200,7 @@ export function OrderDetailView({
           />
         </div>
 
-        <div className="tablet:hidden">
+        <div className="laptop:hidden">
           <OrderLineTable
             order={order}
             favorites={favorites}
@@ -202,7 +209,7 @@ export function OrderDetailView({
         </div>
       </Panel>
 
-      <Panel className="mt-2">
+      <Panel>
         <Panel.Title sub={DETAIL_TEXT.shipmentSub}>
           {DETAIL_TEXT.shipmentSection}
         </Panel.Title>
@@ -214,7 +221,7 @@ export function OrderDetailView({
         />
       </Panel>
 
-      <Panel className="mt-2">
+      <Panel>
         <Panel.Title>{DETAIL_TEXT.paymentSection}</Panel.Title>
         <PaymentPickupPanel order={order} />
 
@@ -238,7 +245,7 @@ export function OrderDetailView({
           onCloseFocus={() => statement.trigger.focus()}
         />
       ) : null}
-    </div>
+    </SummaryLayout>
   );
 }
 

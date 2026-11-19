@@ -1,9 +1,8 @@
 "use client";
 
-import { Button, Dialog, IconButton, Notice, Table } from "@ondo/ui";
+import { Button, KeyValue, Dialog, IconButton, Notice, Table } from "@ondo/ui";
 import { Info, X } from "lucide-react";
 import Link from "next/link";
-import { DescList, DescRow } from "./PaymentSummary";
 import {
   DETAIL_TEXT,
   PICKUP_LABEL,
@@ -93,15 +92,17 @@ export function StatementDialog({
         </div>
 
         <div className="scroll-slim min-h-0 flex-1 overflow-y-auto p-5">
-          <DescList>
-            <DescRow term={STATEMENT_TEXT.issuer}>
+          <KeyValue>
+            <KeyValue.Row term={STATEMENT_TEXT.issuer}>
               {leg?.wholesalerName ?? ""}
-            </DescRow>
-            <DescRow term={STATEMENT_TEXT.receiver}>{receiverStore}</DescRow>
-            <DescRow term={STATEMENT_TEXT.shippedAt}>
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.receiver}>
+              {receiverStore}
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.shippedAt}>
               {shipment.shippedAt ?? SHIPMENT_PACKED}
-            </DescRow>
-            <DescRow term={STATEMENT_TEXT.receiverName}>
+            </KeyValue.Row>
+            <KeyValue.Row term={STATEMENT_TEXT.receiverName}>
               {leg?.pickup === "AGENT" ? (
                 <>
                   {order.agentName}{" "}
@@ -114,14 +115,14 @@ export function StatementDialog({
                   {PICKUP_LABEL.RETAILER}
                 </span>
               )}
-            </DescRow>
+            </KeyValue.Row>
             {/* 통합 주문번호와 도매처별 연번이 **같이** 있다(RT-40) —
                 도매처에 전화할 때 필요한 번호가 뒤쪽이다 */}
-            <DescRow term={STATEMENT_TEXT.origin}>
+            <KeyValue.Row term={STATEMENT_TEXT.origin}>
               {order.orderNo}
               {leg ? ` · ${DETAIL_TEXT.legNo(leg.legNo)}` : ""}
-            </DescRow>
-          </DescList>
+            </KeyValue.Row>
+          </KeyValue>
 
           <div className="bg-border my-3.5 h-px" />
 

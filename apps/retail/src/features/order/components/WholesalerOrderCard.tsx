@@ -51,7 +51,7 @@ export function WholesalerOrderCard({
       aria-label={`${group.wholesalerName} 주문`}
       className="border-border mt-3 overflow-hidden rounded-control border first:mt-0"
     >
-      <div className="bg-accent border-border text-body flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-3.5 py-2.5">
+      <div className="border-border text-body flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-3">
         <h4 className="text-sm font-medium">{group.wholesalerName}</h4>
         {badge}
         {meta ??
@@ -71,7 +71,7 @@ export function WholesalerOrderCard({
         </span>
       </div>
 
-      <div className="px-3.5">
+      <div className="px-4">
         <ul>
           {productBlocks(group.lines).map((block) => (
             <OrderLineItem key={block.productName} block={block} />
@@ -81,7 +81,7 @@ export function WholesalerOrderCard({
       </div>
 
       {foot ? (
-        <div className="bg-accent border-border text-body flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t px-3.5 py-2.5">
+        <div className="border-border text-body flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-4 py-3">
           {foot}
         </div>
       ) : null}

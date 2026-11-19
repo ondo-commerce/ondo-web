@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAddCartItemMutation } from "@/features/cart";
+import { useAddCartItemMutation, useChangeQtyMutation } from "@/features/cart";
 import { InquiryButton, InquiryEntry, InquiryError } from "@/features/chat";
+import { ORDER_PATH } from "@/features/order";
 import {
   ProductDetailView,
   type AddToCartResult,
@@ -29,10 +30,11 @@ import {
  */
 async function settleEach(
   items: readonly CartItemDraft[],
-  send: (item: CartItemDraft) => Promise<unknown>,
+  send: (item: CartItemDraft) => Promise<{ cartItemId: number }>,
 ): Promise<AddToCartResult> {
   const settled = await Promise.allSettled(items.map((item) => send(item)));
   const done: CartItemDraft[] = [];
+  const cartItemIds: number[] = [];
   const failed: { input: CartItemDraft; error: unknown }[] = [];
   items.forEach((input, index) => {
     const result = settled[index];
@@ -43,13 +45,15 @@ async function settleEach(
       return;
     }
     done.push(input);
+    cartItemIds.push(result.value.cartItemId);
   });
-  return { done, failed };
+  return { done, cartItemIds, failed };
 }
 
 export function ProductDetailClient({ product }: { product: ProductDetail }) {
   const router = useRouter();
   const { mutateAsync } = useAddCartItemMutation({ refresh: false });
+  const { mutateAsync: setQty } = useChangeQtyMutation({ refresh: false });
 
   /* 판매처 칸의 `문의하기`(loop-05a)도 같은 이유로 여기서 끼운다 — 상세는 `features/chat`을 모른다 */
   return (
@@ -61,10 +65,26 @@ export function ProductDetailClient({ product }: { product: ProductDetail }) {
         product={product}
         sellerAction={<InquiryButton ac="S5-1 S5-4 S5-11 S5-12" />}
         sellerNotice={<InquiryError />}
-        onAddToCart={async (items) => {
-          const result = await settleEach(items, (item) => mutateAsync(item));
+        onAddToCart={async (items, mode) => {
+          const result = await settleEach(items, async (item) => {
+            const added = await mutateAsync(item);
+            /* 바로 주문하기: 같은 옵션이 이미 있었으면 서버가 더한 수량을 고른 수량으로
+               되돌린다. 여기서 실패하면 그 옵션은 못 담은 것으로 친다 — 다시 누르면
+               담기와 맞추기를 한 번 더 해서 결국 고른 수량이 된다 */
+            if (mode === "set" && added.qty !== item.qty) {
+              await setQty({ cartItemId: added.cartItemId, qty: item.qty });
+            }
+            return added;
+          });
           if (result.done.length > 0) router.refresh();
           return result;
+        }}
+        /* 주문서 주소는 `features/order`가 안다. 상세는 담긴 줄의 id만 넘긴다.
+           여기서 `router.refresh()`를 같이 부르지 않는다 — push 바로 뒤에 부르면 새 기록이
+           덮어쓰기로 바뀌어, 주문서에서 뒤로 가기가 상품 상세를 건너뛰었다. 헤더 뱃지는
+           담기가 끝난 직후(`onAddToCart`) 이미 refresh 했다 */
+        onOrderNow={(cartItemIds) => {
+          router.push(ORDER_PATH.checkout(cartItemIds));
         }}
       />
     </InquiryEntry>

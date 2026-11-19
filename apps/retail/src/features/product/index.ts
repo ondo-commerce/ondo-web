@@ -17,4 +17,5 @@ export type {
   CartItemDraft,
   ListingDetailWire,
   ProductDetail,
+  AddToCartMode,
 } from "./types";

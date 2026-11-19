@@ -55,7 +55,7 @@ export function WholesalerGroup({
       aria-label={`${group.wholesalerName} 담긴 조합`}
       className="border-border mt-3 overflow-hidden rounded-control border first:mt-0"
     >
-      <div className="bg-accent border-border flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-3.5 py-2.5">
+      <div className="border-border flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-3">
         <Checkbox
           checked={groupOn}
           disabled={selectable.length === 0}
@@ -84,7 +84,7 @@ export function WholesalerGroup({
         </span>
       </div>
 
-      <ul className="px-3.5">
+      <ul className="px-4">
         {group.lines.map((line) => (
           <CartLineItem
             key={line.lineId}
