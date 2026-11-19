@@ -80,6 +80,9 @@ export async function pushChats(page: Page): Promise<void> {
   await expect(roomList(page).getByRole("link").first()).toBeVisible();
 }
 
+/** 대화 목록 패널 폭(px). `ChatRoomListPanel`의 `w-md`(28rem) — 2026-11-18 디자인에서 360 → 448 */
+export const CHAT_LIST_WIDTH = 448;
+
 export function roomList(page: Page): Locator {
   return page.getByRole("list", { name: "대화 목록", exact: true });
 }

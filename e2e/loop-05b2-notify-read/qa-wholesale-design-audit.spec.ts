@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   bell,
   chatLink,
@@ -54,7 +55,8 @@ for (const viewport of [
     expect(badge?.top).toBe(-3);
     expect(badge?.right).toBe(-5);
     expect(badge?.height).toBe(16);
-    expect(badge?.fontSize).toBe("12px");
+    const scale = await chatTypeScale(page);
+    expect(badge?.fontSize).toBe(scale.small);
     const chatPill = await chatLink(page).evaluate((a) => {
       const pill = a.querySelector('[aria-hidden="true"][data-ac]');
       const r = a.getBoundingClientRect();
@@ -104,7 +106,7 @@ for (const viewport of [
     expect(Math.abs((place?.offset ?? 99) - 6)).toBeLessThanOrEqual(1);
     expect(place?.bottom ?? 9999).toBeLessThanOrEqual(viewport.height);
 
-    /* 결정 30: 행 치수(와이어프레임 .nrow padding 10 12 10 8, 점 8, title 14, 시각 12, body 13) */
+    /* 결정 30: 행 치수(와이어프레임 .nrow padding 10 12 10 8, 점 8). 글자는 토큰 — title text-sm, 시각 text-xs, body text-body */
     const row = await rows(page)
       .first()
       .evaluate((el) => {
@@ -126,10 +128,10 @@ for (const viewport of [
       });
     console.log("QA row", viewport.width, JSON.stringify(row));
     expect(row.kids[0]?.w).toBe(8);
-    expect(row.kids[1]?.fs).toBe("14px");
+    expect(row.kids[1]?.fs).toBe(scale.body);
     expect(row.kids[1]?.fw).toBe("500");
-    expect(row.kids[2]?.fs).toBe("12px");
-    expect(row.kids[3]?.fs).toBe("13px");
+    expect(row.kids[2]?.fs).toBe(scale.small);
+    expect(row.kids[3]?.fs).toBe(scale.muted);
 
     /* 끝 행 가림: 더 보기로 25개 → 맨 아래로 → 마지막 행 중심이 그 행 */
     await moreButton(page).click();

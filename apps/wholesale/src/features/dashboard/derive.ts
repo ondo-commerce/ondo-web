@@ -335,6 +335,8 @@ export function toNewOrderRows(
 ): NewOrderRowView[] {
   return orders.map((order) => ({
     id: order.id,
+    orderNumber: order.orderNumber,
+    itemCount: order.additionalItemCount + 1,
     waitingLabel: elapsedLabel(order.orderedAt, now),
     retailerName: order.retailerName,
     productSummary: orderProductSummary(order),
@@ -442,11 +444,21 @@ export function toInquiryView(stats: InquiryStats): InquiryView {
   const judged = judgedCount(counts);
   return {
     retailMessages: counts.retailMessages,
+    outcomes: INQUIRY_OUTCOME_ORDER.map((key) => ({
+      label: INQUIRY_TEXT.outcome[key],
+      count: counts[key],
+    })),
+    intents: INQUIRY_INTENT_ORDER.map((key) => ({
+      label: INQUIRY_TEXT.intent[key],
+      count: counts.byIntent[key].judged,
+    })),
+    ratePercent:
+      judged === 0 ? null : Math.round((counts.autoReplied / judged) * 100),
     outcomeLine: INQUIRY_OUTCOME_ORDER.map(
       (key) => `${INQUIRY_TEXT.outcome[key]} ${formatNumber(counts[key])}`,
     ).join(", "),
     rateLabel: autoResolvedRate(counts.autoReplied, judged),
-    rateDetail: `(${formatNumber(counts.autoReplied)}/${INQUIRY_TEXT.judged} ${formatNumber(judged)})`,
+    rateDetail: `${INQUIRY_TEXT.judged} ${formatNumber(judged)}건 중 ${formatNumber(counts.autoReplied)}건`,
     intentLine: INQUIRY_INTENT_ORDER.map(
       (key) =>
         `${INQUIRY_TEXT.intent[key]} ${formatNumber(counts.byIntent[key].judged)}`,
@@ -484,19 +496,19 @@ function monthDay(day: string): string {
   return m === null ? day : `${m[2]}/${m[3]}`;
 }
 
-/**
- * `최근 7일(10/22~10/28) 소매 메시지 13건, 자동으로 끝남 67% (6/판정 9)`. 기간은 응답의 `from`, `to` 그대로다 —
- * 요청한 기간이 아니라 서버가 센 기간을 쓴다. 비율과 판정은 오늘 줄과 같은 함수
- */
-export function toWeekLine(stats: InquiryStats): string {
+/** 최근 7일 집계는 서버 응답의 기간과 판정 수를 함께 보여 준다. */
+export function toWeekLine(
+  stats: InquiryStats,
+): Extract<InquiryWeekLineState, { kind: "line" }> {
   const counts = stats.total;
   const judged = judgedCount(counts);
-  return (
-    `${INQUIRY_TEXT.weekPrefix}(${monthDay(stats.from)}~${monthDay(stats.to)}) ` +
-    `${INQUIRY_TEXT.weekTotal} ${formatNumber(counts.retailMessages)}${INQUIRY_TEXT.totalUnit}, ` +
-    `${INQUIRY_TEXT.ratePrefix} ${autoResolvedRate(counts.autoReplied, judged)} ` +
-    `(${formatNumber(counts.autoReplied)}/${INQUIRY_TEXT.judged} ${formatNumber(judged)})`
-  );
+  return {
+    kind: "line",
+    fromTo: `${monthDay(stats.from)}~${monthDay(stats.to)}`,
+    retailMessages: formatNumber(counts.retailMessages),
+    rateLabel: autoResolvedRate(counts.autoReplied, judged),
+    rateDetail: `${INQUIRY_TEXT.judged} ${formatNumber(judged)}건 중 ${formatNumber(counts.autoReplied)}건`,
+  };
 }
 
 /**
@@ -520,6 +532,6 @@ export function toWeekLineState(input: {
     input.week.to === range.to
       ? input.week
       : undefined;
-  if (week !== undefined) return { kind: "line", text: toWeekLine(week) };
+  if (week !== undefined) return toWeekLine(week);
   return input.failed ? { kind: "failed" } : { kind: "loading" };
 }

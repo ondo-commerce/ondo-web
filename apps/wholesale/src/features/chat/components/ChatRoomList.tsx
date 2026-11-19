@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, cn, Panel, SearchInput, Segmented } from "@ondo/ui";
+import { Button, cn, Panel, SearchInput, Segmented } from "@ondo/ui";
+import { CornerDownLeft } from "lucide-react";
 import Link from "next/link";
 import type { KeyboardEvent, RefObject } from "react";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
@@ -79,7 +80,7 @@ export function ChatRoomListPanel({
   const shown = useDeferredValue(list);
   const busy = shown !== list;
   return (
-    <Panel role="region" aria-label={LIST_TEXT.label} className="w-90 shrink-0">
+    <Panel role="region" aria-label={LIST_TEXT.label} className="w-md shrink-0">
       <Panel.Title
         suffix={busy ? <BusyMark /> : null}
         action={<AutoReplySwitch state={autoReply} />}
@@ -351,7 +352,7 @@ function ChatRoomList({
         ref={listRef}
         aria-label={LIST_TEXT.label}
         data-ac="S2-2 S2-3 S2-6"
-        className="grid gap-1 p-0.5"
+        className="grid gap-1.5 p-0.5"
         onKeyDown={moveFocus}
       >
         {rows.map((row) => (
@@ -421,11 +422,18 @@ function ChatRoomRow({
       onFocus={onFocus}
       onClick={onOpen}
       className={cn(
-        "group focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-control px-3 py-2.5 focus-visible:ring-2 focus-visible:outline-hidden",
-        selected ? "bg-secondary" : "hover:bg-accent",
+        "group focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 rounded-control px-4 py-3.5 focus-visible:ring-2 focus-visible:outline-hidden",
+        selected ? "bg-accent" : "hover:bg-secondary",
       )}
     >
-      <span className="truncate font-medium">{row.name}</span>
+      <span
+        className={cn(
+          "truncate",
+          row.unreadLabel || row.needsReply ? "font-semibold" : "font-medium",
+        )}
+      >
+        {row.name}
+      </span>
       <span
         data-ac="S2-2"
         className={cn(
@@ -437,18 +445,26 @@ function ChatRoomRow({
       </span>
       <span
         className={cn(
-          "text-body self-center truncate",
-          selected ? "text-secondary-foreground" : "text-muted-foreground",
+          "text-body flex min-w-0 items-center gap-1.5 self-center",
+          row.needsReply
+            ? "text-primary"
+            : selected
+              ? "text-secondary-foreground"
+              : "text-muted-foreground",
         )}
       >
-        {row.preview}
+        {/* 답할 차례인 방은 상자 배지 대신 미리보기 줄을 강조색으로 하고 답장 화살표를 앞에 둔다 */}
+        {row.needsReply ? (
+          <>
+            <CornerDownLeft aria-hidden className="size-3.5 shrink-0" />
+            <span className="sr-only" data-ac="S2-2">
+              {LIST_TEXT.needsReply}
+            </span>
+          </>
+        ) : null}
+        <span className="truncate">{row.preview}</span>
       </span>
       <span className="flex min-h-6 items-center justify-end gap-1">
-        {row.needsReply ? (
-          <Badge tone="active" className="h-6" data-ac="S2-2">
-            {LIST_TEXT.needsReply}
-          </Badge>
-        ) : null}
         {row.unreadLabel ? (
           <span
             data-ac="S2-2 S3-7"

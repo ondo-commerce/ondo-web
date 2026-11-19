@@ -475,7 +475,9 @@ for (const width of [1470, 1280] as const) {
       return { color: s.color, fontSize: s.fontSize, textAlign: s.textAlign };
     });
     expect((out.end as { color: string }).color).toBe(muted);
-    expect((out.end as { fontSize: string }).fontSize).toBe("12px");
+    expect((out.end as { fontSize: string }).fontSize).toBe(
+      await resolved(page, "font-size", "--text-xs"),
+    );
     await setScrollTop(page, 0);
     await shot(page, `s2-end-${width}`);
     if (SHOT)
@@ -510,7 +512,7 @@ for (const width of [1470, 1280] as const) {
         };
       });
     expect(line.color).toBe(strong);
-    expect(line.fontSize).toBe("12px");
+    expect(line.fontSize).toBe(await resolved(page, "font-size", "--text-xs"));
     expect(line.top).toBeGreaterThanOrEqual(headBottom);
     await shot(page, `s2-fail-${width}`);
   });

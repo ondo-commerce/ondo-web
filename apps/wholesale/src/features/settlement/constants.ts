@@ -22,11 +22,11 @@ type BadgeTone = NonNullable<BadgeProps["tone"]>;
  * 게이트 결정(G-2)이 **feature 안에서도 색을 늘리지 않기로** 정했다.
  */
 export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
-  NEW: "active",
+  NEW: "wait",
   CONFIRMED: "active",
   PARTIALLY_SHIPPED: "active",
   SHIPPED: "done",
-  CANCELLED: "done",
+  CANCELLED: "muted",
 };
 
 /**
@@ -46,8 +46,8 @@ export const SETTLEMENT_LABEL: Record<SettlementBadgeStatus, string> = {
  * 둘의 구분은 배지 글자와 같은 행의 `미수 잔액` 숫자가 맡는다. `미출고`도 받을 돈이 없는 줄이라 회색이다.
  */
 export const SETTLEMENT_TONE: Record<SettlementBadgeStatus, BadgeTone> = {
-  UNSHIPPED: "done",
-  UNPAID: "done",
+  UNSHIPPED: "muted",
+  UNPAID: "wait",
   PARTIALLY_SETTLED: "active",
   SETTLED: "done",
 };

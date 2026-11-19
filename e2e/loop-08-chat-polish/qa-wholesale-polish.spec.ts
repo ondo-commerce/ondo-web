@@ -1,9 +1,11 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
+  basisLine,
   bubbles,
-  cardLines,
   composer,
   count,
+  expectCard,
   inquiryCard,
   installClock,
   knob,
@@ -11,9 +13,12 @@ import {
   login,
   MESSAGES_GET,
   openChats,
+  openDetail,
   settled,
   startAt,
   STATS_GET,
+  todayRow,
+  todayTotal,
   waitCount,
   watchRequests,
 } from "./helpers";
@@ -25,7 +30,7 @@ import {
  * - 증빙 문서(`runs/loop-08-chat-polish/qa/stats-evidence.md`)의 원본 JSON이 op가 실제로 내는 값과 같은가
  * - 사장 시나리오 (d) 숫자를 그린 뒤 polling이 실패해도 카드는 앞 숫자 그대로, 다른 칸도 그대로
  * - 사장 시나리오 (b) 연달아 보낸 내 글 중 맨 아래 하나에만 `읽음`
- * - 디자인 audit: 카드와 `오늘` 패널의 토큰, 읽음 색 = secondary-foreground
+ * - 디자인 audit: 카드와 옆 `미송 확인` 패널의 토큰(옛 `오늘` 패널은 2026-11-18에 빠졌다), 읽음 색 = secondary-foreground
  *
  * 손으로 센 값(기획 §5-4 2 표, 10/28 영업일 = F1~F12): 자동 답 F1 F5 F8 F11 F12 = 5, 답+확인 F2 = 1, 넘김 F3 F6 = 2,
  * 되묻기 F7 F9 F10 = 3, 결과 없음 F4 = 1, 합 12. 재고 판정 F1 F2 F8 F12 = 4, 미분류 F3 F6 = 2. 판정 8, 5/8 = 62.5 → 63%.
@@ -69,13 +74,18 @@ test("QA-a1 카드 숫자 = 손으로 센 값, 증빙 JSON = op 실제 응답(�
   await startAt(page, new Date("2026-10-29T11:59:30+09:00"), {
     seed: STATS_V1,
   });
-  await expect(cardLines(page)).toHaveText([
-    "오늘 소매 메시지 12건",
-    "자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1",
-    "자동으로 끝남 63% (5/판정 8)",
-    "판정한 것 중 재고 4, 미송 1, 미수 1, 기타 0, 미분류 2",
-    "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
-  ]);
+  await expectCard(page, {
+    today: "오늘 12건 63% 판정 8건 중 5건",
+    outcomes: [
+      "자동 답 5건",
+      "답+확인 1건",
+      "넘김 2건",
+      "되묻기 3건",
+      "결과 없음 1건",
+    ],
+    intents: ["재고 4건", "미송 1건", "미수 1건", "기타 0건", "미분류 2건"],
+    basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 11:59 기준",
+  });
   await page.screenshot({ path: `${QA_DIR}/qa-w-card-1470.png` });
 
   /* 증빙 예시와 같은 조건의 요청. 앱이 같은 문서에서 부르는 경로 그대로(MSW) */
@@ -116,20 +126,26 @@ test("QA-a2 polling 중 낮 12시를 넘으면 카드가 새 영업일(0건)로 
   await startAt(page, new Date("2026-10-29T11:59:40+09:00"), {
     seed: STATS_V1,
   });
-  await expect(cardLines(page).nth(0)).toHaveText("오늘 소매 메시지 12건");
-  await expect(cardLines(page).nth(4)).toContainText("11:59 기준");
+  await expect(todayTotal(page)).toHaveText("12건");
+  await openDetail(page);
+  await expect(basisLine(page)).toContainText("11:59 기준");
   await settled(page, STATS_GET);
   const before = await count(page, STATS_GET);
   await page.clock.fastForward(30_000);
   await waitCount(page, STATS_GET, before + 1);
   await settled(page, STATS_GET);
-  await expect(cardLines(page)).toHaveText([
-    "오늘 소매 메시지 0건",
-    "자동 답 0, 답+확인 0, 넘김 0, 되묻기 0, 결과 없음 0",
-    "자동으로 끝남 - (0/판정 0)",
-    "판정한 것 중 재고 0, 미송 0, 미수 0, 기타 0, 미분류 0",
-    "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 12:00 기준",
-  ]);
+  await expectCard(page, {
+    today: "오늘 0건 - 판정 0건 중 0건",
+    outcomes: [
+      "자동 답 0건",
+      "답+확인 0건",
+      "넘김 0건",
+      "되묻기 0건",
+      "결과 없음 0건",
+    ],
+    intents: ["재고 0건", "미송 0건", "미수 0건", "기타 0건", "미분류 0건"],
+    basis: "소매 메시지 1개 = 1건, 영업일 낮 12시 경계, 12:00 기준",
+  });
 });
 
 test("QA-d1 숫자를 그린 뒤 polling이 500이면 카드는 앞 숫자 그대로, 오류 0, 다른 칸 그대로", async ({
@@ -138,7 +154,7 @@ test("QA-d1 숫자를 그린 뒤 polling이 500이면 카드는 앞 숫자 그�
   await startAt(page, new Date("2026-10-29T11:59:00+09:00"), {
     seed: STATS_V1,
   });
-  await expect(cardLines(page).nth(0)).toHaveText("오늘 소매 메시지 12건");
+  await expect(todayTotal(page)).toHaveText("12건");
   await settled(page, STATS_GET);
   const before = await count(page, STATS_GET);
   /* 앱 기본 5xx 재시도 2회까지 전부 실패 */
@@ -149,7 +165,7 @@ test("QA-d1 숫자를 그린 뒤 polling이 500이면 카드는 앞 숫자 그�
   await waitCount(page, STATS_GET, before + 3);
   await settled(page, STATS_GET);
   await page.clock.fastForward(100);
-  await expect(cardLines(page).nth(0)).toHaveText("오늘 소매 메시지 12건");
+  await expect(todayTotal(page)).toHaveText("12건");
   await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "확정 기다리는 주문", exact: true }),
@@ -157,7 +173,7 @@ test("QA-d1 숫자를 그린 뒤 polling이 500이면 카드는 앞 숫자 그�
   await page.screenshot({ path: `${QA_DIR}/qa-w-card-poll-fail.png` });
 });
 
-test("QA-d2 첫 조회 500: 카드만 오류, 타일 숫자와 오늘 칸 그대로(1280 화면)", async ({
+test("QA-d2 첫 조회 500: 카드만 오류, 타일 숫자와 미송 확인 칸 그대로(1280 화면)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -174,8 +190,9 @@ test("QA-d2 첫 조회 500: 카드만 오류, 타일 숫자와 오늘 칸 그대
   await expect(
     page.getByRole("link", { name: /^확정 기다리는 주문/ }),
   ).toContainText(/\d/);
+  /* 오른쪽 열에서 `오늘` 패널이 빠졌다(2026-11-18) — 같은 열의 미송 확인 패널로 본다 */
   await expect(
-    page.getByRole("heading", { name: "오늘", exact: true }),
+    page.getByRole("heading", { name: "미송 확인", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: `${QA_DIR}/qa-w-card-error-1280.png` });
 });
@@ -238,7 +255,7 @@ test("QA-b1 연달아 보낸 내 글 셋: 소매가 중간까지 읽으면 중�
   expect(await markedSequences(page)).toEqual([5]);
   await page.screenshot({ path: `${QA_DIR}/qa-w-read-last-only.png` });
 
-  /* 디자인 audit: 읽음 = secondary-foreground, 시각 = muted-foreground, 12px */
+  /* 디자인 audit: 읽음 = secondary-foreground, 시각 = muted-foreground, text-xs */
   const style = await log(page)
     .locator('[data-sequence="5"]')
     .evaluate((el) => {
@@ -266,26 +283,29 @@ test("QA-b1 연달아 보낸 내 글 셋: 소매가 중간까지 읽으면 중�
     });
   expect(style.mark).toBe(style.secondary);
   expect(style.line).toBe(style.muted);
-  expect(style.size).toBe("12px");
+  expect(style.size).toBe((await chatTypeScale(page)).small);
   expect(style.lineHeight).toBe("16px");
   expect(style.ac).toBe("S3-2");
 });
 
-test("QA-design 문의 카드 토큰 = 오늘 패널(테두리, 반경, 안쪽 여백, 제목), 줄 글자 14, 기준 줄 12/16 muted", async ({
+test("QA-design 문의 카드 토큰 = 미송 확인 패널(테두리, 반경, 안쪽 여백, 제목), 표 줄 글자 text-sm, 기준 줄 text-xs muted", async ({
   page,
 }) => {
   await startAt(page, new Date("2026-10-29T11:59:30+09:00"), {
     seed: STATS_V1,
   });
-  await expect(cardLines(page)).toHaveCount(5);
+  await expect(todayRow(page)).toHaveCount(1);
+  await openDetail(page);
+  const scale = await chatTypeScale(page);
   const measured = await page.evaluate(() => {
     const card = document.querySelector('[role="region"][aria-label="문의"]');
-    const todayH = [...document.querySelectorAll("h2")].find(
-      (h) => h.textContent?.trim() === "오늘",
+    /* 오른쪽 열의 이웃 패널. 옛 `오늘` 패널은 2026-11-18 디자인에서 빠졌다 */
+    const sideH = [...document.querySelectorAll("h2")].find(
+      (h) => h.textContent?.trim() === "미송 확인",
     );
-    let today: Element | null = todayH ?? null;
-    while (today && getComputedStyle(today).borderTopWidth === "0px")
-      today = today.parentElement;
+    let side: Element | null = sideH ?? null;
+    while (side && getComputedStyle(side).borderTopWidth === "0px")
+      side = side.parentElement;
     const pick = (el: Element | null) => {
       if (!el) return null;
       const s = getComputedStyle(el);
@@ -299,48 +319,48 @@ test("QA-design 문의 카드 토큰 = 오늘 패널(테두리, 반경, 안쪽 �
     const probe = (v: string) => {
       const s = document.createElement("span");
       s.style.color = `var(${v})`;
+      s.style.lineHeight = "var(--text-xs--line-height)";
       document.body.append(s);
-      const c = getComputedStyle(s).color;
+      const c = getComputedStyle(s);
+      const out = { color: c.color, lineHeight: c.lineHeight };
       s.remove();
-      return c;
+      return out;
     };
-    /* 08f 7일 줄은 오늘 응답 뒤에 따로 도착한다. 측정 시점에 따라 5개, 6개로
-       갈리지 않게 helpers.cardLines와 같은 선택자로 뺀다(08f F1) */
-    const ps = card
-      ? [...card.querySelectorAll('p[data-ac]:not([data-ac^="08f:"])')]
-      : [];
     const title = card?.querySelector("h2") ?? null;
+    const todayHead = card?.querySelector('tbody th[scope="row"]') ?? null;
+    const base = card?.querySelector("details > p") ?? null;
+    const muted = probe("--color-muted-foreground");
     return {
       card: pick(card),
-      today: pick(today),
+      side: pick(side),
       title: title && {
         size: getComputedStyle(title).fontSize,
         weight: getComputedStyle(title).fontWeight,
       },
-      todayTitle: todayH && {
-        size: getComputedStyle(todayH).fontSize,
-        weight: getComputedStyle(todayH).fontWeight,
+      sideTitle: sideH && {
+        size: getComputedStyle(sideH).fontSize,
+        weight: getComputedStyle(sideH).fontWeight,
       },
-      lines: ps.map((p) => getComputedStyle(p).fontSize),
-      base: ps[4] && {
-        lh: getComputedStyle(ps[4]).lineHeight,
-        color: getComputedStyle(ps[4]).color,
+      row: todayHead && getComputedStyle(todayHead).fontSize,
+      base: base && {
+        size: getComputedStyle(base).fontSize,
+        lh: getComputedStyle(base).lineHeight,
+        color: getComputedStyle(base).color,
       },
-      muted: probe("--color-muted-foreground"),
-      primary: probe("--color-primary"),
-      link: (() => {
-        const a = card?.querySelector("a");
-        return a && getComputedStyle(a).color;
-      })(),
+      muted: muted.color,
+      xsLineHeight: muted.lineHeight,
     };
   });
   /* 둘 다 잡혔는지 먼저 — null끼리 같으면 거짓 통과다 */
   expect(measured.card?.radius).toBe("10px");
-  expect(measured.today).not.toBeNull();
+  expect(measured.side).not.toBeNull();
   expect(measured.title?.size).toBeDefined();
-  expect(measured.card).toEqual(measured.today);
-  expect(measured.title).toEqual(measured.todayTitle);
-  expect(measured.lines).toEqual(["14px", "14px", "14px", "14px", "12px"]);
-  expect(measured.base).toEqual({ lh: "16px", color: measured.muted });
-  expect(measured.link).toBe(measured.primary);
+  expect(measured.card).toEqual(measured.side);
+  expect(measured.title).toEqual(measured.sideTitle);
+  expect(measured.row).toBe(scale.body);
+  expect(measured.base).toEqual({
+    size: scale.small,
+    lh: measured.xsLineHeight,
+    color: measured.muted,
+  });
 });

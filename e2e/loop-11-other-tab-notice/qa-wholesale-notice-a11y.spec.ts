@@ -71,9 +71,9 @@ test("QA S1-2 S1-5 안내는 글자 그대로 status 한 줄, 실패 배너가 �
     role: "status",
     text: OTHER_TAB_NOTICE,
   });
-  // 접근성 트리: status 안에 문구, 아이콘은 숨김
+  // 접근성 트리: status 안에 문구, 아이콘은 숨김. 문구는 로그인 버튼 아래 한 문단이다(2026-11-18 디자인)
   await expect(page.locator('[data-ac="10:S1-2"]')).toMatchAriaSnapshot(
-    `- status: ${OTHER_TAB_NOTICE}`,
+    `- status:\n  - paragraph: ${OTHER_TAB_NOTICE}`,
   );
   await expect(loginFailedBanner(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/s1-2-notice-1280.png` });

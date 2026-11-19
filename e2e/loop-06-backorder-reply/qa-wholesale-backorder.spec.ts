@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   installClock,
   log,
@@ -149,7 +150,7 @@ test("(e) 칩 9001(지남) → 도매 말풍선 사실 문장 + 근거 줄 + 넘
   await expect(bubble).not.toContainText("지연");
 });
 
-test("디자인 결정 38: 보기 이름표 12px muted 한 번, 보기 줄 13px secondary, 줄마다 하나, 쉼표 이어 쓰기 0", async ({
+test("디자인 결정 38: 보기 이름표 text-xs muted 한 번, 보기 줄 text-body secondary, 줄마다 하나, 쉼표 이어 쓰기 0", async ({
   page,
 }) => {
   const [clarify] = await inject(page, "지난주 주문한 거 언제 와요?");
@@ -175,8 +176,9 @@ test("디자인 결정 38: 보기 이름표 12px muted 한 번, 보기 줄 13px 
   test
     .info()
     .annotations.push({ type: "measure", description: JSON.stringify(m) });
-  expect(m.label).toEqual({ text: "보기", size: "12px" });
-  expect(new Set(m.items.map((i) => i.size))).toEqual(new Set(["13px"]));
+  const scale = await chatTypeScale(page);
+  expect(m.label).toEqual({ text: "보기", size: scale.small });
+  expect(new Set(m.items.map((i) => i.size))).toEqual(new Set([scale.muted]));
   expect(new Set(m.items.map((i) => i.top)).size).toBe(5);
   await bubble
     .screenshot({ path: `${SHOTS}/wholesale-bo-choices.png` })

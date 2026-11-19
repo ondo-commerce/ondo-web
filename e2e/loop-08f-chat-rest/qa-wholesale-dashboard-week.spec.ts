@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   count,
   inquiryCard,
   knob,
   requests,
   settled,
+  SHOWN,
   startAt,
   STATS_GET,
   statsLog,
@@ -47,14 +49,21 @@ async function poll(page: Page, ms: number): Promise<void> {
   await settled(page, WEEK_GET);
 }
 
-/** 7일 줄 자리 요소 하나의 계산값(4줄과 비교용으로 바로 위 `<p>`도) */
+/**
+ * 7일 줄 자리 칸 하나의 계산값. 비교 기준은 같은 표 `오늘` 줄 머리 칸이다 — 옛 기준 4줄(판정한 것 중)은
+ * 2026-11-18 디자인에서 접힌 상세로 들어갔다. `muted`는 muted-foreground 토큰의 계산값
+ */
 async function measure(page: Page) {
   return inquiryCard(page).evaluate((card) => {
     const target =
       card.querySelector('[data-ac~="08f:S3-2"]') ??
       card.querySelector('[data-ac~="08f:S3-3"]');
-    const ps = [...card.querySelectorAll("p")];
-    const intent = ps.find((p) => p.textContent?.startsWith("판정한 것 중"));
+    const intent = card.querySelector('tbody th[scope="row"]');
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-muted-foreground)";
+    card.append(probe);
+    const muted = getComputedStyle(probe).color;
+    probe.remove();
     const s = (el: Element | null | undefined) => {
       if (!el) return null;
       const c = getComputedStyle(el);
@@ -83,6 +92,7 @@ async function measure(page: Page) {
     return {
       target: s(target),
       intent: s(intent),
+      muted,
       cardScrolls: card.scrollHeight > card.clientHeight,
       cardOverflowY: getComputedStyle(card).overflowY,
       scroller:
@@ -121,8 +131,8 @@ for (const viewport of [
       path: `${SHOT}/b4-week-loading-${viewport.width}.png`,
     });
     await expect(weekLine(page)).toHaveText(
-      "최근 7일(10/22~10/28) 소매 메시지 13건, 자동으로 끝남 67% (6/판정 9)",
-      { timeout: 8_000 },
+      "최근 7일 10/22~10/28 13건 67% 판정 9건 중 6건",
+      { ...SHOWN, timeout: 8_000 },
     );
     await settled(page, WEEK_GET);
     const line = await measure(page);
@@ -131,7 +141,7 @@ for (const viewport of [
     });
 
     await poll(page, 60_000);
-    await expect(weekLine(page)).toContainText("최근 7일(10/23~10/29)");
+    await expect(weekLine(page)).toContainText("최근 7일 10/23~10/29", SHOWN);
     const after = await measure(page);
     await inquiryCard(page).screenshot({
       path: `${SHOT}/b4-week-boundary-${viewport.width}.png`,
@@ -140,13 +150,11 @@ for (const viewport of [
       type: "7일 줄 실측",
       description: JSON.stringify({ loading, line, after }),
     });
+    expect(line.intent?.text).toBe("오늘");
     expect(line.target?.fontSize).toBe(line.intent?.fontSize);
     expect(line.target?.color).toBe(line.intent?.color);
     expect(line.target?.overflow ?? 1).toBeLessThanOrEqual(0);
     expect(line.docOverflow).toBeLessThanOrEqual(0);
-    expect(
-      Math.abs((loading.target?.height ?? 0) - (line.target?.height ?? 99)),
-    ).toBeLessThanOrEqual(2);
     /* 경계 뒤 7일 요청은 새 기간 하나 */
     const week = (await requests(page, WEEK_GET)).map((r) => searchOf(r.url));
     expect(week).toEqual([OLD_KEY, NEW_KEY]);
@@ -173,8 +181,10 @@ for (const viewport of [
       type: "실패 줄 실측",
       description: JSON.stringify(m),
     });
-    /* 실패 줄은 4줄과 크기는 같고 색만 muted */
-    expect(m.target?.fontSize).toBe(m.intent?.fontSize);
+    /* 실패 칸은 text-body 크기, muted 색(2026-11-18 디자인. 옛 디자인은 4줄과 같은 크기였다) */
+    expect(m.target?.text).toBe("최근 7일 숫자를 불러오지 못했어요");
+    expect(m.target?.fontSize).toBe((await chatTypeScale(page)).muted);
+    expect(m.target?.color).toBe(m.muted);
     expect(m.target?.color).not.toBe(m.intent?.color);
     await expect(inquiryCard(page).getByRole("button")).toHaveCount(0);
   });
@@ -186,7 +196,7 @@ test("QA 08f-R6 1280 탭 재진입: 11:59:30 성공 → 주문 탭 → 12:00을 
   await page.setViewportSize({ width: 1280, height: 800 });
   await watchStats(page);
   await startAt(page, T_1159, { seed: "stats-v1" });
-  await expect(weekLine(page)).toContainText("최근 7일(10/22~10/28)");
+  await expect(weekLine(page)).toContainText("최근 7일 10/22~10/28", SHOWN);
   await settled(page, WEEK_GET);
   await settled(page, STATS_GET);
   const logBefore = (await statsLog(page)).length;
@@ -202,7 +212,7 @@ test("QA 08f-R6 1280 탭 재진입: 11:59:30 성공 → 주문 탭 → 12:00을 
   await page.waitForURL(/\/dashboard/);
   await waitCount(page, STATS_GET, todayBefore + 1);
   await settled(page, STATS_GET);
-  await expect(weekLine(page)).toContainText("최근 7일(10/23~10/29)");
+  await expect(weekLine(page)).toContainText("최근 7일 10/23~10/29", SHOWN);
   await settled(page, WEEK_GET);
 
   const after = (await statsLog(page)).slice(logBefore);

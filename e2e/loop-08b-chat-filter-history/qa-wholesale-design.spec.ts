@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import { chatRows, enterChats, knob } from "./helpers";
 
 /**
@@ -141,12 +142,27 @@ test("QA-design 필터 줄 토큰 — 구현 = 와이어프레임 #state-filter-
   /* 비교에서 빼는 칸 둘. ① 검색 상자 `color`: 와이어프레임은 안내 글 span 색(muted)이 상자에 걸려 있고 앱은 입력
      글자색이 걸려 있다 — 같은 것을 재지 않는다. ② 눌린 칩 배경: 앱은 칩 뒤 흰 조각(`Segmented` thumb, bg-card)이
      따로 있어 칩 자체는 투명하다 — 조각을 따로 잰다(`thumb`) */
-  const { color: _appSearchColor, ...appSearch } = app.search;
-  const { color: _wireSearchColor, ...wireSearch } = wire.search;
+  /* ③ 검색 상자와 칩 묶음의 글자 크기: 2026-11-18에 글자 단계를 한 칸씩 키워 와이어프레임(14px)과 다르다 —
+     크기는 text-sm 토큰과 따로 비교한다 */
+  const {
+    color: _appSearchColor,
+    fontSize: appSearchSize,
+    ...appSearch
+  } = app.search;
+  const {
+    color: _wireSearchColor,
+    fontSize: _wireSearchSize,
+    ...wireSearch
+  } = wire.search;
+  const { fontSize: appSegSize, ...appSeg } = app.seg;
+  const { fontSize: _wireSegSize, ...wireSeg } = wire.seg;
   const { backgroundColor: _appOnBg, ...appOn } = app.on;
   const { backgroundColor: wireOnBg, ...wireOn } = wire.on;
+  const scale = await chatTypeScale(page);
   expect.soft(appSearch).toEqual(wireSearch);
-  expect.soft(app.seg).toEqual(wire.seg);
+  expect.soft(appSearchSize).toBe(scale.body);
+  expect.soft(appSeg).toEqual(wireSeg);
+  expect.soft(appSegSize).toBe(scale.body);
   expect.soft(appOn).toEqual(wireOn);
   expect.soft(app.thumb).toBe(wireOnBg);
   expect.soft(app.off).toEqual(wire.off);

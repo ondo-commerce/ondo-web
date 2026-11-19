@@ -1,71 +1,41 @@
 "use client";
 
-import { Panel } from "@ondo/ui";
+import { StatTile } from "./TodoTiles";
 import { useDashboardSummaryQuery } from "../api/queries";
 import { TODAY_TEXT } from "../constants";
 import { formatNumber } from "@/shared/lib/format";
 
 /**
- * 오늘 — 주문 건수·금액 / 출고 봉투·장수 / 취소. 확인만 하면 되는 숫자라 우측이다.
+ * 오늘 — 주문 건수와 금액 / 출고 봉투와 장수. 왼쪽 할 일 타일과 같은 모양 두 장이라 윗줄 여섯 장이 한 줄로 읽힌다
+ * (2026-11-18 사용자 지시: 이것도 대시보드 숫자인데 따로 놀았다).
  *
- * 제목 옆 날짜는 **영업일**이다(낮 12시 경계). 새벽 2시에 보면 달력은 내일이지만 여기는 어제 날짜다 —
+ * 날짜는 **영업일**이다(낮 12시 경계). 새벽 2시에 보면 달력은 내일이지만 여기는 어제 날짜다 —
  * 서버 `today`가 그 경계로 집계한 값이라 날짜도 같은 기준으로 붙여야 숫자와 맞는다.
- * 제목 우측의 "마지막 HH:MM"은 서버 `now`다 — 폴링이 도는지 사장이 알 수 있는 유일한 표식이다.
+ * "최근 갱신 HH:MM"은 서버 `now`다 — 폴링이 도는지 사장이 알 수 있는 유일한 표식이다.
  */
 export function TodayPanel() {
   const { data } = useDashboardSummaryQuery();
   const today = data.today;
 
   return (
-    <>
-      <Panel.Title
-        className="mb-4"
-        suffix={
-          <span className="text-muted-foreground text-sm tabular-nums">
-            {today.dateLabel}
+    <div className="grid shrink-0 grid-cols-2 gap-2">
+      <StatTile
+        title={`${TODAY_TEXT.title} ${TODAY_TEXT.orders} ${today.dateLabel}`}
+        value={today.orderCount}
+        unit="건"
+        note={`${formatNumber(today.orderAmount)}원, ${TODAY_TEXT.cancelled} ${formatNumber(today.cancelled)}`}
+      />
+      <StatTile
+        title={`${TODAY_TEXT.title} ${TODAY_TEXT.shipped}`}
+        meta={
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            {TODAY_TEXT.lastPrefix} {today.updatedAtLabel}
           </span>
         }
-        action={
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {TODAY_TEXT.refresh} · {TODAY_TEXT.lastPrefix}{" "}
-            {today.updatedAtLabel}
-          </span>
-        }
-      >
-        {TODAY_TEXT.title}
-      </Panel.Title>
-
-      <dl className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <dt className="text-muted-foreground text-sm">{TODAY_TEXT.orders}</dt>
-          <dd className="flex items-baseline gap-1.5 tabular-nums">
-            <span className="text-2xl font-semibold">
-              {formatNumber(today.orderCount)}
-            </span>
-            <span className="text-sm">건</span>
-            <span className="text-muted-foreground text-sm">
-              · {formatNumber(today.orderAmount)}원
-            </span>
-          </dd>
-          <dd className="text-muted-foreground text-sm tabular-nums">
-            {TODAY_TEXT.cancelled} {formatNumber(today.cancelled)}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-1">
-          <dt className="text-muted-foreground text-sm">
-            {TODAY_TEXT.shipped}
-          </dt>
-          <dd className="flex items-baseline gap-1.5 tabular-nums">
-            <span className="text-2xl font-semibold">
-              {formatNumber(today.shippedCount)}
-            </span>
-            <span className="text-sm">봉투</span>
-            <span className="text-muted-foreground text-sm">
-              · {formatNumber(today.shippedQty)}장
-            </span>
-          </dd>
-        </div>
-      </dl>
-    </>
+        value={today.shippedCount}
+        unit="봉투"
+        note={`${formatNumber(today.shippedQty)}장`}
+      />
+    </div>
   );
 }

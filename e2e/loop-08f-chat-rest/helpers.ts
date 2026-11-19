@@ -2,14 +2,19 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { inquiryCard } from "../loop-08-chat-polish/helpers";
 
 export {
-  cardLines,
   count,
+  detailRows,
+  expectCard,
   inquiryCard,
   knob,
+  openDetail,
   requests,
   settled,
+  SHOWN,
   startAt,
   STATS_GET,
+  todayRow,
+  todayTotal,
   waitCount,
 } from "../loop-08-chat-polish/helpers";
 
@@ -61,14 +66,26 @@ export const WEEK_GET = {
   method: "GET",
 } as const;
 
-/** 7일 줄 `<p>`(숫자가 있을 때) */
+/**
+ * 표의 `최근 7일` 줄(숫자가 있을 때). `SHOWN`으로 읽으면 `최근 7일 10/22~10/28 13건 67% 판정 9건 중 6건` —
+ * 기간, 소매 메시지, 처리율, 판정 내역 순서다
+ */
 export function weekLine(page: Page): Locator {
-  return inquiryCard(page).locator('p[data-ac~="08f:S3-2"]');
+  return inquiryCard(page)
+    .locator("tbody tr")
+    .filter({ has: page.locator('[data-ac~="08f:S3-2"]') });
 }
 
-/** 7일 줄 실패 한 줄 */
+/** `최근 7일` 줄의 소매 메시지 칸(`13건`) */
+export function weekTotal(page: Page): Locator {
+  return weekLine(page).locator('td[data-ac~="08f:S3-2"]');
+}
+
+/** 7일 실패 칸. 로딩 막대도 같은 칸(`08f:S3-3`)에 그려져 막대가 없는 것만 */
 export function weekFailed(page: Page): Locator {
-  return inquiryCard(page).locator('p[data-ac~="08f:S3-3"]');
+  return inquiryCard(page)
+    .locator('td[data-ac~="08f:S3-3"]')
+    .filter({ hasNot: page.getByRole("status") });
 }
 
 /** 7일 줄 막대(로딩) */

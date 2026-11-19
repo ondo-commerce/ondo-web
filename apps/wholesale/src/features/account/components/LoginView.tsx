@@ -128,21 +128,6 @@ export function LoginView() {
         {/* noValidate: 브라우저 기본 말풍선이 뜨면 우리 문구가 가려지고 포커스도
             우리가 옮기지 못한다. required 자체는 남겨 화면 낭독기에 전달한다 */}
         <form onSubmit={submit} noValidate>
-          {/* 래퍼는 늘 그린다 — 안내가 없을 때도 빈 낭독 영역으로 먼저 붙어 있어야 글자가 들어갈 때 읽힌다.
-              `Notice`엔 기본 role이 없어 바깥이 `status`를 진다. `10:` 접두어는 기획이 loop-10 문서라서다 */}
-          <div role="status" data-ac="10:S1-2">
-            {notice ? (
-              <AuthSection>
-                <Notice>
-                  <span className="flex items-start gap-2">
-                    <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-                    <span>{notice}</span>
-                  </span>
-                </Notice>
-              </AuthSection>
-            ) : null}
-          </div>
-
           {banner ? (
             <AuthSection>
               <Notice role="alert">
@@ -213,6 +198,16 @@ export function LoginView() {
             <Button type="submit" size="lg" className="w-full">
               {loginMutation.isPending ? "로그인 중…" : "로그인"}
             </Button>
+            {/* 래퍼는 늘 그린다 — 안내가 없을 때도 빈 낭독 영역으로 먼저 붙어 있어야 글자가 들어갈 때 읽힌다.
+                로그인 버튼 아래, 빨간 글자다(2026-11-18 사용자 지시). `10:` 접두어는 기획이 loop-10 문서라서다 */}
+            <div role="status" data-ac="10:S1-2">
+              {notice ? (
+                <p className="text-destructive-strong mt-3 flex items-start gap-2 text-sm">
+                  <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  <span>{notice}</span>
+                </p>
+              ) : null}
+            </div>
           </AuthSection>
         </form>
       </AuthPanel>

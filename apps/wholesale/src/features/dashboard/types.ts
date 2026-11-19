@@ -79,6 +79,9 @@ export interface TodoTileView {
 /** 확정 대기 큐 한 행. 수량 열이 없다 — 목록 응답에 수량이 없어서 열을 만들지 않았다 */
 export interface NewOrderRowView {
   id: number;
+  orderNumber: number;
+  /** 주문에 든 품목 수(대표 품목 포함) */
+  itemCount: number;
   /** `42분` / `3시간` / `2일`. 서버 `now` 기준 경과 */
   waitingLabel: string;
   retailerName: string;
@@ -109,11 +112,17 @@ export interface TodayView {
 export interface InquiryView {
   /** 1줄 큰 숫자 = 오늘 소매 메시지 수 */
   retailMessages: number;
+  /** 결과 다섯 칸을 표로 그릴 때 쓰는 낱개 값. 순서는 `INQUIRY_OUTCOME_ORDER` */
+  outcomes: readonly { label: string; count: number }[];
+  /** 의도 다섯 칸(판정한 것만). 순서는 `INQUIRY_INTENT_ORDER` */
+  intents: readonly { label: string; count: number }[];
+  /** 막대 폭 0~100. 판정 0이면 null — 빈 막대를 0%로 그리지 않는다 */
+  ratePercent: number | null;
   /** 2줄 `자동 답 5, 답+확인 1, 넘김 2, 되묻기 3, 결과 없음 1` */
   outcomeLine: string;
   /** 3줄 굵은 조각 `63%`. 판정 0이면 `-` */
   rateLabel: string;
-  /** 3줄 꼬리 `(5/판정 8)` */
+  /** 3줄 꼬리 `판정 8건 중 5건` */
   rateDetail: string;
   /** 4줄 `재고 4, 미송 1, 미수 1, 기타 0, 미분류 2`(판정한 것만 센다) */
   intentLine: string;
@@ -140,7 +149,13 @@ export type InquiryWeekLineState =
   | { kind: "none" }
   | { kind: "loading" }
   | { kind: "failed" }
-  | { kind: "line"; text: string };
+  | {
+      kind: "line";
+      fromTo: string;
+      retailMessages: string;
+      rateLabel: string;
+      rateDetail: string;
+    };
 
 /** 주의 목록의 SKU 한 줄 */
 export interface AttentionSkuView {

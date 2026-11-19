@@ -52,7 +52,7 @@ export const RECEIVE_BY_ORDER: readonly ReceiveBy[] = ["AGENT", "RETAILER"];
 export const TILE_TITLE: Record<TodoTileKey, string> = {
   newOrders: "확정 기다리는 주문",
   packing: "포장 대기",
-  outbound: "출고 확정 안 한 봉투",
+  outbound: "출고 대기",
   backorder: "미송",
 };
 
@@ -96,6 +96,8 @@ export const QUEUE_TEXT = {
   view: "주문 보기",
   cancelledPrefix: "오늘 취소",
   columns: {
+    orderNumber: "주문 번호",
+    itemCount: "품목",
     waiting: "대기",
     retailer: "소매처",
     product: "대표 품목",
@@ -106,8 +108,7 @@ export const QUEUE_TEXT = {
 
 export const TODAY_TEXT = {
   title: "오늘",
-  refresh: "30초마다 갱신",
-  lastPrefix: "마지막",
+  lastPrefix: "최근 갱신",
   orders: "주문",
   shipped: "출고",
   cancelled: "취소",
@@ -120,7 +121,7 @@ export const TODAY_TEXT = {
 export const INQUIRY_TEXT = {
   title: "문의",
   openChats: "채팅 열기",
-  totalPrefix: "오늘 소매 메시지",
+  totalPrefix: "오늘 문의",
   totalUnit: "건",
   outcome: {
     autoReplied: "자동 답",
@@ -129,7 +130,9 @@ export const INQUIRY_TEXT = {
     clarified: "되묻기",
     noResult: "결과 없음",
   },
-  ratePrefix: "자동으로 끝남",
+  ratePrefix: "자동 처리",
+  outcomeTitle: "처리 결과",
+  intentTitle: "문의 종류",
   judged: "판정",
   /** 4줄 앞말. 이게 없으면 합이 12가 아니라 8인 줄을 소매 메시지 수로 읽는다(디자인 결정 51) */
   intentPrefix: "판정한 것 중",
@@ -183,6 +186,7 @@ export const ATTENTION_TEXT = {
   overdueEmpty: "입고일이 지난 미송이 없어요",
   noDateEmpty: "입고일을 안 적은 미송이 없어요",
   link: "미송 탭 →",
+  none: "없음",
 } as const;
 
 /** 서버 `now`를 못 받았을 때의 큐 경과 표기. 시계 없이 "N분"을 지어내지 않는다 */

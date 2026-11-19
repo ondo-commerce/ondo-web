@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 import {
   bubbles,
+  CHAT_LIST_WIDTH,
   composer,
   count,
   incoming,
@@ -490,7 +491,7 @@ test("디자인 실측 — 목록 폭, 말풍선 색과 반경, 보내는 중 �
   test
     .info()
     .annotations.push({ type: "design", description: JSON.stringify(m) });
-  expect(m.listWidth).toBe(360);
+  expect(m.listWidth).toBe(CHAT_LIST_WIDTH);
   expect(m.themBg).toBe(m.tokenSecondary);
   expect(m.meBg).toBe(m.tokenPrimary);
   expect(m.sendingOnCard).toBeGreaterThanOrEqual(4.5);
@@ -563,9 +564,10 @@ test("디자인 실측 2 — 실패 말풍선, 선택 행, 시스템 줄, 근거
       retryColor: rgb(cs(retry)?.color ?? "").join(","),
       tokenPrimary: token("--color-primary"),
       retryOnCard: ratio(cs(retry)?.color ?? "", card),
-      selectedPreviewOnSecondary: ratio(cs(selPreview)?.color ?? "", selBg),
+      selectedPreviewOnAccent: ratio(cs(selPreview)?.color ?? "", selBg),
       selectedBg: rgb(selBg).join(","),
-      tokenSecondary: token("--color-secondary"),
+      /* 선택 행 면은 accent(2026-11-18 디자인. 전엔 secondary) */
+      tokenAccent: token("--color-accent"),
       noteBorder: rgb(cs(note)?.borderTopColor ?? "").join(","),
       tokenBorderStrong: token("--color-border-strong"),
       noteTextOnCard: ratio(cs(note)?.color ?? "", card),
@@ -575,15 +577,15 @@ test("디자인 실측 2 — 실패 말풍선, 선택 행, 시스템 줄, 근거
     .info()
     .annotations.push({ type: "design", description: JSON.stringify(m) });
   expect(m.failedBorder).toBe(m.tokenDestructive);
-  expect(m.selectedBg).toBe(m.tokenSecondary);
+  expect(m.selectedBg).toBe(m.tokenAccent);
   expect(m.noteBorder).toBe(m.tokenBorderStrong);
   expect(m.failTextOnCard).toBeGreaterThanOrEqual(4.5);
   expect(m.retryOnCard).toBeGreaterThanOrEqual(4.5);
-  expect(m.selectedPreviewOnSecondary).toBeGreaterThanOrEqual(4.5);
+  expect(m.selectedPreviewOnAccent).toBeGreaterThanOrEqual(4.5);
   expect(m.noteTextOnCard).toBeGreaterThanOrEqual(4.5);
 });
 
-test("1280 폭 — 목록 360 고정, 가로 스크롤 0, 긴 말풍선 방 안", async ({
+test("1280 폭 — 목록 폭 고정, 가로 스크롤 0, 긴 말풍선 방 안", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -597,7 +599,7 @@ test("1280 폭 — 목록 360 고정, 가로 스크롤 0, 긴 말풍선 방 안"
       ?.getBoundingClientRect().width,
   }));
   expect(r.scrollW).toBe(1280);
-  expect(r.list).toBe(360);
+  expect(r.list).toBe(CHAT_LIST_WIDTH);
 });
 
 test("I-4 #4 목록 15초 재조회는 받은 페이지 전부(2장 → 요청 2), 32행 중복 0", async ({

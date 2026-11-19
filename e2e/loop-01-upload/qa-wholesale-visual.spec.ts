@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { chatTypeScale } from "../fixtures/chat-type-scale";
 import {
   addSlot,
   cancelButton,
@@ -85,7 +86,8 @@ test("QA-V1 #state-empty — + 는 muted-foreground, hint 끝 제한 한 줄 500
   await expect(limit).toHaveText("jpg, png · 한 장 4MB까지 · 최대 9장");
   const limitStyle = await styles(limit, ["font-weight", "font-size"]);
   expect(limitStyle["font-weight"]).toBe("500");
-  expect(limitStyle["font-size"]).toBe("13px");
+  /* hint 글자 = text-body 토큰 */
+  expect(limitStyle["font-size"]).toBe((await chatTypeScale(page)).muted);
   const limitColor = await computedColor(limit, "color");
   expect(near(limitColor, GRAY_600), `제한 줄 색 ${limitColor.raw}`).toBe(true);
 
@@ -113,7 +115,7 @@ test("QA-V2 #state-loading — 진행 3(aria-busy·베일 60%·띠) + 대기 2, 
   expect(bandBg.a).toBeGreaterThanOrEqual(0.88);
   const bandStyle = await styles(band, ["font-size", "line-height"]);
   expect(bandStyle).toMatchObject({
-    "font-size": "12px",
+    "font-size": (await chatTypeScale(page)).small,
     "line-height": "16px",
   });
   await expect(up).toHaveAttribute("tabindex", "0");
@@ -124,7 +126,9 @@ test("QA-V2 #state-loading — 진행 3(aria-busy·베일 60%·띠) + 대기 2, 
   const noteColor = await computedColor(note, "color");
   // #254 F8: muted 회색은 꺼진 안내로 읽혀 foreground 로 바꿨다
   expect(near(noteColor, GRAY_900), `문구 색 ${noteColor.raw}`).toBe(true);
-  expect((await styles(note, ["font-size"]))["font-size"]).toBe("14px");
+  expect((await styles(note, ["font-size"]))["font-size"]).toBe(
+    (await chatTypeScale(page)).body,
+  );
 
   await page.screenshot({ path: shot("v2-state-loading") });
   await grid(page).screenshot({ path: shot("v2-state-loading-grid") });
@@ -145,7 +149,7 @@ test("QA-V3 #state-done — 대표 칩 우상단(top 8·right 2·h 20), × 좌�
     top: "8px",
     right: "2px",
     height: "20px",
-    "font-size": "12px",
+    "font-size": (await chatTypeScale(page)).small,
   });
   const remove = first.getByRole("button", { name: "이미지 1 빼기" });
   const rmStyle = await styles(remove, ["top", "left", "width", "height"]);
@@ -181,11 +185,12 @@ test("QA-V4 #state-error — 재시도형 실패 칸: destructive 1px 선(outlin
     "border-width",
   ]);
   expect(near(outline, RED_500), `선 색 ${outline.raw}`).toBe(true);
+  /* ImageSlot에 1px 테두리가 생겼다(2026-11-18). -1px outline이 그 테두리 위에 겹쳐 선은 빨간 한 줄로 보인다 */
   expect(outlineStyle).toMatchObject({
     "outline-width": "1px",
     "outline-style": "solid",
     "outline-offset": "-1px",
-    "border-width": "0px",
+    "border-width": "1px",
   });
   expect(contrast(outline, WHITE)).toBeGreaterThanOrEqual(3);
 
@@ -204,7 +209,7 @@ test("QA-V4 #state-error — 재시도형 실패 칸: destructive 1px 선(outlin
     "padding-top",
   ]);
   expect(alertStyle).toMatchObject({
-    "font-size": "12px",
+    "font-size": (await chatTypeScale(page)).small,
     "line-height": "16px",
     "padding-top": "28px",
   });
@@ -264,7 +269,7 @@ test("QA-V5 #state-error-repick — 다시 고르기형: 재시도 없음, 짧�
   await grid(page).screenshot({ path: shot("v5-state-error-repick-grid") });
 });
 
-test("QA-V6 #state-rejected — 사전 검사 목록: 13px destructive-strong, 파일명 500, 아이콘 14px, 칸 없음", async ({
+test("QA-V6 #state-rejected — 사전 검사 목록: text-body destructive-strong, 파일명 500, 아이콘 14px, 칸 없음", async ({
   page,
 }) => {
   await openCreateWithPost(page);
@@ -276,7 +281,7 @@ test("QA-V6 #state-rejected — 사전 검사 목록: 13px destructive-strong, �
   await expect(list.locator("li")).toHaveCount(2);
   await expect(cells(page)).toHaveCount(0);
   const listStyle = await styles(list, ["font-size", "margin-top"]);
-  expect(listStyle["font-size"]).toBe("13px");
+  expect(listStyle["font-size"]).toBe((await chatTypeScale(page)).muted);
   const color = await computedColor(list, "color");
   expect(near(color, RED_700), `목록 색 ${color.raw}`).toBe(true);
   const name = list.locator("li b").first();
