@@ -1,7 +1,6 @@
 "use client";
 
 import { Panel } from "@ondo/ui";
-import { Heart } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { CatalogEmpty, ResultCount } from "./CatalogSection";
@@ -84,7 +83,7 @@ export function WishlistView({
     /* 주문 내역·정산과 같은 폭(#217 R2). 홈 그리드만 화면 끝까지 흐른다 */
     <div className="mx-auto max-w-wrap">
       <Panel>
-        <Panel.Title sub="최근 찜한 순으로 보여줘요. 새로고침하면 찜이 비워져요 — 아직 서버에 저장되지 않아요.">
+        <Panel.Title sub="새로고침하면 찜 목록이 비워져요.">
           찜 목록
         </Panel.Title>
 
@@ -107,7 +106,7 @@ export function WishlistView({
           <EmptyWishlist />
         ) : !pending && products.length === 0 ? null : (
           <>
-            <div className="flex flex-wrap items-center gap-2 pb-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* 칩 목록을 **찜한 상품에서 만든다** — 고정 목록으로 두면 찜한 게
                 하나도 없는 도매처 칩이 나오고, 눌러 보면 0건이다 */}
               {chips.map((chip) => (
@@ -141,14 +140,11 @@ export function WishlistView({
                 filtered
               />
             ) : (
-              <>
-                <div className="bg-border -mx-4 h-px" />
-                <ProductGrid
-                  products={visible}
-                  favorites={favorites}
-                  onToggleFavorite={toggleFavorite}
-                />
-              </>
+              <ProductGrid
+                products={visible}
+                favorites={favorites}
+                onToggleFavorite={toggleFavorite}
+              />
             )}
           </>
         )}
@@ -157,15 +153,13 @@ export function WishlistView({
   );
 }
 
-/** 찜이 한 건도 없을 때. 문구는 게이트 Q6 확정본이다 */
+/* 빈 상태 한 문장에 찜하는 법을 한 줄 붙인다. 규칙 4절 빈 상태는 한 문장이지만, 찜 목록은
+   처음 쓰는 사장이 어떻게 채우는지 모르는 자리라 둘째 줄을 남긴다(2026-11-19 사용자 결정) */
 function EmptyWishlist() {
   return (
-    <div className="flex flex-col items-center gap-1.5 px-5 py-16 text-center">
-      <span className="bg-secondary text-border-strong mb-1.5 grid size-11 place-items-center rounded-full">
-        <Heart aria-hidden className="size-5" />
-      </span>
-      <h3 className="text-base font-medium">찜한 상품이 없어요.</h3>
-      <p className="text-muted-foreground text-body">
+    <div className="py-8 text-center">
+      <p className="text-muted-foreground text-sm">찜한 상품이 없어요.</p>
+      <p className="text-muted-foreground text-body mt-1">
         마음에 드는 상품의 하트를 눌러 모아 두세요.
       </p>
     </div>

@@ -27,14 +27,14 @@ export interface FilterOption {
 /**
  * 툴바 칸의 겉모습(`_base.css` `.fbtn`). 드롭다운 트리거와 찜 목록의 즉시 토글
  * 칩이 같은 모양이라 여기 한 곳에서 만든다 — 두 벌이 되면 한쪽만 색이 바뀐다.
- * 고른 상태는 검은 채움이다. 게이트 D1대로 강조색을 쓰지 않는다.
+ * 색을 고르기 전에는 다른 축과 같은 중립 버튼으로 보인다.
  */
 export function filterChipClass(active: boolean): string {
   return cn(
-    "text-body flex h-8 cursor-pointer items-center gap-1.5 rounded-control px-3 whitespace-nowrap transition-colors",
+    "text-body border-border flex h-9 cursor-pointer items-center gap-1 rounded-control border px-3 whitespace-nowrap transition-colors",
     active
-      ? "bg-foreground text-card"
-      : "bg-secondary text-secondary-foreground hover:bg-secondary-strong",
+      ? "bg-secondary text-foreground font-medium"
+      : "bg-card text-muted-foreground hover:bg-secondary",
   );
 }
 
@@ -59,7 +59,7 @@ function DropdownItems({
             onClick={onNavigate}
             aria-current={selected ? "true" : undefined}
             className={cn(
-              "hover:bg-secondary text-body flex h-8.5 items-center gap-2 rounded-md px-2.5",
+              "hover:bg-secondary text-body flex h-8.5 items-center gap-2 rounded-control px-3",
               selected
                 ? "text-foreground font-medium"
                 : "text-secondary-foreground",
@@ -99,7 +99,7 @@ function DropdownShell({
       <Popover.Content
         align="start"
         collisionPadding={12}
-        className={cn("w-48 p-1.5 shadow-dropdown", contentClassName)}
+        className={cn("w-48 p-2 shadow-dropdown", contentClassName)}
       >
         <DropdownItems
           options={options}
@@ -111,11 +111,7 @@ function DropdownShell({
   );
 }
 
-/**
- * 축 하나를 좁히는 필터 버튼. 고른 값이 있으면 **버튼 자체가 검게 채워지고**
- * 라벨이 그 값으로 바뀐다(`_base.css` `.fbtn[data-on]`) — 어느 축이 걸려 있는지
- * 드롭다운을 열지 않고도 보여야 한다. 게이트 D1대로 강조색 없이 무채색이다.
- */
+/** 선택한 축은 드롭다운을 닫아도 고른 값을 읽을 수 있다. */
 export function FilterDropdown({
   label,
   options,
@@ -147,7 +143,7 @@ export function FilterDropdown({
           strokeWidth={2}
           className={cn(
             "size-3 shrink-0",
-            active ? "text-card" : "text-border-strong",
+            active ? "text-foreground" : "text-muted-foreground",
           )}
         />
       </button>

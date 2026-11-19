@@ -12,7 +12,7 @@ import {
   type CategoryChip,
 } from "@/shared/config/nav";
 
-/** 규격은 도매 GNB 탭과 같다 — h32 · radius 8 · px12. 선택은 밑줄이 아니라 회색 알약이다 */
+/** 현재 카테고리는 배경과 굵기로 함께 구분한다 */
 function CategoryLinks({
   categories,
   current,
