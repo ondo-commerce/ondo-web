@@ -1,6 +1,6 @@
-import type { PageMeta } from "@ondo/api";
 import { QTY_UNIT } from "@/shared/qty";
 import {
+  BACKORDER_PAGE_SIZE,
   BACKORDER_PATH,
   BACKORDER_SORTS,
   DEFAULT_BACKORDER_SORT,
@@ -30,8 +30,9 @@ import type {
  * 그래서 화면은 `filterByWholesaler` → `sortByOrderedAt`으로 **보이는 목록을 먼저 만들고**,
  * 그 하나를 `summarize`와 표에 같이 넘긴다.
  *
- * 그 집합은 **서버가 준 한 장(`size=100`)**이다. 서버에 도매처·정렬 파라미터가 없어서
- * (`04-wire.md` §3) 필터와 정렬은 받은 장 안에서만 걸린다.
+ * 그 집합은 **서버가 가진 미송 전부**다. 서버에 도매처·정렬 파라미터가 없어서
+ * (`04-wire.md` §3) page가 서버 장을 다 받아 합치고, 거르기 · 정렬 · 장 나누기는 여기서 한다.
+ * 한 장(100건) 안에서만 걸던 때는 101번째 줄부터의 도매처가 칩에 없었고, 요약도 장마다 달랐다(#451).
  */
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -89,12 +90,37 @@ export function toBackorderLine(wire: BackorderWire): BackorderLine {
   };
 }
 
-/** 서버 `meta`(0-base) → 화면 페이지 위치(1-base) */
-export function toBackorderPage(meta: PageMeta): BackorderPage {
+/**
+ * 서버 장들을 이어 붙인 미송 → 화면 줄. 장 사이에 미송이 생기거나 풀리면 줄이 밀려 같은
+ * 미송이 두 장에 걸쳐 올 수 있어서 `backorderId`로 한 번 거른다(먼저 온 것을 남긴다).
+ * 밀려서 빠지는 줄은 여기서 못 막는다 — 다시 열면 돌아온다.
+ */
+export function toBackorderLines(
+  items: readonly BackorderWire[],
+): BackorderLine[] {
+  return [
+    ...new Map(
+      items.map((wire) => [wire.backorderId, toBackorderLine(wire)] as const),
+    ).values(),
+  ];
+}
+
+/**
+ * 보이는 목록에서 `page`(1-base) 한 장을 자른다. 마지막 장을 넘는 수는 빈 `rows`가 되고,
+ * 화면은 `backordersEmptyKind`로 "이 페이지에는 미송이 없어요"와 `첫 장으로`를 세운다(#168).
+ */
+export function pageOf(
+  lines: readonly BackorderLine[],
+  page: number,
+  size: number = BACKORDER_PAGE_SIZE,
+): { rows: BackorderLine[]; paging: BackorderPage } {
   return {
-    page: meta.page + 1,
-    totalPages: meta.totalPages,
-    totalElements: meta.totalElements,
+    rows: lines.slice((page - 1) * size, page * size),
+    paging: {
+      page,
+      totalPages: Math.max(1, Math.ceil(lines.length / size)),
+      totalElements: lines.length,
+    },
   };
 }
 
@@ -177,7 +203,7 @@ export function resolveSort(
  * `VALIDATION_FAILED`가 `error.tsx`로 새어 주소를 잘못 친 사장에게 "운영자에게 알려
  * 주세요"가 뜬다(#169). `Number()`로 읽지 않는다 — `1e5`·`0x10`이 `isInteger`를 통과한다.
  *
- * **몇 장인지는 여기서 모른다** — 마지막 장을 넘는 수는 서버가 빈 장을 주고 화면이
+ * **몇 장인지는 여기서 모른다** — 마지막 장을 넘는 수는 `pageOf`가 빈 장을 주고 화면이
  * `backordersEmptyKind`로 "이 페이지에는 미송이 없어요"와 `첫 장으로`를 세운다(#168).
  */
 export function resolvePage(
@@ -193,9 +219,8 @@ export function resolvePage(
  * 칩·정렬·페이지 링크의 주소. **기본값인 축은 주소에서 뺀다** — 아무것도 안 고른 화면의
  * 주소가 그냥 `/backorders`여서 공유했을 때 짧고, 무엇이 걸려 있는지가 주소에서 읽힌다.
  *
- * 칩과 정렬 링크는 page를 안 넘긴다(첫 장으로 돌아간다). 필터·정렬이 **받은 장 안에서**
- * 걸리는 것이라 3장에서 도매처를 고르면 그 장의 그 도매처만 남는데, 그게 첫 장에서
- * 시작한 사장이 기대하는 결과와 다르다.
+ * 칩과 정렬 링크는 page를 안 넘긴다(첫 장으로 돌아간다). 거르거나 뒤집으면 목록이 바뀌어
+ * 3장이 더는 같은 줄들이 아니다 — 바뀐 목록의 처음부터 본다.
  */
 export function backorderHref(
   wholesalerId: string,
@@ -221,7 +246,7 @@ export function toggledSort(sort: BackorderSort): BackorderSort {
    ──────────────────────────────────────────────────────────────────────── */
 
 /**
- * 필터 칩에 세울 도매처. **받은 장에 실제로 있는 곳만** 세운다 —
+ * 필터 칩에 세울 도매처. **미송이 실제로 있는 곳만** 세운다 —
  * 소매 스펙에 거래처 목록 path가 없기도 하고, 고정 목록으로 두면 눌러도 0건인 칩이 생긴다.
  */
 export function wholesalerChips(
@@ -266,31 +291,26 @@ export function sortByOrderedAt(
  *
  * - `none` — 미송이 하나도 없다(`totalElements === 0`). 대부분 사장의 평소 상태라
  *   `상품 둘러보기`·`주문 내역 보기`가 다음 행동이다.
- * - `outOfRange` — 서버에는 미송이 있는데 이 장이 비었다. 옛 북마크 · 뒤로 가기 ·
- *   미송이 줄어든 뒤의 링크로 마지막 장을 넘어 들어온 것이다. 서버가 빈 배열에
- *   `totalPages: 1`을 주니 페이저도 안 서서 돌아갈 길이 `첫 장으로` 하나다(#168).
+ * - `outOfRange` — 미송은 있는데 이 장이 비었다. 옛 북마크 · 뒤로 가기 ·
+ *   미송이 줄어든 뒤의 링크로 마지막 장을 넘어 들어온 것이다(#168).
  *
  * 주문 내역의 `ordersEmptyKind`와 같은 규칙인데 **`filtered`가 없다.** 도매처 칩은 받은
- * 장에서 만들어지고 주소의 `?wholesaler=`는 칩에 있는 값만 통과하므로
+ * 미송에서 만들어지고 주소의 `?wholesaler=`는 칩에 있는 값만 통과하므로
  * (`resolveWholesalerId`), 필터로 걸러져 0건이 되는 일은 없다 — 걸러진 도매처는 `전체`로
- * 떨어지고 `Notice`가 그 사실을 말한다. 그래서 `visible > 0`이 아닌데 받은 장이 있는
- * 경우는 만들어지지 않고, 만약 생기더라도 빈 상태가 아니라 표(0행 + `합계 0장`)로 둔다.
+ * 떨어지고 `Notice`가 그 사실을 말한다.
  *
- * `lines.length === 0`을 곧 "미송 없음"으로 읽던 때는 범위 밖 장에서 미송이 있는 사장에게
+ * `rows.length === 0`을 곧 "미송 없음"으로 읽던 때는 범위 밖 장에서 미송이 있는 사장에게
  * `지금 기다리는 미송이 없어요`라고 말했다. **`none`은 `totalElements === 0`일 때만이다.**
  */
 export type BackordersEmptyKind = "none" | "outOfRange";
 
 export function backordersEmptyKind(input: {
-  /** 서버가 이 장에 준 미송 수 */
-  received: number;
-  /** 도매처 칩을 건 뒤 남은 수 */
-  visible: number;
+  /** 이 장에 서는 줄 수(`pageOf`의 `rows`) */
+  shown: number;
   paging: BackorderPage;
 }): BackordersEmptyKind | null {
-  if (input.visible > 0) return null;
-  if (input.paging.totalElements === 0) return "none";
-  return input.received === 0 ? "outOfRange" : null;
+  if (input.shown > 0) return null;
+  return input.paging.totalElements === 0 ? "none" : "outOfRange";
 }
 
 /* ────────────────────────────────────────────────────────────────────────

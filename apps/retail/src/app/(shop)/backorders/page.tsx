@@ -7,8 +7,7 @@ import {
   resolvePage,
   resolveSort,
   resolveWholesalerId,
-  toBackorderLine,
-  toBackorderPage,
+  toBackorderLines,
   todayKst,
   wholesalerChips,
   type BackorderWire,
@@ -34,15 +33,25 @@ export default async function Page({
   const params = await searchParams;
   const page = resolvePage(params);
 
-  /* 서버가 아는 파라미터는 `page`·`size` 둘뿐이다. 도매처·정렬은 받은 장 안에서 건다.
+  /* 서버가 아는 파라미터는 `page`·`size` 둘뿐이다. 도매처 거르기 · 정렬 · 장 나누기를
+     화면이 하려면 미송 전부가 있어야 해서 서버 장을 다 받아 합친다(#451). 한 장만 받던
+     때는 101번째 줄부터의 도매처가 칩에 없어서, 알림을 눌러 와도 그 줄이 안 보였다.
      401은 `(shop)` 레이아웃의 `requireSession`이 먼저 걸러 여기까지 안 온다.
      그 밖의 실패는 그대로 던져 `(shop)/error.tsx`가 받는다 */
   const api = await serverApi();
-  const result = await api.fetchPage<BackorderWire>(BACKORDER_API_PATH, {
-    searchParams: { page: page - 1, size: BACKORDER_PAGE_SIZE },
-  });
-
-  const lines = result.items.map(toBackorderLine);
+  const serverPage = (index: number) =>
+    api.fetchPage<BackorderWire>(BACKORDER_API_PATH, {
+      searchParams: { page: index, size: BACKORDER_PAGE_SIZE },
+    });
+  const first = await serverPage(0);
+  const rest = await Promise.all(
+    Array.from({ length: first.meta.totalPages - 1 }, (_, i) =>
+      serverPage(i + 1),
+    ),
+  );
+  const lines = toBackorderLines(
+    [first, ...rest].flatMap((result) => result.items),
+  );
   const allowed = wholesalerChips(lines).map((chip) => chip.id);
 
   /* 떨어뜨린 값이 있으면 화면이 그 사실을 말한다(F2). 상호는 늘 `null`이다 —
@@ -59,7 +68,7 @@ export default async function Page({
       wholesalerId={resolveWholesalerId(params, allowed)}
       sort={resolveSort(params)}
       dropped={droppedId === null ? null : { id: droppedId, name: null }}
-      paging={toBackorderPage(result.meta)}
+      page={page}
     />
   );
 }

@@ -11,16 +11,13 @@ import {
   backordersEmptyKind,
   droppedNoticeText,
   filterByWholesaler,
+  pageOf,
   sortByOrderedAt,
+  sumBackorderQty,
   summarize,
   wholesalerChips,
 } from "../derive";
-import type {
-  BackorderLine,
-  BackorderPage,
-  BackorderSort,
-  DroppedWholesaler,
-} from "../types";
+import type { BackorderLine, BackorderSort, DroppedWholesaler } from "../types";
 
 /**
  * 미송 대기 현황 한 장 — 패널 2개(머리 + 요약 / 툴바 + 표).
@@ -33,8 +30,8 @@ import type {
  * 서버 컴포넌트다. 필터·정렬을 `useState`로 들면 뒤로 가기와 새로고침에서 통째로
  * 사라지고(retail-market F6), 거래처 관리의 미송 배지(RT-66)가 걸 주소도 없어진다.
  *
- * `lines`는 **서버가 준 한 장(100건)**이다. 서버에 도매처·정렬 파라미터가 없어서 필터와
- * 정렬은 이 장 안에서만 걸린다 — 2장 이상이면 `BackorderPager`가 그 사실을 보여준다.
+ * `lines`는 **서버가 가진 미송 전부**다(page가 서버 장을 다 받아 합친다, #451). 거르고
+ * 정렬한 뒤 100줄씩 나눠 그 한 장만 표에 세운다 — 요약은 장이 아니라 `visible` 전체를 센다.
  *
  * 입력칸이 하나도 없다. 소매는 미송을 만들지도 고치지도 못하고(RT-59), 배분은
  * 도매의 일이다(`glossary` §4.8 · §3-0 E) — 읽기 전용인 것이 이 화면의 성격이다.
@@ -45,7 +42,7 @@ export function BackorderView({
   wholesalerId,
   sort,
   dropped,
-  paging,
+  page,
 }: {
   lines: readonly BackorderLine[];
   /** page가 요청 시점에 `todayKst`로 한 번 만든 값. 렌더 중에 `new Date()`를 부르지 않는다 */
@@ -58,20 +55,19 @@ export function BackorderView({
    * 상호는 `features/catalog`만 아는 값이라 page가 찾아 넘긴다.
    */
   dropped: DroppedWholesaler | null;
-  /** 서버 페이지 위치. 2장 이상일 때만 페이저가 서고, `totalElements`가 빈 장의 이유를 가른다 */
-  paging: BackorderPage;
+  /** 주소의 `?page=`(1-base). 마지막 장을 넘으면 빈 장이 되고 빈 상태가 `첫 장으로`를 세운다 */
+  page: number;
 }) {
   const visible = sortByOrderedAt(
     filterByWholesaler(lines, wholesalerId),
     sort,
   );
   const summary = summarize(visible, today);
+  const { rows, paging } = pageOf(visible, page);
+  /* 표 합계 행은 그 위에 선 줄만 더한다. 100줄이 넘으면 요약 카드(전체)와 다를 수 있다 */
+  const rowsQty = sumBackorderQty(rows);
   const droppedNotice = droppedNoticeText(dropped);
-  const empty = backordersEmptyKind({
-    received: lines.length,
-    visible: visible.length,
-    paging,
-  });
+  const empty = backordersEmptyKind({ shown: rows.length, paging });
 
   return (
     <div className="mx-auto max-w-wrap">
@@ -100,15 +96,14 @@ export function BackorderView({
         {empty !== null ? (
           /*
             받은 장이 0건이면 툴바·표·카드·페이저 자리를 통째로 빈 상태로 바꾼다.
-            요약 3카드는 위 패널에 그대로 선다 — `0건 / 총 0장`은 **이 장** 기준이라
-            거짓이 아니다(`BackorderPage` 주석의 한계 그대로).
+            요약 3카드는 위 패널에 그대로 선다 — 범위 밖 장이어도 요약은 미송 전체다.
 
             툴바까지 숨기는 이유: 칩은 `전체` 하나뿐이고 정렬은 뒤집을 행이 없다.
             주문 내역이 0건에도 툴바를 남기는 것은 **필터 때문에** 0건일 수 있어서인데,
             이 화면의 0행은 필터가 만들지 못한다(`backordersEmptyKind` 주석).
 
-            범위 밖 장(`outOfRange`)은 페이저가 안 서서(`totalPages: 1`) 빈 상태 안의
-            `첫 장으로`가 유일한 돌아갈 길이다(#168). 도매처·정렬은 그대로 싣는다.
+            범위 밖 장(`outOfRange`)은 빈 상태 안의 `첫 장으로`가 돌아갈 길이다(#168).
+            도매처·정렬은 그대로 싣는다.
           */
           <EmptyBackorders
             kind={empty}
@@ -136,19 +131,11 @@ export function BackorderView({
               표가 안 잘리는 최소 뷰포트가 744px이라 640px에서 갈면 그 사이가 남는다.
             */}
             <div className="hidden pt-3 tablet:block">
-              <BackorderCards
-                lines={visible}
-                today={today}
-                totalQty={summary.totalQty}
-              />
+              <BackorderCards lines={rows} today={today} totalQty={rowsQty} />
             </div>
 
             <div className="tablet:hidden">
-              <BackorderTable
-                lines={visible}
-                today={today}
-                totalQty={summary.totalQty}
-              />
+              <BackorderTable lines={rows} today={today} totalQty={rowsQty} />
             </div>
 
             <BackorderPager

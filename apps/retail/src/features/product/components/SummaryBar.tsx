@@ -110,11 +110,14 @@ export function SummaryBar({
       </div>
 
       {/* 결과와 이유가 같은 자리에서 바뀐다 — 눈이 한 곳만 보면 된다.
-          role=status라 스크린리더도 누른 뒤에 무슨 일이 있었는지 듣는다 */}
+          role=status라 스크린리더도 누른 뒤에 무슨 일이 있었는지 듣는다.
+          비어도 자리를 남긴다(`text-body` 줄높이 20px). 바닥에 붙은 줄이라 이 줄이
+          사라지면 위의 버튼이 내려가서, 수량을 넣고 바로 누르면 빗나갔다(#451).
+          폰 폭에서는 안내가 두 줄로 접혀서 두 줄 자리를 남긴다 */}
       <p
         role="status"
         className={cn(
-          "text-body mt-2 text-right empty:mt-0",
+          "text-body mt-2 min-h-5 text-right phone:min-h-10",
           /* 못 누르는 이유는 안내라 회색이다. 화면을 열자마자 보이는 글이 빨가면
              오류가 난 것처럼 읽힌다. 빨강은 담기가 실패했을 때뿐이다 */
           failed ? "text-destructive-strong" : "text-muted-foreground",
