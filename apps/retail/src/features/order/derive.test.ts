@@ -178,6 +178,13 @@ describe("productBlocks 사진", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.thumbnailUrl).toBe("https://img/a.jpg");
   });
+  it("첫 조합에 사진이 없으면 뒤 조합 사진을 쓴다", () => {
+    const blocks = productBlocks([
+      { ...base, size: "L", qty: 1, thumbnailUrl: "" },
+      { ...base, size: "M", qty: 1, thumbnailUrl: "https://img/b.jpg" },
+    ]);
+    expect(blocks[0]?.thumbnailUrl).toBe("https://img/b.jpg");
+  });
   it("사진이 없으면 비워 두고 화면은 아이콘을 그린다", () => {
     expect(
       productBlocks([{ ...base, size: "L", qty: 1 }])[0]?.thumbnailUrl,

@@ -49,8 +49,8 @@ export default async function Page({
 
   if (order === null) return <OrderCompleteView order={null} />;
 
-  /* 주문 응답에는 사진이 없다. 게시글 상세의 첫 사진을 붙이고, 못 받은 상품은
-     아이콘 슬롯으로 둔다(완료 화면이 사진 때문에 죽으면 안 된다) */
+  /* 주문 응답에는 사진이 없다. 게시글 상세의 첫 사진을 붙이고, 3초 안에 못 받은
+     상품은 아이콘 슬롯으로 둔다(완료 화면이 사진 때문에 죽으면 안 된다) */
   const productIds = [...new Set(order.lines.map((line) => line.productId))];
   const thumbnails = new Map<string, string>();
   await Promise.all(
@@ -58,7 +58,9 @@ export default async function Page({
       .filter((id) => id !== "")
       .map(async (id) => {
         const url = await api
-          .fetch<ListingDetailWire>(PRODUCT_PATH.detail(Number(id)))
+          .fetch<ListingDetailWire>(PRODUCT_PATH.detail(Number(id)), {
+            signal: AbortSignal.timeout(3_000),
+          })
           .then((detail) => detail.images[0]?.url ?? null)
           .catch(() => null);
         if (url) thumbnails.set(id, url);

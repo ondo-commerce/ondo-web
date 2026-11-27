@@ -31,8 +31,10 @@ export default async function Page({
 
   const api = await serverApi();
   /* 주문서 응답에는 사진이 없다. 같은 cartItemId의 장바구니 행 사진을 같이 받고,
-     실패하면 사진 없이 그린다(주문서가 사진 때문에 죽으면 안 된다) */
-  const cartPromise = api.fetch<CartWire>(CART_PATH.items).catch(() => null);
+     3초 안에 못 받거나 실패하면 사진 없이 그린다(주문서가 사진 때문에 죽으면 안 된다) */
+  const cartPromise = api
+    .fetch<CartWire>(CART_PATH.items, { signal: AbortSignal.timeout(3_000) })
+    .catch(() => null);
   let checkout: CheckoutWire;
   try {
     checkout = await api.fetch<CheckoutWire>(ORDER_API_PATH.checkout, {

@@ -489,6 +489,8 @@ export function productBlocks(lines: readonly ProductLine[]): ProductBlock[] {
     if (block) {
       block.options = `${block.options} / ${option}`;
       block.amount += lineAmount(line);
+      /* 첫 조합에 사진이 없으면 뒤 조합 사진으로 채운다 */
+      block.thumbnailUrl ||= line.thumbnailUrl;
     }
   }
 
