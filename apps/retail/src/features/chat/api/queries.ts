@@ -183,6 +183,20 @@ export function isRoomListSessionLost(error: unknown): boolean {
 }
 
 /**
+ * 옆에 떠 있는 목록을 지금 다시 받는다(#455). 목록과 방이 한 화면이라, 방에서 읽거나 보낸 뒤 15초 갱신을 기다리면
+ * 켜진 행의 안 읽은 수와 마지막 한 줄이 그동안 예전 값으로 남는다. 목록이 화면에 없으면(`active`만) 묻지 않고,
+ * 끊긴 목록은 건드리지 않는다(위 갱신 멈춤 규칙). 도는 요청이 있으면 그걸 쓴다(`cancelRefetch: false`)
+ */
+export function refreshRoomList(queryClient: QueryClient): void {
+  const state = queryClient.getQueryState(chatKeys.rooms());
+  if (isRoomListSessionLost(state?.error) || isSessionLost(queryClient)) return;
+  void queryClient.refetchQueries(
+    { queryKey: chatKeys.rooms(), exact: true, type: "active" },
+    { cancelRefetch: false },
+  );
+}
+
+/**
  * `/chats` 목록(loop-06 S2-4 → loop-08 S4). 장은 `ROOM_LIST_SIZE`(30)씩, `더 보기`가 다음 장을 붙인다.
  *
  * 갱신(§4-4 1): 15초마다, 그리고 탭이 다시 보이면 즉시 1회. TanStack infinite query의 다시 받기는 **받은 장 수만큼
@@ -238,7 +252,9 @@ export function useRoomListQuery() {
     refetchOnMount: (q) =>
       isRoomListSessionLost(q.state.error) ? false : "always",
     refetchOnWindowFocus: (q) =>
-      isRoomListSessionLost(q.state.error) ? false : "always",
+      isRoomListSessionLost(q.state.error) || isSessionLost(queryClient)
+        ? false
+        : "always",
     refetchOnReconnect: false,
   });
 
@@ -253,6 +269,8 @@ export function useRoomListQuery() {
       /* 겹친 회차만 건너뛴다. 다음 회차는 이 타이머 그대로 15초 뒤다 */
       if (state?.fetchStatus === "fetching") return;
       if (isRoomListSessionLost(state?.error)) return;
+      /* 옆 방이 세션 끊김을 봤으면 목록도 묻지 않는다(#455). 한 화면이라 방의 "끊긴 뒤 채팅 요청 0"(S6-5)이 목록까지 걸린다 */
+      if (isSessionLost(queryClient)) return;
       void queryClient.refetchQueries(
         { queryKey: chatKeys.rooms(), exact: true, type: "active" },
         { cancelRefetch: false },

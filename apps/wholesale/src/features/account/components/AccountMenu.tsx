@@ -1,6 +1,6 @@
 "use client";
 
-import { IconButton, Popover } from "@ondo/ui";
+import { Avatar, IconButton, Popover } from "@ondo/ui";
 import { CircleUser, LogOut, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -39,7 +39,13 @@ export function AccountMenu() {
           }
           title="계정"
         >
-          <CircleUser aria-hidden />
+          {/* 상호 첫 글자(#455) — 소매 계정 칩과 같은 모양. 도매 서버엔 아직 `/me`가 없어 실서버 계정은 상호가 비어
+              이메일 첫 글자로 그린다(aria-label과 같은 순서). 세션을 모를 때만 사람 아이콘 */}
+          {account ? (
+            <Avatar size="sm" name={account.storeName || account.email} />
+          ) : (
+            <CircleUser aria-hidden />
+          )}
         </IconButton>
       </Popover.Trigger>
 

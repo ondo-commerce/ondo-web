@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Panel } from "@ondo/ui";
+import { Avatar, Badge, Button, Panel } from "@ondo/ui";
 import { ArrowDown } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
@@ -82,7 +82,11 @@ export function ChatRoomPanel({
         className="my-auto"
         fallback={
           <>
-            {hintName ? <Panel.Title>{hintName}</Panel.Title> : null}
+            {hintName ? (
+              <Panel.Title>
+                <RoomName name={hintName} />
+              </Panel.Title>
+            ) : null}
             <RoomSkeleton />
           </>
         }
@@ -93,7 +97,11 @@ export function ChatRoomPanel({
         }
         errorFallback={({ error, described, retry }) => (
           <>
-            {hintName ? <Panel.Title>{hintName}</Panel.Title> : null}
+            {hintName ? (
+              <Panel.Title>
+                <RoomName name={hintName} />
+              </Panel.Title>
+            ) : null}
             {/* 입력창은 숨긴다 — 못 읽은 방에 보내지 않게(디자인 결정 13).
                 세션이 끊긴 뒤 연 방은 다시 시도해도 같다 — 버튼 없이 이유만 */}
             {isChatSessionLostError(error) ? (
@@ -259,7 +267,7 @@ function ChatRoom({
           ) : null
         }
       >
-        {name}
+        <RoomName name={name} />
       </Panel.Title>
 
       {/* log를 relative 상자로 감싼다 — 새 메시지 버튼이 그 위에 뜬다(디자인 결정 85). 흐름 안에 넣으면 버튼이
@@ -390,3 +398,16 @@ function useNow(): number {
 }
 
 const NOW_TICK_MS = 60_000;
+
+/**
+ * 방 머리 이름 + 목록 행과 같은 첫 글자(#455). 글자는 `::before`라 제목 이름에 안 낀다.
+ * 로딩, 실패 머리도 이걸 써서 다 받는 순간 이름이 옆으로 밀리지 않는다.
+ */
+function RoomName({ name }: { name: string }) {
+  return (
+    <span className="flex items-center gap-3">
+      <Avatar name={name} />
+      {name}
+    </span>
+  );
+}

@@ -178,13 +178,13 @@ export function NotificationBell() {
           className="data-[state=open]:bg-secondary data-[state=open]:text-foreground relative size-8 px-0 phone:size-11"
           data-ac="S2-1 S2-2 S2-8"
         >
-          <Bell aria-hidden className="size-4.5" />
+          <Bell aria-hidden className="size-5" />
           {bell.badge !== null ? (
             /* CartButton 카운터와 같은 모양(결정 47) — 소매 헤더의 숫자 셋이 같은 모양이어야 한다 */
             <span
               aria-hidden
               data-ac="S2-1 S2-2"
-              className="bg-foreground text-card pointer-events-none absolute top-px right-px grid h-4 min-w-4 place-items-center rounded-full px-1 text-xs leading-none tracking-normal tabular-nums"
+              className="bg-primary text-primary-foreground ring-card pointer-events-none absolute -top-0.75 -right-1.25 h-4 min-w-4 rounded-full px-1 text-center text-xs leading-4 font-medium tabular-nums ring-2"
             >
               {bell.badge}
             </span>

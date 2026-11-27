@@ -1,4 +1,5 @@
 import { cn } from "@ondo/ui";
+import { Flame } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
@@ -33,6 +34,8 @@ export function AuthLayout({
         className={cn("w-full", width === "wide" ? "max-w-140" : "max-w-110")}
       >
         <div className="mb-4 flex items-baseline gap-2">
+          {/* 헤더 로고와 같은 마크(#455) */}
+          <Flame aria-hidden className="size-5 shrink-0 self-center" />
           <span className="text-xl tracking-tighter">
             <span className="font-bold">On</span>
             <span className="font-semibold">도마켓</span>

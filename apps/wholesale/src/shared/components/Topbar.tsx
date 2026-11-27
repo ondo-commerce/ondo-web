@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@ondo/ui";
+import { Flame } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -36,12 +37,11 @@ export function Topbar({
     <header className="bg-card border-border flex h-14 shrink-0 items-center gap-6 border-b px-5">
       <Link
         href="/dashboard"
-        className="flex shrink-0 items-center gap-1"
+        className="flex shrink-0 items-center gap-1.5"
         title="온도 ERP"
       >
-        <span aria-hidden className="text-xl">
-          ⌘
-        </span>
+        {/* 로고 마크(#455, 사용자가 후보 넷 중 고름). 예전 `⌘`는 맥 Command 키로 읽혀 뺐다. 소매 로고에도 같은 마크다 */}
+        <Flame aria-hidden className="size-5 shrink-0" />
         <span className="text-lg font-bold tracking-tighter">온도 ERP</span>
       </Link>
 

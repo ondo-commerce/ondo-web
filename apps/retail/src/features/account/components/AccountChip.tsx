@@ -7,7 +7,7 @@ import { clearHeaderSession } from "@/shared/api/headerCounts";
 import { AccountMenu } from "@/shared/components/AccountMenu";
 import { useLogoutMutation } from "../api/session";
 import { ACCOUNT_PATH } from "../constants";
-import { otherTabActionOf, storeInitial } from "../derive";
+import { otherTabActionOf } from "../derive";
 import {
   broadcastSessionChange,
   runSessionChange,
@@ -92,11 +92,5 @@ export function AccountChip({
     [queryClient, retailerId],
   );
 
-  return (
-    <AccountMenu
-      storeName={storeName}
-      initial={storeInitial(storeName)}
-      onLogout={logout}
-    />
-  );
+  return <AccountMenu storeName={storeName} onLogout={logout} />;
 }

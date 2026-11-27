@@ -1,21 +1,21 @@
 "use client";
 
 import { Button, cn } from "@ondo/ui";
-import { Heart, Search } from "lucide-react";
+import { Flame, Heart, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GlobalSearch } from "@/shared/components/GlobalSearch";
 
 /**
- * 소매 상단 헤더 — 로고 · 통합 검색 · 주문 내역 · 찜 · 채팅 · 장바구니 · 계정.
+ * 소매 상단 헤더 — 로고 · 통합 검색 · 찜 · 채팅 · 장바구니 · 계정.
  *
  * 도매 `Topbar`를 복사하지 않았다. 도매 헤더의 내용물은 주 메뉴 7탭이고
  * 소매는 검색 + 아이콘 + 계정 드롭다운이다. 도매 쪽은 화면 전체 스크롤이 없어
  * sticky가 필요 없지만, 문서형으로 흐르는 소매는 sticky여야 늘 같은 자리에 남는다.
  *
  * 규격은 확정 와이어프레임 `15_retail-hallmark/_base.css` 실측값이다 —
- * 높이 56 · 좌우 20 · 간격 20 · 아이콘 버튼 32 · 검색 340×36(SearchInput 기본값) ·
- * 로고 14(본문 크기 그대로).
+ * 높이 56 · 좌우 20 · 간격 20 · 아이콘 버튼 32 · 검색 340×36(SearchInput 기본값).
+ * 로고 크기, 아이콘 20px, 안 읽은 수 배지는 도매 `Topbar`에 맞췄다(#455) — 두 앱 헤더가 다르게 생겨 보였다.
  * 알림 아이콘은 채팅(loop-06 06a)과 알림 종(06b) 둘이다. 종은 채팅 오른쪽, 장바구니 왼쪽(디자인 결정 47).
  *
  * **채팅 배지, 알림 종, 장바구니 뱃지, 계정 칩은 이 파일이 만들지 않는다.** 안 읽은 수를 아는 것은
@@ -67,11 +67,15 @@ export function Header({
         )}
       >
         <Link href="/" className="flex shrink-0 items-baseline gap-1.5">
-          {/* 원본은 `On`이 파랑이지만 게이트 D1로 색을 쓰지 않는다 — 굵기로만 가른다 */}
-          {/* 크기를 따로 주지 않는다 — 와이어프레임 `.brand`도 본문 14px 그대로다 */}
-          <span className="text-sm tracking-tighter">
-            <span className="font-bold">On</span>
-            <span className="font-semibold">도마켓</span>
+          {/* 도매 `온도 ERP` 로고와 같은 마크와 18px 굵게(#455). 색은 쓰지 않는다.
+              마크는 폰에서 숨긴다 — 그 폭은 검색칸 몫이다(06b 결정 48) */}
+          <Flame
+            aria-hidden
+            className="size-5 shrink-0 self-center phone:hidden"
+          />
+          {/* 폰은 한 단계 작게 — 18px이면 390 검색칸이 하한 90에 1px 모자란다(06b 결정 48) */}
+          <span className="text-lg font-bold tracking-tighter phone:text-base">
+            On도마켓
           </span>
           {/* 꼬리표는 좁은 화면에서 사라진다 — `_base.css:331` `.brand .tag` */}
           <span className="text-muted-foreground text-body tablet:hidden">
@@ -83,13 +87,8 @@ export function Header({
 
         {/* 360 미만은 아이콘 사이 4 → 0(결정 49). 44 버튼 넷 + 계정 칩이 288px에 들어간다 */}
         <div className="ml-auto flex shrink-0 items-center gap-1 narrow:gap-0">
-          {/* 텍스트 링크는 ≤40rem에서 사라진다 — `_base.css:338` `.tlink`.
-              같은 자리는 계정 드롭다운의 `주문 내역` 항목이 대신 받는다 */}
-          <Button asChild variant="ghost" className="px-3 phone:hidden">
-            <Link href="/orders">주문 내역</Link>
-          </Button>
-
-          {/* 360 미만에서 검색칸 대신. 주문 내역 자리(채팅 앞)에 선다(결정 49) */}
+          {/* `주문 내역` 글자 버튼은 뺐다(#455). 계정 드롭다운에 같은 항목이 있다 */}
+          {/* 360 미만에서 검색칸 대신. 채팅 앞에 선다(결정 49) */}
           {/* ref는 안쪽 button에 — packages/ui `Button` 타입이 ref를 받지 않는다(읽기 전용이라 asChild로 넘긴다) */}
           <Button
             asChild
@@ -104,7 +103,7 @@ export function Header({
               onClick={() => setSearchOpen(true)}
               data-ac="S2-8"
             >
-              <Search aria-hidden className="size-4.5" />
+              <Search aria-hidden className="size-5" />
             </button>
           </Button>
 
@@ -117,7 +116,7 @@ export function Header({
             data-ac="S2-8"
           >
             <Link href="/wishlist" aria-label="찜 목록">
-              <Heart aria-hidden className="size-4.5" />
+              <Heart aria-hidden className="size-5" />
             </Link>
           </Button>
 
