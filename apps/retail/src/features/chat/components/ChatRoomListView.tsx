@@ -1,13 +1,19 @@
 "use client";
 
-import { Button, Panel, cn } from "@ondo/ui";
+import { Avatar, Button, Panel, cn } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef } from "react";
 import { isRoomListSessionLost, useRoomListQuery } from "../api/queries";
-import { APPROVAL_PATH, LIST_TEXT, LOGIN_PATH } from "../constants";
+import { useChatSessionLost } from "../api/session";
+import {
+  APPROVAL_PATH,
+  CHAT_BLOCK_HEIGHT,
+  LIST_TEXT,
+  LOGIN_PATH,
+} from "../constants";
 import { moreStateOf, toRoomRows } from "../derive";
 import type { ChatRoomRowView, MoreState } from "../types";
 import { useListAnchor } from "../useListAnchor";
@@ -18,40 +24,62 @@ import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
  * 15초마다 받은 장 전부를 첫 장부터 다시 받는다. 갱신은 화면에 표시하지 않는다(결정 63).
  * 목록에선 읽음을 보내지 않는다. 방을 열어야 읽힌다.
  *
- * 패널 하나 안에서 머리(h1)는 늘 그리고 그 아래가 막대, 빈 상태, 실패, 행으로 갈린다. 소매 셸은 문서형
- * 스크롤이라 행이 많으면 페이지가 내려간다(목록 안 스크롤 없음).
+ * 패널 하나 안에서 머리는 늘 그리고 그 아래가 막대, 빈 상태, 실패, 행으로 갈린다.
+ *
+ * `ChatSplitView`의 왼쪽 칸이다(#455). 넓은 화면에선 방 블록과 같은 높이로 서고 행은 패널 안에서 스크롤한다
+ * (방 화면 페이지 스크롤 0, S5-9). 폰(≤40rem)은 목록만 따로 보여 예전처럼 문서가 스크롤한다.
  */
-export function ChatRoomListView() {
+export function ChatRoomListView({
+  selectedRoomId,
+  roomOpen,
+}: {
+  /** 오른쪽에 열린 방. 그 행을 켠다 */
+  selectedRoomId: number | null;
+  /** 오른쪽에 방(또는 없는 방 안내)이 있으면 그쪽 이름이 h1이다 — 목록 머리는 h2로 내린다 */
+  roomOpen: boolean;
+}) {
   const headingId = useId();
+  const Heading = roomOpen ? "h2" : "h1";
   return (
-    <div className="mx-auto max-w-wrap">
-      <Panel
-        role="region"
-        aria-labelledby={headingId}
-        data-ac="S2-4"
-        /* 브라우저 scroll anchoring을 끈다(loop-08e S4, §4-4 4). 갱신 보정은 `useListAnchor`가 한다 — 브라우저는
-           DOM 순서로 첫 보이는 노드를 붙잡아 맨 위로 올라간 행을 기준으로 삼을 수 있고, 켜 두면 같은 변경을 두 번
-           옮긴다. 이 패널 밖(셸)은 브라우저 기본 그대로다 */
-        className="gap-0 [overflow-anchor:none]"
+    <Panel
+      role="region"
+      aria-labelledby={headingId}
+      data-ac="S2-4"
+      /* 브라우저 scroll anchoring을 끈다(loop-08e S4, §4-4 4). 갱신 보정은 `useListAnchor`가 한다 — 브라우저는
+         DOM 순서로 첫 보이는 노드를 붙잡아 맨 위로 올라간 행을 기준으로 삼을 수 있고, 켜 두면 같은 변경을 두 번
+         옮긴다. 넓은 화면은 패널 칸(`data-list-scroll`), 폰은 문서가 스크롤하고 훅이 둘 다 본다 */
+      className={cn(
+        CHAT_BLOCK_HEIGHT,
+        "gap-0 [overflow-anchor:none] phone:h-auto phone:min-h-0",
+      )}
+    >
+      <div className="mb-4 flex items-center">
+        <Heading id={headingId} className="text-xl font-medium">
+          {LIST_TEXT.title}
+        </Heading>
+      </div>
+      {/* 이 칸도 따로 끈다 — 넓은 화면에선 이 칸이 스크롤 컨테이너라 위 Panel의 값이 여기 보정까지 막지는 못한다
+          (overflow-anchor는 상속되지 않는다). 안 끄면 브라우저와 훅이 같은 갱신을 두 번 옮겨 맨 위로 튄다 */}
+      <Panel.Body
+        data-list-scroll
+        className="[overflow-anchor:none] phone:overflow-visible"
       >
-        <div className="mb-4 flex items-center">
-          <h1 id={headingId} className="text-xl font-medium">
-            {LIST_TEXT.title}
-          </h1>
-        </div>
-        <ListBody />
-      </Panel>
-    </div>
+        <ListBody selectedRoomId={selectedRoomId} />
+      </Panel.Body>
+    </Panel>
   );
 }
 
-function ListBody() {
+function ListBody({ selectedRoomId }: { selectedRoomId: number | null }) {
   const router = useRouter();
   const query = useRoomListQuery();
   const notApproved =
     isApiError(query.error) &&
     query.error.code === RETAIL_ERROR_CODE.ACCOUNT_NOT_APPROVED;
   const sessionLost = isRoomListSessionLost(query.error);
+  /* 옆 방이 세션 끊김을 본 경우만 행을 전체 이동으로 바꾼다. 목록만 끊긴 경우(S4-7)는 클라이언트 이동 그대로 —
+     방 화면이 자기 첫 조회에서 끊김을 처리하고, 돌아와도 받은 행과 안내 줄이 남아야 한다 */
+  const roomSessionLost = useChatSessionLost();
   /* 15초 갱신과 끊김 안내 줄이 보던 행을 밀지 않게(loop-08e S4). 아래 이른 return 전에 부른다 */
   const listRef = useRef<HTMLUListElement>(null);
   useListAnchor(listRef, query.data, sessionLost);
@@ -102,7 +130,11 @@ function ListBody() {
         <ul ref={listRef} aria-label={LIST_TEXT.label} className="grid gap-1">
           {rows.map((row) => (
             <li key={row.roomId}>
-              <RoomRow row={row} />
+              <RoomRow
+                row={row}
+                selected={row.roomId === selectedRoomId}
+                documentNav={roomSessionLost}
+              />
             </li>
           ))}
         </ul>
@@ -199,14 +231,33 @@ function Spinner() {
  * 행 — `<a>` 하나에 두 줄(loop-04 디자인 결정 3 그대로). 1줄 도매처명(안 읽은 방만 강조) + 시각,
  * 2줄 마지막 한 줄(muted, 말줄임) + 안 읽은 수 알약(primary). 알약 글자는 숨기고 수는 이름 끝에 붙인다.
  */
-function RoomRow({ row }: { row: ChatRoomRowView }) {
+function RoomRow({
+  row,
+  selected,
+  documentNav,
+}: {
+  row: ChatRoomRowView;
+  selected: boolean;
+  /**
+   * 세션이 끊긴 뒤엔 `<a href>` 전체 이동(방 머리 `RoomHead`와 같은 이유, S6-14). 클라이언트 이동이면 RSC 요청이
+   * 401을 받아 오류 화면으로 갈 수 있다. 새 문서 요청이면 서버의 `requireSession`이 `/login`으로 보낸다
+   */
+  documentNav: boolean;
+}) {
+  const Anchor = documentNav ? "a" : Link;
   return (
-    <Link
+    <Anchor
       href={row.href}
+      aria-current={selected ? "page" : undefined}
       data-room-id={row.roomId}
       data-ac="S2-4"
-      className="hover:bg-secondary focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 rounded-control px-4 py-4 focus-visible:ring-2 focus-visible:outline-hidden"
+      /* 첫 글자 아바타가 두 줄을 차지한다(#455) — 줄끼리 누구 방인지 먼저 보인다. 켜진 행은 도매 목록과 같은 accent 면 */
+      className={cn(
+        "focus-visible:ring-ring grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1 rounded-control px-4 py-4 focus-visible:ring-2 focus-visible:outline-hidden",
+        selected ? "bg-accent" : "hover:bg-secondary",
+      )}
     >
+      <Avatar name={row.name} className="row-span-2 self-center" />
       <span
         title={row.name}
         className={cn("truncate text-sm", row.unreadCount > 0 && "font-medium")}
@@ -234,7 +285,7 @@ function RoomRow({ row }: { row: ChatRoomRowView }) {
       {row.unreadCount > 0 ? (
         <span className="sr-only">{LIST_TEXT.unreadSr(row.unreadCount)}</span>
       ) : null}
-    </Link>
+    </Anchor>
   );
 }
 
@@ -243,7 +294,12 @@ function ListSkeleton() {
   return (
     <div role="status" aria-label={LIST_TEXT.loading} className="grid gap-1">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="grid gap-1 px-4 py-4">
+        <div
+          key={i}
+          className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-4"
+        >
+          {/* 아바타 자리. 다 받은 뒤 행이 옆으로 밀리지 않는다 */}
+          <div className="bg-muted row-span-2 size-10 animate-pulse rounded-xl" />
           <div className="bg-muted h-5 w-3/10 animate-pulse rounded-control" />
           <div className="bg-muted h-5 w-7/10 animate-pulse rounded-control" />
         </div>

@@ -4,6 +4,7 @@ import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { chatKeys } from "./api/keys";
 import { useSendMessageMutation } from "./api/mutations";
+import { refreshRoomList } from "./api/queries";
 import {
   chatAccountEpoch,
   isChatLeaving,
@@ -100,6 +101,8 @@ export function useChatOutbox() {
           update(roomId, (list) =>
             list.filter((p) => p.clientMessageId !== item.clientMessageId),
           );
+          /* 옆 목록의 마지막 한 줄이 방금 보낸 글이 되게(#455) */
+          refreshRoomList(queryClient);
         },
         (error: unknown) => {
           /* 401은 `guardSession`이 이미 그 방 화면의 끊김으로 표시했다(떠난 화면이면 안 했다). 여기는 말풍선 갈래만 */

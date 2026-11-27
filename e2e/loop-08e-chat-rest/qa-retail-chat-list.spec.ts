@@ -30,14 +30,24 @@ async function topOf(page: Page, roomId: number) {
   return page.evaluate(
     ({ selector, roomId }) => {
       const header = document.querySelector("header");
+      /* #455부터 1280은 목록이 방 옆 패널 칸 안에서 스크롤한다. 폰은 문서다(`retail-chat-list-anchor.spec.ts`와 같은 판정) */
+      const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+      const panel =
+        sc !== null && getComputedStyle(sc).overflowY !== "visible" ? sc : null;
       const row = document.querySelector(
         `${selector}[data-room-id="${roomId}"]`,
       );
       return {
         top: row?.getBoundingClientRect().top ?? Number.NaN,
-        headerBottom: header?.getBoundingClientRect().bottom ?? 0,
-        scrollY: window.scrollY,
-        maxScroll: document.documentElement.scrollHeight - window.innerHeight,
+        headerBottom:
+          panel?.getBoundingClientRect().top ??
+          header?.getBoundingClientRect().bottom ??
+          0,
+        scrollY: panel?.scrollTop ?? window.scrollY,
+        maxScroll:
+          panel === null
+            ? document.documentElement.scrollHeight - window.innerHeight
+            : panel.scrollHeight - panel.clientHeight,
         overflowX: document.documentElement.scrollWidth - window.innerWidth,
       };
     },
@@ -51,16 +61,23 @@ async function scrollRowToHeader(page: Page, position: number) {
     ({ selector, position }) =>
       new Promise<number>((resolve) => {
         const header = document.querySelector("header")!;
+        const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+        const panel =
+          sc !== null && getComputedStyle(sc).overflowY !== "visible"
+            ? sc
+            : null;
         const row = document.querySelectorAll(selector)[position - 1]!;
-        const off = () =>
-          row.getBoundingClientRect().top -
-          header.getBoundingClientRect().bottom;
+        const edge = () =>
+          panel === null
+            ? header.getBoundingClientRect().bottom
+            : panel.getBoundingClientRect().top;
+        const off = () => row.getBoundingClientRect().top - edge();
         const dy = off();
         if (Math.abs(dy) < 0.5) return resolve(off());
-        window.addEventListener("scroll", () => resolve(off()), {
+        (panel ?? window).addEventListener("scroll", () => resolve(off()), {
           once: true,
         });
-        window.scrollBy(0, dy);
+        (panel ?? window).scrollBy(0, dy);
       }),
     { selector: LIST_ROW, position },
   );

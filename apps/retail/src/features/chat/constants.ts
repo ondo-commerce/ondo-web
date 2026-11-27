@@ -102,6 +102,8 @@ export const ENTRY_TEXT = {
 
 /** 방 텍스트. 소매 사장 시점이다 — 도매의 "소매처가 문의하면"을 뒤집었다(§4-5 표) */
 export const ROOM_TEXT = {
+  /** `/chats` 오른쪽 빈 자리(#455) */
+  pick: "대화를 고르면 여기에 열려요",
   logLabel: "대화",
   /** 방 블록 이름 `무드온 대화` */
   regionSuffix: " 대화",
@@ -141,6 +143,15 @@ export const ROOM_TEXT = {
 
 /** 채팅 목록 주소. 헤더 링크가 가는 곳이고, 그 목록에서 연 방의 `?from=` 값이다 */
 export const CHATS_HREF = "/chats";
+
+/**
+ * 방 블록과 목록 패널의 높이(#455, 원래 방 블록 값). 둘이 나란히 서므로 한 값을 같이 쓴다.
+ * 근거와 하한은 `ChatRoomView`의 `BLOCK_HEIGHT` 주석
+ */
+export const CHAT_BLOCK_HEIGHT = "h-[calc(100dvh-73px)] min-h-112";
+
+/** 폰 폭. 목록과 방을 따로 보이는 기준이다 — `globals.css`의 `phone` variant와 같은 값 */
+export const PHONE_QUERY = "(width <= 40rem)";
 
 /* 헤더 count 주기와 실패 간격은 `shared/headerCounts.ts`(06b 알림 종과 같이 쓴다) */
 

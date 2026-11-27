@@ -238,7 +238,8 @@ test.describe("디자인 토큰(와이어프레임 _base.css 대조)", () => {
       seen: [true, true],
       wrapMax: "576px",
       logGap: "8px",
-      contentWidths: ["768px", "768px"],
+      /* 1470 폭에서 왼쪽 목록(448)이 같은 화면에 서서(#455) 방 안쪽 폭이 768 상한에 못 미친다 */
+      contentWidths: ["690px", "690px"],
       h1: ["20px", "28px"],
       headMb: "16px",
       back: [true, true],

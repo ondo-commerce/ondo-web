@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Panel } from "@ondo/ui";
+import { Avatar, Button, Panel } from "@ondo/ui";
 import { isApiError } from "@ondo/api";
 import { ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
@@ -16,7 +16,7 @@ import { ReceivableReplyCard } from "./ReceivableReplyCard";
 import { StockReplyCard } from "./StockReplyCard";
 import { refreshHeaderCounts } from "@/shared/api/headerCounts";
 import { useMarkReadMutation } from "../api/mutations";
-import { useRoomQueries } from "../api/queries";
+import { refreshRoomList, useRoomQueries } from "../api/queries";
 import {
   isChatSessionLostError,
   useChatLeaving,
@@ -25,6 +25,7 @@ import {
 } from "../api/session";
 import {
   APPROVAL_PATH,
+  CHAT_BLOCK_HEIGHT,
   COUNTERPART_SENDER,
   LOGIN_PATH,
   ROOM_TEXT,
@@ -82,10 +83,11 @@ import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
  * 하한 448(`min-h-112`, 디자인 결정 13). 이보다 낮은 창(390x480, 가로 모드)에선 블록이 하한을 지키고
  * 그때만 페이지가 스크롤한다(S5-15). `dvh`라 모바일 주소창이 접히고 펴질 때도 따라간다.
  */
-const BLOCK_HEIGHT = "relative h-[calc(100dvh-73px)] min-h-112";
+const BLOCK_HEIGHT = `relative ${CHAT_BLOCK_HEIGHT}`;
 
 /**
- * 소매 채팅방 `/chats/{roomId}`. 목록 없이 방 하나다(01-plan §3 in 2). 방 머리와 메시지는 브라우저에서
+ * 소매 채팅방 `/chats/{roomId}`. 넓은 화면에선 `ChatSplitView`가 왼쪽에 목록을 두고 이 블록을 오른쪽에 세운다(#455).
+ * 방 머리와 메시지는 브라우저에서
  * 받는다 — 목이 브라우저 MSW라 서버 fetch로는 닿지 않는다(§4-2 1).
  *
  * 블록(패널)은 상태와 상관없이 같은 자리, 같은 높이에 있고 로딩, 없는 방, 실패가 그 안에서 그려진다.
@@ -107,6 +109,20 @@ export function ChatRoomView({
   useResetChatSessionOnLeave(roomId);
   return (
     <ChatBlock key={roomId} roomId={roomId} from={from} addToCart={addToCart} />
+  );
+}
+
+/**
+ * `/chats`의 오른쪽 자리(#455). 방 블록과 같은 높이라 방을 고르면 그 자리에 그대로 들어선다.
+ * 도매(`ROOM_TEXT.pick`)는 방이 0개면 문구를 숨기지만 여기선 목록 상태를 모른다 — 0개여도 틀리지 않는 말로 쓴다.
+ */
+export function ChatRoomPick() {
+  return (
+    <Panel className={BLOCK_HEIGHT}>
+      <p className="text-muted-foreground my-auto text-center text-sm">
+        {ROOM_TEXT.pick}
+      </p>
+    </Panel>
   );
 }
 
@@ -527,7 +543,10 @@ function useMarkRead(
         const before = confirmed.current;
         confirmed.current = confirmedReadOf(before, result);
         if (inFlight.current === target) inFlight.current = 0;
-        if (confirmed.current > before) void refreshHeaderCounts(queryClient);
+        if (confirmed.current > before) {
+          void refreshHeaderCounts(queryClient);
+          refreshRoomList(queryClient);
+        }
       },
       () => {
         if (inFlight.current === target) inFlight.current = 0;
@@ -644,10 +663,12 @@ function RoomHead({
   documentNav?: boolean;
 }) {
   /* ≤40rem 높이 44 — 손가락 기준, 문의하기 버튼과 같다(와이어프레임 .rtitle .home, QA F4) */
+  /* 넓은 화면에서 `채팅 목록`을 누르면 방이 닫히고 오른쪽이 빈 자리로 돌아간다(#455) */
   const className =
     "text-muted-foreground hover:text-foreground text-body flex shrink-0 items-center gap-0.5 whitespace-nowrap phone:min-h-11";
   return (
     <div data-ac="S5-5 S5-13 S5-15" className="mb-4 flex items-center gap-3">
+      <Avatar name={name} />
       <h1 title={name} className="min-w-0 flex-1 truncate text-xl font-medium">
         {name}
       </h1>
