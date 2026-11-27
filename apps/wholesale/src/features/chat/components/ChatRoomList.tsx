@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, cn, Panel, SearchInput, Segmented } from "@ondo/ui";
+import { Avatar, Button, cn, Panel, SearchInput, Segmented } from "@ondo/ui";
 import { CornerDownLeft } from "lucide-react";
 import Link from "next/link";
 import type { KeyboardEvent, RefObject } from "react";
@@ -241,7 +241,12 @@ function ListSkeleton({ rows }: { rows: number }) {
   return (
     <div role="status" aria-label="불러오는 중">
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="grid gap-2 px-3 py-2.5">
+        <div
+          key={i}
+          className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 px-3 py-2.5"
+        >
+          {/* 아바타 자리. 다 받은 뒤 행이 옆으로 밀리지 않는다 */}
+          <div className="bg-muted row-span-2 size-10 animate-pulse rounded-xl" />
           <div className="bg-muted h-4 w-2/5 animate-pulse rounded-control" />
           <div className="bg-muted h-4 w-4/5 animate-pulse rounded-control" />
         </div>
@@ -422,10 +427,12 @@ function ChatRoomRow({
       onFocus={onFocus}
       onClick={onOpen}
       className={cn(
-        "group focus-visible:ring-ring grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 rounded-control px-4 py-3.5 focus-visible:ring-2 focus-visible:outline-hidden",
+        "group focus-visible:ring-ring grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 rounded-control px-4 py-3.5 focus-visible:ring-2 focus-visible:outline-hidden",
         selected ? "bg-accent" : "hover:bg-secondary",
       )}
     >
+      {/* 소매처 첫 글자(#455). 두 줄을 차지해 줄끼리 누구 방인지 먼저 보인다 */}
+      <Avatar name={row.name} className="row-span-2 self-center" />
       <span
         className={cn(
           "truncate",

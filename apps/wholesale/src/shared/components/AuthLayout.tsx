@@ -1,4 +1,5 @@
 import { cn } from "@ondo/ui";
+import { Flame } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
@@ -38,12 +39,10 @@ export function AuthLayout({
         <div
           className={cn("w-full", width === "wide" ? "max-w-140" : "max-w-110")}
         >
-          {/* 로고 마크 `⌘`와 글자는 `Topbar`가 쓰는 것 그대로다 — 로그인하고
+          {/* 로고 글자는 `Topbar`가 쓰는 것 그대로다 — 로그인하고
               들어갔을 때 같은 로고가 헤더 왼쪽에 있어야 한 앱으로 읽힌다 */}
           <div className="mb-4 flex items-baseline gap-2">
-            <span aria-hidden className="text-xl tracking-tighter">
-              ⌘
-            </span>
+            <Flame aria-hidden className="size-5 shrink-0 self-center" />
             <span className="text-xl font-bold tracking-tighter">온도 ERP</span>
             <span className="text-muted-foreground text-body">
               동대문 도매 관리
