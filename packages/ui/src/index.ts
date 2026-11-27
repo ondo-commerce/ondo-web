@@ -1,4 +1,5 @@
 /* primitives — HTML 요소 대체재 수준. 도메인 지식 0 */
+export { Avatar, type AvatarProps } from "./primitives/Avatar";
 export { Badge, type BadgeProps } from "./primitives/Badge";
 export { Button, type ButtonProps } from "./primitives/Button";
 export { Checkbox, type CheckboxProps } from "./primitives/Checkbox";
