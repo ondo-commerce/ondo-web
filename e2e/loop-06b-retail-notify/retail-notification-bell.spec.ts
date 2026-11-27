@@ -361,8 +361,10 @@ test("S2-4 닫혀 있으면 목록 0, 열면 1회. 첫 행 title, body, 어제 �
   await expect(first).toHaveAttribute("data-id", String(SEED_FIRST));
   await expect(first).toHaveAttribute("data-unread", "true");
   await expect(first).toContainText("무드온 미송 입고일 변경");
+  /* #465 본문은 두 줄(상품 남은 N장 / 입고일: 전 → 후) */
+  await expect(first).toContainText("린넨 셋업 자켓 베이지/L 남은 2장");
   await expect(first).toContainText(
-    `린넨 셋업 자켓 베이지/L 남은 2장, ${fmtEta(plus(R, 5))} → ${fmtEta(plus(R, 7))}`,
+    `입고일: ${fmtEta(plus(R, 5))} → ${fmtEta(plus(R, 7))}`,
   );
   await expect(first).toContainText(YESTERDAY_1420);
 

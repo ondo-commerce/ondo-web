@@ -8,7 +8,12 @@ import type { MouseEvent, ReactNode, RefObject } from "react";
 import { useNotificationListQuery } from "../api/queries";
 import { markAllText, PANEL_TEXT } from "../constants";
 import { flattenPages, hasNewer, toNotificationRow, unreadOf } from "../derive";
-import type { HeaderCounts, NotificationRowView, PanelNotice } from "../types";
+import type {
+  EtaBody,
+  HeaderCounts,
+  NotificationRowView,
+  PanelNotice,
+} from "../types";
 
 /** 버튼 안 작은 회전 표시. 채팅 보내는 중과 같은 모양 */
 function Spinner() {
@@ -286,6 +291,26 @@ const ROW_CLASS =
   "focus-visible:ring-ring grid w-full grid-cols-[0.5rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-control py-2.5 pr-3 pl-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset aria-disabled:cursor-default phone:min-h-11";
 
 /**
+ * 미송 입고일 본문 두 줄. 한 줄로 이어 쓰면 남은 장수와 새 날짜가 문장에 묻혀서
+ * 나눴다(#465). 안 읽은 알림만 장수와 새 날짜를 파란 글씨로 — 읽은 알림은 원래 색이다
+ */
+function EtaLines({ eta, unread }: { eta: EtaBody; unread: boolean }) {
+  const em = cn(unread && "text-primary");
+  return (
+    <span className="text-muted-foreground col-span-2 col-start-2 flex flex-col text-body">
+      <span className="line-clamp-2">
+        {eta.item} {PANEL_TEXT.etaLeft} <span className={em}>{eta.qty}</span>
+      </span>
+      <span>
+        {PANEL_TEXT.etaLabel} {eta.from === null ? null : `${eta.from} → `}
+        <span className={em}>{eta.to}</span>
+        {eta.from === null ? ` ${PANEL_TEXT.etaFixed}` : null}
+      </span>
+    </span>
+  );
+}
+
+/**
  * 행 하나(디자인 결정 57, 도매 결정 30). 점 8 + title + 오른쪽 시각, 아래 body **두 줄까지**(결정 51 — 한 줄이면
  * 360 패널에서 "→ 11/8(일)" 새 날짜가 잘린다). 종류 아이콘은 없다(title 끝말이 종류).
  * 갈 곳이 있으면 행 전체가 `<a>` 하나, 없으면(모르는 type, kind) `<button>` — 안에 다른 버튼을 두지 않는다.
@@ -322,7 +347,9 @@ function NotificationRow({
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
         {row.time}
       </span>
-      {row.body !== null ? (
+      {row.eta !== null ? (
+        <EtaLines eta={row.eta} unread={row.unread} />
+      ) : row.body !== null ? (
         <span className="text-muted-foreground col-span-2 col-start-2 line-clamp-2 text-body">
           {row.body}
         </span>

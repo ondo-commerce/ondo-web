@@ -1,6 +1,7 @@
 import { BACKORDERS_HREF, BADGE_MAX, ORDER_HREF } from "./constants";
 import type {
   BadgeView,
+  EtaBody,
   FetchedNotificationPage,
   HeaderCounts,
   Notification,
@@ -111,6 +112,25 @@ function targetHref(target: Notification["target"]): string | null {
   return null;
 }
 
+/* `상품 색/사이즈 남은 N장, 전 → 후`. 전과 후는 `11/5(목)` 꼴이거나 `입고일 미정` */
+const ETA_BODY = /^(.+) 남은 (\d+장), (.+) → (.+)$/;
+const UNSET = "미정";
+const dropPrefix = (s: string) => s.replace(/^입고일\s*/, "");
+
+/** 미송 입고일 본문을 두 줄용으로 나눈다. 꼴이 다르면(주문 알림 등) null — 원문을 그린다 */
+export function parseEtaBody(body: string | null): EtaBody | null {
+  const m = body === null ? null : ETA_BODY.exec(body);
+  if (!m) return null;
+  const [, item = "", qty = "", rawFrom = "", rawTo = ""] = m;
+  const from = dropPrefix(rawFrom);
+  return {
+    item,
+    qty,
+    from: from === UNSET ? null : from,
+    to: dropPrefix(rawTo),
+  };
+}
+
 /**
  * wire → 행(S2-5). 모르는 type이면 body를 버리고 href 없음 — `<button>`으로 그려 읽음만 한다.
  * 아는 type이어도 target kind를 모르면 같다.
@@ -120,10 +140,12 @@ export function toNotificationRow(
   nowMs: number,
 ): NotificationRowView {
   const href = KNOWN_TYPES.has(n.type) ? targetHref(n.target) : null;
+  const body = href === null ? null : n.body;
   return {
     id: n.id,
     title: n.title,
-    body: href === null ? null : n.body,
+    body,
+    eta: parseEtaBody(body),
     time: relativeTime(n.createdAt, nowMs),
     unread: n.readAt === null,
     href,

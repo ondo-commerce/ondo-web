@@ -40,12 +40,29 @@ export interface BadgeView {
   badge: string | null;
 }
 
+/**
+ * 미송 입고일 알림 본문 `린넨 반팔 셔츠 아이보리/L 남은 28장, 입고일 미정 → 12/9(수)`를
+ * 두 줄로 그리려고 나눈 값. 서버는 한 줄 문장만 준다
+ */
+export interface EtaBody {
+  /** `린넨 반팔 셔츠 아이보리/L` */
+  item: string;
+  /** `28장` */
+  qty: string;
+  /** 바뀌기 전 날짜. 처음 지정(전이 `미정`)이면 null이고 화면은 `확정`을 붙인다 */
+  from: string | null;
+  /** 새 날짜 `12/9(수)`. 날짜가 지워졌으면 `미정` */
+  to: string;
+}
+
 /** 패널 행 하나 */
 export interface NotificationRowView {
   id: number;
   title: string;
   /** 본문(두 줄까지). 모르는 type이면 null(title만 그린다) */
   body: string | null;
+  /** 미송 입고일 본문을 나눈 값. 꼴이 다르면 null이고 `body`를 그대로 그린다 */
+  eta: EtaBody | null;
   /** "방금", "3분 전", "10/28 14:20" */
   time: string;
   unread: boolean;
