@@ -3,6 +3,7 @@ import { LINE_PENDING_NOTE, backorderNote } from "./constants";
 import {
   backorderCount,
   lineStatusNote,
+  productBlocks,
   shownBackorderQty,
   toOrderDetail,
   toOrderSummary,
@@ -159,5 +160,27 @@ describe("toOrderSummary 미송 장수", () => {
         summary({ wholesalerCount: 2, wholesalerNames: ["라온", "무드온"] }),
       ).backorderQty,
     ).toBe(10);
+  });
+});
+
+/* #462 — 주문서와 주문 응답에 사진이 없어 페이지가 붙인 주소가 상품 묶음까지 내려와야 한다 */
+describe("productBlocks 사진", () => {
+  const base = {
+    productName: "린넨 반팔 셔츠",
+    colorLabel: "아이보리",
+    price: 16500,
+  };
+  it("같은 상품의 첫 조합 사진을 묶음 사진으로 쓴다", () => {
+    const blocks = productBlocks([
+      { ...base, size: "L", qty: 40, thumbnailUrl: "https://img/a.jpg" },
+      { ...base, size: "M", qty: 1 },
+    ]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.thumbnailUrl).toBe("https://img/a.jpg");
+  });
+  it("사진이 없으면 비워 두고 화면은 아이콘을 그린다", () => {
+    expect(
+      productBlocks([{ ...base, size: "L", qty: 1 }])[0]?.thumbnailUrl,
+    ).toBeUndefined();
   });
 });

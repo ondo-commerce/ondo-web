@@ -24,6 +24,7 @@ export {
   toOrderDetail,
   toOrderPage,
   toOrderSummary,
+  withThumbnails,
 } from "./derive";
 export type { OrdersLocation } from "./derive";
 export type {

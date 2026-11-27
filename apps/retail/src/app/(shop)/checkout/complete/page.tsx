@@ -5,9 +5,11 @@ import {
   OrderCompleteView,
   resolveOrderId,
   toOrderDetail,
+  withThumbnails,
   type OrderDetailWire,
   type OrderRecord,
 } from "@/features/order";
+import { PRODUCT_PATH, type ListingDetailWire } from "@/features/product";
 import { RETAIL_ERROR_CODE } from "@/shared/api/errorCodes";
 import { serverApi } from "@/shared/api/server";
 
@@ -45,5 +47,23 @@ export default async function Page({
     }
   }
 
-  return <OrderCompleteView order={order} />;
+  if (order === null) return <OrderCompleteView order={null} />;
+
+  /* 주문 응답에는 사진이 없다. 게시글 상세의 첫 사진을 붙이고, 못 받은 상품은
+     아이콘 슬롯으로 둔다(완료 화면이 사진 때문에 죽으면 안 된다) */
+  const productIds = [...new Set(order.lines.map((line) => line.productId))];
+  const thumbnails = new Map<string, string>();
+  await Promise.all(
+    productIds
+      .filter((id) => id !== "")
+      .map(async (id) => {
+        const url = await api
+          .fetch<ListingDetailWire>(PRODUCT_PATH.detail(Number(id)))
+          .then((detail) => detail.images[0]?.url ?? null)
+          .catch(() => null);
+        if (url) thumbnails.set(id, url);
+      }),
+  );
+
+  return <OrderCompleteView order={withThumbnails(order, thumbnails)} />;
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { CART_PATH, toCartLines, type CartWire } from "@/features/cart";
 import {
   CheckoutView,
   ORDER_API_PATH,
@@ -29,6 +30,9 @@ export default async function Page({
   if (ids.length === 0) return <CheckoutView groups={[]} />;
 
   const api = await serverApi();
+  /* 주문서 응답에는 사진이 없다. 같은 cartItemId의 장바구니 행 사진을 같이 받고,
+     실패하면 사진 없이 그린다(주문서가 사진 때문에 죽으면 안 된다) */
+  const cartPromise = api.fetch<CartWire>(CART_PATH.items).catch(() => null);
   let checkout: CheckoutWire;
   try {
     checkout = await api.fetch<CheckoutWire>(ORDER_API_PATH.checkout, {
@@ -40,6 +44,12 @@ export default async function Page({
     if (isNotApproved(error)) redirect(APPROVAL_PATH);
     throw error;
   }
+  const cart = await cartPromise;
+  const thumbnails = new Map(
+    (cart === null ? [] : toCartLines(cart)).map(
+      (line) => [line.cartItemId, line.thumbnailUrl] as const,
+    ),
+  );
 
-  return <CheckoutView groups={toCheckoutGroups(checkout)} />;
+  return <CheckoutView groups={toCheckoutGroups(checkout, thumbnails)} />;
 }
