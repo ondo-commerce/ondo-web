@@ -189,6 +189,25 @@ describe("S2-4 목록 행과 돌아가기", () => {
     ]);
   });
 
+  it("toRoomRows — 마지막이 사람 넘김이면 한 줄은 도매용 서버 문구 대신 '사장님께 전달했어요'", () => {
+    const rows = toRoomRows(
+      [
+        summary(1, {
+          lastMessage: {
+            sequence: 4,
+            sender: "SYSTEM",
+            kind: "HANDOFF",
+            preview: "자동 답변이 답하지 못했어요. 직접 답해 주세요",
+            sentAt: "2026-10-29T14:18:00+09:00",
+          },
+        }),
+        summary(2, { lastMessage: null }),
+      ],
+      T0,
+    );
+    expect(rows.map((r) => r.preview)).toEqual(["사장님께 전달했어요", ""]);
+  });
+
   it("toRoomRows — 같은 방이 두 번 오면 앞 것만", () => {
     const rows = toRoomRows([summary(1), summary(1, { unreadCount: 9 })], T0);
     expect(rows.map((r) => [r.roomId, r.unreadCount])).toEqual([[1, 1]]);

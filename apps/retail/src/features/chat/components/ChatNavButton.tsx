@@ -41,12 +41,12 @@ export function ChatNavButton() {
         aria-current={active ? "page" : undefined}
         data-ac="S2-1 S2-2 S2-9"
       >
-        <MessageCircle aria-hidden className="size-4.5" />
+        <MessageCircle aria-hidden className="size-5" />
         {badge === null ? null : (
           <span
             aria-hidden
             data-ac="S2-2 S2-9"
-            className="bg-foreground text-card pointer-events-none absolute top-px right-px grid h-4 min-w-4 place-items-center rounded-full px-1 text-xs leading-none tracking-normal tabular-nums"
+            className="bg-primary text-primary-foreground ring-card pointer-events-none absolute -top-0.75 -right-1.25 h-4 min-w-4 rounded-full px-1 text-center text-xs leading-4 font-medium tabular-nums ring-2"
           >
             {badge}
           </span>

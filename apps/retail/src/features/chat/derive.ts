@@ -902,7 +902,14 @@ export function toRoomRows(
       roomId: room.roomId,
       href: chatRoomHref(room.roomId, CHATS_HREF),
       name: room.counterpart.name,
-      preview: room.lastMessage?.preview ?? "",
+      /* 마지막이 사람 넘김이면 방 안 줄과 같은 '사장님께 전달했어요'(#458). 서버 preview는 도매에게 하는 말이다 */
+      preview:
+        room.lastMessage === null
+          ? ""
+          : systemLineText({
+              kind: room.lastMessage.kind,
+              body: room.lastMessage.preview,
+            }),
       time: formatListTime(room.lastActivityAt, nowMs),
       unreadLabel: formatUnread(room.unreadCount),
       unreadCount: room.unreadCount,

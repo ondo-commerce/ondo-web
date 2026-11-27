@@ -30,6 +30,10 @@ import {
  * 손 계산한 보정량(기준 행 자리 변화 × 행 간격, 또는 안내 줄 높이)과 같은지 본다(S4-3 ⑤).
  *
  * 고정 대기는 없다. scroll 이벤트는 실제로 한 번 난 것을 받고 넘어간다.
+ *
+ * #455부터 넓은 화면(1280)은 목록이 방 옆 패널 안에서 스크롤한다. 아래 `headerBottom`, `innerHeight`, `scrollY`는
+ * "보이는 칸의 위끝, 아래끝, 스크롤 값"이다 — 폰(390)은 헤더 아래 창과 문서, 1280은 패널 칸(`data-list-scroll`)이다.
+ * 각 `page.evaluate` 안의 `panel` 두 줄이 그 판정이다(앱 `useListAnchor`의 `panelScroller`와 같은 규칙).
  */
 
 assertStubServers();
@@ -37,8 +41,11 @@ assertStubServers();
 const LIST_ROW = 'ul[aria-label="대화 목록"] a[data-room-id]';
 
 interface Geometry {
+  /** 보이는 칸 위끝(문서 스크롤이면 헤더 아래끝, 패널이면 패널 칸 위끝) */
   headerBottom: number;
+  /** 보이는 칸 아래끝 */
   innerHeight: number;
+  /** 문서 scrollY 또는 패널 scrollTop */
   scrollY: number;
   /** roomId → 창 기준 위끝, 목록 순서대로 */
   rows: { roomId: number; top: number; bottom: number }[];
@@ -47,10 +54,14 @@ interface Geometry {
 async function geometry(page: Page): Promise<Geometry> {
   return page.evaluate((selector) => {
     const header = document.querySelector("header");
+    const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+    const panel =
+      sc !== null && getComputedStyle(sc).overflowY !== "visible" ? sc : null;
+    const box = panel?.getBoundingClientRect();
     return {
-      headerBottom: header?.getBoundingClientRect().bottom ?? 0,
-      innerHeight: window.innerHeight,
-      scrollY: window.scrollY,
+      headerBottom: box?.top ?? header?.getBoundingClientRect().bottom ?? 0,
+      innerHeight: box?.bottom ?? window.innerHeight,
+      scrollY: panel?.scrollTop ?? window.scrollY,
       rows: [...document.querySelectorAll(selector)].map((el) => {
         const rect = el.getBoundingClientRect();
         return {
@@ -83,27 +94,31 @@ function visibleIds(g: Geometry): number[] {
 }
 
 /**
- * `position`번째 행 위끝을 헤더 아래끝에 맞춘다. 앱은 scroll 이벤트에서 보이는 행을 적으니, 그 이벤트가 실제로
- * 한 번 난 뒤(앱 리스너가 먼저 등록돼 먼저 돈다) 돌아온다. 문서 끝에 막혀 못 가면 실패시킨다
+ * `position`번째 행 위끝을 보이는 칸 위끝(헤더 아래끝 또는 패널 칸 위끝)에 맞춘다. 앱은 scroll 이벤트에서 보이는
+ * 행을 적으니, 그 이벤트가 실제로 한 번 난 뒤(앱 리스너가 먼저 등록돼 먼저 돈다) 돌아온다. 끝에 막혀 못 가면 실패시킨다
  */
 async function scrollRowToHeader(page: Page, position: number): Promise<void> {
   const off = await page.evaluate(
     ({ selector, position }) =>
       new Promise<number>((resolve) => {
         const header = document.querySelector("header");
+        const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+        const panel =
+          sc !== null && getComputedStyle(sc).overflowY !== "visible"
+            ? sc
+            : null;
         const row = document.querySelectorAll(selector)[position - 1];
         if (header === null || row === undefined) return resolve(Number.NaN);
-        const dy =
-          row.getBoundingClientRect().top -
-          header.getBoundingClientRect().bottom;
+        const topEdge = () =>
+          (panel ?? header).getBoundingClientRect()[
+            panel === null ? "bottom" : "top"
+          ];
+        const dy = row.getBoundingClientRect().top - topEdge();
         const settle = () =>
-          resolve(
-            row.getBoundingClientRect().top -
-              header.getBoundingClientRect().bottom,
-          );
+          resolve(row.getBoundingClientRect().top - topEdge());
         if (Math.abs(dy) < 0.5) return settle();
-        window.addEventListener("scroll", settle, { once: true });
-        window.scrollBy(0, dy);
+        (panel ?? window).addEventListener("scroll", settle, { once: true });
+        (panel ?? window).scrollBy(0, dy);
       }),
     { selector: LIST_ROW, position },
   );
@@ -265,7 +280,10 @@ test.describe("S4-3 1280", () => {
         capture: true,
         once: true,
       });
-      window.scrollBy(0, 100);
+      const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+      const panel =
+        sc !== null && getComputedStyle(sc).overflowY !== "visible" ? sc : null;
+      (panel ?? window).scrollBy(0, 100);
     });
     await page.clock.runFor(3_000);
     await flushUntil(page, async () => (await rowIds(page))[0] === row30);
@@ -419,7 +437,14 @@ test.describe("S4-4 1280", () => {
     const before = await geometry(page);
     const listTop0 = await page
       .locator('ul[aria-label="대화 목록"]')
-      .evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
+      .evaluate((el) => {
+        const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+        const panel =
+          sc !== null && getComputedStyle(sc).overflowY !== "visible"
+            ? sc
+            : null;
+        return el.getBoundingClientRect().top + (panel?.scrollTop ?? scrollY);
+      });
 
     await chatMock(page, "fail", { op: "rooms", status: 401 });
     await runToTick(page);
@@ -430,7 +455,14 @@ test.describe("S4-4 1280", () => {
     const after = await geometry(page);
     const listTop1 = await page
       .locator('ul[aria-label="대화 목록"]')
-      .evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
+      .evaluate((el) => {
+        const sc = document.querySelector<HTMLElement>("[data-list-scroll]");
+        const panel =
+          sc !== null && getComputedStyle(sc).overflowY !== "visible"
+            ? sc
+            : null;
+        return el.getBoundingClientRect().top + (panel?.scrollTop ?? scrollY);
+      });
 
     expect(
       listTop1 - listTop0,

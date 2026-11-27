@@ -14,8 +14,9 @@ export { clearChatDrafts, keepChatDraftsOf } from "./draftStore";
 /* 셸 수명 채팅 칸(소매처 id, #362 보류 말풍선). `app/(shop)/layout.tsx`가 `children`을 감싼다 */
 export { ChatShellProvider } from "./ChatShellProvider";
 export { ChatNavButton } from "./components/ChatNavButton";
-export { ChatRoomListView } from "./components/ChatRoomListView";
-export { ChatRoomView } from "./components/ChatRoomView";
+/* 채팅 한 화면(#455). `app/(shop)/chats/layout.tsx`가 감싸고, `/chats` 오른쪽 빈 자리는 `ChatRoomPick` */
+export { ChatSplitView } from "./components/ChatSplitView";
+export { ChatRoomPick, ChatRoomView } from "./components/ChatRoomView";
 export {
   InquiryButton,
   InquiryEntry,
