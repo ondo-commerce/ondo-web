@@ -58,6 +58,8 @@ export interface CartLine {
   /** 노출용 색상 표기(자유 텍스트). 팔레트 키가 아니라 도매 현장의 색 이름이다 */
   colorLabel: string;
   size: string;
+  /** 대표 사진 주소. 없으면 빈 문자열이고 화면은 아이콘 슬롯을 그린다 */
+  thumbnailUrl: string;
   /** 담을 때가 아니라 **매번 도매에서 다시 가져온** 판매가. 주문 불가면 null일 수 있다 */
   price: number | null;
   /** 재고 소진 · 미송 가능. 스펙에 없어 항상 false */

@@ -95,6 +95,8 @@ export interface ProductLine {
   size: string;
   price: number;
   qty: number;
+  /** 대표 사진 주소. 주문서와 주문 응답에는 없어 페이지가 다른 응답에서 붙인다 */
+  thumbnailUrl?: string;
 }
 
 /**

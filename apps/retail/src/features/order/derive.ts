@@ -208,7 +208,11 @@ function toWholesaler(wire: WholesalerWithBankWire): {
 }
 
 /** `GET /checkout` → 도매처 상자 목록. 서버가 도매처별로 묶어 준 순서 그대로다 */
-export function toCheckoutGroups(wire: CheckoutWire): CheckoutGroup[] {
+export function toCheckoutGroups(
+  wire: CheckoutWire,
+  /** `cartItemId` → 사진 주소. 주문서 응답에 사진이 없어 장바구니 응답에서 가져온다 */
+  thumbnails: ReadonlyMap<number, string> = new Map(),
+): CheckoutGroup[] {
   return wire.groups.map((group) => {
     const wholesaler = toWholesaler(group.wholesaler);
 
@@ -227,6 +231,7 @@ export function toCheckoutGroups(wire: CheckoutWire): CheckoutGroup[] {
         size: item.size ?? "",
         price: item.salePrice ?? 0,
         qty: item.qty ?? 0,
+        thumbnailUrl: thumbnails.get(item.cartItemId),
       })),
     };
   });
@@ -343,6 +348,23 @@ function toOrderLeg(wire: WholesalerOrderWire): OrderLeg {
  * **평평하게 편다** — 표·출고 기록·요약 카드가 도매처를 가로질러 세기 때문이다.
  * 어느 도매처 것인지는 각 줄의 `wholesalerId`가 든다.
  */
+/**
+ * 주문 라인에 사진을 붙인다. 주문 응답(`OrderItem`)에 사진이 없어 페이지가
+ * 게시글 상세에서 받아 온 `listingId` → 주소를 넘긴다. 못 받은 줄은 그대로 둔다
+ */
+export function withThumbnails(
+  order: OrderRecord,
+  thumbnails: ReadonlyMap<string, string>,
+): OrderRecord {
+  return {
+    ...order,
+    lines: order.lines.map((line) => ({
+      ...line,
+      thumbnailUrl: thumbnails.get(line.productId),
+    })),
+  };
+}
+
 export function toOrderDetail(wire: OrderDetailWire): OrderRecord {
   const legs: OrderLeg[] = [];
   const lines: OrderLine[] = [];
@@ -430,6 +452,8 @@ export interface ProductBlock {
   /** `체리레드 · S · 10장 / 체리레드 · M · 6장 / 딥네이비 · L · 10장` */
   options: string;
   amount: number;
+  /** 묶인 첫 조합의 사진. 같은 상품이라 하나면 된다 */
+  thumbnailUrl?: string;
 }
 
 /**
@@ -454,6 +478,7 @@ export function productBlocks(lines: readonly ProductLine[]): ProductBlock[] {
         productName: line.productName,
         options: option,
         amount: lineAmount(line),
+        thumbnailUrl: line.thumbnailUrl,
       });
       continue;
     }
@@ -464,6 +489,8 @@ export function productBlocks(lines: readonly ProductLine[]): ProductBlock[] {
     if (block) {
       block.options = `${block.options} / ${option}`;
       block.amount += lineAmount(line);
+      /* 첫 조합에 사진이 없으면 뒤 조합 사진으로 채운다 */
+      block.thumbnailUrl ||= line.thumbnailUrl;
     }
   }
 
@@ -996,6 +1023,7 @@ export function legGroup(order: OrderRecord, leg: OrderLeg): CheckoutGroup {
       size: line.size,
       price: line.price,
       qty: line.qty,
+      thumbnailUrl: line.thumbnailUrl,
     })),
   };
 }
