@@ -39,11 +39,11 @@ export function CartButton({
         href="/cart"
         aria-label={count === null ? "장바구니" : `장바구니, ${count}개 담김`}
       >
-        <ShoppingBag aria-hidden className="size-4.5" />
+        <ShoppingBag aria-hidden className="size-5" />
         {count === null ? null : (
           <span
             aria-hidden
-            className="bg-foreground text-card absolute top-px right-px grid h-4 min-w-4 place-items-center rounded-full px-1 text-xs leading-none tracking-normal"
+            className="bg-primary text-primary-foreground ring-card pointer-events-none absolute -top-0.75 -right-1.25 h-4 min-w-4 rounded-full px-1 text-center text-xs leading-4 font-medium tabular-nums ring-2"
           >
             {count}
           </span>
