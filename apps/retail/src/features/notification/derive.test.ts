@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseEtaBody,
   flattenPages,
   hasNewer,
   isCurrentAddress,
@@ -135,6 +136,12 @@ describe("S2-5 toNotificationRow — 행이 가는 곳과 모양", () => {
       id: 2022,
       title: "무드온 미송 입고일 변경",
       body: "린넨 셋업 자켓 베이지/L 남은 2장, 11/5(목) → 11/8(일)",
+      eta: {
+        item: "린넨 셋업 자켓 베이지/L",
+        qty: "2장",
+        from: "11/5(목)",
+        to: "11/8(일)",
+      },
       time: "10/28 14:20",
       unread: true,
       href: "/backorders?wholesaler=101",
@@ -252,5 +259,33 @@ describe("S2-4 S2-11 flattenPages, markPagesRead — 이어 받은 장과 읽음
       "2026-10-28T00:00:00Z",
       "2026-10-29T14:21:00Z",
     ]);
+  });
+});
+
+/* #465 — 미송 입고일 본문을 두 줄로 나눈다. 처음 지정이면 from이 null(화면은 "확정") */
+describe("parseEtaBody", () => {
+  it("처음 지정: 입고일 미정 → 날짜", () => {
+    expect(
+      parseEtaBody(
+        "린넨 반팔 셔츠 아이보리/L 남은 28장, 입고일 미정 → 12/9(수)",
+      ),
+    ).toEqual({
+      item: "린넨 반팔 셔츠 아이보리/L",
+      qty: "28장",
+      from: null,
+      to: "12/9(수)",
+    });
+  });
+  it("날짜를 지우면 to가 미정", () => {
+    expect(
+      parseEtaBody("셔츠 레드/M 남은 47장, 12/2(수) → 입고일 미정"),
+    ).toMatchObject({
+      from: "12/2(수)",
+      to: "미정",
+    });
+  });
+  it("꼴이 다르거나 null이면 null — 원문을 그린다", () => {
+    expect(parseEtaBody("주문이 확정됐어요")).toBeNull();
+    expect(parseEtaBody(null)).toBeNull();
   });
 });

@@ -17,6 +17,10 @@ export const ORDER_HREF = (orderId: number) => `/orders/${orderId}`;
 
 /** 패널 문구. 와이어프레임 `20_retail-notifications` 그대로 */
 export const PANEL_TEXT = {
+  /* 미송 입고일 본문 두 줄. `남은 28장` / `입고일: 12/9(수) 확정` */
+  etaLeft: "남은",
+  etaLabel: "입고일:",
+  etaFixed: "확정",
   title: "알림",
   listLabel: "알림 목록",
   empty: "새 알림이 없어요",
