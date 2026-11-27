@@ -70,6 +70,7 @@ function toCartLine(
     productName: item.title ?? MISSING_PRODUCT_NAME,
     colorLabel: item.colorName ?? "",
     size: item.size ?? "",
+    thumbnailUrl: item.thumbnailUrl ?? "",
     price: item.salePrice ?? null,
     /* 스펙에 없다. 값이 오기 전까지 배지는 안 뜬다 */
     soldOut: false,

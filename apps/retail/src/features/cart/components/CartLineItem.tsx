@@ -2,6 +2,7 @@
 
 import { Badge, Checkbox, IconButton, cn } from "@ondo/ui";
 import { X } from "lucide-react";
+import { ProductImage } from "@/shared/components/ProductImage";
 import { QtyStepper } from "@/shared/components/QtyStepper";
 import { SOLD_OUT_BADGE, UNORDERABLE_BADGE } from "../constants";
 import {
@@ -29,9 +30,8 @@ import type { CartLine, CartLineIssue } from "../types";
  * 옵션이 지워진 것이라 체크도 수량도 잠기고 합계에서 빠진다 — 빼기(X)만 된다.
  * 행을 지우지 않고 남기는 것은 스펙이 그렇게 적어서다("행은 남으니 회색으로").
  *
- * 썸네일이 빈 회색 상자인 것은 서버가 주는 `thumbnailUrl`의 호스트가 아직 이미지
- * 설정에 없어서다 — 상품 화면 연동(#163)이 호스트를 열면 그때 같이 붙인다.
- * 값이 아니라 자리라서 `aria-hidden`이다.
+ * 썸네일은 서버 `thumbnailUrl`을 `ProductImage`로 그린다. 상품명이 옆에 있어
+ * 사진은 장식이라 `aria-hidden`이다.
  *
  * **빼기(X)는 요청이 나가 있는 동안(`busy`) 잠긴다** — `선택 삭제`·`되돌리기`와
  * 같은 규칙이다. 느린 DELETE 중에 두 번 눌리면 DELETE가 두 건 나간다. 서버가
@@ -72,7 +72,16 @@ export function CartLineItem({
         className="size-4.5"
       />
 
-      <span aria-hidden className="bg-secondary size-13 shrink-0 rounded-md" />
+      <span
+        aria-hidden
+        className="bg-secondary text-border-strong relative grid size-13 shrink-0 place-items-center overflow-hidden rounded-md"
+      >
+        <ProductImage
+          src={line.thumbnailUrl}
+          sizes="52px"
+          iconClassName="size-5"
+        />
+      </span>
 
       {/* basis-40: 이 칸이 먼저 줄어들다 못해 0이 되면 상품명이 세로로 서 버린다.
           여기까지만 줄고 그 아래에서는 값 칸이 줄을 바꾼다 */}

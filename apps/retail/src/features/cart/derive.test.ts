@@ -19,6 +19,7 @@ function line(over: Partial<CartLine> = {}): CartLine {
     productName: "코튼 셔츠",
     colorLabel: "블랙",
     size: "M",
+    thumbnailUrl: "",
     price: 12000,
     soldOut: false,
     orderable: true,

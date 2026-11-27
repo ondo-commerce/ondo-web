@@ -1,3 +1,4 @@
+import { ProductImage } from "@/shared/components/ProductImage";
 import { formatWon, type ProductBlock } from "../derive";
 
 /**
@@ -13,8 +14,17 @@ import { formatWon, type ProductBlock } from "../derive";
 export function OrderLineItem({ block }: { block: ProductBlock }) {
   return (
     <li className="border-border flex items-center gap-3 border-b py-3 last:border-b-0">
-      {/* 이미지가 아직 없다. 자리만 잡아 두고 낭독기에는 읽히지 않게 둔다 */}
-      <span aria-hidden className="bg-secondary size-13 shrink-0 rounded-md" />
+      {/* 상품명이 옆에 있어 사진은 장식이다 */}
+      <span
+        aria-hidden
+        className="bg-secondary text-border-strong relative grid size-13 shrink-0 place-items-center overflow-hidden rounded-md"
+      >
+        <ProductImage
+          src={block.thumbnailUrl}
+          sizes="52px"
+          iconClassName="size-5"
+        />
+      </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{block.productName}</p>
         <p className="text-muted-foreground text-body mt-0.5">
